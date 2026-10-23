@@ -1,5 +1,3 @@
-use std::env;
-
 use crate::modern_gpu::{modern_gpu_path_fallback_reason, ModernGpuPathFallback};
 use crate::modern_software::VariantAtlasRenderStats;
 
@@ -93,8 +91,8 @@ impl ModernAssetLiveFrameReport {
 
 impl ModernAssetLiveStats {
     pub fn from_env() -> Self {
-        let enabled = env::var_os("ZELDA3_VARIANT_LIVE_STATS").is_some();
-        let log_every_frames = env::var("ZELDA3_VARIANT_LIVE_STATS_EVERY")
+        let enabled = crate::debug_env::var_os!("ZELDA3_VARIANT_LIVE_STATS").is_some();
+        let log_every_frames = crate::debug_env::var!("ZELDA3_VARIANT_LIVE_STATS_EVERY")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|value| *value != 0)

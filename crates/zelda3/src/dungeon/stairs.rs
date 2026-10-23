@@ -1565,8 +1565,8 @@ impl ZeldaState {
     pub(super) fn module07_11_02_load_and_prep_room(&mut self) {
         self.apply_palette_filter_bounce();
         let live_draw = self.native_exact_cpu_owner.is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some();
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some();
         if live_draw {
             self.begin_live_dungeon_supertile_room_load();
         } else {

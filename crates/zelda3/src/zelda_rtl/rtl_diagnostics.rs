@@ -15,7 +15,7 @@ impl ZeldaState {
             return;
         }
         let root = std::path::PathBuf::from(
-            crate::debug_env::var("ZELDA3_DEBUG_PRESENTED_DIR")
+            crate::debug_env::var!("ZELDA3_DEBUG_PRESENTED_DIR")
                 .expect("selected presented frames require ZELDA3_DEBUG_PRESENTED_DIR"),
         );
         std::fs::create_dir_all(&root).expect("create presented-state directory");
@@ -80,7 +80,7 @@ impl ZeldaState {
     }
 
     pub(super) fn replay_assert_native_coherent(&self, label: &str) {
-        let Ok(mode) = crate::debug_env::var("ZELDA3_ASSERT_NATIVE_COHERENT") else {
+        let Ok(mode) = crate::debug_env::var!("ZELDA3_ASSERT_NATIVE_COHERENT") else {
             return;
         };
         if let Some(frame) = Self::parse_trace_env_u32("ZELDA3_ASSERT_COHERENT_FRAME") {
@@ -93,7 +93,7 @@ impl ZeldaState {
         // cached-sprite shadow). Pass a comma-separated allow-list in
         // ZELDA3_ASSERT_COHERENT_IGNORE to suppress that baseline so `=panic` aborts only
         // on a genuinely-unexpected drift.
-        if let Ok(ignore) = crate::debug_env::var("ZELDA3_ASSERT_COHERENT_IGNORE") {
+        if let Ok(ignore) = crate::debug_env::var!("ZELDA3_ASSERT_COHERENT_IGNORE") {
             let ignore: Vec<&str> = ignore.split(',').map(|s| s.trim()).collect();
             bad.retain(|name| !ignore.contains(name));
         }
@@ -117,7 +117,7 @@ impl ZeldaState {
     /// frames where two of them actually disagree about a byte (i.e. a real clobber rather
     /// than a latent overlap). See GameState::report_scratch_conflicts.
     pub(super) fn replay_assert_scratch_conflicts(&self, label: &str) {
-        let Ok(mode) = crate::debug_env::var("ZELDA3_ASSERT_SCRATCH_CONFLICTS") else {
+        let Ok(mode) = crate::debug_env::var!("ZELDA3_ASSERT_SCRATCH_CONFLICTS") else {
             return;
         };
         let conflicts = self.game_state.report_scratch_conflicts(&self.ram);

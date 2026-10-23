@@ -217,8 +217,8 @@ impl ZeldaState {
             && self.pending_map_force_blank_output_scanline.is_none()
         {
             if frame.submodule == 3
-                && (crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_FULL_PLAN_PROBE").is_some()
-                    || crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some())
+                && (crate::debug_env::var_os!("ZELDA3_NATIVE_TILESET_FULL_PLAN_PROBE").is_some()
+                    || crate::debug_env::var_os!("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some())
             {
                 self.native_map_graphics_timing = Some(
                     self.probe_dungeon_map_tileset_wram_schedule(input, false)
@@ -234,11 +234,11 @@ impl ZeldaState {
             && !self.game_state.display.nmi_update_is_latched()
             && self.game_execution_scheduler.is_idle()
         {
-            if crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some() {
                 self.native_map_graphics_timing = Some(
                     self.probe_dungeon_map_tileset_wram_schedule(input, true)
                 );
-            } else if crate::debug_env::var_os("ZELDA3_NATIVE_MAP_RECOVERY_PROBE").is_some() {
+            } else if crate::debug_env::var_os!("ZELDA3_NATIVE_MAP_RECOVERY_PROBE").is_some() {
                 self.probe_dungeon_map_recovery_restore_schedule(input);
             }
         }
@@ -312,7 +312,7 @@ impl ZeldaState {
             && self.dungeon_submodule_cpu_schedule.is_none()
         {
             let schedule = dungeon_submodule_cpu_schedule(self);
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!(
                     "dungeon_cpu_schedule host={} module={:02x}/{:02x}/{:02x} submodule_nmis={} caller_nmis={} sprite_main_nmis={} suffix_nmis={} caller_phase={:?} sprite_boundary={:?} cached_boundary={:?} reenters_main={}",
                     self.frame_ctr_dbg,

@@ -147,7 +147,7 @@ impl<'a> LiveIndexVariantBase<'a> {
 
 fn debug_variant_missing_key(key: &crate::modern_variant_atlas::VariantAtlasKey) {
     static PRINTED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let Ok(limit) = std::env::var("ZELDA3_VARIANT_DEBUG_MISSING") else {
+    let Ok(limit) = crate::debug_env::var!("ZELDA3_VARIANT_DEBUG_MISSING") else {
         return;
     };
     let limit = limit.parse::<usize>().unwrap_or(16);
@@ -465,7 +465,7 @@ impl ModernGpuVariantRenderer {
                 crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
             }
         }
-        if std::env::var("ZELDA3_STABLE_REJECT_STATS").is_ok() {
+        if crate::debug_env::var!("ZELDA3_STABLE_REJECT_STATS").is_ok() {
             let mut total = 0u32;
             let mut rejected = 0u32;
             for packet in plan.material_packets() {

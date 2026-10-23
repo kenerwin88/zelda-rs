@@ -301,7 +301,7 @@ impl ZeldaState {
         following_frame: FrameState,
         following_room: u8,
     ) {
-        if crate::debug_env::var("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
+        if crate::debug_env::var!("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == self.frame_ctr_dbg)

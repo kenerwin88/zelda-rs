@@ -642,7 +642,7 @@ impl AbsoluteDspEventClock {
         for (port, write) in host_writes.writes.iter_mut().enumerate() {
             if handled[port].is_some() { *write = None; }
         }
-        let debug_transport = crate::debug_env::var("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
+        let debug_transport = crate::debug_env::var!("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u64>().ok())
             == Some(self.host_frame_index);
@@ -1018,12 +1018,12 @@ impl AbsoluteDspEventClock {
             self.pending_timed_main_cpu_port_writes.push((
                 snes_master_clock_to_apu_cycle(master), 0, 0xff,
             ));
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload command host={} v={v} h={h} master={master} audio={}",
                     self.host_frame_index, self.absolute_apu_cycle);
             }
         } else {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload unpositioned_command host={} bank={bank_id} audio={}",
                     self.host_frame_index, self.absolute_apu_cycle);
             }

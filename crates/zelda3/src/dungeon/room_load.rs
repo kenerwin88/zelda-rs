@@ -1527,7 +1527,7 @@ impl ZeldaState {
         &mut self,
         owner: EarlyDungeonRoomOwner,
     ) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_ROOM_HEADER_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_ROOM_HEADER_LIVE_TRIAL").is_none() {
             return;
         }
         let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
@@ -1545,7 +1545,7 @@ impl ZeldaState {
             "source-ordered room header began twice");
         assert!(self.pending_early_dungeon_room_owner.is_none());
         let floor_draw_trial =
-            crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some();
+            crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some();
         if floor_draw_trial {
             self.dungeon_torch_mut().clear_lit_torches();
             self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();

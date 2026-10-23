@@ -142,7 +142,7 @@ impl ZeldaState {
         );
         let reset_xy_flags = self.game_state.dungeon.door_setup.reset_xy_check_flags();
         self.apply_reset_xy_quadrant_overrides(reset_xy_flags);
-        if crate::debug_env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_QUADRANT").is_some() {
             eprintln!(
                 "[QUADRANT-LAYOUT] host={} room={:#x} key={:#x} ram_aa={:#x} flags={:#x} x_mask={:#x} y_mask={:#x} ram_a8={:#x} ram_a9={:#x} blast=({},{}) reset_xy={:#x} -> fullsize=({},{})",
                 self.frame_ctr_dbg,
@@ -458,7 +458,7 @@ impl ZeldaState {
             LAYOUT_QUADRANT_FLAGS[self.game_state.dungeon.room_load.layout_quadrant_key() as usize];
         let mask = self.game_state.player.follower_link.quadrant_y_mask();
         let blast_wall_y_open = self.game_state.dungeon.room_effects.blast_wall_y_open();
-        if crate::debug_env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_QUADRANT").is_some() {
             eprintln!(
                 "[QUADRANT] host={} room={:#x} key={:#x} ram_aa={:#x} flags={:#x} y_mask={:#x} ram_a9={:#x} blast_y={} ram_453={:#x} -> fullsize_y={}",
                 self.frame_ctr_dbg,
@@ -704,7 +704,7 @@ impl ZeldaState {
             // isolated instruction stream.
             let measured_entry = self.native_dungeon_room_load_cpu_entry.take();
             let schedule = dungeon_room_load_cpu_schedule(self, measured_entry);
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!(
                     "dungeon_room_load_cpu_schedule host={} room={:04x} room_load_nmis={} auxiliary_graphics_nmis={} caller_nmis={} prefix_nmis={} sprite_main_nmis={} suffix_nmis={} boundary={:?}",
                     self.frame_ctr_dbg,
@@ -859,8 +859,8 @@ impl ZeldaState {
     /// ROM: `Module07_02_01_LoadNextRoom`
     pub(super) fn module07_02_01_load_next_room(&mut self) {
         if self.native_exact_cpu_owner.is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
         {
             // Dungeon_LoadRoom's floor and object loops cross multiple CPU
             // hosts. Retain their translated cursors until the source-owned
@@ -1629,7 +1629,7 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn apply_dungeon_quadrant_cpu_advance(&mut self, advance: DungeonModuleCpuAdvance) {
-        if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
             eprintln!(
                 "dungeon_quadrant_cpu_apply host={} phase={:?} active_return={}",
                 self.frame_ctr_dbg,
@@ -1905,8 +1905,8 @@ impl ZeldaState {
     /// terminal completion.
     pub(in crate::zelda_rtl) fn dungeon_initialize_room_from_special_after_adjust(&mut self) {
         if self.native_exact_cpu_owner.is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
             && self.game_state.frame.main_module == 7
             && self.game_state.frame.submodule == 0x0e
         {
@@ -2066,7 +2066,7 @@ impl ZeldaState {
         // DMA request only after it finishes, so the source CPU receipt owns
         // these two stores while the translated conversion is suspended.
         if self.native_exact_cpu_owner.is_none()
-            || crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL")
+            || crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL")
                 .is_none()
         {
             self.set_pending_nmi_subroutine(9);
@@ -2090,7 +2090,7 @@ impl ZeldaState {
     /// ROM: `DungeonTransition_TriggerBGC56UpdateAndAdvance`
     pub(super) fn dungeon_transition_trigger_bgc56_update_and_advance(&mut self) {
         if self.native_exact_cpu_owner.is_none()
-            || crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL")
+            || crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL")
                 .is_none()
         {
             self.set_pending_nmi_subroutine(10);

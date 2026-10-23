@@ -5727,7 +5727,7 @@ impl ZeldaState {
     /// scratch. A suspended quadrant can start here and then publish a tile
     /// prefix without materializing the rest of the C call.
     pub(super) fn begin_overworld_quadrant_decode(&mut self, screen: i32) {
-        if crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some() {
             eprintln!("native_quadrant_decode_begin frame={} screen={screen}", self.frame_ctr_dbg);
         }
         let hibytes = self.GetOverworldHibytes(screen);
@@ -5755,7 +5755,7 @@ impl ZeldaState {
                 .source_word(tile * 2)
                 .wrapping_mul(2);
             if dst == 0x4000 && tile < 16
-                && crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some()
+                && crate::debug_env::var_os!("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some()
             {
                 eprintln!("native_quadrant_tile frame={} tile={tile} input={input:04x}", self.frame_ctr_dbg);
             }
@@ -6228,7 +6228,7 @@ impl ZeldaState {
         }
         let (sprite_reload_workload, live_final_slots) = if self.rom_startup_timing()
             && self.native_exact_cpu_owner.is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCAN_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SCAN_LIVE_TRIAL").is_some()
         {
             let sprite_records = self.begin_overworld_sprite_reload_presence_just_load();
             let (workload, final_slots) =
@@ -6236,7 +6236,7 @@ impl ZeldaState {
             (workload, Some(final_slots))
         } else if self.rom_startup_timing()
             && self.native_exact_cpu_owner.is_some()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCAN_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SCAN_TRIAL").is_some()
         {
             let work = self.begin_overworld_sprite_reload_just_load();
             self.begin_native_exact_cpu_overworld_scan_trial(work);

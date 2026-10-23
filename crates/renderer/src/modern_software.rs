@@ -2053,7 +2053,7 @@ fn finalize_frame(
     // the MAIN screen as raw bytes (one u8 per pixel: 0=BG1 1=BG2 2=BG3 4=OBJ(pal4-7)
     // 5=backdrop 6=OBJ(pal0-3), 0xff=no real pixel). Lets a viewer attribute every
     // diff pixel to the layer/source that produced it — ground truth, vs guessing.
-    if let Ok(path) = std::env::var("ZELDA3_BITMAP") {
+    if let Ok(path) = crate::debug_env::var!("ZELDA3_BITMAP") {
         let map: Vec<u8> = (0..len)
             .map(|i| if main.real[i] { main.bit[i] } else { 0xff })
             .collect();
@@ -2245,7 +2245,7 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
     let mut modern = crate::modern_extract::extract_modern_frame(frame);
     crate::modern_extract::fill_modern_cgram_colors(&mut modern, frame, true);
 
-    if let Ok(value) = std::env::var("ZELDA3_DEBUG_MODE7_PIXEL") {
+    if let Ok(value) = crate::debug_env::var!("ZELDA3_DEBUG_MODE7_PIXEL") {
         let mut parts = value.split(',');
         if let (Some(Ok(sx)), Some(Ok(sy))) = (
             parts.next().map(str::parse::<usize>),

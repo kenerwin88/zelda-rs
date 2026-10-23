@@ -5,7 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["parity-debug"]
+parity-debug = ["zelda3-debug-env/parity-debug"]
+
 [dependencies]
+zelda3-debug-env = { path = "../zelda3-debug-env" }
 bitflags = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"

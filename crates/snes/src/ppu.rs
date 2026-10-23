@@ -1586,7 +1586,7 @@ impl PpuState {
             }
         }
 
-        if std::env::var_os("TRACE_OBJ_EDGE").is_some()
+        if crate::debug_env::var_os!("TRACE_OBJ_EDGE").is_some()
             && (line == 0 || line == 1 || line == 185 || line == 211 || (216..=223).contains(&line))
         {
             for sprite in &sprites {
@@ -1687,7 +1687,7 @@ impl PpuState {
                             | ((bits >> 14) & 4)
                             | ((bits >> 21) & 8);
                         let dst = (col + sprite.x + px + PPU_EXTRA_LEFT_RIGHT as i32) as usize;
-                        if std::env::var_os("TRACE_OBJ_EDGE").is_some()
+                        if crate::debug_env::var_os!("TRACE_OBJ_EDGE").is_some()
                             && (((line == 0 && dst == 124 + PPU_EXTRA_LEFT_RIGHT)
                                 || (line == 1 && dst == 127 + PPU_EXTRA_LEFT_RIGHT)
                                 || (line == 185 && dst == 78 + PPU_EXTRA_LEFT_RIGHT))
@@ -1752,7 +1752,7 @@ impl PpuState {
                 if clear_backdrop || src > *bg {
                     *bg = src;
                 }
-                if std::env::var_os("TRACE_OBJ_EDGE").is_some()
+                if crate::debug_env::var_os!("TRACE_OBJ_EDGE").is_some()
                     && !sub
                     && screen_x == 78
                     && src != 0x0500
@@ -2014,7 +2014,7 @@ impl PpuState {
 
     fn handle_pixel_old(&mut self, x: i32, y: i32) {
         let mut color = 0u16;
-        let trace_pixel = std::env::var_os("TRACE_OBJ_EDGE").is_some()
+        let trace_pixel = crate::debug_env::var_os!("TRACE_OBJ_EDGE").is_some()
             && ((x == 127 && (y == 56 || y == 57)) || (x == 40 && (y == 40 || y == 41)));
         // `run_line` and the legacy renderer number visible lines 1..=224,
         // while presentation receipts number their output rows 0..223.
@@ -2198,7 +2198,7 @@ impl PpuState {
                     let g = self.brightness_mult[((color as usize) >> 5) & clip_color_mask];
                     let b = self.brightness_mult[((color as usize) >> 10) & clip_color_mask];
                     let rgb = 0xff000000 | (r as u32) << 16 | (g as u32) << 8 | b as u32;
-                    if std::env::var_os("TRACE_OBJ_EDGE").is_some()
+                    if crate::debug_env::var_os!("TRACE_OBJ_EDGE").is_some()
                         && ((line == 185 && i == 78 + PPU_EXTRA_LEFT_RIGHT)
                             || (line == 1 && i == 127 + PPU_EXTRA_LEFT_RIGHT)
                             || (line == 56 && i == 127 + PPU_EXTRA_LEFT_RIGHT)
@@ -2280,7 +2280,7 @@ impl PpuState {
                         | ((color_map[g] as u32) << 8)
                         | ((color_map[r] as u32) << 16)
                         | 0xff000000;
-                    if std::env::var_os("TRACE_OBJ_EDGE").is_some()
+                    if crate::debug_env::var_os!("TRACE_OBJ_EDGE").is_some()
                         && ((line == 185 && i == 78 + PPU_EXTRA_LEFT_RIGHT)
                             || (line == 1 && i == 127 + PPU_EXTRA_LEFT_RIGHT)
                             || (line == 56 && i == 127 + PPU_EXTRA_LEFT_RIGHT)

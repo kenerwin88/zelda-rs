@@ -2074,7 +2074,7 @@ fn dungeon_supertile_quadrant_cpu_advance_for_resume(
                 DungeonQuadrantCpuAdvance::CompleteBeforeNmi
             }
         };
-        if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
             eprintln!(
                 "dungeon_quadrant_cpu_advance host={} room={:04x} state={} phase={:?} resumed={:?} sprite_boundary={:?} cached_boundary={:?}",
                 state.frame_ctr_dbg,
@@ -2421,7 +2421,7 @@ pub(super) fn dialogue_initialization_cpu_plan(
                     entered_text_initialize,
                     "Module0E reached NMI before Text_Initialize"
                 );
-                if crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
                     eprintln!(
                         "[DLG-CPU] nmi #{nmi_crossings} at pc={:06x} module={:02x}/{:02x} $12={:02x} text_state={:02x} read_pos={:02x}{:02x} sp={:04x}",
                         run.pc(),
@@ -2590,7 +2590,7 @@ fn module_cpu_entry_after_leading_nmi(state: &ZeldaState, input: u16, cpu_host: 
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     for _ in 0..50_000 {
         if run.is_complete() {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
                 eprintln!("module_cpu_entry host={} pc={entry_pc:06x} position={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
@@ -2627,7 +2627,7 @@ fn overworld_map_graphics_cpu_nmi_slices(state: &ZeldaState, input: u16) -> (u8,
         }
         if run.is_complete() {
             let quadrants = quadrant_nmis.expect("map caller did not finish its quadrants");
-            if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
                 eprintln!("overworld_map_cpu host={} quadrants={quadrants} tail={} return={:?}",
                     state.frame_ctr_dbg, nmis - quadrants, budget.raster_position());
             }
@@ -2801,7 +2801,7 @@ fn dialogue_main_loop_cpu_phase(state: &mut ZeldaState, input: u16, nmi_is_trail
 fn debug_overworld_cpu_iteration_host_matches(host: u32) -> bool {
     static RANGE: std::sync::OnceLock<Option<(u32, u32)>> = std::sync::OnceLock::new();
     let Some((lo, hi)) = RANGE.get_or_init(|| {
-        let value = crate::debug_env::var("ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION").ok()?;
+        let value = crate::debug_env::var!("ZELDA3_DEBUG_OVERWORLD_CPU_ITERATION").ok()?;
         let (lo, hi) = value.split_once('-')?;
         Some((lo.parse().ok()?, hi.parse().ok()?))
     }) else {
@@ -2815,7 +2815,7 @@ fn debug_overworld_cpu_iteration_host_matches(host: u32) -> bool {
 fn debug_overworld_cpu_pc_matches(pc: u32) -> bool {
     static PCS: std::sync::OnceLock<Vec<u32>> = std::sync::OnceLock::new();
     PCS.get_or_init(|| {
-        crate::debug_env::var("ZELDA3_DEBUG_OVERWORLD_CPU_PCS")
+        crate::debug_env::var!("ZELDA3_DEBUG_OVERWORLD_CPU_PCS")
             .ok()
             .map(|value| {
                 value
@@ -2873,7 +2873,7 @@ fn overworld_packing_from_run(state: &mut ZeldaState, nmi_is_trailing: bool, mut
     let mut sprite_main_last_completed_slot: Option<u8> = None;
     for _ in 0..200_000 {
         if run.is_complete() {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some()
                 && packing_entry.is_some_and(|position: CpuRasterPosition| position.coordinates().0 >= 215) {
                 eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} returned={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
@@ -3050,7 +3050,7 @@ fn overworld_packing_from_run(state: &mut ZeldaState, nmi_is_trailing: bool, mut
                     budget.raster_position()
                 );
             }
-            if crate::debug_env::var_os("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_OVERWORLD_CPU_PACKING").is_some() {
                 eprintln!("overworld_cpu_packing host={} entry={packing_entry:?} pc={:06x} boundary={:?} progress={progress:?} source_progress={source_progress:?} pointer_tail_cycles={pointer_tail_cycles:?} link_oam_caller={link_oam_caller_return:06x?}",
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
             }
@@ -3228,7 +3228,7 @@ fn try_overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget
                 if advance_instruction_with_rom_hdma(&mut run, &mut budget, step.master_cycles)
                     .reached_boundary().is_some()
                 {
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                         eprintln!("song_upload main_wait host={host} pc={:06x} position={:?} zero={} counter={}",
                             checkpoint.entry_pc, budget.raster_position(), checkpoint.zero, run.ram_byte(FRAME_COUNTER));
                     }
@@ -3247,7 +3247,7 @@ fn try_overworld_cpu_suffix_main_wait_phase(mut run: RomCpuTimingRun, mut budget
                 DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
             } else { 0x00_805d };
             let checkpoint = run.main_wait_checkpoint(next_entry);
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload main_wait host={host} pc={:06x} position={:?} zero={} counter={}",
                     checkpoint.entry_pc, budget.raster_position(), checkpoint.zero, run.ram_byte(FRAME_COUNTER));
             }
@@ -3335,7 +3335,7 @@ fn overworld_upload_suffix_interruption(
                 .or_else(|| packing.map(SpritePreparationProgress::ExtendedOam))
                 .expect("upload suffix interrupted outside modeled sprite preparation");
             if let Some(packing) = packing { packing.validate(); }
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload suffix host={} pc={:06x} position={:?} progress={progress:?}",
                     state.frame_ctr_dbg, run.pc(), budget.raster_position());
             }
@@ -3357,7 +3357,7 @@ fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleB
     budget.begin_nmi_handler();
     run.request_nmi();
 
-    let trace = crate::debug_env::var_os("ZELDA3_DEBUG_ROM_CPU_NMI_TRACE").is_some();
+    let trace = crate::debug_env::var_os!("ZELDA3_DEBUG_ROM_CPU_NMI_TRACE").is_some();
     for step in 0..100_000 {
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
@@ -3476,7 +3476,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             terminal_blank_row.get_or_insert(force_blank_output_row(v, h));
         }
         if matches!(run.pc(), 0x00_f3e5 | 0x00_8942)
-            && crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
+            && crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
         {
             eprintln!(
                 "[SPOTLIGHT-BLANK] host={} pc={:06x} raster={:?} first_nmi={} active_complete={}",
@@ -3501,7 +3501,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             }
             if module_ended_after_second_nmi && run.pc() == 0x00_8051 {
                 if successor_entry.is_none()
-                    && crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
+                    && crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
                 {
                     eprintln!("[SPOTLIGHT-SUCCESSOR] host={} entry={entry:?} field={} raster={:?}",
                         state.frame_ctr_dbg, budget.field_index(), budget.raster_position());
@@ -3615,7 +3615,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                     });
                 iterations_before_nmi = Some(iterations);
                 interrupted_pc = Some(run.pc());
-                if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
                     eprintln!("[SPOTLIGHT-FIRST-NMI] host={} pc={:06x} raster={:?}",
                         state.frame_ctr_dbg, run.pc(), budget.raster_position());
                 }
@@ -3624,7 +3624,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                     Some(matches!(run.pc(), 0x00_8034 | 0x00_8036));
             } else if completed_active_window_words.is_none() {
                 second_link_interruption = spotlight_link_axis_interruption(run.pc(), run.index_x());
-                if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
                     eprintln!("[SPOTLIGHT-SECOND-NMI] host={} pc={:06x} raster={:?} link={second_link_interruption:?}",
                         state.frame_ctr_dbg, run.pc(), budget.raster_position());
                 }
@@ -3642,7 +3642,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             let before = budget.raster_position();
             let interrupted_pc = run.pc();
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload iris_nmi entry_host={} entry={entry:?} pc={interrupted_pc:06x} before={before:?} after={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
@@ -3682,8 +3682,8 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
     let mut nmis = 0u8;
     for _ in 0..10_000_000 {
         if run.is_complete() {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some()
-                || crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some()
+                || crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("pre_dungeon_cpu_schedule host={} entry={entry:?} nmis={nmis} return={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
@@ -3722,7 +3722,7 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
                             host: state.frame_ctr_dbg + u32::from(nmis) + tail_nmis,
                             position: budget.raster_position(),
                         };
-                        if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                        if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                             eprintln!("song_upload dungeon_command {command:?}");
                         }
                         return (nmis, Some(command));
@@ -3749,7 +3749,7 @@ fn pre_dungeon_load_nmi_slices_at(state: &ZeldaState, entry: CpuRasterPosition) 
             let before = budget.raster_position();
             let interrupted_pc = run.pc();
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload loader_nmi entry_host={} nmi={nmis} pc={interrupted_pc:06x} before={before:?} after={:?}",
                     state.frame_ctr_dbg, budget.raster_position());
             }
@@ -3795,7 +3795,7 @@ fn dungeon_exit_spotlight_cpu_plan(
     // say so under `ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE` rather than abort play.
     if earliest.map(DungeonExitSpotlightCpuPlan::current_boundary_key)
         != latest.map(DungeonExitSpotlightCpuPlan::current_boundary_key)
-        && crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
+        && crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some()
     {
         eprintln!(
             "[SPOTLIGHT-ENVELOPE] host={} entry {entry_earliest:?}..{entry_latest:?} changed the Module0F CPU/HDMA plan; keeping the earliest",
@@ -3806,7 +3806,7 @@ fn dungeon_exit_spotlight_cpu_plan(
         earliest.next_entry_latest = latest.next_entry_latest;
         earliest.successor_entry_latest = latest.successor_entry_latest;
     }
-    if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+    if crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
         if let Some(plan) = earliest {
             eprintln!("[SPOTLIGHT-PLAN] host={} radius={} entry={entry_earliest:?} pc={:06x} wait={} prep={} active_first={:?} following_first={:?} next={:?}",
                 state.frame_ctr_dbg, state.game_state.display.spotlight_hdma.window_radius(),
@@ -3998,7 +3998,7 @@ fn trace_dungeon_cpu_checkpoint(
     run: &RomCpuTimingRun,
     budget: &CpuCycleBudget,
 ) {
-    let Some(path) = crate::debug_env::var_os("ZELDA3_CPU_CHECKPOINT_TRACE") else {
+    let Some(path) = crate::debug_env::var_os!("ZELDA3_CPU_CHECKPOINT_TRACE") else {
         return;
     };
     let host_frame = state.frame_ctr_dbg;
@@ -4345,7 +4345,7 @@ pub fn recent_host_receipt_vectors() -> Vec<String> {
 /// so an "unowned semantic control receipts" close panic can be traced to
 /// the lane that skipped consumption (route hosts 202669, 256364).
 fn debug_host_path_early_return(host: u32, line: u32) {
-    if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+    if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some() {
         eprintln!("[HOSTPATH] host={host} early-return line {line}");
     }
 }
@@ -4459,7 +4459,7 @@ fn map_fade_cpu_blank_scanline(state: &ZeldaState, input: u16) -> u8 {
     for _ in 0..1_000_000 {
         if run.is_complete() {
             let (scanline, master_cycle) = budget.raster_position().coordinates();
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!("map_fade_blank host={} submodule={} v={} h={} row={}",
                     state.frame_ctr_dbg, state.game_state.frame.submodule, scanline,
                     master_cycle, force_blank_output_row(scanline, master_cycle));
@@ -4646,7 +4646,7 @@ fn dungeon_submodule_cpu_schedule_plan(
             field_timing,
         );
     }
-    if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+    if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         eprintln!(
             "dungeon_submodule_dispatch_entry host={} raster={scanline}:{master_cycle} nmi_latch={:02x}",
@@ -4783,7 +4783,7 @@ fn dungeon_submodule_cpu_schedule_plan(
                 } else {
                     ModuleCpuPhase::InterruptedInSpriteMain
                 });
-                if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                     let slot = sprite_main_current_slot.unwrap_or(0);
                     eprintln!(
                         "dungeon_submodule_first_caller_nmi pc={:06x} cached_progress={cached_sprite_copy:?} live_slot={} state={:02x} type={:02x} x={:02x}",
@@ -4848,7 +4848,7 @@ fn pre_overworld_song_upload_command_from_cpu(
             // receiver owns the final six-clock bus access, not its end.
             let crossing = advance_instruction_with_rom_hdma(&mut run, &mut budget, 24);
             nmis += u32::from(crossing.reached_boundary().is_some());
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload measured entry_host={entry_host} nmis={nmis} position={:?}",
                     budget.raster_position());
             }
@@ -4859,7 +4859,7 @@ fn pre_overworld_song_upload_command_from_cpu(
         }
         if advance_rom_cpu_step(&mut run, &mut budget) != CpuWorkAdvance::Complete {
             nmis += 1;
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                 eprintln!("song_upload nmi crossing={nmis} pc={:06x} position={:?}",
                     run.pc(), budget.raster_position());
             }
@@ -4905,7 +4905,7 @@ fn pre_overworld_load_cpu_plan(
     let mut decoder_started_at_nmi = Vec::new();
     let screen_build = entry_pc.is_none();
     let debug_screen_build = screen_build
-        && crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some();
+        && crate::debug_env::var_os!("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some();
     if screen_build {
         run.enable_cpu_write_trace();
     }
@@ -4926,7 +4926,7 @@ fn pre_overworld_load_cpu_plan(
             screen_build_progress.tiles += 1;
         }
         if entered && run.is_complete() {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!("pre_overworld_load_cpu host={} submodule={} nmis={nmis} return={:?}",
                     state.frame_ctr_dbg, state.game_state.frame.submodule, budget.raster_position());
             }
@@ -4970,7 +4970,7 @@ fn pre_overworld_load_cpu_plan(
                     screen_build_progress.copied, screen_build_progress.tiles);
             }
             if entry_pc == Some(0x02_af19)
-                && crate::debug_env::var_os("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some()
+                && crate::debug_env::var_os!("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some()
             {
                 eprintln!("pre_overworld_decode host={} crossing={} tiles={} pc={:06x}",
                     state.frame_ctr_dbg, nmis, map32_tiles, run.pc());
@@ -7965,7 +7965,7 @@ fn dungeon_module_7_cpu_timing(
         && state.game_state.frame.main_module == 7
         && state.game_state.frame.submodule == 0x0f
         && state.game_state.frame.subsubmodule == 1;
-    let debug_cpu_phases = crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_PHASES").is_some();
+    let debug_cpu_phases = crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_PHASES").is_some();
     let mut spotlight_instruction_steps = None;
 
     for _ in 0..200_000 {
@@ -8592,7 +8592,7 @@ fn begin_dungeon_landing_cpu_advance(state: &ZeldaState) -> DungeonModuleCpuTimi
 }
 
 pub(super) fn debug_cached_sprite_cpu_for_host(host: u32) -> bool {
-    let Some(value) = crate::debug_env::var_os("ZELDA3_DEBUG_CACHED_SPRITE_CPU") else {
+    let Some(value) = crate::debug_env::var_os!("ZELDA3_DEBUG_CACHED_SPRITE_CPU") else {
         return false;
     };
     let value = value.to_string_lossy();
@@ -11773,7 +11773,7 @@ fn room_71_item_graphics_return_crosses_completed_nmi(
 /// authoritative gate; a run with it set is not parity evidence.
 fn tolerate_unconsumed_song_end_poll_for_diagnostics() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_DIAGNOSTIC_TOLERATE_SONG_END_POLL").is_some())
+    *ENABLED.get_or_init(|| crate::debug_env::var_os!("ZELDA3_DIAGNOSTIC_TOLERATE_SONG_END_POLL").is_some())
 }
 
 impl ZeldaState {
@@ -12120,7 +12120,7 @@ impl ZeldaState {
 
     #[track_caller]
     pub(crate) fn set_sound_effect_2(&mut self, value: u8) {
-        if crate::debug_env::var("ZELDA3_DEBUG_AUDIO_COMMAND_FRAME")
+        if crate::debug_env::var!("ZELDA3_DEBUG_AUDIO_COMMAND_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == self.frame_ctr_dbg)
@@ -13418,7 +13418,7 @@ impl ZeldaState {
         }
         static WATCH: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
         *WATCH.get_or_init(|| {
-            crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
+            crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
                 .ok()
                 .and_then(|value| usize::from_str_radix(value.trim_start_matches("0x"), 16).ok())
                 .filter(|offset| *offset < 0x1000)
@@ -15289,7 +15289,7 @@ impl ZeldaState {
     }
 
     fn finish_startup_memory_publication(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             eprintln!("native-startup-memory-complete host={} ram12={:02x}", self.frame_ctr_dbg, self.ram[0x12]);
         }
         self.sync_native_game_state_from_ram();
@@ -15386,7 +15386,7 @@ impl ZeldaState {
                             self.frame_ctr_dbg, (u32::from(context.bank) << 16) | u32::from(context.pc),
                             cpu.timeline.raster_position());
                     }
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                         eprintln!("native-startup-nmi host={host} clock={} raster={:?} context={:?}",
                             cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position(), cpu.startup.accepted_context());
                     }
@@ -15418,7 +15418,7 @@ impl ZeldaState {
                         |event, clock| crate::cycle_models::native_hdma::wait_event(event, clock,
                             &self.ram, self.native_ppu.as_mut().unwrap(), &mut self.dma, &mut self.ppu));
                     crate::cycle_ledger::charge(u64::from(wait_cycles));
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                         eprintln!("native-main-caller pc={:02x}:{:04x} clock={} raster={:?} context={context:?}",
                             context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
                     }
@@ -16099,7 +16099,7 @@ impl ZeldaState {
                         }
                         _ => panic!("unowned intro clear store {address:06x}"),
                     }
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                         eprintln!("native-intro-clear-store clock={at} address={address:06x} value={value:04x} width={width}");
                     }
                     0
@@ -16117,7 +16117,7 @@ impl ZeldaState {
                     eprintln!("native-main-phase-capture frame={} cpu_host={cpu_host} retained=Some(({cpu_host}, {}, {:?}))",
                         self.frame_ctr_dbg,(u32::from(context.bank)<<16)|u32::from(context.pc),cpu.timeline.raster_position());
                 }
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-clear-nmi clock={} raster={:?} context={context:?}",
                         cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
                 }
@@ -16138,7 +16138,7 @@ impl ZeldaState {
                 return self.run_native_intro_clear_until_boundary();
             }
             IntroClearBoundary::TextReturned => {
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-text-return clock={} raster={:?} context={:?}",
                         cpu.timeline.clock_master_cycles(),cpu.timeline.raster_position(),cpu.startup.intro_text_returned_context().unwrap());
                 }
@@ -16147,7 +16147,7 @@ impl ZeldaState {
                 return self.run_native_intro_clear_until_boundary();
             }
             IntroClearBoundary::PaletteCleared => {
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-palette-clear-return clock={} raster={:?} context={:?}",
                         cpu.timeline.clock_master_cycles(),cpu.timeline.raster_position(),cpu.startup.intro_text_returned_context().unwrap());
                 }
@@ -16158,7 +16158,7 @@ impl ZeldaState {
             IntroClearBoundary::Returned => {
                 let context = cpu.startup.intro_clear_returned_context().unwrap();
                 assert_eq!((context.bank, context.pc), (0, 0x805a));
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-clear-return clock={} raster={:?} context={context:?}",
                         cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
                 }
@@ -16170,7 +16170,7 @@ impl ZeldaState {
             IntroClearBoundary::Packed => {
                 let context = cpu.startup.intro_packing_returned_context().unwrap();
                 assert_eq!((context.bank, context.pc), (0, 0x865c));
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-packing-return clock={} raster={:?} context={context:?}",
                         cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
                 }
@@ -16181,7 +16181,7 @@ impl ZeldaState {
             IntroClearBoundary::Sources => {
                 let context = cpu.startup.intro_sources_returned_context().unwrap();
                 assert_eq!((context.bank, context.pc), (0, 0x86df));
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-sources-return clock={} raster={:?} context={context:?}",
                         cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
                 }
@@ -16204,7 +16204,7 @@ impl ZeldaState {
                 self.dialogue_fast_forward_hold_active=false;
                 self.last_nmi_prepare_sprites_master_cycles=Some(u32::try_from(cpu.startup.intro_sprite_prefix_master_cycles()).unwrap());
                 self.main_loop_sprite_preparation_completed=true;
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-intro-tail-return clock={} raster={:?} context={context:?}",
                         cpu.timeline.clock_master_cycles(),cpu.timeline.raster_position());
                 }
@@ -16371,7 +16371,7 @@ impl ZeldaState {
         // module_main_routing still accounts its own dispatch once when the
         // selected Rust callee is entered below. Its pointer stores already ran.
         cpu.startup.enter_module(context);
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             eprintln!("native-main-module pc={:02x}:{:04x} clock={} raster={:?}",
                 context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
         }
@@ -16392,7 +16392,7 @@ impl ZeldaState {
             if let Access::WriteByte(address @ 0x2100..=0x213f, value) = access {
                 self.native_ppu_bus_write(clock, address, value);
             }
-            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                 if let Access::WriteByte(address @ (0x2100..=0x213f | 0x420c), value) = access {
                     eprintln!("native-intro-ppu clock={at} address={address:04x} value={value:02x}");
                 }
@@ -16442,7 +16442,7 @@ impl ZeldaState {
         });
         crate::cycle_ledger::charge_routine(0x0c_c120, cycles);
         cpu.startup.enter_intro_half_slot(context);
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             eprintln!("native-intro-half-slot pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
                 context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
         }
@@ -16485,7 +16485,7 @@ impl ZeldaState {
                             let offset = address as usize - 0x7e0000;
                             crate::types::ww_check(offset, 2, "native_intro_half_slot_plane", u32::from(value));
                             self.ram[offset..offset+2].copy_from_slice(&value.to_le_bytes());
-                            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                            if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                                 eprintln!("native-half-slot-store clock={at} address={address:06x} value={value:04x}");
                             }
                         }
@@ -16502,7 +16502,7 @@ impl ZeldaState {
         assert_eq!((context.bank, context.pc), (2, 0x8024));
         crate::cycle_ledger::charge_routine(0x00_e3fa, cycles);
         cpu.startup.return_intro_half_slot(context);
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             eprintln!("native-half-slot-return pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
                 context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
         }
@@ -16520,7 +16520,7 @@ impl ZeldaState {
             if let Access::WriteByte(address @ 0x2100..=0x213f, value) = access {
                 self.native_ppu_bus_write(clock, address, value);
             }
-            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                 eprintln!("native-intro-setup-bus clock={at} access={access:?}");
             }
             match access {
@@ -16557,7 +16557,7 @@ impl ZeldaState {
         assert_eq!((context.bank, context.pc), (12, 0xc161));
         crate::cycle_ledger::charge_routine(0x02_8024, cycles);
         cpu.startup.return_intro_setup(context);
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             eprintln!("native-intro-setup-return pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
                 context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());
         }
@@ -16636,7 +16636,7 @@ impl ZeldaState {
             if let Access::WriteByte(address @ 0x2100..=0x213f, value) = access {
                 self.native_ppu_bus_write(clock, address, value);
             }
-            if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                 eprintln!("native-intro-clear-entry-bus clock={at} access={access:?}");
             }
             let read = |address: u32| {
@@ -16713,7 +16713,7 @@ impl ZeldaState {
         else if animation {cpu.startup.enter_intro_animation(context);}
         else if title {cpu.startup.enter_intro_title(context);}
         else {cpu.startup.enter_intro_clear(context);}
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             let label = if animation {"animation"} else if poly {"poly"} else if darkening {"darkening"} else if follower {"follower"} else if items {"items"} else if text {"text"} else if first { "first" } else { "following" };
             eprintln!("native-intro-{label}-clear pc={:02x}:{:04x} clock={} raster={:?} work={cycles}",
                 context.bank, context.pc, cpu.timeline.clock_master_cycles(), cpu.timeline.raster_position());

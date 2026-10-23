@@ -1061,7 +1061,7 @@ impl PaletteTransform {
 
 fn provenance_trace_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| crate::debug_env::var_os("ZELDA3_PALETTE_PROVENANCE_TRACE").is_some())
+    *ENABLED.get_or_init(|| crate::debug_env::var_os!("ZELDA3_PALETTE_PROVENANCE_TRACE").is_some())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1075,7 +1075,7 @@ pub(crate) enum ProvenanceCheckMode {
 pub(crate) fn palette_provenance_check_mode() -> Option<ProvenanceCheckMode> {
     static MODE: std::sync::OnceLock<Option<ProvenanceCheckMode>> = std::sync::OnceLock::new();
     *MODE.get_or_init(
-        || match crate::debug_env::var("ZELDA3_PALETTE_PROVENANCE_CHECK") {
+        || match crate::debug_env::var!("ZELDA3_PALETTE_PROVENANCE_CHECK") {
             Ok(value) if value == "panic" => Some(ProvenanceCheckMode::Panic),
             Ok(value) if !value.is_empty() && value != "0" => Some(ProvenanceCheckMode::Log),
             _ => None,

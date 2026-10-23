@@ -175,11 +175,11 @@ pub(crate) fn note_rom_cpu_profile_host(host: u32) {
 }
 
 fn rom_cpu_profile_dir() -> Option<std::path::PathBuf> {
-    crate::debug_env::var_os("ZELDA3_DEBUG_ROM_CPU_PROFILE").map(std::path::PathBuf::from)
+    crate::debug_env::var_os!("ZELDA3_DEBUG_ROM_CPU_PROFILE").map(std::path::PathBuf::from)
 }
 
 fn rom_cpu_profile_host_selected() -> bool {
-    let Ok(selection) = crate::debug_env::var("ZELDA3_DEBUG_ROM_CPU_PROFILE_HOST") else {
+    let Ok(selection) = crate::debug_env::var!("ZELDA3_DEBUG_ROM_CPU_PROFILE_HOST") else {
         return true;
     };
     let host = ROM_CPU_PROFILE_HOST.with(|cell| cell.get());

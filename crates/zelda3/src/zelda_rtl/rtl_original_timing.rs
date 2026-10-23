@@ -197,7 +197,7 @@ impl ZeldaState {
             self.game_execution_scheduler.current_work(),
             receipts.semantic,
         ));
-        if let Ok(range) = crate::debug_env::var("ZELDA3_DEBUG_INSTALL_RECEIPTS") {
+        if let Ok(range) = crate::debug_env::var!("ZELDA3_DEBUG_INSTALL_RECEIPTS") {
             let mut parts = range.split('-');
             let lo: u64 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
             let hi: u64 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(lo);
@@ -5338,7 +5338,7 @@ impl ZeldaState {
             || self.original_timing_main_loop_progress()
                 != Some(crate::MainLoopProgress::CallStackContinued)
         {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some() {
                 eprintln!(
                     "[HOSTPATH] host={} idle-continued plan: preconditions failed idle={} interruption={:?} progress={:?} scheduler={:?}",
                     self.frame_ctr_dbg,
@@ -5351,7 +5351,7 @@ impl ZeldaState {
             return None;
         }
         let Some(timeline) = self.original_timing_main_loop_return_timeline() else {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some() {
                 eprintln!(
                     "[HOSTPATH] host={} idle-continued plan: no return timeline",
                     self.frame_ctr_dbg,
@@ -5382,7 +5382,7 @@ impl ZeldaState {
                 self.pending_main_loop_common_suffix,
             );
         } else if self.pending_main_loop_common_suffix.is_none() {
-            if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some() {
                 eprintln!(
                     "[HOSTPATH] host={} idle-continued plan: no pending suffix",
                     self.frame_ctr_dbg,
@@ -8324,7 +8324,7 @@ impl ZeldaState {
                     .finish_call_stack_at_main_wait_before_nmi();
             }
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some()
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some()
             && (self.dungeon_poly_thread_is_active()
                 || (self.game_state.frame.main_module == 7
                     && self.sprite_slot_view(15).sprite_type() == 0xab))
@@ -8648,7 +8648,7 @@ impl ZeldaState {
                 self.original_timing_uninterrupted_idle_main_loop_plan(progress)
             })
             .flatten();
-        if let Ok(range) = crate::debug_env::var("ZELDA3_DEBUG_IDLE_PLAN") {
+        if let Ok(range) = crate::debug_env::var!("ZELDA3_DEBUG_IDLE_PLAN") {
             let in_range = range
                 .split_once('-')
                 .and_then(|(lo, hi)| Some((lo.parse::<u32>().ok()?, hi.parse::<u32>().ok()?)))
@@ -8951,7 +8951,7 @@ impl ZeldaState {
                     self.queue_native_song_upload_return_nmi(position);
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                 }
-                if crate::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
                     eprintln!("song_upload return host={} position={position:?}", self.frame_ctr_dbg);
                 }
                 self.native_overworld_song_upload = None;
@@ -9626,7 +9626,7 @@ impl ZeldaState {
                             self,
                             DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT,
                         );
-                        if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+                        if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                             eprintln!(
                                 "selected_load_return_cpu host={} state={:02x}/{:02x}/{:02x} phase={:?} resumed={:?} subsubmodule={:02x} countdown={}",
                                 self.frame_ctr_dbg,
@@ -11048,7 +11048,7 @@ impl ZeldaState {
                 "scheduled caller-to-fresh-iteration state changed before its source-authoritative completion",
             );
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some()
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some()
             && matches!(
                 self.game_execution_scheduler.current_work(),
                 Some(GameWorkContinuation::FinishDungeonSupertileTransition {
@@ -11664,7 +11664,7 @@ impl ZeldaState {
         {
             self.advance_native_map_graphics_write_plan();
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some() {
             eprintln!(
                 "[HOSTPATH] host={} step={:?} nmi_timeline={:?} return_timeline={} remaining={:?}",
                 self.frame_ctr_dbg,
@@ -11729,7 +11729,7 @@ impl ZeldaState {
             self.begin_overworld_proximity_scan_continuation();
             self.set_overworld_horizontal_scroll_delta_low(0xff);
             if self.native_exact_cpu_owner.is_some()
-                && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCAN_LIVE_TRIAL").is_some()
+                && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SCAN_LIVE_TRIAL").is_some()
             {
                 self.begin_native_exact_cpu_overworld_live_scan(sprite_records);
                 assert!(self.game_execution_scheduler
@@ -13101,7 +13101,7 @@ impl ZeldaState {
             ) = work_slice
             {
                 if let Some(following) = iteration.rom_following_field_receipt() {
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_SPOTLIGHT_ENVELOPE").is_some() {
                         eprintln!("[SPOTLIGHT-CAPTURE] host={} publication={publication_override:?} following={:?} first={:?} queued={} active={:?}",
                             self.frame_ctr_dbg, following.publication,
                             following.words.iter().position(|&word| word != 0x00ff),
@@ -13468,7 +13468,7 @@ impl ZeldaState {
                 CpuBusWorkload::with_dynamic_hdma(),
                 CpuFieldTiming::non_interlace(even_field),
             );
-            if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() && hosts == 1 {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() && hosts == 1 {
                 eprintln!(
                     "[POLY-NMI] host={} swap_upload_master={} swap_bare_master={} slot1_entry={}:{}",
                     self.frame_ctr_dbg, swap_with_upload, swap_without_upload, scanline, cycle
@@ -13593,7 +13593,7 @@ impl ZeldaState {
             CpuBusWorkload::with_dynamic_hdma(),
             CpuFieldTiming::non_interlace(even_field),
         );
-        let debug = crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some();
+        let debug = crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some();
         for counter in &ROM_CPU_SHADOW_HDMA_DEBUG {
             counter.store(0, std::sync::atomic::Ordering::Relaxed);
         }

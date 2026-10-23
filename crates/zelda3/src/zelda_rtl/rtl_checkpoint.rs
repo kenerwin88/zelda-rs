@@ -915,7 +915,7 @@ impl ZeldaState {
                         | DungeonSupertileTransitionWork::StraightInterroomSpriteGraphics,
                 })
             ));
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some()
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some()
             && captured_frame.main_module == 7
             && captured_frame.submodule == 0x0e
         {
@@ -1248,7 +1248,7 @@ impl ZeldaState {
             // the hardware PPU is the only display owner at this boundary.
             return capture(self);
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
             let live: u64 = self.ppu.vram[0x5800..0x5c00]
                 .iter()
                 .map(|&w| u64::from(w))
@@ -1567,7 +1567,7 @@ impl ZeldaState {
                 publication_plan.oam_scanout_source,
             );
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SPIRAL_RETURN").is_some()
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SPIRAL_RETURN").is_some()
             && self
                 .spiral_stair_return_oam_publication_host_frame
                 .is_some()
@@ -1834,7 +1834,7 @@ impl ZeldaState {
         // with the same decoded cache words.
         self.staged_presented_vram_chr_source = Some(self.vram_chr_source.clone());
         self.staged_presented_vram_chr_preview_source = Some(self.vram_chr_preview_source.clone());
-        if crate::debug_env::var_os("ZELDA3_AUDIT_OAM_LAW").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_AUDIT_OAM_LAW").is_some() {
             if let Some(law) = self.oam_law_visible.as_deref() {
                 let limit = self.ppu.oam.len().min(law.len());
                 let diffs: Vec<usize> = (0..limit)
@@ -2626,7 +2626,7 @@ impl ZeldaState {
                     link_obj: link_obj_dma_generation,
                     link_obj_sources: link_obj_dma_generation,
                 }));
-                if crate::debug_env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
                     eprintln!(
                         "animated_bg_second_palette_return host={} countdown={:04x} source={:04x} operands={animated_bg_operands:?}",
                         self.frame_ctr_dbg,

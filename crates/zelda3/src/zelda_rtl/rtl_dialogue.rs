@@ -536,7 +536,7 @@ impl ZeldaState {
                 self.dialogue_text_scanout_from_render_buffer()
             }
         };
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
             let vram_sum = frozen_scanout
                 .vram
                 .iter()
@@ -738,7 +738,7 @@ impl ZeldaState {
     /// instead of publishing the later DMA operands, countdowns and latch.
     pub(super) fn suspend_dialogue_sprite_preparation_at_native_cpu_return(&mut self) -> bool {
         if !self.rom_startup_timing()
-            || crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_none()
+            || crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_none()
             || self.game_state.frame.main_module != 0x0e
             || self.game_state.frame.submodule != 2
         {
@@ -778,7 +778,7 @@ impl ZeldaState {
         &mut self,
         completed_scanout: DialogueTextScanout,
     ) {
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_STAGE").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SCROLL_STAGE").is_some() {
             eprintln!(
                 "[SCROLL] stage_after_return host={} words={:04x?}",
                 self.frame_ctr_dbg,
@@ -793,7 +793,7 @@ impl ZeldaState {
         &mut self,
         completed_scanout: DialogueTextScanout,
     ) {
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_STAGE").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SCROLL_STAGE").is_some() {
             eprintln!(
                 "[SCROLL] stage_early host={} words={:04x?}",
                 self.frame_ctr_dbg,
@@ -840,7 +840,7 @@ impl ZeldaState {
             crate::PresentedDialogueText::WORD_COUNT,
             "dialogue publication did not cover the complete BG3 text-DMA range",
         );
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_STAGE").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SCROLL_STAGE").is_some() {
             let differing = token
                 .words
                 .iter()
@@ -2326,7 +2326,7 @@ impl ZeldaState {
             // The long scroll copy has crossed vblank before the ROM reaches
             // Main_PrepSpritesForNmi or clears $12. Its continuation is resumed
             // by the dedicated scheduler in run_frame_internal.
-            if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some() {
                 eprintln!(
                     "[HOSTPATH] host={} game-loop tail: dialogue scroll busy",
                     self.frame_ctr_dbg
@@ -2338,7 +2338,7 @@ impl ZeldaState {
             return;
         }
         if self.rom_startup_timing()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
             && self.game_state.frame.main_module == 0x0e
             && self.game_state.frame.submodule == 2
         {
@@ -2379,7 +2379,7 @@ impl ZeldaState {
         if self.rom_startup_timing()
             && self.game_state.frame.main_module == 0x0e
             && self.game_state.frame.submodule == 2
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
         {
             let interruption = self.native_exact_cpu_host_trace.as_ref().and_then(|trace| {
                 if trace.sprite_preparation_interruptions.len() == 1 {
@@ -2451,7 +2451,7 @@ impl ZeldaState {
             // authoritative for the latch and sprite preparation.
             self.dialogue_fast_forward_hold_active = false;
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_HOST_PATH").is_some() {
             eprintln!(
                 "[HOSTPATH] host={} game-loop tail: fast_forward_hold={} partial_nmi={}",
                 self.frame_ctr_dbg, self.dialogue_fast_forward_hold_active, partial_nmi,

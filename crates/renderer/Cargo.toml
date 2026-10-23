@@ -5,7 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["parity-debug"]
+parity-debug = ["zelda3-debug-env/parity-debug"]
+
 [dependencies]
+zelda3-debug-env = { path = "../zelda3-debug-env" }
 wgpu = "29"
 winit = "0.30"
 pollster = "0.3"

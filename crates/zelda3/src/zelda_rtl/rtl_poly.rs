@@ -196,7 +196,7 @@ impl ZeldaState {
         };
         crate::cycle_ledger::muted(|| {
             let mut irq_masked = thread.context.p & 4 != 0;
-            let step_trace = crate::debug_env::var_os("ZELDA3_DEBUG_POLY_STEPS").is_some();
+            let step_trace = crate::debug_env::var_os!("ZELDA3_DEBUG_POLY_STEPS").is_some();
             while clock.clock_master_cycles() < deadline || irq_masked {
                 let (pc, before) = ((u32::from(thread.context.bank) << 16) | u32::from(thread.context.pc), clock.clock_master_cycles());
                 let retired = self.step_native_poly_worker_with_hdma(&mut thread.worker, &mut thread.context, &mut clock, &mut hdma);
@@ -207,7 +207,7 @@ impl ZeldaState {
                 irq_masked = retired.irq_masked;
             }
         });
-        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
             eprintln!("[POLY-PHASE] host={} field={} nmi_cost={nmi_master_cycles} start={} budget={} ran={} pc={:02x}{:04x} go={} upload={}",
                 self.frame_ctr_dbg, thread.field, start - nmi_at, deadline.saturating_sub(start),
                 clock.clock_master_cycles() - start, thread.context.bank, thread.context.pc,
@@ -336,7 +336,7 @@ impl ZeldaState {
                 phases += 1;
             }
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
             eprintln!("[POLY-LAGFREE] host={} cost={cost} activation={activation:?} go_at={:?} phases={phases} go={} upload={}",
                 self.frame_ctr_dbg, self.lag_free_go_master, self.ram[0x1f00], self.ram[0x1f0c]);
         }
@@ -510,7 +510,7 @@ impl ZeldaState {
         let latch = wire_latch;
         self.poly_next_host_nmi_state = Some((latch, upload));
         self.poly_next_host_swap_master = None;
-        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
             eprintln!(
                 "[POLY-STASH] host={} latch={:?} upload={}",
                 self.frame_ctr_dbg, latch, upload,
@@ -658,7 +658,7 @@ impl ZeldaState {
             self.poly_receipt_gates_cur = None;
         }
         if self.dungeon_poly_thread_is_active()
-            && crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some()
+            && crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some()
         {
             eprintln!(
                 "[POLY] host={} entry: did_run_step={} pending_update={} in_flight={} hold_frames={} startup_hold={:?} maiden_ai={}",
@@ -752,7 +752,7 @@ impl ZeldaState {
                 if !self.advance_poly_shadow_host() {
                     return;
                 }
-                if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
                     eprintln!(
                         "[POLY-FRAME] host={} module={:02x} config1={} scanlines={} hosts={} master={}",
                         self.frame_ctr_dbg,
@@ -765,7 +765,7 @@ impl ZeldaState {
                 }
                 self.poly_job_in_flight = false;
             } else if use_timed_worker {
-                if dungeon_poly_thread && crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                if dungeon_poly_thread && crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
                     eprintln!(
                         "[POLY] host={} dungeon thread: startup_hold={:?} in_flight={} hold_frames={} rendered={} pending_update={}",
                         self.frame_ctr_dbg,
@@ -821,7 +821,7 @@ impl ZeldaState {
                             self.poly_dungeon_frames_rendered.saturating_add(1);
                         let scanlines = self.last_poly_work.scanlines;
                         let slices = if let Some((hosts, master)) = triforce_render_hosts {
-                            if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                            if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
                                 eprintln!(
                                     "[POLY-DUNG] host={} module={:02x} config1={} shadow_master={} scanlines={} hosts={}",
                                     self.frame_ctr_dbg,
@@ -882,7 +882,7 @@ impl ZeldaState {
                                 .div_ceil(TRIFORCE_ROOM_POLY_THREAD_HOST_CYCLES)
                                 .clamp(1, 16) as u8,
                         };
-                        if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                        if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
                             eprintln!(
                                 "[POLY-TRI] host={} config1={} shadow_master={:?} estimate={} hosts={}",
                                 self.frame_ctr_dbg,
@@ -897,7 +897,7 @@ impl ZeldaState {
                         self.last_poly_work.worker_frames() - 1
                     };
                     self.poly_job_in_flight = true;
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
                         eprintln!(
                             "[POLY] host={} module={:02x}/{:02x} cycles={} worker_frames={} config1={:#x} metrics={:?}",
                             self.frame_ctr_dbg,
@@ -917,7 +917,7 @@ impl ZeldaState {
                 self.poly_job_in_flight = false;
             } else {
                 self.poly_run_frame();
-                if crate::debug_env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_POLY").is_some() {
                     eprintln!(
                         "[POLY] host={} untimed frame: module={:02x}/{:02x} config1={} scanlines={} cycles={} worker_frames={} work={:?}",
                         self.frame_ctr_dbg,

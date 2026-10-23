@@ -9,6 +9,8 @@
 // `cargo check --tests` is the dead-code detector, release builds stay quiet.
 #![cfg_attr(not(test), allow(dead_code))]
 
+pub use zelda3_debug_env as debug_env;
+
 pub mod apu;
 pub mod cart;
 pub mod consts;

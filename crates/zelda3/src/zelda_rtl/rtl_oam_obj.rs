@@ -367,8 +367,8 @@ impl ZeldaState {
         // self-contained instead of requiring a second replay with another
         // undocumented environment flag.
         let capture_publication_candidates =
-            crate::debug_env::var_os("ZELDA3_CAPTURE_DISPLAY_CANDIDATES").is_some()
-                || crate::debug_env::var_os("ZELDA3_CAPTURE_OBJ_STATE_LEDGER").is_some();
+            crate::debug_env::var_os!("ZELDA3_CAPTURE_DISPLAY_CANDIDATES").is_some()
+                || crate::debug_env::var_os!("ZELDA3_CAPTURE_OBJ_STATE_LEDGER").is_some();
         let candidate_captured_oam = capture_publication_candidates.then(|| self.ppu.oam.clone());
         let candidate_captured_vram = capture_publication_candidates.then(|| self.ppu.vram.clone());
         let interrupted_obj_cache_base = matches!(
@@ -448,7 +448,7 @@ impl ZeldaState {
             && following_frame.subsubmodule == 1)
             .then(|| self.ppu.oam.clone())
             .filter(|resident| resident[116 * 2].to_le_bytes()[1] != 0xf0);
-        let debug_subtile_oam = crate::debug_env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
+        let debug_subtile_oam = crate::debug_env::var_os!("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && following_frame.main_module == 7
             && following_frame.submodule == 1
             && following_frame.subsubmodule == 6;
@@ -761,7 +761,7 @@ impl ZeldaState {
             following_frame,
             following_room,
         );
-        if crate::debug_env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && following_room == 0x82
             && following_frame.main_module == 7
             && following_frame.submodule == 2
@@ -1116,7 +1116,7 @@ impl ZeldaState {
                 room_71_live_obj_cache,
                 room_71_live_link_head_obj_cache,
             );
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
                 && following_room == 0x71
                 && following_frame.main_module == 7
                 && following_frame.submodule == 5
@@ -1213,7 +1213,7 @@ impl ZeldaState {
                     captured_sources,
                     self.asset_raw(57),
                 );
-                if crate::debug_env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_DISPLAY_OAM").is_some() {
                     eprintln!(
                         "display_subtile_cache host={} dma={} last={} head_source={:04x} raw_head={:04x} cache_head={:04x}",
                         self.frame_ctr_dbg,

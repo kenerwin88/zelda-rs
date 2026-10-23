@@ -356,10 +356,10 @@ fn vwf_interrupted_click_marks_boundary(
 }
 
 fn debug_vwf_budget_for_frame(host_frame: u32) -> bool {
-    if crate::debug_env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
+    if crate::debug_env::var_os!("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
         return true;
     }
-    crate::debug_env::var("ZELDA3_DEBUG_VWF_BUDGET_FRAME")
+    crate::debug_env::var!("ZELDA3_DEBUG_VWF_BUDGET_FRAME")
         .ok()
         .and_then(|value| {
             let (first, last) = value.split_once('-').unwrap_or((&value, &value));
@@ -2386,7 +2386,7 @@ impl ZeldaState {
             // no schedule is provably right; keep the earliest and report it
             // under `ZELDA3_DEBUG_DIALOGUE_CPU_PLAN` rather than abort play.
             if earliest.schedule_key() != latest.schedule_key()
-                && crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some()
+                && crate::debug_env::var_os!("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some()
             {
                 eprintln!(
                     "[DIALOGUE-CPU-PLAN] host={} entry interval changed the schedule: earliest={:?} latest={:?}; keeping the earliest",
@@ -2400,7 +2400,7 @@ impl ZeldaState {
                 earliest.caller_nmi_crossings(),
                 Some(earliest.following_main_nmi_uses_host_animated_bg_operands()),
             ));
-            if crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
                 eprintln!(
                     "dialogue_cpu_plan host={} module={:#04x} msg={:#06x} speed={} earliest={:?} latest={:?} prefix_crossings={} caller_crossings={} following_main_animated_bg={:?}",
                     self.frame_ctr_dbg,
@@ -5013,7 +5013,7 @@ impl ZeldaState {
         self.set_sub_screen_layers(1);
         self.erase_tile_maps_dungeonmap();
         if self.rom_startup_timing()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some()
         {
             let timing = self.native_map_graphics_timing.take()
                 .expect("timed map graphics requires the native CPU schedule");
@@ -5931,7 +5931,7 @@ impl ZeldaState {
         self.world_palette_theme_mut()
             .set_aux_tile_theme_index(aux_tile_theme);
         if self.rom_startup_timing()
-            && crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some()
         {
             let timing = self.native_map_graphics_timing.take()
                 .expect("timed recovery graphics requires the native CPU schedule");
@@ -6507,7 +6507,7 @@ impl ZeldaState {
                     self.step_dialogue_initialization_caller(&mut work).expect("initialization prefix");
                 }
                 self.dialogue_initialization_caller = Some(work);
-                if crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
                     eprintln!("native-dialogue-initialization-caller host={} retained=call-decoder", self.frame_ctr_dbg);
                 }
                 return;
@@ -6523,7 +6523,7 @@ impl ZeldaState {
         assert!(self.pending_main_loop_common_suffix.is_none(), "two owners of the main caller suffix");
         assert_eq!(work.initialization.phase, TextInitializationPhase::Tail);
         while self.step_dialogue_initialization_caller(&mut work).is_some() {}
-        if crate::debug_env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
             eprintln!("native-dialogue-initialization-caller host={} returned=main-wait preparation_cycles={}",
                 self.frame_ctr_dbg, work.preparation_master_cycles);
         }
@@ -6712,7 +6712,7 @@ impl ZeldaState {
         crate::cycle_ledger::charge(46); // $0E:C4B4, once before the held decoder
         let source_cursor = self.native_exact_cpu_host_trace.as_ref()
             .and_then(|trace| trace.dialogue_decode_cursor_at_return());
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
             eprintln!("native-dialogue-loader-prepare host={} source_cursor={source_cursor:?} progress={:?}",
                 self.frame_ctr_dbg - 1,
                 self.dialogue_character_load_progress.as_ref().map(|progress| progress.source_index));
@@ -6722,7 +6722,7 @@ impl ZeldaState {
             assert_eq!(consumed, cursor, "native dialogue decoder did not reach the source output boundary");
         }
         self.messaging_state_mut().set_dialogue_msg_read_pos(consumed);
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
             eprintln!("native-dialogue-loader-published host={} cursor={} sentinel={:?}",
                 self.frame_ctr_dbg - 1,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
@@ -7162,7 +7162,7 @@ impl ZeldaState {
         // Finish the same native handler, without granting it another
         // estimated host budget or publishing source WRAM values.
         if self.dialogue_fast_forward_hold_active
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_PREP_LIVE_TRIAL").is_some()
             && self.native_exact_cpu_host_trace.as_ref().is_some_and(|trace| {
                 trace.sprite_preparation_progress_at_host_boundary().is_some()
             })
@@ -8170,7 +8170,7 @@ impl ZeldaState {
                         && speed == 4 && counter & 15 <= 11
                         && self.dialogue_live_message_read_position_target.is_none()
                         && cycles_left >= dispatch_master_cycles as u32
-                        && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_none()
+                        && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_none()
                     {
                         if let Some(mut clock) = exact_budget.as_ref().and_then(|budget| budget.clock.clone()) {
                             // The already-retired dispatch prefix fits before
@@ -8266,7 +8266,7 @@ impl ZeldaState {
                             )
                         };
                     }
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_VWF_WAIT").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_VWF_WAIT").is_some() {
                         eprintln!(
                             "[VWF-WAIT] host={} cmd={} read_pos={read_pos} target={:?} countdown2={} filtered={:#04x}/{:#04x} state={}",
                             self.frame_ctr_dbg,
@@ -9315,7 +9315,7 @@ impl ZeldaState {
             cycles_before_vblank,
             call_master_cycles,
         );
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
             eprintln!(
                 "scroll_schedule host={} headroom={} call={call_master_cycles} timing={completion_timing:?}",
                 self.frame_ctr_dbg, cycles_before_vblank,
@@ -9328,7 +9328,7 @@ impl ZeldaState {
                     * crate::cycle_models::vwf::HANDLER_EXIT_MASTER_CYCLES,
         );
         let source_scroll_progress = self.native_exact_cpu_host_trace.as_ref()
-            .filter(|_| crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_some())
+            .filter(|_| crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_some())
             .and_then(|trace| trace.scroll_copy_progress);
         let command_done = if self.vwf_uses_exact_costs() {
             self.native_scroll_copy_cursor = Some(NativeScrollCopyCursor {

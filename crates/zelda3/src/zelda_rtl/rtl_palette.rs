@@ -330,10 +330,10 @@ impl ZeldaState {
         plan: &DisplayPublicationPlan,
     ) {
         let capture_publication_candidates =
-            crate::debug_env::var_os("ZELDA3_CAPTURE_DISPLAY_CANDIDATES").is_some()
-                || crate::debug_env::var_os("ZELDA3_CAPTURE_OBJ_STATE_LEDGER").is_some();
+            crate::debug_env::var_os!("ZELDA3_CAPTURE_DISPLAY_CANDIDATES").is_some()
+                || crate::debug_env::var_os!("ZELDA3_CAPTURE_OBJ_STATE_LEDGER").is_some();
         let captured_before_nmi = capture_publication_candidates.then(|| self.ppu.cgram.clone());
-        if crate::debug_env::var_os("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some() {
             let frame = crate::game_state::FrameState::load_from_ram(&following.ram);
             if frame.main_module == 7 && frame.submodule == 0x0e {
                 eprintln!(
@@ -447,7 +447,7 @@ impl ZeldaState {
         } else {
             match following.cgram_scanout_generation {
                 CgramScanoutGeneration::RetainPreviousPresented => {
-                    if crate::debug_env::var_os("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some() {
+                    if crate::debug_env::var_os!("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some() {
                         eprintln!(
                             "spiral_cgram_source host={} composed={:04x}/{:04x}/{:04x} captured={:04x}/{:04x}/{:04x} last={:?} latch={:?}",
                             self.frame_ctr_dbg,

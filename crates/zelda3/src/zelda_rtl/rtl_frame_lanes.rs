@@ -3145,7 +3145,7 @@ impl ZeldaState {
         // The outgoing scanout still owns the frozen text generation.
         self.interrupt_nmi(input, oam_dma_source, false);
         self.capture_display_snapshot();
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SCROLL_COPY_LIVE_TRIAL").is_some() {
             let source_scroll = self.native_exact_cpu_host_trace.as_ref()
                 .map(|trace| (trace.scroll_copy_progress, trace.scroll_copy_returned));
             if let Some((Some(progress), _)) = source_scroll {
@@ -4360,7 +4360,7 @@ impl ZeldaState {
                     .dungeon_submodule_cpu_schedule
                     .take()
                     .expect("spiral-room completion requires its CPU schedule");
-                if crate::debug_env::var_os("ZELDA3_DEBUG_SPIRAL_ROOM_INIT").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_SPIRAL_ROOM_INIT").is_some() {
                     eprintln!(
                             "[SPIRAL-INIT] host={} caller_nmis={} sprite_main_nmis={} suffix_nmis={} resumed_this_host={} owes_return={} owes_progress={} fresh={} interruption={:?} boundary={:?} claims={:?}",
                             self.frame_ctr_dbg,
@@ -5464,7 +5464,7 @@ impl ZeldaState {
                 | SpriteMainCpuCaller::BossVictory { .. }
                 | SpriteMainCpuCaller::SaveAndQuit { .. }
         ));
-        if crate::debug_env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
             eprintln!(
                     "dungeon_sprite_main_cpu_complete host={} boundary={boundary:?} active_return={} state={:02x}/{:02x}/{:02x}",
                     self.frame_ctr_dbg,

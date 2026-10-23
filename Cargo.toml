@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/zelda3-debug-env",
     "crates/snes",
     "crates/zelda3-dialogue",
     "crates/zelda3-compat",

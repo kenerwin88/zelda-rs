@@ -8,7 +8,7 @@ impl ZeldaState {
     pub(super) fn debug_latch_frame_matches(&self) -> bool {
         static RANGE: std::sync::OnceLock<Option<(u32, u32)>> = std::sync::OnceLock::new();
         let Some((lo, hi)) = RANGE.get_or_init(|| {
-            let value = crate::debug_env::var("ZELDA3_DEBUG_LATCH").ok()?;
+            let value = crate::debug_env::var!("ZELDA3_DEBUG_LATCH").ok()?;
             let (lo, hi) = value.split_once('-')?;
             Some((lo.parse().ok()?, hi.parse().ok()?))
         }) else {
@@ -874,7 +874,7 @@ impl ZeldaState {
         if self.resumed_dungeon_caller_audio_follows_host_publication() {
             return;
         }
-        let debug_audio_nmi = crate::debug_env::var("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
+        let debug_audio_nmi = crate::debug_env::var!("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
             == Some(self.frame_ctr_dbg);

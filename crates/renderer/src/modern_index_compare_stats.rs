@@ -1,4 +1,3 @@
-use std::env;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::BufWriter;
@@ -342,15 +341,15 @@ pub struct ModernIndexCompareStats {
 impl ModernIndexCompareStats {
     pub fn from_env() -> Self {
         Self {
-            summary_enabled: env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok(),
-            progress_interval: env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
+            summary_enabled: crate::debug_env::var!("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok(),
+            progress_interval: crate::debug_env::var!("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
                 .ok()
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(0),
-            dump_frame: env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME")
+            dump_frame: crate::debug_env::var!("ZELDA3_MODERN_INDEX_DUMP_FRAME")
                 .ok()
                 .and_then(|s| s.parse::<u32>().ok()),
-            trace_pixel: env::var("ZELDA3_VARIANT_TRACE_PIXEL")
+            trace_pixel: crate::debug_env::var!("ZELDA3_VARIANT_TRACE_PIXEL")
                 .ok()
                 .and_then(|value| parse_trace_pixel(&value)),
             ..Self::default()
@@ -572,7 +571,7 @@ impl ModernIndexCompareStats {
         // Rendering the same inputs must be bit-identical; a difference means the GPU
         // render/compare path has per-render state pollution or a synchronization race.
         // Permanent env-gated diagnostic: `ZELDA3_VARIANT_RERENDER_CHECK=<N>`.
-        if let Some(iters) = std::env::var("ZELDA3_VARIANT_RERENDER_CHECK")
+        if let Some(iters) = crate::debug_env::var!("ZELDA3_VARIANT_RERENDER_CHECK")
             .ok()
             .and_then(|s| s.parse::<u32>().ok())
             .filter(|&n| n > 1)

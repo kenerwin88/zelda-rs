@@ -4,7 +4,7 @@
 //! `ZELDA3_ASSERT_*`, `ZELDA3_WW_*`, `ZELDA3_AUDIT_*`, `ZELDA3_CAPTURE_*` and
 //! `ZELDA3_SCRATCH_CONFLICT_*` read in this crate goes through here. With the
 //! `parity-debug` cargo feature (on by default, used by the parity profile and
-//! the tests) these are plain environment lookups; without it they are
+//! the tests) these snapshot each variable on first read; without it they are
 //! compile-time `None`, so release binaries carry none of the tracing
 //! branches. Behavior-affecting knobs (`ZELDA3_SAVE_DIR`,
 //! `ZELDA3_PARITY_RUNTIME_CONFIG`, the `ZELDA3_SNES9X_*`/`ZELDA3_ROM_*` timing
@@ -13,29 +13,36 @@
 use std::env::VarError;
 use std::ffi::OsString;
 
-/// Whether the debug switches are compiled in.
+/// Whether this crate's debug switches are compiled in.
 pub const ENABLED: bool = cfg!(feature = "parity-debug");
+
+// Pass this crate's feature gate explicitly: another workspace crate enabling
+// the shared cache must not enable Zelda diagnostics in a feature-off build.
+#[macro_export]
+macro_rules! zelda3_debug_var {
+    ($name:literal) => { $crate::debug_env::shared::var!($name, $crate::debug_env::ENABLED) };
+}
+
+#[macro_export]
+macro_rules! zelda3_debug_var_os {
+    ($name:literal) => { $crate::debug_env::shared::var_os!($name, $crate::debug_env::ENABLED) };
+}
+
+#[doc(hidden)]
+pub use zelda3_debug_env as shared;
+pub use crate::{zelda3_debug_var as var, zelda3_debug_var_os as var_os};
 
 #[inline]
 pub fn var_os(name: &str) -> Option<OsString> {
-    if ENABLED {
-        std::env::var_os(name)
-    } else {
-        None
-    }
+    if ENABLED { zelda3_debug_env::var_os(name) } else { None }
 }
 
 #[inline]
 pub fn var(name: &str) -> Result<String, VarError> {
-    if ENABLED {
-        std::env::var(name)
-    } else {
-        Err(VarError::NotPresent)
-    }
+    if ENABLED { zelda3_debug_env::var(name) } else { Err(VarError::NotPresent) }
 }
 
-/// `true` when the switch is present in the environment (any value).
 #[inline]
 pub fn is_set(name: &str) -> bool {
-    var_os(name).is_some()
+    ENABLED && zelda3_debug_env::is_set(name)
 }

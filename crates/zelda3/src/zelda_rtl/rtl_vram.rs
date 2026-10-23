@@ -149,7 +149,7 @@ impl ZeldaState {
         static WATCH: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
         let watched = if self.native_exact_cpu_owner.is_some() {
             *WATCH.get_or_init(|| {
-                crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
+                crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
                     .ok()
                     .and_then(|value| {
                         usize::from_str_radix(value.trim_start_matches("0x"), 16).ok()
@@ -394,7 +394,7 @@ impl ZeldaState {
         plan: &DisplayPublicationPlan,
         retained_full_tilemap_vram: Option<&RetainedVramRegion>,
     ) {
-        let debug_vram_frame = crate::debug_env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+        let debug_vram_frame = crate::debug_env::var!("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == self.frame_ctr_dbg);

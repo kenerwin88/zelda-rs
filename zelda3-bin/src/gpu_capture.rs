@@ -186,7 +186,7 @@ impl LiveGpuFrameCapture {
         comparison_frame: Option<u32>,
     ) -> Self {
         let cgram = game.cgram_after_first_hdma_line();
-        let debug_target_frame = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+        let debug_target_frame = zelda3::debug_env::var!("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok());
         let probe_frame = comparison_frame.unwrap_or(game.frame_ctr_dbg);
@@ -196,7 +196,7 @@ impl LiveGpuFrameCapture {
         // so audit them here — every captured frame — against the base (pre-HDMA) PPU CGRAM. This is
         // the check that catches a stale committed image between upload commits (e.g. a snapshot
         // restore during a fade). `=panic` aborts on the first divergence.
-        if let Ok(audit_mode) = std::env::var("ZELDA3_PALETTE_CGRAM_AUDIT") {
+        if let Ok(audit_mode) = zelda3::debug_env::var!("ZELDA3_PALETTE_CGRAM_AUDIT") {
             let audit = game.audit_cgram_mirror(&game.ppu.cgram);
             if !audit.is_clean() {
                 let first = audit
@@ -222,7 +222,7 @@ impl LiveGpuFrameCapture {
             }
         }
         if let Some(index) = debug_this_frame
-            .then(|| std::env::var("ZELDA3_DEBUG_CGRAM_INDEX").ok())
+            .then(|| zelda3::debug_env::var!("ZELDA3_DEBUG_CGRAM_INDEX").ok())
             .flatten()
             .and_then(|value| {
                 value
@@ -243,7 +243,7 @@ impl LiveGpuFrameCapture {
             );
         }
         let raw_scanlines = game.ppu_scanline_windows();
-        if debug_this_frame && std::env::var_os("ZELDA3_DEBUG_CGRAM_INDEX").is_some() {
+        if debug_this_frame && zelda3::debug_env::var_os!("ZELDA3_DEBUG_CGRAM_INDEX").is_some() {
             eprintln!(
                 "renderer_scanline_registers host={} ppu_tm={:02x} line0_tm={:02x} line40_tm={:02x} line223_tm={:02x}",
                 game.frame_ctr_dbg,
@@ -264,7 +264,7 @@ impl LiveGpuFrameCapture {
                 ppu.vram[0x60da],
             );
         }
-        if std::env::var("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
+        if zelda3::debug_env::var!("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == game.frame_ctr_dbg)
@@ -285,7 +285,7 @@ impl LiveGpuFrameCapture {
                 &cgram[0x80..0x100],
             );
         }
-        if std::env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
+        if zelda3::debug_env::var!("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == game.frame_ctr_dbg)
@@ -300,7 +300,7 @@ impl LiveGpuFrameCapture {
                 game.frame_ctr_dbg
             );
         }
-        if std::env::var_os("ZELDA3_DEBUG_BG3_PUBLICATION").is_some()
+        if zelda3::debug_env::var_os!("ZELDA3_DEBUG_BG3_PUBLICATION").is_some()
             && game.ram[MAIN_MODULE_INDEX] == 14
             && game.ram[0x11] == 1
         {
@@ -312,7 +312,7 @@ impl LiveGpuFrameCapture {
         }
         let source_entries = game.vram_chr_source().as_slice().to_vec();
         let dialogue_active = game.is_dialogue_display_active();
-        if std::env::var("ZELDA3_DEBUG_BG3_SEMANTIC_FRAME")
+        if zelda3::debug_env::var!("ZELDA3_DEBUG_BG3_SEMANTIC_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == game.frame_ctr_dbg)
@@ -1856,7 +1856,7 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
             capture.modern_asset_present_input(&self.modern_assets, &mut self.variant_live_stats),
         );
         if let Some(line) = report.failure_line() {
-            if std::env::var_os("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
+            if zelda3::debug_env::var_os!("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
                 let gpu_frame = capture.gpu_frame();
                 let source_table = renderer::source_table_from_entries(capture.source_entries());
                 let resolved =

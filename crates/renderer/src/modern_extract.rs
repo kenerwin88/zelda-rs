@@ -1006,13 +1006,13 @@ pub(crate) enum ForbidLiveCgramMode {
 /// cached-av replay frame.
 fn trace_bg_tile_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_TRACE_BG_TILE").is_some())
+    *ENABLED.get_or_init(|| crate::debug_env::var_os!("ZELDA3_TRACE_BG_TILE").is_some())
 }
 
 pub(crate) fn forbid_live_cgram_mode() -> ForbidLiveCgramMode {
     static MODE: std::sync::OnceLock<ForbidLiveCgramMode> = std::sync::OnceLock::new();
     *MODE.get_or_init(
-        || match std::env::var("ZELDA3_FORBID_LIVE_CGRAM").as_deref() {
+        || match crate::debug_env::var!("ZELDA3_FORBID_LIVE_CGRAM").as_deref() {
             Ok("compare") => ForbidLiveCgramMode::Compare,
             Ok("1") | Ok("panic") | Ok("enforce") => ForbidLiveCgramMode::Enforce,
             _ => ForbidLiveCgramMode::Off,
@@ -1123,7 +1123,7 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
         .find_map(|(line, scanline)| scanline.forced_blank.then_some(line as u8));
     modern.retain_active_display_history = frame.retain_active_display_history;
     modern.forced_blank = modern.forced_blank_scanlines as usize == frame.scanlines.len();
-    if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some() && frame.forced_blank {
+    if crate::debug_env::var_os!("ZELDA3_DEBUG_NMI_LATCH").is_some() && frame.forced_blank {
         eprintln!(
             "modern_blanking physical={} prefix={} from={:?} scan0={} scan1={}",
             frame.forced_blank,
@@ -1456,7 +1456,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     // the off-VRAM resolved atlas cell (unflipped) against the live-VRAM decode of
     // the same slot. wrong_cell>0 means a STALE/WRONG source tag; gap>0 means the
     // recorded key is absent from the atlas. Off when the var is unset (one getenv).
-    let dbg = std::env::var("ZELDA3_SRC_DEBUG").is_ok();
+    let dbg = crate::debug_env::var!("ZELDA3_SRC_DEBUG").is_ok();
     let mut dbg_total = 0usize;
     let mut dbg_mismatch = 0usize;
     let mut dbg_gap = 0usize;
@@ -2112,7 +2112,7 @@ fn semantic_dialogue_layout_vwf_glyph_runs(
         })
         .collect::<Vec<_>>();
     let matches_live = semantic_vwf_layout_matches_live_runs(&runs, frame, bg3_tile_screen_xy);
-    if std::env::var_os("ZELDA3_DEBUG_VWF_SEMANTIC").is_some() && !runs.is_empty() {
+    if crate::debug_env::var_os!("ZELDA3_DEBUG_VWF_SEMANTIC").is_some() && !runs.is_empty() {
         eprintln!(
             "vwf_semantic origin_tile={origin_tile_number:04x} origin_xy=({origin_x},{origin_y}) guard_matches_live={matches_live} semantic={:?} live={:?}",
             runs.iter()
@@ -2228,7 +2228,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
     src_table: &S,
     atlas: &ModernSourceAtlas,
 ) -> (Vec<ModernIndexTile>, Vec<ModernIndexSpriteInstance>) {
-    let debug_pixel = std::env::var("ZELDA3_DEBUG_MODERN_OBJ_PIXEL")
+    let debug_pixel = crate::debug_env::var!("ZELDA3_DEBUG_MODERN_OBJ_PIXEL")
         .ok()
         .and_then(|value| {
             let (x, y) = value.split_once(',')?;
@@ -2402,7 +2402,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         // asset set. Keep it visible for diagnostics, but mark
                         // it unresolved so the production GPU route fails
                         // rather than silently using a VRAM compositor.
-                        if std::env::var_os("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
+                        if crate::debug_env::var_os!("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
                             eprintln!(
                                 "unresolved_sprite_source slot={slot:04x} source=({kind},{pack:04x},{tile_off:04x}) content_key={:08x} indices={}",
                                 four_bpp_cache.content_hash(obj_vram, slot),

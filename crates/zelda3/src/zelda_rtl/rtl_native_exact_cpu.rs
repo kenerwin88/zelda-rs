@@ -207,18 +207,18 @@ pub(super) struct NativeExactCpuOverworldLiveScan {
 
 impl ZeldaState {
     pub(super) fn native_exact_cpu_link_oam_equipment_is_pending(&self) -> bool {
-        crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_LINK_OAM_LIVE_TRIAL").is_some()
+        crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_LINK_OAM_LIVE_TRIAL").is_some()
             && self.native_exact_cpu_host_trace.as_ref()
                 .is_some_and(|trace| trace.link_oam_equipment_selection)
     }
 
     pub(super) fn advance_native_exact_cpu_link_oam_prefix(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_LINK_OAM_LIVE_TRIAL").is_some()
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_LINK_OAM_LIVE_TRIAL").is_some()
             && self.native_exact_cpu_host_trace.as_ref()
                 .is_some_and(|trace| trace.link_oam_body_selection) {
             self.refine_dungeon_link_oam_to_body_selection();
         }
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_LINK_OAM_LIVE_TRIAL").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_LINK_OAM_LIVE_TRIAL").is_some() {
             let arrow_progress = self.native_exact_cpu_host_trace.as_ref().and_then(|trace| {
                 trace.module07_caller_passed_link_without_nmi(self.game_state.frame.frame_counter)
                     .then(|| Self::hud_arrow_digit_progress_at_pc(trace.return_pc)).flatten()
@@ -234,7 +234,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_sprite_timer_prefix(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_none() {
             return;
         }
         if let Some((boundary, _)) = self.take_native_exact_cpu_follower_body_draw_boundary() {
@@ -268,7 +268,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_story_decompression(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_STORY_DECOMP_LIVE_TRIAL")
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_STORY_DECOMP_LIVE_TRIAL")
             .is_none()
         {
             return;
@@ -344,7 +344,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_bg_chars_gate(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_BG_CHARS_GATE_LIVE_TRIAL").is_none() {
             return;
         }
         let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
@@ -408,7 +408,7 @@ impl ZeldaState {
     pub(super) fn native_exact_cpu_spotlight_build_checkpoint(
         &self,
     ) -> Option<crate::SpotlightTableBuildProgress> {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPOTLIGHT_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPOTLIGHT_LIVE_TRIAL").is_none() {
             return None;
         }
         let trace = self.native_exact_cpu_host_trace.as_ref()?;
@@ -446,7 +446,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_pre_dungeon_room_header(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_ROOM_HEADER_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_ROOM_HEADER_LIVE_TRIAL").is_none() {
             return;
         }
         let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
@@ -492,7 +492,7 @@ impl ZeldaState {
             work.completed_words()
         );
         if work.completed_words() == super::dungeon::DungeonFloorDrawWork::TOTAL_WORDS
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some()
         {
             assert!(self.active_early_dungeon_object_draw.is_none());
             self.active_early_dungeon_object_draw = self.begin_dungeon_object_draw_current_room();
@@ -565,7 +565,7 @@ impl ZeldaState {
     pub(super) fn take_native_exact_cpu_follower_body_draw_boundary(
         &mut self,
     ) -> Option<(SpriteMainCpuBoundary, OriginalTimingBoundary)> {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_none() {
             return None;
         }
         self.native_exact_cpu_host_trace.as_mut()?.follower_body_draw_prefix.take()
@@ -574,14 +574,14 @@ impl ZeldaState {
     pub(super) fn take_native_exact_cpu_quadrant_copy_boundary(
         &mut self,
     ) -> Option<(u16, OriginalTimingBoundary)> {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_ROOM_UPLOAD_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_ROOM_UPLOAD_LIVE_TRIAL").is_none() {
             return None;
         }
         self.native_exact_cpu_host_trace.as_mut()?.quadrant_copy_boundary.take()
     }
 
     pub(super) fn advance_native_exact_cpu_zelda_follower_graphics(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_none() {
             return;
         }
         let Some((slot, stage)) = self.native_exact_cpu_host_trace.as_ref()
@@ -698,7 +698,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_pre_dungeon_animated_graphics(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_PRE_DUNGEON_GRAPHICS_LIVE_TRIAL").is_none()
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_PRE_DUNGEON_GRAPHICS_LIVE_TRIAL").is_none()
             || !matches!(self.game_execution_scheduler.current_work(),
                 Some(GameWorkContinuation::FinishPreDungeonEntranceLoad { .. })) {
             return;
@@ -726,7 +726,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_pre_overworld_animated_graphics(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_PRE_OVERWORLD_GRAPHICS_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_PRE_OVERWORLD_GRAPHICS_LIVE_TRIAL").is_none() {
             return;
         }
         let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else { return };
@@ -744,7 +744,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_overworld_map8(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_MAP8_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_MAP8_LIVE_TRIAL").is_none() {
             return;
         }
         let Some(target) = self.native_exact_cpu_host_trace.as_ref()
@@ -764,7 +764,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_overworld_quadrants(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_QUADRANTS_LIVE_TRIAL").is_none()
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_QUADRANTS_LIVE_TRIAL").is_none()
             || !matches!(self.game_execution_scheduler.current_work(),
                 Some(GameWorkContinuation::FinishOverworldMapQuadrants { .. })) {
             return;
@@ -778,7 +778,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_initial_scroll(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SCROLL_MAP_LIVE_TRIAL").is_none()
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SCROLL_MAP_LIVE_TRIAL").is_none()
             || self.game_execution_scheduler.current_work()
                 != Some(GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail) {
             return;
@@ -827,7 +827,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_room_upload(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_ROOM_UPLOAD_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_ROOM_UPLOAD_LIVE_TRIAL").is_none() {
             return;
         }
         let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
@@ -881,7 +881,7 @@ impl ZeldaState {
     }
 
     pub(super) fn advance_native_exact_cpu_ground_item_receipt_tail(&mut self) {
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_ITEM_RECEIPT_LIVE_TRIAL").is_none() {
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_ITEM_RECEIPT_LIVE_TRIAL").is_none() {
             return;
         }
         let Some(trace) = self.native_exact_cpu_host_trace.as_ref() else {
@@ -1002,7 +1002,7 @@ impl ZeldaState {
         );
         if !finished {
             self.native_exact_cpu_overworld_live_scan = Some(live);
-        } else if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_some() {
+        } else if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_SPRITE_TIMERS_LIVE_TRIAL").is_some() {
             // A completed scan alone proves only its inner return. The
             // TimersAndOam coordinate call additionally proves that Module09
             // returned through its reload suffix and entered Sprite_Main.
@@ -2578,14 +2578,14 @@ impl ZeldaState {
         else {
             return;
         };
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_DIALOGUE_LOADER").is_some() {
             eprintln!("native-dialogue-loader host={} source_cursor={} native_cursor={} work={:?} message={}",
                 self.frame_ctr_dbg - 1, source_cursor,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
                 self.game_execution_scheduler.current_work(),
                 self.game_state.messaging.dialogue_message_index.value());
         }
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIALOGUE_DECODE_LIVE_TRIAL").is_none()
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIALOGUE_DECODE_LIVE_TRIAL").is_none()
             || self.game_execution_scheduler.current_work()
                 != Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn)
         {
@@ -2944,7 +2944,7 @@ impl NativeExactCpuOwner {
         }
         if step.origin_pc == 0x02_8a67 {
             trace.auxiliary_sprite_graphics_returned = true;
-            if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_TRACE_AUX_RETURN").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_TRACE_AUX_RETURN").is_some() {
                 eprintln!(
                     "native-exact-cpu-aux-return host={} at={}",
                     trace.host,
@@ -3345,7 +3345,7 @@ impl NativeExactCpuOwner {
                 "ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL",
             )
             .is_some(),
-            wram_watch_address: crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
+            wram_watch_address: crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_WATCH_WRAM_ADDR")
                 .ok()
                 .and_then(|value| {
                     let value = value.trim_start_matches("0x");
@@ -3353,7 +3353,7 @@ impl NativeExactCpuOwner {
                 }),
             ..Default::default()
         };
-        let trace_decompression_entry = crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
+        let trace_decompression_entry = crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
             .ok()
             .and_then(|value| {
                 let (first, last) = value.split_once('-').unwrap_or((&value, &value));
@@ -3458,7 +3458,7 @@ impl NativeExactCpuOwner {
                         snes.ram[0x02], u16::from_le_bytes([snes.ram[0], snes.ram[1]]),
                     );
                 }
-                if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_TILESET_PHASES").is_some()
+                if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_TILESET_PHASES").is_some()
                     && step.origin_pc == 0x00_e19b
                 {
                     eprintln!("native-tileset-source-raster host={} pc={:06x} start={} end={} after={:?}",
@@ -3910,7 +3910,7 @@ impl ZeldaState {
     pub(super) fn advance_native_exact_cpu_host(&mut self) {
         if !self.rom_startup_timing
             || self.original_timing_semantic_receipts.is_some()
-            || crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OWNER").is_none()
+            || crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_OWNER").is_none()
         {
             self.native_exact_cpu_host_trace = None;
             return;
@@ -3919,9 +3919,9 @@ impl ZeldaState {
             .frame_ctr_dbg
             .checked_sub(1)
             .expect("native exact CPU host starts after frame entry");
-        let diagnose_nmi = crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_NMI")
+        let diagnose_nmi = crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_NMI")
             .is_some()
-            && crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
+            && crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
                 .ok()
                 .and_then(|value| {
                     let (first, last) = value.split_once('-').unwrap_or((&value, &value));
@@ -3937,7 +3937,7 @@ impl ZeldaState {
                 self.game_state.display.pending_nmi_subroutine,
                 self.game_state.display.core_update_disable_flag);
         }
-        let trace_host = crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
+        let trace_host = crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_TRACE_HOST")
             .ok()
             .and_then(|value| {
                 let (first, last) = value.split_once('-').unwrap_or((&value, &value));
@@ -3945,7 +3945,7 @@ impl ZeldaState {
             })
             .is_some_and(|(first, last)| (first..=last).contains(&host));
         let independent_trial_host =
-            crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_HOST")
+            crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_HOST")
                 .ok()
                 .and_then(|value| {
                     let (first, last) = value.split_once('-').unwrap_or((&value, &value));
@@ -3953,11 +3953,11 @@ impl ZeldaState {
                 })
                 .is_some_and(|(first, last)| (first..=last).contains(&host));
         let contiguous_trial_start =
-            crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_CONTIGUOUS_TRIAL_START")
+            crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_CONTIGUOUS_TRIAL_START")
                 .ok()
                 .and_then(|value| value.parse::<u32>().ok());
         let diagnose_ownership =
-            crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_OWNERSHIP").is_some();
+            crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_OWNERSHIP").is_some();
         let diagnostic_scroll_phase = diagnose_ownership.then(|| self.dialogue_scroll_phase());
         let owner = if let Some(owner) = self.native_exact_cpu_owner.as_mut() {
             owner
@@ -3969,7 +3969,7 @@ impl ZeldaState {
             self.native_exact_cpu_owner.as_mut().unwrap()
         };
         if trace_host {
-            if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_PPU").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_PPU").is_some() {
                 eprintln!("native-exact-ppu-owner host={host} native_latch={} source_latch={} native_gate={} source_gate={} scheduler={:?}", self.ram[crate::game_state::constants::NMI_BOOLEAN], owner.cpu.machine().snes().ram[0x12], self.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES], owner.cpu.machine().snes().ram[0x710], self.game_execution_scheduler);
                 let source = &owner.cpu.machine().snes().ppu;
                 let compare = |label: &str, source: &[u16], native: &[u16]| {
@@ -4010,7 +4010,7 @@ impl ZeldaState {
                 eprintln!("native-exact-cpu-dialogue-buffer-entry host={host} first_diff={offset:04x} source={source_byte:02x} native={native_byte:02x}");
             }
         }
-        if crate::debug_env::var("ZELDA3_NATIVE_EXACT_CPU_NMI_PHASE_HOST")
+        if crate::debug_env::var!("ZELDA3_NATIVE_EXACT_CPU_NMI_PHASE_HOST")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
             == Some(host)
@@ -4027,13 +4027,13 @@ impl ZeldaState {
             && !owner.translated_trial_stopped;
         let trial_host = independent_trial_host || contiguous_trial;
         let preserve_stack_segment = trial_host
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_STACK").is_some();
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_STACK").is_some();
         let preserve_direct_page = preserve_stack_segment
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_DP").is_some();
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_DP").is_some();
         let preserve_dialogue_asset_state = preserve_direct_page
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_DIALOGUE").is_some();
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_DIALOGUE").is_some();
         let preserve_overworld_decode_scratch = preserve_stack_segment
-            && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_OVERWORLD_SCRATCH")
+            && crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_REBASE_TRIAL_OVERWORLD_SCRATCH")
                 .is_some();
         // A trial never changes the retained owner or translated gameplay.
         // It tests whether the exact CPU can read translated memory at this
@@ -4071,7 +4071,7 @@ impl ZeldaState {
                     NativeExactCpuInterrupt::Irq => None,
                 });
             let phase_aligned_rebase =
-                crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_REBASE_AFTER_CARRIED_NMI")
+                crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_REBASE_AFTER_CARRIED_NMI")
                     .is_some()
                     && self
                         .game_execution_scheduler
@@ -4209,7 +4209,7 @@ impl ZeldaState {
                         scroll_passes, cpu.x, cpu.y);
                 }
             }
-            if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_TILESET_PHASES").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_TILESET_PHASES").is_some() {
                 let phase = |pc: u32| match pc {
                     0x00_e19b => Some("initialize-tilesets"),
                     0x00_e1ae => Some("select-sprite-sheets"),
@@ -4504,7 +4504,7 @@ impl ZeldaState {
             }
         }
         self.reconcile_native_exact_cpu_landing_music_nmi(&trace);
-        if crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_VWF_WORK").is_some()
+        if crate::debug_env::var_os!("ZELDA3_NATIVE_EXACT_CPU_DIAGNOSE_VWF_WORK").is_some()
             && trace_host
         {
             eprintln!("native-exact-vwf-work host={host} cpu={} since_nmi={} first={:?} last={:?} cursor_work={:?} draw_entry_work={:?} nmi_blocks={:?} nmis={:?} completions={:?}",

@@ -826,7 +826,7 @@ impl ZeldaState {
         let deferred_before = self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_deferred;
         let (owned_marker, legacy_marker, pending_effect2, input_effect2) =
             self.audio.modern.queue.push(current_vwf_glyph_completed);
-        let marker_debug = crate::debug_env::var("ZELDA3_DEBUG_VWF_MARKER_POLICY").ok();
+        let marker_debug = crate::debug_env::var!("ZELDA3_DEBUG_VWF_MARKER_POLICY").ok();
         let selected_host = marker_debug.as_deref().and_then(|range| range.split_once('-'))
             .and_then(|(start, end)| Some((start.parse::<u32>().ok()?, end.parse::<u32>().ok()?)))
             .is_some_and(|(start, end)| (start..=end).contains(&self.frame_ctr_dbg));
@@ -926,7 +926,7 @@ impl ZeldaState {
             self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input,
         );
         let sampled = peek.host_acknowledgements()[0];
-        let debug_song_poll = crate::debug_env::var("ZELDA3_DEBUG_SONG_POLL")
+        let debug_song_poll = crate::debug_env::var!("ZELDA3_DEBUG_SONG_POLL")
             .ok()
             .is_some_and(|value| value == "all" || value.parse() == Ok(self.frame_ctr_dbg));
         if debug_song_poll {
@@ -1015,13 +1015,13 @@ impl ZeldaState {
         // latch authored after that sample belongs to a later audio batch.
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
             let debug_spc_polls =
-                crate::debug_env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
+                crate::debug_env::var_os!("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
             let frame_start_apu_cycle = clock.absolute_dsp_cycle() * 32;
             let boundary = (!matches!(self.original_timing_owner, OriginalTimingOwnerState::Live))
                 .then(|| self.native_startup_cpu.as_ref()
                     .filter(|cpu| cpu.startup.owns_cpu_clock())
                     .map(|cpu| cpu.timeline.clock_master_cycles())).flatten();
-            if crate::debug_env::var("ZELDA3_DEBUG_AUDIO_OWNER_FROM").ok()
+            if crate::debug_env::var!("ZELDA3_DEBUG_AUDIO_OWNER_FROM").ok()
                 .and_then(|value| value.parse::<u32>().ok())
                 .is_some_and(|first| self.frame_ctr_dbg >= first)
             {
@@ -1083,7 +1083,7 @@ impl ZeldaState {
                     native_samples,
                 )
         };
-        if crate::debug_env::var("ZELDA3_DEBUG_MUSIC_WINDOW_FRAME")
+        if crate::debug_env::var!("ZELDA3_DEBUG_MUSIC_WINDOW_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == self.frame_ctr_dbg)
@@ -1342,7 +1342,7 @@ impl ZeldaState {
             ports[usize::from(port)] = value;
             self.audio.modern.queue.acknowledge_legacy_ports(ports);
         }
-        if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
             eprintln!("native-nmi-apui clock={master} port={port} value={value:02x} write={}", write.is_some());
         }
         value
@@ -1374,7 +1374,7 @@ impl ZeldaState {
                 // native upload and memory initializer own the later stores;
                 // untouched words retain this reset value. Asset reloads and
                 // resumed states must not replay the machine reset.
-                if crate::debug_env::var_os("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
+                if crate::debug_env::var_os!("ZELDA3_DEBUG_NATIVE_STARTUP").is_some() {
                     eprintln!("native-startup-reset-fill host={}", self.frame_ctr_dbg);
                 }
                 self.ram.fill(0x55);

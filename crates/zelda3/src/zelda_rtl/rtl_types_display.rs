@@ -1487,8 +1487,8 @@ pub(crate) struct CaptureDisplayDiagnostics {
 impl CaptureDisplayDiagnostics {
     pub(crate) fn from_env() -> Self {
         Self {
-            attract_timeline: crate::debug_env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some(),
-            frame_boundary: crate::debug_env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some(),
+            attract_timeline: crate::debug_env::var_os!("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some(),
+            frame_boundary: crate::debug_env::var_os!("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some(),
         }
     }
 }
@@ -1541,9 +1541,9 @@ impl DisplayDiagnostics {
     pub(crate) fn from_env() -> Self {
         Self {
             capture: CaptureDisplayDiagnostics::from_env(),
-            display_oam: crate::debug_env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some(),
-            nmi_latch: crate::debug_env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some(),
-            scroll_retain: crate::debug_env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some(),
+            display_oam: crate::debug_env::var_os!("ZELDA3_DEBUG_DISPLAY_OAM").is_some(),
+            nmi_latch: crate::debug_env::var_os!("ZELDA3_DEBUG_NMI_LATCH").is_some(),
+            scroll_retain: crate::debug_env::var_os!("ZELDA3_DEBUG_SCROLL_RETAIN").is_some(),
         }
     }
 }

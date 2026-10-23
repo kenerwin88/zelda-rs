@@ -161,7 +161,7 @@ pub fn flush_host(host: u32) {
         let current_silent_calls = silent_calls();
         let silent = current_silent_calls - ledger.last_host_silent_calls;
         ledger.last_host_silent_calls = current_silent_calls;
-        if let Some(dir) = crate::debug_env::var_os("ZELDA3_DEBUG_CYCLE_LEDGER") {
+        if let Some(dir) = crate::debug_env::var_os!("ZELDA3_DEBUG_CYCLE_LEDGER") {
             let dir = std::path::PathBuf::from(dir);
             let _ = std::fs::create_dir_all(&dir);
             // Completed scopes omit unscoped charges and can span a flush.

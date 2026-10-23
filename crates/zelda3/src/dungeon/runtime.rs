@@ -623,7 +623,7 @@ impl ZeldaState {
             self.begin_spiral_stair_return_main_loop_reentry();
             self.module07_00_player_control();
             self.link_oam_main();
-            if crate::debug_env::var_os("ZELDA3_DEBUG_SPIRAL_RETURN").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_SPIRAL_RETURN").is_some() {
                 let reentered_equipment: [u16; 4] = std::array::from_fn(|word| {
                     read_le_u16(&self.ram, OAM_BUF + 112 * 4 + word * 2)
                 });

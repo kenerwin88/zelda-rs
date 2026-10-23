@@ -12,8 +12,8 @@ path = "src/main.rs"
 
 [features]
 default = ["parity-debug"]
-# Forwarded to the engine crate; see crates/zelda3/Cargo.toml.
-parity-debug = ["zelda3/parity-debug"]
+# Forwarded through all runtime crates; packaging disables these diagnostics.
+parity-debug = ["zelda3/parity-debug", "snes/parity-debug", "renderer/parity-debug", "platform/parity-debug"]
 
 [[example]]
 name = "dungeon-room-playtest"
@@ -22,11 +22,11 @@ test = false
 
 [dependencies]
 bincode = "1"
-snes = { path = "../crates/snes" }
+snes = { path = "../crates/snes", default-features = false }
 zelda3 = { path = "../crates/zelda3", default-features = false }
 zelda3-compat = { path = "../crates/zelda3-compat" }
-platform = { path = "../crates/platform" }
-renderer = { path = "../crates/renderer" }
+platform = { path = "../crates/platform", default-features = false }
+renderer = { path = "../crates/renderer", default-features = false }
 assets = { path = "../crates/assets" }
 parity = { path = "../crates/parity" }
 zelda3-dialogue = { path = "../crates/zelda3-dialogue" }

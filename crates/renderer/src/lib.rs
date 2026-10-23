@@ -13,6 +13,8 @@
 //! Phase 1b — BG layer rendering:
 //! - [`BgLayerRenderer`]: single-layer BG pipeline (tilemap → atlas → CGRAM).
 
+pub use zelda3_debug_env as debug_env;
+
 pub mod fast_hash;
 mod frame_compare;
 pub mod gpu_frame;
@@ -2611,7 +2613,7 @@ fn modern_asset_frame_present_route(
 impl FrameRenderer {
     fn snes9x_timings_enabled() -> bool {
         static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_SNES9X_TIMING").is_some())
+        *ENABLED.get_or_init(|| crate::debug_env::var_os!("ZELDA3_SNES9X_TIMING").is_some())
     }
 
     pub async fn new(window: Arc<Window>, game_width: u32, game_height: u32) -> Self {
@@ -2685,7 +2687,7 @@ impl FrameRenderer {
             presentation_params,
             presentation_notice: PresentationNotice::default(),
             viewport,
-            log_viewport: env::var_os("ZELDA3_RENDER_VIEWPORT_LOG").is_some(),
+            log_viewport: crate::debug_env::var_os!("ZELDA3_RENDER_VIEWPORT_LOG").is_some(),
             hd_scale,
             modern_gpu: None,
             modern_variant_gpu: None,
@@ -3592,7 +3594,7 @@ impl FrameRenderer {
 
     fn modern_live_timings_enabled() -> bool {
         static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_RENDER_TIMINGS").is_some())
+        *ENABLED.get_or_init(|| crate::debug_env::var_os!("ZELDA3_RENDER_TIMINGS").is_some())
     }
 
     fn modern_live_timing_mark(last: &mut Option<std::time::Instant>) -> u128 {
@@ -3891,7 +3893,7 @@ pub fn modern_mode7_cpu_rgba(frame: &GpuFrame<'_>, mode7_source_chars: Option<&[
     match mode7_source_chars {
         None => crate::modern_software::render_modern_mode7_frame(frame),
         Some(chars) => {
-            if std::env::var_os("ZELDA3_DEBUG_MODE7_SOURCE_AUDIT").is_some() {
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_MODE7_SOURCE_AUDIT").is_some() {
                 let mismatches = frame
                     .vram
                     .iter()

@@ -5,8 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["parity-debug"]
+parity-debug = ["renderer/parity-debug"]
+
 [dependencies]
-renderer = { path = "../renderer" }
+renderer = { path = "../renderer", default-features = false }
 winit = "0.30"
 cpal = "0.15"
 gilrs = "0.10"

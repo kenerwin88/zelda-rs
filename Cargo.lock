@@ -2022,6 +2022,7 @@ dependencies = [
  "serde_json",
  "wgpu",
  "winit",
+ "zelda3-debug-env",
  "zelda3-dialogue",
  "zelda3-palette",
 ]
@@ -2322,6 +2323,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 1.0.69",
+ "zelda3-debug-env",
  "zstd",
 ]
 
@@ -3426,6 +3428,7 @@ dependencies = [
  "sha2",
  "snes",
  "zelda3-compat",
+ "zelda3-debug-env",
  "zelda3-dialogue",
  "zelda3-palette",
 ]
@@ -3471,6 +3474,10 @@ version = "0.0.0"
 dependencies = [
  "zelda3-dialogue",
 ]
+
+[[package]]
+name = "zelda3-debug-env"
+version = "0.0.0"
 
 [[package]]
 name = "zelda3-dialogue"

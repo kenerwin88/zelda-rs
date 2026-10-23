@@ -879,7 +879,7 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla29_milestone_item_receipt(&mut self, k: usize) {
-        if crate::debug_env::var_os("ZELDA3_DEBUG_ANCILLA29").is_some() {
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_ANCILLA29").is_some() {
             eprintln!(
                 "[ANC29] host={} k={} item={:#x} z={} g={} native_bits={:#06x} ram_bits={:#04x}{:02x} countdown={} work3={} link_aux={} hook={} sub={}",
                 self.frame_ctr_dbg,
