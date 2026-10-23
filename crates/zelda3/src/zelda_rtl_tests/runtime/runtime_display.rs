@@ -31,7 +31,7 @@ fn palette_filter_prefix_and_remainder_equal_one_uninterrupted_source_call() {
 
     let mut whole = ZeldaState::new();
     configure(&mut whole);
-    whole.ApplyPaletteFilter_bounce();
+    whole.apply_palette_filter_bounce();
 
     for index in 0..256 {
         assert_eq!(
@@ -782,7 +782,7 @@ fn link_zap_mosaic_bounces_between_zero_and_c0() {
     let mut state = ZeldaState::new();
     state.set_mosaic_level(0xb0);
 
-    state.LinkZap_HandleMosaic();
+    state.link_zap_handle_mosaic();
 
     assert_eq!(state.game_state.display.mosaic_level, 0xc0);
     assert_eq!(state.game_state.display.mosaic_direction, 1);
@@ -790,7 +790,7 @@ fn link_zap_mosaic_bounces_between_zero_and_c0() {
     assert_eq!(state.game_state.display.bg_mode, 9);
 
     state.set_mosaic_level(0x10);
-    state.LinkZap_HandleMosaic();
+    state.link_zap_handle_mosaic();
     assert_eq!(state.game_state.display.mosaic_level, 0);
     assert_eq!(state.game_state.display.mosaic_direction, 0);
     assert_eq!(state.game_state.display.mosaic_copy, 3);
@@ -1110,7 +1110,7 @@ fn palette_direction_toggle_defers_countdown_clear_and_substage_publication() {
         atomic.set_darkening_or_lightening_screen_word(direction);
         let mut staged = atomic.clone();
         let cgram_requests = staged.ram[0x15];
-        atomic.ApplyPaletteFilter_bounce();
+        atomic.apply_palette_filter_bounce();
         staged.apply_palette_filter_bounce_through_direction_toggle();
         assert_eq!(
             staged

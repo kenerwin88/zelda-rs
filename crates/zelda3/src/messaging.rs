@@ -2605,7 +2605,7 @@ impl ZeldaState {
     pub(super) fn Module0E_05_DesertPrayer(&mut self) {
         match self.game_state.frame.subsubmodule {
             0 => self.ResetTransitionPropsAndAdvance_ResetInterface(),
-            1 => self.ApplyPaletteFilter_bounce(),
+            1 => self.apply_palette_filter_bounce(),
             2 => {
                 if let Some(
                     interruption @ crate::MainLoopInterruption::DesertPrayerIris {
@@ -2655,7 +2655,7 @@ impl ZeldaState {
                         self.take_original_timing_main_loop_interruption(interruption),
                         "Desert Prayer iris interruption disappeared before its source caller consumed it",
                     );
-                    self.ApplyPaletteFilter_bounce();
+                    self.apply_palette_filter_bounce();
                     assert_eq!(
                         self.game_state.display.palette_filter.countdown_word(),
                         u16::from(palette_countdown),
@@ -2692,7 +2692,7 @@ impl ZeldaState {
                     );
                     return;
                 }
-                self.ApplyPaletteFilter_bounce();
+                self.apply_palette_filter_bounce();
                 self.DesertPrayer_BuildIrisHDMATable();
             }
             4 => {
@@ -2824,7 +2824,7 @@ impl ZeldaState {
         }
         self.clear_bg_vram_load_mode();
         self.EnableForceBlank();
-        self.EraseTileMaps_normal();
+        self.erase_tile_maps_normal();
         let bak = self
             .game_state
             .inventory
@@ -3144,7 +3144,7 @@ impl ZeldaState {
                 let saved_module = self.game_state.frame.saved_module_for_menu;
                 self.set_main_module(saved_module);
                 self.clear_window_layer_masks();
-                self.IrisSpotlight_ResetTable();
+                self.iris_spotlight_reset_table();
                 return false;
             }
         }
@@ -3600,7 +3600,7 @@ impl ZeldaState {
             return;
         }
         self.Death_InitializeGameOverLetters();
-        self.IrisSpotlight_close();
+        self.iris_spotlight_close();
         self.set_object_color_window_selection(0x30);
         self.set_bg34_window_selection(0);
         self.increment_submodule();
@@ -3612,7 +3612,7 @@ impl ZeldaState {
     }
 
     fn game_over_iris_wipe_before_table(&mut self) {
-        self.PaletteFilter_RestoreBGSubstractiveStrict();
+        self.palette_filter_restore_bg_substractive_strict();
         self.copy_color(
             (zelda3_palette::Bank::Main, 32),
             (zelda3_palette::Bank::Main, 0),
@@ -3621,7 +3621,7 @@ impl ZeldaState {
 
     fn game_over_iris_wipe_after_table(&mut self) {
         let bak = self.game_state.frame.main_module;
-        self.IrisSpotlight_ConfigureTable();
+        self.iris_spotlight_configure_table();
         self.game_over_iris_wipe_after_completed_table(bak);
     }
 
@@ -3647,7 +3647,7 @@ impl ZeldaState {
     fn game_over_iris_goal_after_palette_fill(&mut self) {
         self.set_main_color_constant(0, 0x18);
         self.set_main_color_constant(32, 0x18);
-        self.IrisSpotlight_ResetTable();
+        self.iris_spotlight_reset_table();
         self.set_fixed_color_red(32);
         self.set_fixed_color_green(64);
         self.set_fixed_color_blue(128);
@@ -3681,7 +3681,7 @@ impl ZeldaState {
             self.messaging_state_mut().decrement_menu_animation_timer();
             return;
         }
-        self.PaletteFilter_RestoreBGSubstractiveStrict();
+        self.palette_filter_restore_bg_substractive_strict();
         self.copy_color(
             (zelda3_palette::Bank::Main, 32),
             (zelda3_palette::Bank::Main, 0),
@@ -3704,7 +3704,7 @@ impl ZeldaState {
                 self.inventory_items_mut().set_bottle(i, value);
                 self.messaging_state_mut().set_menu_animation_timer(12);
                 self.set_chr_halfslot_request(15);
-                self.Graphics_LoadChrHalfSlot();
+                self.graphics_load_chr_half_slot();
                 self.clear_chr_halfslot_request();
                 self.set_submodule(10);
                 return;
@@ -3722,12 +3722,12 @@ impl ZeldaState {
     pub(super) fn Death_Func6(&mut self) {
         self.messaging_state_mut().set_menu_animation_timer(12);
         self.set_chr_halfslot_request(15);
-        self.Graphics_LoadChrHalfSlot();
+        self.graphics_load_chr_half_slot();
         self.clear_chr_halfslot_request();
         self.set_sp6r_indoors(5);
         self.select_overworld_aux_palette_offset();
-        self.Palette_Load_SpriteEnvironment_Dungeon();
-        self.Palette_Load_SpriteMain();
+        self.palette_load_sprite_environment_dungeon_with_cycle_scope();
+        self.palette_load_sprite_main();
         self.increment_cgram_update_flag();
         self.increment_submodule();
         self.Death_PlayerSwoon();
@@ -4126,7 +4126,7 @@ impl ZeldaState {
     pub(super) fn GameOver_Restore0D(&mut self) {
         if !self.hud_state().is_doing_heart_animation() {
             self.set_chr_halfslot_request(1);
-            self.Graphics_LoadChrHalfSlot();
+            self.graphics_load_chr_half_slot();
             let fixed_color = self.game_state.dungeon.room_effects.fixed_color_plusminus();
             self.Dungeon_ApproachFixedColor_variable(fixed_color);
             self.increment_submodule();
@@ -4136,14 +4136,14 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOver_Restore0E(&mut self) {
-        self.Graphics_LoadChrHalfSlot();
+        self.graphics_load_chr_half_slot();
         let sub_screen_layers = self.game_state.display.ppu_scroll_copy.mapbak_ts();
         self.set_sub_screen_layers(sub_screen_layers);
         self.increment_submodule();
     }
 
     pub(super) fn GameOver_ResituateLink(&mut self) {
-        self.PaletteFilter_RestoreBGAdditiveStrict();
+        self.palette_filter_restore_bg_additive_strict();
         self.copy_color(
             (zelda3_palette::Bank::Main, 32),
             (zelda3_palette::Bank::Main, 0),
@@ -4439,7 +4439,7 @@ impl ZeldaState {
 
     pub(super) fn WorldMap_LoadSpriteGFX(&mut self) {
         self.set_chr_halfslot_request(0x10);
-        self.Graphics_LoadChrHalfSlot();
+        self.graphics_load_chr_half_slot();
         self.clear_chr_halfslot_request();
         self.increment_overworld_map_state();
     }
@@ -4957,7 +4957,7 @@ impl ZeldaState {
         self.world_palette_theme_mut().set_aux_tile_theme_index(64);
         self.set_main_screen_layers(0x16);
         self.set_sub_screen_layers(1);
-        self.EraseTileMaps_dungeonmap();
+        self.erase_tile_maps_dungeonmap();
         if self.rom_startup_timing()
             && crate::debug_env::var_os("ZELDA3_NATIVE_TILESET_TIMED_WRAM").is_some()
         {
@@ -4977,12 +4977,12 @@ impl ZeldaState {
         self.InitializeTilesets();
         self.select_overworld_aux_palette_offset();
         self.replay_trace_ram_watch("dungmap-prep-before-bg-palette");
-        self.Palette_Load_DungeonMapBG();
+        self.palette_load_dungeon_map_bg();
         self.replay_trace_ram_watch("dungmap-prep-after-bg-palette");
-        self.Palette_Load_DungeonMapSprite();
+        self.palette_load_dungeon_map_sprite();
         self.replay_trace_ram_watch("dungmap-prep-after-sprite-palette");
         self.set_hud_palette(1);
-        self.Palette_Load_HUD();
+        self.palette_load_hud();
         self.replay_trace_ram_watch("dungmap-prep-after-hud-palette");
         self.LoadActualGearPalettes();
         self.replay_trace_ram_watch("dungmap-prep-after-gear-palette");
@@ -5827,7 +5827,7 @@ impl ZeldaState {
         let hdmaen_bak = self.game_state.display.hdma_enable_mask;
         self.dungeon_map_recovery_saved_hdma_enable = Some(hdmaen_bak);
         self.clear_hdma_enable_mask();
-        self.EraseTileMaps_normal();
+        self.erase_tile_maps_normal();
 
         let main_screen_layers = self.game_state.display.ppu_scroll_copy.mapbak_tm();
         let sub_screen_layers = self.game_state.display.ppu_scroll_copy.mapbak_ts();
@@ -6528,7 +6528,7 @@ impl ZeldaState {
         if module_20 {
             self.ResetHUDPalettes4and5();
         }
-        self.Attract_DecompressStoryGFX();
+        self.attract_decompress_story_gfx();
         crate::cycle_ledger::charge(16); // LDX #0 after the callee returns
         self.text_initialize_module_state_prefix();
     }

@@ -1399,7 +1399,7 @@ impl ZeldaState {
 
     pub(super) fn catfish_regurgitate_medallion(&mut self, k: usize) {
         if self.catfish_regurgitate_medallion_before_graphics(k) {
-            self.DecodeAnimatedSpriteTile_variable(0x1c);
+            self.decode_animated_sprite_tile_variable(0x1c);
         }
     }
 
@@ -2120,6 +2120,7 @@ impl ZeldaState {
         self.follower_link_state_mut().set_speed_setting(0);
     }
 
+    /// ROM: `OldMan_EnableCutscene`
     pub(super) fn old_man_enable_cutscene(&mut self) {
         self.follower_link_state_mut().immobilize();
         self.follower_link_state_mut()
@@ -2410,7 +2411,7 @@ impl ZeldaState {
             3 => {
                 if self.sprite_slot_view(k).delay_aux1() == 0 {
                     self.sprite_show_message_unconditional(0x111);
-                    self.Palette_Restore_BG_And_HUD();
+                    self.palette_restore_bg_and_hud();
                     self.increment_cgram_update_flag();
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.player_resources_mut().set_magic_consumption_level(1);
@@ -2590,8 +2591,8 @@ impl ZeldaState {
                         self.set_music_control(0x1b);
                         self.set_last_music_control(0);
                         self.sprite_slot_view_mut(j).set_b(1);
-                        self.Palette_AssertTranslucencySwap();
-                        self.PaletteFilter_WishPonds();
+                        self.palette_assert_translucency_swap_with_cycle_charge();
+                        self.palette_filter_wish_ponds();
                         self.sprite_slot_view_mut(k).set_e(j as u8);
                         self.sprite_slot_view_mut(k).set_ai_state(4);
                         self.sprite_slot_view_mut(k).set_delay_main(255);
@@ -2600,10 +2601,10 @@ impl ZeldaState {
             }
             4 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
-                    self.PaletteFilter_SP5F();
+                    self.palette_filter_sp5f();
                     if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_show_message_unconditional(0x8b);
-                        self.Palette_RevertTranslucencySwap();
+                        self.palette_revert_translucency_swap();
                         self.set_sub_screen_layers(0);
                         self.set_color_math_control(0x20);
                         self.increment_cgram_update_flag();
@@ -2669,7 +2670,7 @@ impl ZeldaState {
                     let value = self.sprite_slot_view(k).direction();
                     self.player_resources_mut().set_bombs(value);
                 }
-                self.Palette_AssertTranslucencySwap();
+                self.palette_assert_translucency_swap_with_cycle_charge();
                 self.set_sub_screen_layers(2);
                 self.set_color_math_control(0x30);
                 self.increment_cgram_update_flag();
@@ -2677,7 +2678,7 @@ impl ZeldaState {
             }
             8 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
-                    self.PaletteFilter_SP5F();
+                    self.palette_filter_sp5f();
                     if self.game_state.display.palette_filter.countdown() == 30 {
                         let j = self.sprite_slot_view(k).e() as usize;
                         self.sprite_slot_view_mut(j).set_state(0);
@@ -2687,8 +2688,8 @@ impl ZeldaState {
                 }
             }
             9 => {
-                self.PaletteFilter_RestoreSP5F();
-                self.Palette_RevertTranslucencySwap();
+                self.palette_filter_restore_sp5f();
+                self.palette_revert_translucency_swap();
                 self.follower_link_state_mut().set_item_receipt_method(2);
                 // The ROM advances the pond's AI state BEFORE calling
                 // Link_ReceiveItem: the oracle already reads $0A while the
@@ -2773,7 +2774,7 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_happiness_pond_rupee_graphics(&mut self, k: usize) {
-        self.DecodeAnimatedSpriteTile_variable(0x24);
+        self.decode_animated_sprite_tile_variable(0x24);
         self.add_happiness_pond_rupees_after_graphics(self.sprite_slot_view(k).head_direction());
         self.happiness_pond_after_rupees(k);
     }
@@ -2883,8 +2884,8 @@ impl ZeldaState {
                     self.set_music_control(0x1b);
                     self.set_last_music_control(0);
                     self.sprite_slot_view_mut(j).set_b(1);
-                    self.Palette_AssertTranslucencySwap();
-                    self.PaletteFilter_WishPonds();
+                    self.palette_assert_translucency_swap_with_cycle_charge();
+                    self.palette_filter_wish_ponds();
                     self.sprite_slot_view_mut(k).set_e(j as u8);
                     self.sprite_slot_view_mut(k).set_ai_state(6);
                     self.sprite_slot_view_mut(k).set_delay_main(255);
@@ -2892,10 +2893,10 @@ impl ZeldaState {
             }
             6 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
-                    self.PaletteFilter_SP5F();
+                    self.palette_filter_sp5f();
                     if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_show_message_unconditional(0x95);
-                        self.Palette_RevertTranslucencySwap();
+                        self.palette_revert_translucency_swap();
                         self.set_sub_screen_layers(0);
                         self.set_color_math_control(0x20);
                         self.increment_cgram_update_flag();
@@ -2939,7 +2940,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(9);
             }
             9 => {
-                self.Palette_AssertTranslucencySwap();
+                self.palette_assert_translucency_swap_with_cycle_charge();
                 self.set_sub_screen_layers(2);
                 self.set_color_math_control(0x30);
                 self.increment_cgram_update_flag();
@@ -2947,7 +2948,7 @@ impl ZeldaState {
             }
             10 => {
                 if self.game_state.frame.frame_counter & 7 == 0 {
-                    self.PaletteFilter_SP5F();
+                    self.palette_filter_sp5f();
                     if self.game_state.display.palette_filter.countdown() == 30 {
                         let j = self.sprite_slot_view(k).e() as usize;
                         self.sprite_slot_view_mut(j).set_state(0);
@@ -2957,8 +2958,8 @@ impl ZeldaState {
                 }
             }
             11 => {
-                self.PaletteFilter_RestoreSP5F();
-                self.Palette_RevertTranslucencySwap();
+                self.palette_filter_restore_sp5f();
+                self.palette_revert_translucency_swap();
                 self.sprite_slot_view_mut(k).set_ai_state(0);
                 self.sprite_slot_view_mut(k).set_delay_main(255);
             }
@@ -3553,7 +3554,7 @@ impl ZeldaState {
             if self.game_state.inventory.items.book() != 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
             } else {
-                self.DecodeAnimatedSpriteTile_variable(0x0e);
+                self.decode_animated_sprite_tile_variable(0x0e);
             }
         } else {
             let j = self.game_state.sprite_battle.item_drop_counter();
@@ -3838,6 +3839,7 @@ impl ZeldaState {
         }
     }
 
+    /// ROM: `Sprite_SpawnBatCrashCutscene`
     pub(super) fn sprite_spawn_bat_crash_cutscene(&mut self) {
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(0, 0x37, &mut info);
@@ -4881,7 +4883,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_big_key_load_graphics(&mut self, k: usize) {
-        self.DecodeAnimatedSpriteTile_variable(0x22);
+        self.decode_animated_sprite_tile_variable(0x22);
         self.sprite_prep_key_set_item_drop(k);
     }
 
@@ -4892,15 +4894,15 @@ impl ZeldaState {
     ) {
         use crate::zelda_rtl::AnimatedSpriteTileDecompressionProgress::{FirstSheet, SecondSheet};
         match progress {
-            None => self.DecodeAnimatedSpriteTile_variable(0x22),
+            None => self.decode_animated_sprite_tile_variable(0x22),
             Some(FirstSheet(completed)) => {
                 self.apply_animated_sprite_tile_sheet_slice(0x22, true, completed, 0x0600);
                 self.apply_animated_sprite_tile_sheet_slice(0x22, false, 0, 0x0600);
-                self.WriteTo4BPPBuffer_at_7F4000(0x22);
+                self.write_to4_bpp_buffer_at_7f4000(0x22);
             }
             Some(SecondSheet(completed)) => {
                 self.apply_animated_sprite_tile_sheet_slice(0x22, false, completed, 0x0600);
-                self.WriteTo4BPPBuffer_at_7F4000(0x22);
+                self.write_to4_bpp_buffer_at_7f4000(0x22);
             }
         }
         self.sprite_prep_key_set_item_drop(k);

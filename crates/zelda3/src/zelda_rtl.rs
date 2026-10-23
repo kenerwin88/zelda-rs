@@ -113,7 +113,7 @@ use crate::timing_receipts::{
     SpriteResetAllProgressReceipt, TriforceRoomCase2PaletteProgressReceipt,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
-use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
+use crate::util::{find_index_in_memblk, ByteArray, byte_array_append_byte, byte_array_append_data};
 
 // Snes9x reaches the ROM's first initialized WRAM state after 81 complete
 // libretro frames.  The pixels written by that work are published separately
@@ -14738,10 +14738,10 @@ impl ZeldaState {
 
     pub fn byte_array_append_vl(arr: &mut ByteArray, mut v: u32) {
         while v >= 255 {
-            ByteArray_AppendByte(arr, 255);
+            byte_array_append_byte(arr, 255);
             v -= 255;
         }
-        ByteArray_AppendByte(arr, v as u8);
+        byte_array_append_byte(arr, v as u8);
     }
 
     pub fn state_recorder_read_vl(data: &[u8], replay_pos: &mut usize) -> u32 {
@@ -14907,7 +14907,7 @@ impl ZeldaState {
         let frames = sr.frames_since_last;
         sr.frames_since_last = 0;
         let x = if cmd < 0xc0 { 0xf } else { 0x1 };
-        ByteArray_AppendByte(
+        byte_array_append_byte(
             &mut sr.log,
             cmd | if frames < x { frames as u8 } else { x as u8 },
         );
@@ -14946,10 +14946,10 @@ impl ZeldaState {
         if lq == 3 {
             Self::byte_array_append_vl(&mut sr.log, (num - 1 - 3) as u32);
         }
-        ByteArray_AppendByte(&mut sr.log, (addr >> 8) as u8);
-        ByteArray_AppendByte(&mut sr.log, addr as u8);
+        byte_array_append_byte(&mut sr.log, (addr >> 8) as u8);
+        byte_array_append_byte(&mut sr.log, addr as u8);
         for &byte in value.iter().take(num) {
-            ByteArray_AppendByte(&mut sr.log, byte);
+            byte_array_append_byte(&mut sr.log, byte);
         }
     }
 
@@ -14976,7 +14976,7 @@ impl ZeldaState {
                 Self::state_recorder_record_cmd(sr, sr.replay_cmd);
                 let old_replay_pos = sr.replay_pos as usize;
                 sr.replay_pos = sr.log.size() as u32;
-                ByteArray_AppendData(&mut sr.log, &old_log.data[old_replay_pos..]);
+                byte_array_append_data(&mut sr.log, &old_log.data[old_replay_pos..]);
             }
             sr.total_frames = sr.total_frames.wrapping_sub(sr.replay_frame_counter);
             sr.replay_frame_counter = 0;

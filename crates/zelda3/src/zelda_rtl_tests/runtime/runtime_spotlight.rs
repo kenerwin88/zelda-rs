@@ -118,7 +118,7 @@ fn unfinished_spotlight_rows_do_not_replace_the_published_hardware_table() {
         state.follower_link_state_mut().set_x(120);
         state.set_bg2_v_copy2(0);
         state.set_bg2_h_copy2(0);
-        state.IrisSpotlight_close();
+        state.iris_spotlight_close();
         let published = state.hdma_dynamic_table_bytes();
         // Source window-1 rows at center (128,238), captured from Snes9x.
         assert_eq!(&published[226..232], &[255, 0, 84, 172, 74, 182]);
@@ -4023,7 +4023,7 @@ fn suspended_landing_spotlight_retains_sprite_preparation_until_caller_return() 
         state
     }
     let mut atomic = initial();
-    atomic.IrisSpotlight_ConfigureTable();
+    atomic.iris_spotlight_configure_table();
     atomic.complete_deferred_module07_0f_operate_spotlight_suffix();
     atomic.complete_deferred_module07_0f_landing_wipe_suffix();
     atomic.complete_dungeon_after_submodule_cpu_caller_return();

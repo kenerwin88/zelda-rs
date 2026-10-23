@@ -2810,9 +2810,9 @@ fn state_recorder_replays_snapshot_boundary_commands() {
     state.ppu.cgram[3] = 0;
 
     let mut log = ByteArray::default();
-    ByteArray_AppendByte(&mut log, 0xd0);
+    byte_array_append_byte(&mut log, 0xd0);
     ZeldaState::byte_array_append_vl(&mut log, snapshot.size() as u32);
-    ByteArray_AppendData(&mut log, &snapshot.data);
+    byte_array_append_data(&mut log, &snapshot.data);
 
     let mut sr = StateRecorder {
         replay_mode: true,

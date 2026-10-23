@@ -1431,7 +1431,7 @@ impl ZeldaState {
     // Ganon_ExtinguishTorch_adjust_translucency / Ganon_ExtinguishTorch:
     // the original calls the dungeon's Dungeon_ExtinguishTorch.
     fn ganon_extinguish_torch_adjust_translucency_for_ganon(&mut self) {
-        self.Palette_AssertTranslucencySwap();
+        self.palette_assert_translucency_swap_with_cycle_charge();
         self.dungeon_torch_mut().set_target(NativeTile::torch(0));
         self.Dungeon_ExtinguishTorch();
     }

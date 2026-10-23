@@ -84,7 +84,7 @@ impl ZeldaState {
         // (110): no slot takes the BMI (+6) to the RTS; a slot runs
         // $09:B742-B76F (562, the JSL GetRandomNumber included) then the RTS.
         crate::cycle_ledger::charge(102 + 110);
-        if let Some((j, _info)) = self.Sprite_SpawnDynamically(0, 0xc2) {
+        if let Some((j, _info)) = self.try_spawn_sprite_with_info(0, 0xc2) {
             crate::cycle_ledger::charge(562 + 42);
             let x = self
                 .game_state
@@ -99,8 +99,8 @@ impl ZeldaState {
                 .ppu_scroll_copy
                 .bg2_v_copy2()
                 .wrapping_sub(0x30);
-            self.Sprite_SetX(j, x);
-            self.Sprite_SetY(j, y);
+            self.sprite_set_x(j, x);
+            self.sprite_set_y(j, y);
             let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_floor(0);
             sprite.set_direction(0);
@@ -291,10 +291,10 @@ impl ZeldaState {
         self.temp_counter_mut().set(3);
         loop {
             let i = self.game_state.scratch_counter.value() as usize;
-            let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0xa7, 12) else {
+            let Some((j, _info)) = self.try_spawn_sprite_with_info_up_to_slot(k, 0xa7, 12) else {
                 return;
             };
-            self.Sprite_SetX(
+            self.sprite_set_x(
                 j,
                 self.game_state
                     .player
@@ -302,7 +302,7 @@ impl ZeldaState {
                     .x()
                     .wrapping_add(INVISIBLE_STALFOS_TRAP_X_OFFSETS[i] as i16 as u16),
             );
-            self.Sprite_SetY(
+            self.sprite_set_y(
                 j,
                 self.game_state
                     .player
@@ -354,9 +354,9 @@ impl ZeldaState {
         if self.overlord_slot_view(k).gen2() >= 0x18 || self.overlord_slot_view(k).gen2() & 3 != 0 {
             return;
         }
-        if let Some((j, info)) = self.Sprite_SpawnDynamicallyEx(k, 0x9c, 12) {
+        if let Some((j, info)) = self.try_spawn_sprite_with_info_up_to_slot(k, 0x9c, 12) {
             let random_x = ZORO_SPAWNER_X_OFFSETS[(self.get_random_number() & 7) as usize];
-            self.Sprite_SetX(
+            self.sprite_set_x(
                 j,
                 info.r5_overlord_x
                     .wrapping_add(random_x as i16 as u16)
@@ -391,8 +391,8 @@ impl ZeldaState {
         let value = 127;
         self.overlord_slot_view_mut(k).set_gen2(value);
         for i in (0..=3).rev() {
-            if let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x9b, 12) {
-                self.Sprite_SetX(
+            if let Some((j, _info)) = self.try_spawn_sprite_with_info_up_to_slot(k, 0x9b, 12) {
+                self.sprite_set_x(
                     j,
                     self.game_state
                         .player
@@ -400,7 +400,7 @@ impl ZeldaState {
                         .x()
                         .wrapping_add(WIZZROBE_SPAWNER_X_OFFSETS[i] as i16 as u16),
                 );
-                self.Sprite_SetY(
+                self.sprite_set_y(
                     j,
                     self.game_state
                         .player
@@ -450,7 +450,7 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_room_spawn_tile(&mut self, k: usize) -> i32 {
-        let Some((j, _info)) = self.Sprite_SpawnDynamically(k, 0x94) else {
+        let Some((j, _info)) = self.try_spawn_sprite_with_info(k, 0x94) else {
             return -1;
         };
         let i = self.overlord_slot_view(k).gen1() as usize;
@@ -494,9 +494,9 @@ impl ZeldaState {
         if n >= 5 {
             return;
         }
-        if let Some((j, info)) = self.Sprite_SpawnDynamicallyEx(k, 0x94, 12) {
-            self.Sprite_SetX(j, info.r5_overlord_x);
-            self.Sprite_SetY(j, info.r7_overlord_y);
+        if let Some((j, info)) = self.try_spawn_sprite_with_info_up_to_slot(k, 0x94, 12) {
+            self.sprite_set_x(j, info.r5_overlord_x);
+            self.sprite_set_y(j, info.r7_overlord_y);
             let floor = self.overlord_slot_view(k).floor();
             let direction = self.game_state.scratch_counter.value();
             let a = PIROGUSU_SPAWNER_DIRECTIONS[direction as usize];
@@ -590,11 +590,11 @@ impl ZeldaState {
         }
         let value = 127;
         self.overlord_slot_view_mut(k).set_gen2(value);
-        let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x90, 12) else {
+        let Some((j, _info)) = self.try_spawn_sprite_with_info_up_to_slot(k, 0x90, 12) else {
             return;
         };
-        self.Sprite_SetX(j, self.game_state.player.follower_link.x());
-        self.Sprite_SetY(j, self.game_state.player.follower_link.y());
+        self.sprite_set_x(j, self.game_state.player.follower_link.x());
+        self.sprite_set_y(j, self.game_state.player.follower_link.y());
         self.sprite_slot_view_mut(j).set_z(208);
         self.sprite_sfx_queue_sfx2_with_pan(j, 0x20);
         let floor = self.game_state.player.follower_link.lower_level_state();
@@ -619,9 +619,9 @@ impl ZeldaState {
         if n >= 5 {
             return;
         }
-        if let Some((j, _info)) = self.Sprite_SpawnDynamicallyEx(k, 0x8f, 12) {
+        if let Some((j, _info)) = self.try_spawn_sprite_with_info_up_to_slot(k, 0x8f, 12) {
             let i = self.game_state.player.follower_link.facing_index();
-            self.Sprite_SetX(
+            self.sprite_set_x(
                 j,
                 self.game_state
                     .player
@@ -629,7 +629,7 @@ impl ZeldaState {
                     .x()
                     .wrapping_add(BLOB_SPAWNER_ZOL_X_OFFSETS[i] as i16 as u16),
             );
-            self.Sprite_SetY(
+            self.sprite_set_y(
                 j,
                 self.game_state
                     .player
@@ -716,11 +716,11 @@ impl ZeldaState {
         if old == FALLING_STALFOS_TRAP_TRIGGER_TIMERS[k] {
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
-            let Some((j, info)) = self.Sprite_SpawnDynamicallyEx(k, 0x85, 12) else {
+            let Some((j, info)) = self.try_spawn_sprite_with_info_up_to_slot(k, 0x85, 12) else {
                 return;
             };
-            self.Sprite_SetX(j, info.r5_overlord_x);
-            self.Sprite_SetY(j, info.r7_overlord_y);
+            self.sprite_set_x(j, info.r5_overlord_x);
+            self.sprite_set_y(j, info.r7_overlord_y);
             let floor = self.overlord_slot_view(k).floor();
             let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_z(224);
@@ -752,11 +752,11 @@ impl ZeldaState {
         if a != SNAKE_TRAP_SPAWN_TIMERS_BY_SLOT[k] {
             return;
         }
-        let Some((j, info)) = self.Sprite_SpawnDynamically(k, 0x6e) else {
+        let Some((j, info)) = self.try_spawn_sprite_with_info(k, 0x6e) else {
             return;
         };
-        self.Sprite_SetX(j, info.r5_overlord_x);
-        self.Sprite_SetY(j, info.r7_overlord_y);
+        self.sprite_set_x(j, info.r5_overlord_x);
+        self.sprite_set_y(j, info.r7_overlord_y);
         let floor = self.overlord_slot_view(k).floor();
         {
             let mut sprite = self.sprite_slot_view_mut(j);
@@ -840,11 +840,11 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord_spawn_cannon_ball(&mut self, k: usize, xd: i32) {
-        let Some((j, info)) = self.Sprite_SpawnDynamically(k, 0x50) else {
+        let Some((j, info)) = self.try_spawn_sprite_with_info(k, 0x50) else {
             return;
         };
-        self.Sprite_SetX(j, info.r5_overlord_x.wrapping_add(xd as i16 as u16));
-        self.Sprite_SetY(j, info.r7_overlord_y.wrapping_sub(1));
+        self.sprite_set_x(j, info.r5_overlord_x.wrapping_add(xd as i16 as u16));
+        self.sprite_set_y(j, info.r7_overlord_y.wrapping_sub(1));
         let counter = self.game_state.scratch_counter.value() as usize;
         let floor = self.overlord_slot_view(k).floor();
         let mut sprite = self.sprite_slot_view_mut(j);
@@ -950,15 +950,17 @@ impl ZeldaState {
         }
     }
 
-    fn Sprite_SpawnDynamically(
+    /// ROM: `Sprite_SpawnDynamically`
+    fn try_spawn_sprite_with_info(
         &mut self,
         k: usize,
         sprite: u8,
     ) -> Option<(usize, super::sprite::SpriteSpawnInfo)> {
-        self.Sprite_SpawnDynamicallyEx(k, sprite, 15)
+        self.try_spawn_sprite_with_info_up_to_slot(k, sprite, 15)
     }
 
-    fn Sprite_SpawnDynamicallyEx(
+    /// ROM: `Sprite_SpawnDynamicallyEx`
+    fn try_spawn_sprite_with_info_up_to_slot(
         &mut self,
         k: usize,
         sprite: u8,
@@ -971,14 +973,6 @@ impl ZeldaState {
         } else {
             None
         }
-    }
-
-    fn Sprite_SetX(&mut self, k: usize, x: u16) {
-        self.sprite_slot_view_mut(k).set_x(x);
-    }
-
-    fn Sprite_SetY(&mut self, k: usize, y: u16) {
-        self.sprite_slot_view_mut(k).set_y(y);
     }
 
     fn GarnishAlloc(&self) -> Option<usize> {

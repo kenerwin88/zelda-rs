@@ -141,7 +141,8 @@ pub fn StrFmt(args: fmt::Arguments<'_>) -> String {
     formatted
 }
 
-pub fn ByteArray_Resize(arr: &mut ByteArray, new_size: usize) {
+/// ROM: `ByteArray_Resize`
+pub fn byte_array_resize(arr: &mut ByteArray, new_size: usize) {
     if new_size > arr.data.capacity() {
         let minsize = arr.data.capacity() + (arr.data.capacity() >> 1) + 8;
         let capacity = if new_size < minsize {
@@ -154,20 +155,23 @@ pub fn ByteArray_Resize(arr: &mut ByteArray, new_size: usize) {
     arr.data.resize(new_size, 0);
 }
 
-pub fn ByteArray_Destroy(arr: &mut ByteArray) {
+/// ROM: `ByteArray_Destroy`
+pub fn byte_array_destroy(arr: &mut ByteArray) {
     arr.data.clear();
     arr.data.shrink_to_fit();
 }
 
-pub fn ByteArray_AppendData(arr: &mut ByteArray, data: &[u8]) {
+/// ROM: `ByteArray_AppendData`
+pub fn byte_array_append_data(arr: &mut ByteArray, data: &[u8]) {
     let old_size = arr.data.len();
-    ByteArray_Resize(arr, old_size + data.len());
+    byte_array_resize(arr, old_size + data.len());
     arr.data[old_size..].copy_from_slice(data);
 }
 
-pub fn ByteArray_AppendByte(arr: &mut ByteArray, v: u8) {
+/// ROM: `ByteArray_AppendByte`
+pub fn byte_array_append_byte(arr: &mut ByteArray, v: u8) {
     let old_size = arr.data.len();
-    ByteArray_Resize(arr, old_size + 1);
+    byte_array_resize(arr, old_size + 1);
     arr.data[old_size] = v;
 }
 

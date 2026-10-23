@@ -857,7 +857,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).e() & 1 == 0 {
             // $1E:CE9D..CEA7 (JSL PaletteFilter_SP5F).
             crate::cycle_ledger::charge(168);
-            self.PaletteFilter_SP5F();
+            self.palette_filter_sp5f();
             if self.game_state.display.palette_filter.countdown() == 0 {
                 // $1E:CEA9..CEB9, RTS.
                 crate::cycle_ledger::charge(212 + 42);

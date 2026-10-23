@@ -231,7 +231,7 @@ impl ZeldaState {
     }
 
     pub fn save_func(ctx_in: &mut ByteArray, data: &mut [u8]) {
-        ByteArray_AppendData(ctx_in, data);
+        byte_array_append_data(ctx_in, data);
     }
 
     pub(super) fn save_load_call(func: &mut SaveLoadFunc<'_, '_>, data: &mut [u8]) {

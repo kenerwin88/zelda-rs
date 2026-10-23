@@ -335,7 +335,7 @@ mod floor_draw_tests {
         while staged.advance_dungeon_object_draw_one(&mut objects) {}
         staged.active_early_dungeon_object_draw = Some(objects);
         staged.finish_live_dungeon_supertile_room_load();
-        staged.Dungeon_RestoreStarTileChr();
+        staged.dungeon_restore_star_tile_chr();
         let prefix = load_gfx::TransitionAuxGraphicsProgress { sheet: 0, completed_bytes: 0x100 };
         staged.advance_transition_aux_graphics(None, prefix);
         staged.native_transition_aux_graphics_progress = Some(prefix);
@@ -1217,7 +1217,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_DoubleApplyAndIncrementGrayscale(&mut self) {
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         if self.rom_startup_timing() {
             self.schedule_pre_main_caller_continuation(
                 PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter,
@@ -1237,7 +1237,7 @@ impl ZeldaState {
             self.game_state.frame.submodule,
             0x0e | 0x11 | 0x12
         ));
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         self.ApplyGrayscaleFixed_Incremental();
     }
 
@@ -1416,11 +1416,11 @@ impl ZeldaState {
         self.set_spotlight_y_lower(lower);
         let upper = lower.wrapping_add(y_span);
         self.set_spotlight_y_upper(upper);
-        self.AdjustWaterHDMAWindow_X(upper);
+        self.adjust_water_hdma_window_x(upper);
     }
 
     pub(super) fn Module07_0D_FloodDam(&mut self) {
-        self.FloodDam_PrepFloodHDMA();
+        self.flood_dam_prep_flood_hdma();
         match self.game_state.frame.subsubmodule {
             0 => self.FloodDam_PrepTiles_init(),
             1..=3 => self.Watergate_Main_State1(),
@@ -1457,7 +1457,7 @@ impl ZeldaState {
             .staircase_move_counter()
             < 9
         {
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
             if self.game_state.display.palette_filter.countdown() != 0 {
                 if self.rom_startup_timing() {
                     // The two full palette walks straddle vblank on hardware.
@@ -1469,7 +1469,7 @@ impl ZeldaState {
                     );
                     return;
                 }
-                self.ApplyPaletteFilter_bounce();
+                self.apply_palette_filter_bounce();
             }
         }
         self.complete_spiral_stairs_palette_filter_tail();
@@ -1479,7 +1479,7 @@ impl ZeldaState {
         debug_assert_eq!(self.game_state.frame.main_module, 7);
         debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
         debug_assert_eq!(self.game_state.frame.subsubmodule, 2);
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         self.complete_spiral_stairs_palette_filter_tail();
     }
 
@@ -1529,7 +1529,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_0E_SpiralStairs(&mut self) {
         if self.game_state.frame.subsubmodule >= 7 {
-            self.Graphics_IncrementalVRAMUpload();
+            self.graphics_incremental_vram_upload();
             if self.suspend_dungeon_selectable_peg_attribute_flip(
                 DungeonPegAttributeFlipCaller::SpiralStairs,
             ) {
@@ -5448,7 +5448,7 @@ impl ZeldaState {
 
     pub(super) fn prepare_dungeon_exit_from_boss_fight(&mut self) {
         self.SavePalaceDeaths();
-        self.SaveDungeonKeys_misc();
+        self.save_dungeon_keys_misc();
         let bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x8000;
         self.dungeon_savegame_state_mut()
             .set_savegame_state_bits(bits);
@@ -6789,7 +6789,7 @@ impl ZeldaState {
             self.set_submodule(0);
             self.set_subsubmodule(0);
             self.clear_window_main_sub_masks();
-            self.IrisSpotlight_ResetTable();
+            self.iris_spotlight_reset_table();
         }
     }
 
@@ -7035,7 +7035,7 @@ impl ZeldaState {
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
         crate::cycle_ledger::charge(46); // JSR palette cache.
-        self.Overworld_CopyPalettesToCache();
+        self.overworld_copy_palettes_to_cache();
         crate::cycle_ledger::charge(38 + 42); // INC state; RTS.
         self.increment_subsubmodule();
     }
@@ -8218,7 +8218,7 @@ impl ZeldaState {
                 self.set_sound_effect_2(27);
                 self.set_submodule(3);
                 self.dungeon_room_effects_mut().toggle_star_tile_phase();
-                self.Dungeon_RestoreStarTileChr();
+                self.dungeon_restore_star_tile_chr();
             }
         }
     }
@@ -8625,7 +8625,7 @@ impl ZeldaState {
         if self.game_state.world.overworld.event_info.event_info(0x5b) & 0x20 == 0
             && self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 != 0
         {
-            self.Palette_RevertTranslucencySwap();
+            self.palette_revert_translucency_swap();
             self.dungeon_header_mut().clear_header_tag(0);
             self.prepare_dungeon_exit_from_boss_fight();
         }
@@ -11837,7 +11837,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_15_WarpPad(&mut self) {
         if self.game_state.frame.subsubmodule >= 3 {
-            self.Graphics_IncrementalVRAMUpload();
+            self.graphics_incremental_vram_upload();
             if self.suspend_dungeon_selectable_peg_attribute_flip(
                 DungeonPegAttributeFlipCaller::WarpPad,
             ) {
@@ -11917,7 +11917,7 @@ impl ZeldaState {
     pub(super) fn Dungeon_InterRoomTrans_State13(&mut self) {
         self.stage_room_72_supertile_landing_obj_scanout();
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
         }
         self.Dungeon_IntraRoomTrans_State5();
         if let Some(advance) = self
@@ -12064,7 +12064,7 @@ impl ZeldaState {
             crate::cycle_ledger::charge(32); // CMP #7; BCC.
             if self.game_state.frame.subsubmodule >= 7 {
                 crate::cycle_ledger::charge(62);
-                self.Graphics_IncrementalVRAMUpload();
+                self.graphics_incremental_vram_upload();
             } else {
                 crate::cycle_ledger::charge(6);
             }
@@ -12245,7 +12245,7 @@ impl ZeldaState {
 
     pub(super) fn continue_module07_02_01_after_room_load(&mut self) {
         self.ResetStarTileGraphics();
-        self.LoadTransAuxGFX_sprite();
+        self.load_trans_aux_gfx_sprite();
         if self.begin_dungeon_supertile_transition_work(
             DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
         ) {
@@ -12301,7 +12301,7 @@ impl ZeldaState {
 
     pub(super) fn Module07_07_FallingTransition(&mut self) {
         if self.game_state.frame.subsubmodule >= 6 {
-            self.Graphics_IncrementalVRAMUpload();
+            self.graphics_incremental_vram_upload();
             if self.suspend_dungeon_selectable_peg_attribute_flip(
                 DungeonPegAttributeFlipCaller::FallingTransition,
             ) {
@@ -12318,7 +12318,7 @@ impl ZeldaState {
         }
         match self.game_state.frame.subsubmodule {
             0 => self.Module07_07_00_HandleMusicAndResetRoom(),
-            1 => self.ApplyPaletteFilter_bounce(),
+            1 => self.apply_palette_filter_bounce(),
             2 => {
                 if !self.begin_dungeon_falling_room_initialization_work() {
                     self.Dungeon_InitializeRoomFromSpecial();
@@ -12400,7 +12400,7 @@ impl ZeldaState {
             );
             return;
         }
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         self.complete_falling_fade_in_after_palette();
     }
 
@@ -12442,14 +12442,14 @@ impl ZeldaState {
         self.set_submodule(7);
         self.set_subsubmodule(17);
         self.set_chr_halfslot_request(1);
-        self.Graphics_LoadChrHalfSlot();
+        self.graphics_load_chr_half_slot();
     }
 
     pub(super) fn Module07_07_11_CacheRoomAndSetMusic(&mut self) {
         if self.overworld_map_state() == 5 {
             self.ResetThenCacheRoomEntryProperties();
             self.Dungeon_PlayMusicIfDefeated();
-            self.Graphics_LoadChrHalfSlot();
+            self.graphics_load_chr_half_slot();
         }
     }
 
@@ -12467,7 +12467,7 @@ impl ZeldaState {
             }
             1 => {
                 if self.game_state.frame.frame_counter & 1 == 0 {
-                    self.ApplyPaletteFilter_bounce();
+                    self.apply_palette_filter_bounce();
                 }
             }
             2 => self.Module11_02_LoadEntrance(),
@@ -12678,7 +12678,7 @@ impl ZeldaState {
         self.follower_link_state_mut().clear_button_b_frames();
         self.Dungeon_ResetTorchBackgroundAndPlayer();
         if self.game_state.player.follower_link.is_bunny_mirror() {
-            self.LoadGearPalettes_bunny();
+            self.load_gear_palettes_bunny();
         }
         self.set_hdma_enable_mask(0x80);
         self.hud_refill_logic();
@@ -12692,13 +12692,13 @@ impl ZeldaState {
         let palette_filter_loop_master_cycles = palette_filter_active
             .then(|| crate::zelda_rtl::palette_filter_bounce_loop_master_cycles(self));
         if palette_filter_active {
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
         }
         self.Dungeon_InterRoomTrans_notDarkRoom_with_cpu_timing(palette_filter_loop_master_cycles);
     }
 
     pub(super) fn Dungeon_SpiralStaircase11(&mut self) {
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         if self.suspend_spiral_staircase_palette_filter(
             SpiralStaircasePaletteTail::BuildQuadrantForVram,
         ) {
@@ -12760,13 +12760,13 @@ impl ZeldaState {
         let palette_filter_loop_master_cycles = palette_filter_active
             .then(|| crate::zelda_rtl::palette_filter_bounce_loop_master_cycles(self));
         if palette_filter_active {
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
         }
         self.Dungeon_InterRoomTrans_State4_with_cpu_timing(palette_filter_loop_master_cycles);
     }
 
     pub(super) fn Dungeon_SpiralStaircase12(&mut self) {
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         if self.suspend_spiral_staircase_palette_filter(
             SpiralStaircasePaletteTail::PrepareNextQuadrant,
         ) {
@@ -12828,7 +12828,7 @@ impl ZeldaState {
             }
             self.SubtileTransitionCalculateLanding();
             if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
-                self.ApplyPaletteFilter_bounce();
+                self.apply_palette_filter_bounce();
             }
         }
         self.increment_subsubmodule();
@@ -12953,9 +12953,9 @@ impl ZeldaState {
             self.suspend_dungeon_subtile_palette_filter_if_cpu_interrupted();
             return;
         }
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         if !self.rom_startup_timing() && self.game_state.display.palette_filter.countdown() != 0 {
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
         }
         self.suspend_dungeon_subtile_palette_filter_if_cpu_interrupted();
     }
@@ -12995,7 +12995,7 @@ impl ZeldaState {
             );
             self.clear_mosaic_target_level();
         }
-        self.Dungeon_HandleTranslucencyAndPalette();
+        self.dungeon_handle_translucency_and_palette();
     }
 
     /// The isolated ROM CPU estimate may place this host's vblank inside
@@ -13096,7 +13096,7 @@ impl ZeldaState {
                 // filter advances the main palette buffer atomically.
                 self.retain_palette_filter_input_cgram_on_next_display_capture();
             }
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
             let cpu_advance = self
                 .take_dungeon_landing_cpu_advance()
                 .map(|advance| self.supersede_dungeon_sprite_main_estimate_by_wire(advance));
@@ -13394,7 +13394,7 @@ impl ZeldaState {
         debug_assert_eq!(self.game_state.frame.main_module, 7);
         debug_assert_eq!(self.game_state.frame.submodule, 2);
         debug_assert!(matches!(self.game_state.frame.subsubmodule, 2 | 14));
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State15(&mut self) {
@@ -13507,7 +13507,7 @@ impl ZeldaState {
 
     pub(super) fn complete_module07_06_fat_inter_room_stairs_after_attribute_loader(&mut self) {
         if self.game_state.frame.subsubmodule >= 13 {
-            self.Graphics_IncrementalVRAMUpload();
+            self.graphics_incremental_vram_upload();
             if self
                 .game_state
                 .dungeon
@@ -13547,9 +13547,9 @@ impl ZeldaState {
         match self.game_state.frame.subsubmodule {
             0 => self.ResetTransitionPropsAndAdvance_ResetInterface(),
             1 => {
-                self.ApplyPaletteFilter_bounce();
+                self.apply_palette_filter_bounce();
                 if self.game_state.display.palette_filter.countdown() != 0 {
-                    self.ApplyPaletteFilter_bounce();
+                    self.apply_palette_filter_bounce();
                 }
             }
             2 => {
@@ -13705,8 +13705,8 @@ impl ZeldaState {
             return;
         }
         match self.game_state.frame.subsubmodule >> 2 {
-            0 | 1 => self.Module07_16_UpdatePegs_Step1(),
-            2 => self.Module07_16_UpdatePegs_Step2(),
+            0 | 1 => self.module07_16_update_pegs_step1(),
+            2 => self.module07_16_update_pegs_step2(),
             3 => self.RecoverPegGFXFromMapping(),
             4 => {
                 if let Some(progress) =
@@ -13781,7 +13781,7 @@ impl ZeldaState {
                 // $02:9826..9840 PrepareForCrystalCutscene (JSL
                 // PaletteFilter_RestoreBGSubstractiveStrict, colour copy, test).
                 crate::cycle_ledger::charge(294);
-                self.PaletteFilter_RestoreBGSubstractiveStrict();
+                self.palette_filter_restore_bg_substractive_strict();
                 self.copy_color(
                     (zelda3_palette::Bank::Main, 32),
                     (zelda3_palette::Bank::Main, 0),
@@ -13824,7 +13824,7 @@ impl ZeldaState {
                 // $02:9888..9899 BuildCrystalCutsceneTilemap (JSL
                 // PaletteFilter_Crystal).
                 crate::cycle_ledger::charge(220);
-                self.PaletteFilter_Crystal();
+                self.palette_filter_crystal();
                 self.set_sub_screen_layers(1);
                 self.follower_link_state_mut().set_immobilized_flag(2);
                 let room = self.game_state.world.location.dungeon_room();
@@ -13938,7 +13938,7 @@ impl ZeldaState {
         self.clear_bg_vram_load_mode();
         self.save_current_music_as_last();
         if self.palette_swap_enabled() {
-            self.Palette_RevertTranslucencySwap();
+            self.palette_revert_translucency_swap();
         }
     }
 
@@ -14395,7 +14395,7 @@ impl ZeldaState {
         let _scope = crate::cycle_ledger::routine(0x02_932d);
         // $932D: JSL Spotlight_open (the callee charges itself).
         crate::cycle_ledger::charge(62);
-        self.Spotlight_open();
+        self.spotlight_open();
         // $9331-$9333: INC $B0, RTS.
         crate::cycle_ledger::charge(80);
         self.increment_subsubmodule();
@@ -14415,7 +14415,7 @@ impl ZeldaState {
             self.suspend_landing_spotlight_table(progress);
             return;
         }
-        self.IrisSpotlight_ConfigureTable();
+        self.iris_spotlight_configure_table();
         self.complete_module07_0f_operate_spotlight_suffix();
     }
 
@@ -14771,7 +14771,7 @@ impl ZeldaState {
             && self.game_state.frame.subsubmodule == 1)
             .then(|| self.take_dungeon_landing_cpu_advance()).flatten();
         if self.game_state.frame.subsubmodule >= 13 {
-            self.Graphics_IncrementalVRAMUpload();
+            self.graphics_incremental_vram_upload();
         }
         if self
             .game_state
@@ -14859,7 +14859,7 @@ impl ZeldaState {
             // advances it. On hardware the filter can span vblank: NMI uploads
             // this generation, then the 65816 resumes and finishes the next.
             self.retain_palette_filter_input_cgram_on_next_display_capture();
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
             self.stage_straight_interroom_fadeout_obj_source();
             let palette_countdown = self.game_state.display.palette_filter.countdown();
             self.suspend_straight_interroom_fadeout_suffix_if_crosses_nmi(palette_countdown);
@@ -14870,7 +14870,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_11_02_LoadAndPrepRoom(&mut self) {
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         let live_draw = self.native_exact_cpu_owner.is_some()
             && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_FLOOR_DRAW_LIVE_TRIAL").is_some()
             && crate::debug_env::var_os("ZELDA3_NATIVE_EXACT_CPU_OBJECT_DRAW_LIVE_TRIAL").is_some();
@@ -14894,7 +14894,7 @@ impl ZeldaState {
 
     pub(super) fn complete_straight_room_initialization_after_room_load(&mut self) {
         if self.native_transition_aux_graphics_progress.is_none() {
-            self.Dungeon_RestoreStarTileChr();
+            self.dungeon_restore_star_tile_chr();
         }
         self.LoadTransAuxGFX();
         self.Dungeon_LoadCustomTileAttr();
@@ -14903,7 +14903,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_11_03_FilterAndLoadBGChars(&mut self) {
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         self.PrepTransAuxGfx();
         self.set_pending_nmi_subroutine(9);
         self.set_core_update_disable_flag(9);
@@ -14916,7 +14916,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_11_04_FilterDoBGAndResetSprites(&mut self) {
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         self.DungeonTransition_TriggerBGC56UpdateAndAdvance();
         if self.suspend_straight_interroom_sprite_reset_before_room_load() {
             return;
@@ -14932,7 +14932,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_11_09_LoadSpriteGraphics(&mut self) {
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
         self.decrement_subsubmodule();
         self.LoadNewSpriteGFXSet();
         if self.begin_dungeon_supertile_transition_work(
@@ -14940,7 +14940,7 @@ impl ZeldaState {
         ) {
             return;
         }
-        self.Dungeon_HandleTranslucencyAndPalette();
+        self.dungeon_handle_translucency_and_palette();
     }
 
     pub(super) fn Module07_11_0A_ScrollCamera(&mut self) {
@@ -15589,8 +15589,8 @@ impl ZeldaState {
         self.set_color_math_control(0x33);
         self.set_countdown(0);
         self.set_darkening_or_lightening_screen(0);
-        self.Palette_AssertTranslucencySwap();
-        self.PaletteFilter_Crystal();
+        self.palette_assert_translucency_swap_with_cycle_charge();
+        self.palette_filter_crystal();
         for (i, color) in CRYSTAL_CUTSCENE_INITIALIZE_CRYSTAL_MAIDEN_PAL
             .iter()
             .enumerate()
@@ -15666,7 +15666,7 @@ impl ZeldaState {
 
     pub(super) fn begin_rescued_maiden_initialization(&mut self) {
         self.activate_nmi_thread();
-        self.Polyhedral_InitializeThread();
+        self.polyhedral_initialize_thread();
         self.crystal_cutscene_initialize_before_follower_graphics();
     }
 
@@ -16449,7 +16449,7 @@ impl ZeldaState {
         assert!(self.active_dungeon_sprite_main_return.is_none());
         assert!(!self.dungeon_post_sprite_main_return_pending);
         if self.game_state.display.palette_filter.countdown() != 0 {
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
         }
         self.dungeon_post_sprite_main_return_pending = true;
         self.complete_module07_dungeon_after_submodule();
@@ -16827,7 +16827,7 @@ impl ZeldaState {
         }
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(3);
-        self.ApplyPaletteFilter_bounce();
+        self.apply_palette_filter_bounce();
     }
 
     pub(super) fn Module07_15_0F_FinalizeAndCacheEntry(&mut self) {

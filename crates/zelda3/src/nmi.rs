@@ -2060,7 +2060,7 @@ impl ZeldaState {
             46
         });
         if self.game_state.display.has_nmi_copy_packets_request() {
-            self.NMI_CopyPackets();
+            self.nmi_copy_packets();
             crate::cycle_ledger::charge(78);
             self.clear_nmi_copy_packets_request();
             self.clear_core_update_disable_flag();
@@ -2560,7 +2560,8 @@ impl ZeldaState {
         self.copy_to_vram_slice(0x3ed0, &buf, 0x40);
     }
 
-    pub(super) fn NMI_CopyPackets(&mut self) {
+    /// ROM: `NMI_CopyPackets`
+    pub(super) fn nmi_copy_packets(&mut self) {
         let data = self.nmi_vram_packet_buffer().to_vec();
         // NMI_DoUpdates packet loop $00:8C39-$00:8C6C: 604 per packet with
         // the system-bank discount, plus the taken `BNE $008C39` (+6) after

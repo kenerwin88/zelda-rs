@@ -624,6 +624,7 @@ impl ZeldaState {
             .clear_prep_runtime_state_from(completed_stores);
     }
 
+    /// ROM: `SpritePrep_LoadProperties`
     pub(super) fn sprite_prep_load_properties(&mut self, k: usize) {
         self.sprite_prep_reset_properties(k);
         self.sprite_prep_load_properties_after_reset(k);
@@ -721,10 +722,12 @@ impl ZeldaState {
         self.ancilla_add_falling_prize(0x29, item, 4)
     }
 
+    /// ROM: `Sprite_SetX`
     pub(super) fn sprite_set_x(&mut self, k: usize, x: u16) {
         self.sprite_slot_view_mut(k).set_x(x);
     }
 
+    /// ROM: `Sprite_SetY`
     pub(super) fn sprite_set_y(&mut self, k: usize, y: u16) {
         self.sprite_slot_view_mut(k).set_y(y);
     }
@@ -5624,7 +5627,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             ),
             SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot) => {
                 let slot = usize::from(slot);
-                self.DecodeAnimatedSpriteTile_variable(0x11);
+                self.decode_animated_sprite_tile_variable(0x11);
                 self.complete_sprite_main_after_interrupted_slot(slot);
             }            SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(slot) => {
                 let slot = usize::from(slot);
@@ -5698,7 +5701,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 // remain (SpritePrep_BonkItem's room-$107 branch has no
                 // statements after the decode).
                 let slot = usize::from(slot);
-                self.DecodeAnimatedSpriteTile_variable(0x0e);
+                self.decode_animated_sprite_tile_variable(0x0e);
                 self.complete_sprite_main_after_interrupted_slot(slot);
             }
             SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot) => {
@@ -9971,7 +9974,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 let shield = self.sprite_slot_view(k).subtype();
                 self.inventory_items_mut().set_shield_type(shield);
                 if self.game_state.enhanced_features.has(4096) {
-                    self.Palette_Load_Shield();
+                    self.palette_load_shield();
                 }
             }
             _ => {}

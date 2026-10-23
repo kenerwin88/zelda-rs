@@ -141,12 +141,12 @@ impl ZeldaState {
         self.DecompressAnimatedOverworldTiles(0x5e);
         self.InitializeTilesets();
         self.OverworldLoadScreensPaletteSet();
-        self.Overworld_LoadPalettes(
+        self.overworld_load_palettes(
             self.GetOverworldBgPalette(sc),
             self.overworld_config_table().sprite_palette(sc as usize),
         );
-        self.Palette_SetOwBgColor();
-        self.Overworld_LoadPalettesInner();
+        self.palette_set_ow_bg_color();
+        self.overworld_load_palettes_inner();
         for i in 0..0x100usize {
             self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
         }
@@ -241,23 +241,23 @@ impl ZeldaState {
         self.InitializeTilesets();
         self.native_pre_overworld_tileset_publication = None;
         self.OverworldLoadScreensPaletteSet();
-        self.Overworld_LoadPalettes(
+        self.overworld_load_palettes(
             self.GetOverworldBgPalette(overworld_screen),
             self.overworld_config_table()
                 .sprite_palette(overworld_screen as usize),
         );
-        self.Palette_SetOwBgColor();
+        self.palette_set_ow_bg_color();
         if self.game_state.frame.main_module == 8 {
-            self.Overworld_LoadPalettesInner();
+            self.overworld_load_palettes_inner();
         } else {
-            self.SpecialOverworld_CopyPalettesToCache();
+            self.special_overworld_copy_palettes_to_cache();
         }
         self.Overworld_SetFixedColAndScroll();
         self.set_overworld_fixed_color_adjustment(0);
         self.follower_initialize();
 
         if overworld_screen & 0x3f == 0 {
-            self.DecodeAnimatedSpriteTile_variable(0x1e);
+            self.decode_animated_sprite_tile_variable(0x1e);
         }
         self.set_saved_module_for_menu(9);
         self.sprite_begin_reload_all_overworld();
@@ -328,7 +328,7 @@ impl ZeldaState {
         {
             self.follower_link_state_mut().set_bunny_state(1);
             self.follower_link_state_mut().set_handler_state(23);
-            self.LoadGearPalettes_bunny();
+            self.load_gear_palettes_bunny();
         }
         self.set_bg_mode(9);
         self.dungeon_torch_mut().clear_lights_out_request();
@@ -524,13 +524,13 @@ impl ZeldaState {
         self.set_left_right_scroll_target_end(SPECIAL_EXIT_SCROLL_X_END[k]);
 
         self.set_dungeon_room_index(room_bak);
-        self.Palette_SpecialOw();
+        self.palette_special_ow();
     }
 
     pub(super) fn Overworld_EnterSpecialArea(&mut self) {
         let (room_bak, bg_palette, sprite_palette) =
             self.overworld_enter_special_area_before_palettes();
-        self.Overworld_LoadPalettes(bg_palette, sprite_palette);
+        self.overworld_load_palettes(bg_palette, sprite_palette);
         self.overworld_enter_special_area_after_palettes(room_bak);
     }
 
@@ -1666,7 +1666,7 @@ impl ZeldaState {
         let area = ((self.game_state.player.follower_link.y() & 0x1e00) >> 5)
             | ((self.game_state.player.follower_link.x() & 0x1e00) >> 8);
         self.set_current_area_of_player_word(area);
-        self.Graphics_LoadChrHalfSlot();
+        self.graphics_load_chr_half_slot();
         self.replay_trace_ram_watch("module09-player-after-chr");
         self.Overworld_OperateCameraScroll();
         self.replay_trace_ram_watch("module09-player-after-camera");
@@ -2108,8 +2108,8 @@ impl ZeldaState {
             6 => {
                 if self.game_state.frame.frame_counter & 1 == 0 {
                     if self.entrance_sequence_counter() & 7 == 0 {
-                        self.PaletteFilter_RestoreAdditive(0xb0, 0xc0);
-                        self.PaletteFilter_RestoreSubtractive(0xd0, 0xe0);
+                        self.palette_filter_restore_additive(0xb0, 0xc0);
+                        self.palette_filter_restore_subtractive(0xd0, 0xe0);
                         self.increment_cgram_update_flag();
                         self.set_sound_effect_2(2);
                     }
@@ -2657,7 +2657,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module10_00_OpenIris(&mut self) {
-        self.Spotlight_open();
+        self.spotlight_open();
         self.increment_submodule();
     }
 
@@ -2757,7 +2757,7 @@ impl ZeldaState {
     /// belongs to the load's completion host.
     fn mirror_warp_run_animation_submodules_suspends(&mut self) -> bool {
         let was_pending = self.game_execution_scheduler.work_is_pending();
-        self.MirrorWarp_RunAnimationSubmodules();
+        self.mirror_warp_run_animation_submodules();
         !was_pending && self.game_execution_scheduler.work_is_pending()
     }
 
@@ -2884,7 +2884,7 @@ impl ZeldaState {
 
     pub(super) fn MirrorWarp_FinalizeAndLoadDestination(&mut self) {
         self.hdma_setup(0, 0xf2fb, 0x41, 0, 0x26, 0);
-        self.IrisSpotlight_ResetTable();
+        self.iris_spotlight_reset_table();
         self.set_countdown_word(0);
         self.set_darkening_or_lightening_screen_word(0);
         // ReloadPreviouslyLoadedSheets spans the wire's held vblanks; the
@@ -2934,7 +2934,7 @@ impl ZeldaState {
                 self.set_overworld_screen(screen);
                 self.set_overworld_area_index(screen);
                 self.set_overworld_map_state(0);
-                self.PaletteFilter_InitializeWhiteFilter();
+                self.palette_filter_initialize_white_filter();
                 self.Overworld_LoadGFXAndScreenSize();
                 self.increment_subsubmodule();
             }
@@ -2995,11 +2995,11 @@ impl ZeldaState {
 
         self.OverworldLoadScreensPaletteSet();
         let sc = self.game_state.world.location.overworld_screen_index() as usize;
-        self.Overworld_LoadPalettes(
+        self.overworld_load_palettes(
             self.GetOverworldBgPalette(sc as u8),
             self.overworld_config_table().sprite_palette(sc),
         );
-        self.Palette_SpecialOw();
+        self.palette_special_ow();
         self.Overworld_SetFixedColAndScroll();
         if self.game_state.world.location.overworld_screen_index() == 0x1b
             || self.game_state.world.location.overworld_screen_index() == 0x5b
@@ -3111,8 +3111,8 @@ impl ZeldaState {
                 self.set_countdown(0);
                 self.increment_subsubmodule();
             }
-            1 => self.PaletteFilter_WhirlpoolBlue(),
-            2 => self.PaletteFilter_IsolateWhirlpoolBlue(),
+            1 => self.palette_filter_whirlpool_blue(),
+            2 => self.palette_filter_isolate_whirlpool_blue(),
             3 => {
                 self.set_fixed_color_blue(0x9f);
                 self.clear_overworld_aux_or_main_offset();
@@ -3176,17 +3176,17 @@ impl ZeldaState {
             }
             9 => {
                 self.clear_overworld_aux_or_main_offset();
-                self.Palette_Load_SpriteMain();
-                self.Palette_Load_SpriteEnvironment();
-                self.Palette_Load_Sp0L();
-                self.Palette_Load_HUD();
-                self.Palette_Load_OWBGMain();
+                self.palette_load_sprite_main();
+                self.palette_load_sprite_environment_with_cycle_scope();
+                self.palette_load_sp0l();
+                self.palette_load_hud();
+                self.palette_load_owbg_main();
                 let sc = self.game_state.world.location.overworld_screen_index() as usize;
-                self.Overworld_LoadPalettes(
+                self.overworld_load_palettes(
                     self.GetOverworldBgPalette(sc as u8),
                     self.overworld_config_table().sprite_palette(sc),
                 );
-                self.Palette_SetOwBgColor();
+                self.palette_set_ow_bg_color();
                 self.Overworld_SetFixedColAndScroll();
                 self.run_or_schedule_module09_long_load(
                     Module09LongLoadStep::SpritePalettesAndGraphics,
@@ -3194,14 +3194,14 @@ impl ZeldaState {
                 );
             }
             10 => {
-                self.PaletteFilter_WhirlpoolRestoreRedGreen();
+                self.palette_filter_whirlpool_restore_red_green();
                 if self.game_state.display.palette_filter.countdown() != 0 {
-                    self.PaletteFilter_WhirlpoolRestoreRedGreen();
+                    self.palette_filter_whirlpool_restore_red_green();
                 }
             }
             11 => {
-                self.Graphics_IncrementalVRAMUpload();
-                self.PaletteFilter_WhirlpoolRestoreBlue();
+                self.graphics_incremental_vram_upload();
+                self.palette_filter_whirlpool_restore_blue();
             }
             12 => {
                 self.follower_link_state_mut().set_blink_countdown(144);
@@ -3375,7 +3375,7 @@ impl ZeldaState {
         interrupt_module0f_goal_caller: bool,
     ) -> (bool, bool) {
         let entry_main_module = self.game_state.frame.main_module;
-        let reached_spotlight_goal = self.IrisSpotlight_ConfigureTable();
+        let reached_spotlight_goal = self.iris_spotlight_configure_table();
         let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
             entry_main_module,
             interrupt_module0f_goal_caller,
@@ -3884,7 +3884,7 @@ impl ZeldaState {
                 crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted,
             ) {
                 assert!(
-                    !self.IrisSpotlight_ConfigureTable(),
+                    !self.iris_spotlight_configure_table(),
                     "recurring table checkpoint cannot cross its goal transition"
                 );
                 self.game_execution_scheduler.schedule_work(
@@ -4812,7 +4812,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_PrepExitWithSpotlight_table_and_advance(&mut self) {
-        self.IrisSpotlight_close();
+        self.iris_spotlight_close();
         self.increment_submodule();
     }
 
@@ -5007,9 +5007,9 @@ impl ZeldaState {
         let sc = self.game_state.world.location.overworld_screen_index() as usize;
         let bg = self.GetOverworldBgPalette(sc as u8);
         let spr = self.overworld_config_table().sprite_palette(sc);
-        self.Overworld_LoadPalettes(bg, spr);
-        self.Palette_SetOwBgColor();
-        self.Overworld_LoadPalettesInner();
+        self.overworld_load_palettes(bg, spr);
+        self.palette_set_ow_bg_color();
+        self.overworld_load_palettes_inner();
     }
 
     pub(super) fn FindPartnerWhirlpoolExit(&mut self) {
@@ -5170,11 +5170,11 @@ impl ZeldaState {
             .restore_special_exit_graphics_index();
 
         let sc = self.game_state.world.location.overworld_screen_index() as usize;
-        self.Overworld_LoadPalettes(
+        self.overworld_load_palettes(
             self.GetOverworldBgPalette(sc as u8),
             self.overworld_config_table().sprite_palette(sc),
         );
-        self.Palette_SpecialOw();
+        self.palette_special_ow();
         self.follower_link_state_mut().set_quadrants(0, 2);
         self.set_fullsize_overworld_quadrants();
         self.follower_link_state_mut().disable_oam_offsets();
@@ -6104,7 +6104,7 @@ impl ZeldaState {
 
     pub(super) fn Overworld_RunScrollTransition(&mut self) {
         self.link_handle_moving_animation_full_long_entry();
-        self.Graphics_IncrementalVRAMUpload();
+        self.graphics_incremental_vram_upload();
         let rv = self.OverworldScrollTransition();
         if rv & 0x0f == 0 {
             let direction_bits = self.edge_transition_direction_bits();
@@ -6451,11 +6451,11 @@ impl ZeldaState {
             self.clear_mosaic_level();
         } else {
             let sc = self.game_state.world.location.overworld_screen_index() as usize;
-            self.Overworld_LoadPalettes(
+            self.overworld_load_palettes(
                 self.GetOverworldBgPalette(sc as u8),
                 self.overworld_config_table().sprite_palette(sc),
             );
-            self.Overworld_CopyPalettesToCache();
+            self.overworld_copy_palettes_to_cache();
         }
     }
 
@@ -6896,7 +6896,7 @@ impl ZeldaState {
             return;
         }
 
-        self.PaletteFilter_BlindingWhite();
+        self.palette_filter_blinding_white();
         if self
             .game_state
             .display
@@ -7074,7 +7074,7 @@ impl ZeldaState {
             self.set_sound_effect_1(0x2e);
             self.Palette_AnimGetMasterSword2();
         } else {
-            self.PaletteFilter_BlindingWhite();
+            self.palette_filter_blinding_white();
             if self
                 .game_state
                 .display
@@ -7151,12 +7151,12 @@ impl ZeldaState {
                 let sc = self.game_state.world.location.overworld_screen_index() as usize;
                 let bg = self.GetOverworldBgPalette(sc as u8);
                 let spr = self.overworld_config_table().sprite_palette(sc);
-                self.Overworld_LoadPalettes(bg, spr);
+                self.overworld_load_palettes(bg, spr);
                 self.OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic();
             }
             1 => {
-                self.Graphics_IncrementalVRAMUpload();
-                self.ApplyPaletteFilter_bounce();
+                self.graphics_incremental_vram_upload();
+                self.apply_palette_filter_bounce();
             }
             _ => {
                 self.save_current_music_as_last();
@@ -7187,8 +7187,8 @@ impl ZeldaState {
         match self.game_state.frame.subsubmodule {
             0 => self.OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic(),
             1 => {
-                self.Graphics_IncrementalVRAMUpload();
-                self.ApplyPaletteFilter_bounce();
+                self.graphics_incremental_vram_upload();
+                self.apply_palette_filter_bounce();
             }
             _ => {
                 if self.game_state.world.location.overworld_screen_index() < 0x80 {
@@ -7220,7 +7220,7 @@ impl ZeldaState {
                 }
                 self.ResetTransitionPropsAndAdvance_ResetInterface();
             }
-            1 => self.ApplyPaletteFilter_bounce(),
+            1 => self.apply_palette_filter_bounce(),
             _ => {
                 let special_exit = self.game_state.frame.main_module == 0x0b
                     && self.game_state.frame.submodule == 0x24;
@@ -7235,7 +7235,7 @@ impl ZeldaState {
                 self.set_screen_brightness(0x80);
                 self.set_subsubmodule(0);
                 if u16::from(self.game_state.world.location.overworld_screen_index()) & 0x3f == 0 {
-                    self.DecodeAnimatedSpriteTile_variable(0x1e);
+                    self.decode_animated_sprite_tile_variable(0x1e);
                     if self.rom_startup_timing() && !restored && !returned {
                         self.game_execution_scheduler.schedule_work(
                             GameWorkContinuation::FinishOverworldSpecialExitMosaic,
@@ -7271,7 +7271,7 @@ impl ZeldaState {
         if self.game_state.frame.submodule == 36
             && self.publish_overworld_special_exit_mosaic_restore_prefix()
         {
-            self.DecodeAnimatedSpriteTile_variable(0x1e);
+            self.decode_animated_sprite_tile_variable(0x1e);
         }
         self.increment_submodule();
     }
@@ -7293,7 +7293,7 @@ impl ZeldaState {
     pub(super) fn complete_overworld_special_exit_mosaic_after_second_decode(&mut self) {
         assert_eq!(self.game_state.frame.main_module, 0x0b);
         assert_eq!(self.game_state.frame.submodule, 0x24);
-        self.DecodeAnimatedSpriteTile_variable(0x1e);
+        self.decode_animated_sprite_tile_variable(0x1e);
         self.increment_submodule();
     }
 

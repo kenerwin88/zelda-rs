@@ -177,7 +177,7 @@ fn nmi_copy_packets_panics_on_invalid_vmain_like_c_assert() {
     s.ram[0x1102] = 0x82;
     s.ram[0x1103] = 0;
 
-    s.NMI_CopyPackets();
+    s.nmi_copy_packets();
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn nmi_copy_packets_reads_uvram_data_not_uvram_header() {
     s.ram[0x1104..0x1108].copy_from_slice(&[0x34, 0x12, 0x78, 0x56]);
     write_le_u16(&mut s.ram, 0x1108, 0xffff);
 
-    s.NMI_CopyPackets();
+    s.nmi_copy_packets();
 
     assert_eq!(s.ppu.vram[0x2000], 0x1234);
     assert_eq!(s.ppu.vram[0x2001], 0x5678);

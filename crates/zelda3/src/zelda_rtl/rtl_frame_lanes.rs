@@ -4485,7 +4485,7 @@ impl ZeldaState {
                 // The converted sprite sheet returns after four
                 // interrupted NMIs. Only then may the palette tail
                 // advance state 9 to state 10.
-                self.Dungeon_HandleTranslucencyAndPalette();
+                self.dungeon_handle_translucency_and_palette();
                 // The wire may suspend the module tail's cached-
                 // sprite execution at the host return (route host
                 // 1409941: CachedSpriteExecutionProgress Loading
@@ -5340,7 +5340,7 @@ impl ZeldaState {
         // second filter pass only after that boundary instead of
         // collapsing both passes into one host frame.
         if hud.is_none() && self.game_state.display.palette_filter.countdown() != 0 {
-            self.ApplyPaletteFilter_bounce();
+            self.apply_palette_filter_bounce();
         }
         // The filter interrupted Module07's translated call stack.
         // Resume its ordinary sprite/Link/HUD suffix before

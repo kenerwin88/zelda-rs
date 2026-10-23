@@ -1338,14 +1338,14 @@ impl ZeldaState {
             }
             2 => {
                 if (self.game_state.frame.frame_counter & 15) == 0 {
-                    self.PaletteFilter_SP5F();
+                    self.palette_filter_sp5f();
                     if self.game_state.display.palette_filter.countdown() == 0 {
                         self.sprite_slot_view_mut(k).set_ai_state(3);
                     }
                 }
             }
             3 => {
-                self.PaletteFilter_RestoreSP5F();
+                self.palette_filter_restore_sp5f();
                 self.palette_revert_translucency_swap();
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.follower_link_state_mut().clear_immobilized();

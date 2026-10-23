@@ -1170,15 +1170,15 @@ impl ZeldaState {
                 if j >= 15 {
                     if (63..78).contains(&j) {
                         if self.sprite_slot_view(k).sprite_type() == 0xcd {
-                            self.Trinexx_FlashShellPalette_Blue();
+                            self.trinexx_flash_shell_palette_blue();
                         } else {
-                            self.Trinexx_FlashShellPalette_Red();
+                            self.trinexx_flash_shell_palette_red();
                         }
                     }
                 } else if self.sprite_slot_view(k).sprite_type() == 0xcd {
-                    self.Trinexx_UnflashShellPalette_Blue();
+                    self.trinexx_unflash_shell_palette_blue();
                 } else {
-                    self.Trinexx_UnflashShellPalette_Red();
+                    self.trinexx_unflash_shell_palette_red();
                 }
             }
             _ => {}

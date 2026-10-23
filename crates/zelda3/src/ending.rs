@@ -15,7 +15,6 @@ const TRIFORCE_ROOM_CASE9_SCROLL_NMI_SLICES: u8 = 7;
 use super::*;
 use crate::types::sign8;
 use crate::zelda_rtl::misc::DUNG_ANIMATED_TILES;
-use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 
 mod ending_shared;
 use ending_shared::*;
@@ -52,27 +51,6 @@ impl ZeldaState {
 
     fn CallForDuckIndoors(&mut self) {
         self.call_for_duck_indoors();
-    }
-
-    fn Sprite_SpawnBatCrashCutscene(&mut self) {
-        let mut info = SpriteSpawnInfo::default();
-        let j = self.sprite_spawn_dynamically(0, 0x37, &mut info);
-        if j >= 0 {
-            let j = j as usize;
-            self.sprite_slot_view_mut(j).set_y_velocity(0);
-            self.sprite_slot_view_mut(j).set_b(0);
-            self.sprite_slot_view_mut(j).set_direction(0);
-            self.sprite_slot_view_mut(j).set_floor(0);
-            self.sprite_slot_view_mut(j).set_subtype2(1);
-            self.sprite_slot_view_mut(j).set_flags2(1);
-            self.sprite_slot_view_mut(j).set_flags3(1);
-            self.sprite_slot_view_mut(j).set_oam_flags(1);
-            self.sprite_slot_view_mut(j).set_x_low(204);
-            self.sprite_slot_view_mut(j).set_x_high(7);
-            self.sprite_slot_view_mut(j).set_y_low(50);
-            self.sprite_slot_view_mut(j).set_y_high(6);
-            self.sprite_slot_view_mut(j).set_deflection_bits(128);
-        }
     }
 
     fn ending_asset_u16(&self, asset: usize, index: usize) -> u16 {
@@ -123,7 +101,7 @@ impl ZeldaState {
         self.set_hud_palette(1);
         self.initialize_tilesets();
         self.OverworldLoadScreensPaletteSet();
-        self.Overworld_LoadPalettes(
+        self.overworld_load_palettes(
             self.GetOverworldBgPalette(self.game_state.world.location.overworld_screen_index()),
             sprpal,
         );
@@ -134,7 +112,7 @@ impl ZeldaState {
         self.overworld_load_palettes_inner();
         self.Overworld_SetFixedColAndScroll();
         if self.game_state.world.location.overworld_screen_index() >= 128 {
-            self.Palette_SetOwBgColor();
+            self.palette_set_ow_bg_color();
         }
         self.set_bg_mode(9);
         self.increment_subsubmodule();
@@ -168,7 +146,7 @@ impl ZeldaState {
         self.sprite_system_mut().set_graphics_index(45);
         self.initialize_tilesets();
         self.set_overworld_screen(0x5b);
-        self.Overworld_LoadPalettes(
+        self.overworld_load_palettes(
             self.GetOverworldBgPalette(self.game_state.world.location.overworld_screen_index()),
             0x13,
         );
@@ -217,7 +195,7 @@ impl ZeldaState {
             .set_misc_sprites_graphics_index(10);
         self.initialize_tilesets();
         self.set_sp6r_indoors(10);
-        self.Dungeon_LoadPalettes();
+        self.dungeon_load_palettes();
         self.set_bg_mode(9);
         self.ending_scratch_mut().clear_primary_word();
         self.set_screen_brightness(0);
@@ -293,7 +271,7 @@ impl ZeldaState {
                     self.dungeon_savegame_state_mut()
                         .clear_savegame_state_bits();
                     self.clear_modal_pause_flag();
-                    self.Sprite_SpawnBatCrashCutscene();
+                    self.sprite_spawn_bat_crash_cutscene();
                     self.follower_link_state_mut().set_facing(2);
                     self.set_saved_module_for_menu(9);
                     self.set_indoor_flag(0);
@@ -508,7 +486,7 @@ impl ZeldaState {
                 }
             }
             13 => {
-                self.PaletteFilter_BlindingWhiteTriforce();
+                self.palette_filter_blinding_white_triforce();
                 if self
                     .game_state
                     .display
@@ -573,7 +551,7 @@ impl ZeldaState {
     ) -> u8 {
         self.set_dungeon_room(0x189);
         self.erase_tile_maps_normal();
-        self.Palette_RevertTranslucencySwap();
+        self.palette_revert_translucency_swap();
         self.overworld_enter_special_area_through_ow_bg2_words(usize::from(completed_ow_bg2_words))
     }
 
@@ -581,7 +559,7 @@ impl ZeldaState {
     fn triforce_room_load_case2_after_upload(&mut self) {
         self.set_dungeon_room(0x189);
         self.erase_tile_maps_normal();
-        self.Palette_RevertTranslucencySwap();
+        self.palette_revert_translucency_swap();
         self.Overworld_EnterSpecialArea();
     }
 
@@ -599,9 +577,9 @@ impl ZeldaState {
         self.sprite_system_mut().set_graphics_index(125);
         self.world_palette_theme_mut().set_aux_tile_theme_index(81);
         self.initialize_tilesets();
-        self.Overworld_LoadAreaPalettesEx(4);
-        self.Overworld_LoadPalettes(14, 0);
-        self.SpecialOverworld_CopyPalettesToCache();
+        self.overworld_load_area_palettes_ex(4);
+        self.overworld_load_palettes(14, 0);
+        self.special_overworld_copy_palettes_to_cache();
         self.increment_subsubmodule();
     }
 
@@ -842,14 +820,6 @@ impl ZeldaState {
             // as an uninterrupted iteration would (route host 1558267).
             self.stage_pending_dialogue_scroll_completion_after_captured_boundary();
         }
-    }
-
-    pub(super) fn Polyhedral_InitializeThread(&mut self) {
-        self.polyhedral_initialize_thread();
-    }
-
-    pub(super) fn Module00_Intro(&mut self) {
-        self.module00_intro();
     }
 
     pub(super) fn intro_clear1kb_blocks_of_wram(&mut self) {
@@ -2577,12 +2547,12 @@ impl ZeldaState {
             return;
         }
         self.increment_submodule();
-        self.PaletteFilter_WishPonds_Inner();
+        self.palette_filter_wish_ponds_inner();
     }
 
     pub(super) fn credits_fade_in_the_end(&mut self) {
         if self.game_state.frame.frame_counter & 7 == 0 {
-            self.PaletteFilter_SP5F();
+            self.palette_filter_sp5f();
             if self.game_state.display.palette_filter.countdown() == 0 {
                 self.increment_submodule();
             }
@@ -2643,6 +2613,7 @@ impl ZeldaState {
         self.increment_cgram_update_flag();
     }
 
+    /// ROM: `Module00_Intro`
     pub(super) fn module00_intro(&mut self) {
         if self.try_native_intro_title_entry() {
             self.run_native_intro_clear_until_boundary();
@@ -3175,6 +3146,7 @@ impl ZeldaState {
         }
     }
 
+    /// ROM: `Polyhedral_InitializeThread`
     pub(super) fn polyhedral_initialize_thread(&mut self) {
         // $09:F7DE..F80F: 748 straight-line, the first byte of each MVN
         // included; 52 per further byte of the 254-byte clear and the

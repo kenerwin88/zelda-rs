@@ -817,7 +817,7 @@ impl ZeldaState {
             if self.active_early_dungeon_floor_draw.is_none() { return; }
             self.finish_live_dungeon_supertile_room_load();
             if straight {
-                self.Dungeon_RestoreStarTileChr();
+                self.dungeon_restore_star_tile_chr();
             } else {
                 self.ResetStarTileGraphics();
             }

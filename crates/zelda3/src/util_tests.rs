@@ -74,13 +74,13 @@ fn read_whole_file_zero_terminates_like_c() {
 #[test]
 fn byte_array_helpers_match_c_growth() {
     let mut arr = ByteArray::default();
-    ByteArray_AppendByte(&mut arr, 1);
-    ByteArray_AppendData(&mut arr, &[2, 3]);
+    byte_array_append_byte(&mut arr, 1);
+    byte_array_append_data(&mut arr, &[2, 3]);
     assert_eq!(arr.data, [1, 2, 3]);
     assert!(arr.capacity() >= 8);
-    ByteArray_Resize(&mut arr, 1);
+    byte_array_resize(&mut arr, 1);
     assert_eq!(arr.data, [1]);
-    ByteArray_Destroy(&mut arr);
+    byte_array_destroy(&mut arr);
     assert_eq!(arr.size(), 0);
 }
 

@@ -9802,7 +9802,7 @@ impl ZeldaState {
             } else if opening_polka_dots && self.attract_first_story_render_delay == 3 {
                 self.complete_text_initialization_state_prefix();
             } else if opening_polka_dots && self.attract_first_story_render_delay == 2 {
-                self.Attract_DecompressStoryGFX();
+                self.attract_decompress_story_gfx();
                 self.complete_text_initialization_suffix();
                 self.attract_build_legend_image_tile_map(0);
                 // The ROM resumes the first polka-dot story tick on this

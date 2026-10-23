@@ -557,7 +557,7 @@ impl ZeldaState {
         };
         let item_type = ANCILLA_ADD_FALLING_PRIZE_FALLING_ITEM_TYPE[item_idx as usize];
         if item_type == 0x10 || item_type == 0x0f {
-            self.DecodeAnimatedSpriteTile_variable(RECEIVE_ITEM_GRAPHICS[item_type as usize]);
+            self.decode_animated_sprite_tile_variable(RECEIVE_ITEM_GRAPHICS[item_type as usize]);
         }
 
         {
@@ -3075,7 +3075,7 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_gt_cutscene(&mut self) {
         if let Some(k) = self.ancilla_add_gt_cutscene_before_graphics() {
-            self.DecodeAnimatedSpriteTile_variable(0x28);
+            self.decode_animated_sprite_tile_variable(0x28);
             self.ancilla_add_gt_cutscene_after_graphics(k);
         }
     }
@@ -3244,7 +3244,7 @@ impl ZeldaState {
         if !self.add_happiness_pond_rupees_before_graphics() {
             return;
         }
-        self.DecodeAnimatedSpriteTile_variable(0x24);
+        self.decode_animated_sprite_tile_variable(0x24);
         self.add_happiness_pond_rupees_after_graphics(arg);
     }
 
@@ -3540,7 +3540,7 @@ impl ZeldaState {
         receive_item: u8,
         graphics: u8,
     ) {
-        self.DecodeAnimatedSpriteTile_variable(if graphics == 0xff { 0 } else { graphics });
+        self.decode_animated_sprite_tile_variable(if graphics == 0xff { 0 } else { graphics });
         if graphics == 6 {
             self.DecompressSwordGraphics();
         }
@@ -3709,10 +3709,12 @@ impl ZeldaState {
         Some(k)
     }
 
+    /// ROM: `Ancilla_GetY`
     pub(super) fn ancilla_get_y(&self, k: usize) -> u16 {
         self.ancilla_slot_view(k).y()
     }
 
+    /// ROM: `Ancilla_GetX`
     pub(super) fn ancilla_get_x(&self, k: usize) -> u16 {
         self.ancilla_slot_view(k).x()
     }
@@ -3900,6 +3902,7 @@ impl ZeldaState {
         )
     }
 
+    /// ROM: `Ancilla_MoveX`
     pub(super) fn ancilla_move_x(&mut self, k: usize) {
         // $08:9080 wraps the shared Y-axis body with X+10, then restores
         // the live slot through $08:A752. The low-coordinate read crosses
@@ -3911,6 +3914,7 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).move_x();
     }
 
+    /// ROM: `Ancilla_MoveY`
     pub(super) fn ancilla_move_y(&mut self, k: usize) {
         crate::cycle_ledger::charge_routine(0x08_908b,
             Self::ancilla_axis_move_master_cycles(k, self.ancilla_slot_view(k).y_velocity()));
@@ -4509,7 +4513,7 @@ impl ZeldaState {
                         };
                     self.follower_link_state_mut().set_bunny_state(bunny);
                     if self.game_state.player.follower_link.is_bunny() {
-                        self.LoadGearPalettes_bunny();
+                        self.load_gear_palettes_bunny();
                     } else {
                         self.LoadActualGearPalettes();
                     }
@@ -7109,7 +7113,7 @@ impl ZeldaState {
         } else if a == 0x45 {
             self.player_resources_mut().increment_magic_filler_by(16);
         } else if a == 0x22 || a == 0x23 {
-            self.Palette_Load_LinkArmorAndGloves();
+            self.palette_load_link_armor_and_gloves();
         }
 
         let value = 0;
@@ -7322,7 +7326,7 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k).set_work_byte_1(value);
                 let value = RECEIVE_ITEM_MILESTONE_FRAME_TIMERS[a as usize];
                 self.ancilla_slot_view_mut(k).set_work_byte_3(value);
-                self.WriteTo4BPPBuffer_at_7F4000(RECEIVE_ITEM_MILESTONE_GFX_SOURCES[a as usize]);
+                self.write_to4_bpp_buffer_at_7f4000(RECEIVE_ITEM_MILESTONE_GFX_SOURCES[a as usize]);
                 crate::cycle_ledger::charge(28); // PLX after graphics return.
             } else {
                 crate::cycle_ledger::charge(6);
@@ -7418,9 +7422,9 @@ impl ZeldaState {
                 if countdown == 1 {
                     if self.ancilla_slot_view(k).item_to_link() == 0x20 {
                         self.set_ambient_sound_effect(0x0f);
-                        self.DecodeAnimatedSpriteTile_variable(0x28);
+                        self.decode_animated_sprite_tile_variable(0x28);
                     } else {
-                        self.DecodeAnimatedSpriteTile_variable(0x23);
+                        self.decode_animated_sprite_tile_variable(0x23);
                     }
                 }
                 self.world_transient_mut()
@@ -7434,7 +7438,7 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k).set_work_byte_3(value);
                 self.set_sp6r_indoors(4);
                 self.select_overworld_aux_palette_offset();
-                self.Palette_Load_SpriteEnvironment_Dungeon();
+                self.palette_load_sprite_environment_dungeon_with_cycle_scope();
                 self.increment_cgram_update_flag();
             }
         } else if self.ancilla_slot_view(k).g() != 0 {
@@ -8316,7 +8320,8 @@ impl ZeldaState {
         self.ancilla_move_x(k);
     }
 
-    fn ancilla_project_speed_towards_player(&self, k: usize, vel: u8) -> ProjectSpeedRet {
+    /// ROM: `Ancilla_ProjectSpeedTowardsPlayer`
+    pub(super) fn ancilla_project_speed_towards_player(&self, k: usize, vel: u8) -> ProjectSpeedRet {
         if vel == 0 {
             return ProjectSpeedRet::ZERO;
         }
@@ -9382,7 +9387,7 @@ impl ZeldaState {
                     if self.game_state.effects.tower_seal.ring_radius() >= 240 {
                         self.set_sp6r_indoors(0);
                         self.select_overworld_aux_palette_offset();
-                        self.Palette_Load_SpriteEnvironment_Dungeon();
+                        self.palette_load_sprite_environment_dungeon_with_cycle_scope();
                         self.increment_cgram_update_flag();
                         let value = 0;
                         self.ancilla_slot_view_mut(k).set_ancilla_type(value);
@@ -9698,7 +9703,7 @@ impl ZeldaState {
                     .enhanced_features
                     .has(REVIVAL_FAIRY_MONITOR_HP_FEATURES0_MISC_BUG_FIXES)
                 {
-                    self.LoadGearPalettes_bunny();
+                    self.load_gear_palettes_bunny();
                 }
             } else {
                 self.follower_link_state_mut().clear_handler_state();
@@ -11055,6 +11060,7 @@ impl ZeldaState {
         self.set_sound_effect_2(out);
     }
 
+    /// ROM: `Ancilla_SetXY`
     pub(super) fn ancilla_set_xy(&mut self, k: usize, x: u16, y: u16) {
         self.ancilla_set_x(k, x);
         self.ancilla_set_y(k, y);
@@ -11269,7 +11275,7 @@ impl ZeldaState {
         use crate::cycle_models::receipt_drawing::ReceiptDrawingTail;
         match tail {
             ReceiptDrawingTail::Sparkle=>{self.ancilla_add_occasional_sparkle(k);self.ancilla_receipt_after_sparkle(k);},
-            ReceiptDrawingTail::Graphics {source}=>{self.WriteTo4BPPBuffer_at_7F4000(source);crate::cycle_ledger::charge(28);self.ancilla_receipt_coordinates_and_draw(k);},
+            ReceiptDrawingTail::Graphics {source}=>{self.write_to4_bpp_buffer_at_7f4000(source);crate::cycle_ledger::charge(28);self.ancilla_receipt_coordinates_and_draw(k);},
             ReceiptDrawingTail::Draw=>{let x=read_le_u16(&self.ram,2);let y=read_le_u16(&self.ram,0);self.ancilla_receive_item_draw(k,x,y);},
         }
     }

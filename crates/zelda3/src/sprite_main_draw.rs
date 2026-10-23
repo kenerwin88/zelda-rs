@@ -605,7 +605,7 @@ impl ZeldaState {
     // void Sprite_Zora_RegurgitateFlippers(int k) {  // 9de1aa
     pub(super) fn sprite_zora_regurgitate_flippers(&mut self, k: usize) {
         if self.sprite_zora_regurgitate_flippers_before_graphics(k) {
-            self.DecodeAnimatedSpriteTile_variable(0x11);
+            self.decode_animated_sprite_tile_variable(0x11);
         }
     }
 
@@ -919,7 +919,7 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_catfish_medallion_graphics(&mut self, k: usize) {
-        self.DecodeAnimatedSpriteTile_variable(0x1c);
+        self.decode_animated_sprite_tile_variable(0x1c);
         self.sprite_slot_view_mut(k)
             .set_graphics(CATFISH_BIG_FISH_CONVERSATE_GFX[80 >> 3]);
     }
@@ -2562,7 +2562,7 @@ impl ZeldaState {
                     self.set_color_math_control(0x7f);
                     self.set_main_screen_layers(6);
                     self.set_sub_screen_layers(0x10);
-                    self.PaletteFilter_SP5F();
+                    self.palette_filter_sp5f();
                 }
                 if self.sprite_slot_view(k).z_velocity() != 0xff {
                     self.sprite_slot_view_mut(k).add_z_velocity(1);
@@ -6026,7 +6026,7 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_waterfall_gt_cutscene_graphics(&mut self, _k: usize) {
-        self.DecodeAnimatedSpriteTile_variable(0x28);
+        self.decode_animated_sprite_tile_variable(0x28);
         let ancilla = (0..5)
             .find(|&i| self.ancilla_slot_view(i).ancilla_type() == 0x43)
             .expect("GT cutscene graphics completion requires its cutscene ancilla");
@@ -7329,7 +7329,7 @@ impl ZeldaState {
         let value = self.sprite_slot_view(k).g();
         self.sprite_slot_view_mut(k).set_ignore_projectile(value);
         if self.sprite_slot_view(k).g() == 0 {
-            self.DecodeAnimatedSpriteTile_variable(3);
+            self.decode_animated_sprite_tile_variable(3);
             self.sprite_get16_bit_coords(k);
             let value = 1;
             self.sprite_slot_view_mut(k).set_g(value);

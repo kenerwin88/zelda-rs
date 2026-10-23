@@ -58,7 +58,7 @@ impl ZeldaState {
 
     pub(super) fn complete_attract_init_graphics(&mut self) {
         self.erase_tile_maps_normal();
-        self.Attract_LoadBG3GFX();
+        self.attract_load_bg3_gfx();
         self.set_overworld_palette_mode(4);
         self.set_hud_palette(1);
         self.clear_overworld_aux_or_main_offset();

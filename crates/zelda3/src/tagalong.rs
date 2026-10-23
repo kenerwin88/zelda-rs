@@ -1,7 +1,7 @@
 // Methods ported from zelda3/src/tagalong.c and included inside ZeldaState.
 
 use super::*;
-use crate::types::{abs16, sign16, sign8, ProjectSpeedRet};
+use crate::types::{abs16, sign16, sign8};
 
 const OAM_BUF_TAGALONG: usize = 0x0800;
 const FEATURES0_MISC_BUG_FIXES_TAGALONG: u32 = 4096;
@@ -700,15 +700,15 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).set_x(x);
             self.ancilla_slot_view_mut(k).set_y(y);
 
-            let pt = self.Ancilla_ProjectSpeedTowardsPlayer(k, 24);
+            let pt = self.ancilla_project_speed_towards_player(k, 24);
             let mut ancilla = self.ancilla_slot_view_mut(k);
             ancilla.set_x_velocity(pt.x);
             ancilla.set_y_velocity(pt.y);
-            self.Ancilla_MoveY(k);
-            self.Ancilla_MoveX(k);
+            self.ancilla_move_y(k);
+            self.ancilla_move_x(k);
 
-            let x = self.Ancilla_GetX(k);
-            let y = self.Ancilla_GetY(k);
+            let x = self.ancilla_get_x(k);
+            let y = self.ancilla_get_y(k);
             let link = self.game_state.player.follower_link;
             if abs16(x.wrapping_sub(link.x())) < 2 && abs16(y.wrapping_sub(link.y())) < 2 {
                 return;
@@ -785,8 +785,8 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_become_follower(&mut self, k: usize) {
-        let y = self.Tagalong_Sprite_GetY(k);
-        let x = self.Tagalong_Sprite_GetX(k);
+        let y = self.tagalong_sprite_get_y(k);
+        let x = self.tagalong_sprite_get_x(k);
         self.sprite_become_follower_from_position(x, y);
     }
 
@@ -889,7 +889,7 @@ impl ZeldaState {
                     let j = j as usize;
                     self.start_shared_message_timer(TAGALONG_MESSAGE_TIMERS[j]);
                     self.dialogue_message_index_mut().set_value(TAGALONG_MSG[j]);
-                    self.Tagalong_Main_ShowTextMessage();
+                    self.tagalong_main_show_text_message();
                 }
             } else {
                 crate::cycle_ledger::charge(100 + 6);
@@ -1403,7 +1403,7 @@ impl ZeldaState {
                 && self.game_state.world.location.indoor_flag() == 0
                 && self.hud_state().super_bomb_indicator_timer() == 0
             {
-                if self.AncillaAdd_SuperBombExplosion(0x3a, 0).is_some() {
+                if self.ancilla_add_super_bomb_explosion(0x3a, 0).is_some() {
                     self.follower_state_mut().set_dropped(0);
                     if self
                         .game_state
@@ -1643,11 +1643,11 @@ impl ZeldaState {
                     return;
                 }
                 if info.msg == 0x9d {
-                    self.OldMan_RevertToSprite(st as usize);
+                    self.old_man_revert_to_sprite_with_unconditional_cleanup(st as usize);
                 } else if info.msg == 0x28 {
                     self.follower_state_mut().set_indicator(0);
                 }
-                self.Tagalong_Main_ShowTextMessage();
+                self.tagalong_main_show_text_message();
                 return;
             }
         }
@@ -2071,9 +2071,9 @@ impl ZeldaState {
         let mut maiden = self.sprite_slot_view_mut(k);
         maiden.set_state(9);
         maiden.set_sprite_type(206);
-        self.Tagalong_Sprite_SetX(k, x);
-        self.Tagalong_Sprite_SetY(k, y.wrapping_sub(16));
-        self.SpritePrep_LoadProperties(k);
+        self.tagalong_sprite_set_x(k, x);
+        self.tagalong_sprite_set_y(k, y.wrapping_sub(16));
+        self.sprite_prep_load_properties(k);
         let mut maiden = self.sprite_slot_view_mut(k);
         maiden.set_delay_aux2(192);
         maiden.set_graphics(21);
@@ -2092,15 +2092,15 @@ impl ZeldaState {
     }
 
     pub(super) fn kiki_spawn_handler_monke(&mut self, k: usize) -> Option<usize> {
-        let j = self.Tagalong_Sprite_SpawnDynamically(k, 0xb6)?;
+        let j = self.tagalong_sprite_spawn_dynamically(k, 0xb6)?;
         let layer = self.tagalong_slot(k).direction();
         let mut monke = self.sprite_slot_view_mut(j);
         monke.set_head_direction(layer);
         monke.set_direction(layer);
         let x = self.tagalong_x(k);
         let y = self.tagalong_y(k);
-        self.Tagalong_Sprite_SetX(j, x.wrapping_add(2));
-        self.Tagalong_Sprite_SetY(j, y.wrapping_add(2));
+        self.tagalong_sprite_set_x(j, x.wrapping_add(2));
+        self.tagalong_sprite_set_y(j, y.wrapping_add(2));
         let floor = self.game_state.player.follower_link.floor();
         let mut monke = self.sprite_slot_view_mut(j);
         monke.set_floor(floor);
@@ -2134,7 +2134,8 @@ impl ZeldaState {
         self.tagalong_slot(k).y()
     }
 
-    fn Tagalong_Main_ShowTextMessage(&mut self) {
+    /// ROM: `Tagalong_Main_ShowTextMessage`
+    fn tagalong_main_show_text_message(&mut self) {
         if self.game_state.frame.main_module != 14 {
             self.clear_tile_interaction_shared_flag();
             self.messaging_state_mut().clear_module();
@@ -2144,94 +2145,8 @@ impl ZeldaState {
         }
     }
 
-    fn Ancilla_GetX(&self, k: usize) -> u16 {
-        self.ancilla_slot_view(k).x()
-    }
-
-    fn Ancilla_GetY(&self, k: usize) -> u16 {
-        self.ancilla_slot_view(k).y()
-    }
-
-    fn Ancilla_SetXY(&mut self, k: usize, x: u16, y: u16) {
-        let mut ancilla = self.ancilla_slot_view_mut(k);
-        ancilla.set_x(x);
-        ancilla.set_y(y);
-    }
-
-    fn Ancilla_MoveX(&mut self, k: usize) {
-        self.ancilla_move_x(k);
-    }
-
-    fn Ancilla_MoveY(&mut self, k: usize) {
-        self.ancilla_move_y(k);
-    }
-
-    fn Ancilla_ProjectSpeedTowardsPlayer(&self, k: usize, vel: u8) -> ProjectSpeedRet {
-        if vel == 0 {
-            return ProjectSpeedRet {
-                x: 0,
-                y: 0,
-                xdiff: 0,
-                ydiff: 0,
-            };
-        }
-        let link = self.game_state.player.follower_link;
-        let below = link.y().wrapping_sub(self.Ancilla_GetY(k));
-        let right = link.x().wrapping_sub(self.Ancilla_GetX(k));
-        let below_b = below as u8;
-        let below_a = sign16(below) as u8;
-        let right_b = right as u8;
-        let right_a = sign16(right) as u8;
-        let mut r12 = if sign8(below_b) {
-            0u8.wrapping_sub(below_b)
-        } else {
-            below_b
-        };
-        let mut r13 = if sign8(right_b) {
-            0u8.wrapping_sub(right_b)
-        } else {
-            right_b
-        };
-        let mut swapped = false;
-        if r13 < r12 {
-            swapped = true;
-            core::mem::swap(&mut r12, &mut r13);
-        }
-        let mut xvel = vel;
-        let mut yvel = 0u8;
-        let mut t = 0u8;
-        let mut n = vel;
-        loop {
-            t = t.wrapping_add(r12);
-            if t >= r13 {
-                t = t.wrapping_sub(r13);
-                yvel = yvel.wrapping_add(1);
-            }
-            n = n.wrapping_sub(1);
-            if n == 0 {
-                break;
-            }
-        }
-        if swapped {
-            core::mem::swap(&mut xvel, &mut yvel);
-        }
-        ProjectSpeedRet {
-            x: if right_a != 0 {
-                0u8.wrapping_sub(xvel)
-            } else {
-                xvel
-            },
-            y: if below_a != 0 {
-                0u8.wrapping_sub(yvel)
-            } else {
-                yvel
-            },
-            xdiff: right_b,
-            ydiff: below_b,
-        }
-    }
-
-    fn AncillaAdd_SuperBombExplosion(&mut self, a: u8, y: u8) -> Option<usize> {
+    /// ROM: `AncillaAdd_SuperBombExplosion`
+    fn ancilla_add_super_bomb_explosion(&mut self, a: u8, y: u8) -> Option<usize> {
         let k = self.ancilla_add_simple(a, y)?;
         let mut explosion = self.ancilla_slot_view_mut(k);
         explosion.set_r(0);
@@ -2243,23 +2158,27 @@ impl ZeldaState {
         let j = self.game_state.sprites.follower_runtime.data_index_word() as usize;
         let y = self.tagalong_y(j);
         let x = self.tagalong_x(j);
-        self.Ancilla_SetXY(k, x.wrapping_add(8), y.wrapping_add(16));
+        self.ancilla_set_xy(k, x.wrapping_add(8), y.wrapping_add(16));
         Some(k)
     }
 
-    fn Tagalong_Sprite_GetX(&self, k: usize) -> u16 {
+    /// ROM: `Tagalong_Sprite_GetX`
+    fn tagalong_sprite_get_x(&self, k: usize) -> u16 {
         self.sprite_slot_view(k).x()
     }
 
-    fn Tagalong_Sprite_GetY(&self, k: usize) -> u16 {
+    /// ROM: `Tagalong_Sprite_GetY`
+    fn tagalong_sprite_get_y(&self, k: usize) -> u16 {
         self.sprite_slot_view(k).y()
     }
 
-    fn Tagalong_Sprite_SetX(&mut self, k: usize, x: u16) {
+    /// ROM: `Tagalong_Sprite_SetX`
+    fn tagalong_sprite_set_x(&mut self, k: usize, x: u16) {
         self.sprite_slot_view_mut(k).set_x(x);
     }
 
-    fn Tagalong_Sprite_SetY(&mut self, k: usize, y: u16) {
+    /// ROM: `Tagalong_Sprite_SetY`
+    fn tagalong_sprite_set_y(&mut self, k: usize, y: u16) {
         self.sprite_slot_view_mut(k).set_y(y);
     }
 
@@ -2267,7 +2186,8 @@ impl ZeldaState {
         self.sprite_workspace_mut().set_room_marker_word(k, value);
     }
 
-    fn Tagalong_Sprite_SpawnDynamically(&mut self, k: usize, sprite: u8) -> Option<usize> {
+    /// ROM: `Tagalong_Sprite_SpawnDynamically`
+    fn tagalong_sprite_spawn_dynamically(&mut self, k: usize, sprite: u8) -> Option<usize> {
         let j = (0..16)
             .rev()
             .find(|&j| self.sprite_slot_view(j).state() == 0)?;
@@ -2276,7 +2196,7 @@ impl ZeldaState {
             spawned.set_state(9);
             spawned.set_sprite_type(sprite);
         }
-        self.SpritePrep_LoadProperties(j);
+        self.sprite_prep_load_properties(j);
         if !self.game_state.world.location.is_indoors() {
             self.set_sprite_room_marker_word(j, 0xffff);
         } else {
@@ -2293,33 +2213,26 @@ impl ZeldaState {
         Some(j)
     }
 
-    fn SpritePrep_LoadProperties(&mut self, k: usize) {
-        self.sprite_prep_load_properties(k);
-    }
-
-    fn OldMan_RevertToSprite(&mut self, k: usize) {
-        if let Some(j) = self.Tagalong_Sprite_SpawnDynamically(k, 0xad) {
+    /// ROM: `OldMan_RevertToSprite`
+    fn old_man_revert_to_sprite_with_unconditional_cleanup(&mut self, k: usize) {
+        if let Some(j) = self.tagalong_sprite_spawn_dynamically(k, 0xad) {
             let layer = self.tagalong_slot(k).direction();
             let mut old_man = self.sprite_slot_view_mut(j);
             old_man.set_direction(layer);
             old_man.set_head_direction(layer);
-            self.Tagalong_Sprite_SetY(j, self.tagalong_y(k).wrapping_add(2));
-            self.Tagalong_Sprite_SetX(j, self.tagalong_x(k).wrapping_add(2));
+            self.tagalong_sprite_set_y(j, self.tagalong_y(k).wrapping_add(2));
+            self.tagalong_sprite_set_x(j, self.tagalong_x(k).wrapping_add(2));
             let floor = self.game_state.player.follower_link.floor();
             let mut old_man = self.sprite_slot_view_mut(j);
             old_man.set_floor(floor);
             old_man.set_ignore_projectile(1);
             old_man.set_subtype2(1);
         }
-        self.OldMan_EnableCutscene();
+        self.old_man_enable_cutscene();
         self.follower_state_mut().set_indicator(0);
         self.follower_link_state_mut().set_speed_setting(0);
     }
 
-    fn OldMan_EnableCutscene(&mut self) {
-        self.follower_link_state_mut().immobilize();
-        self.follower_link_state_mut().enable_cutscene_immunity();
-    }
 }
 
 #[cfg(test)]
@@ -2571,7 +2484,7 @@ impl ZeldaState {
             FollowerTail::Trigger => self.follower_handle_trigger(),
             FollowerTail::NoTimedMessage => self.follower_no_timed_message(),
             FollowerTail::Message { index } => {
-                self.Tagalong_Main_ShowTextMessage();
+                self.tagalong_main_show_text_message();
                 // PLY restores the original index, then SEP : CPY : BNE and the real near return.
                 crate::cycle_ledger::charge(28 + 54 + if index == 0 { 42 } else { 6 });
                 if index != 0 {

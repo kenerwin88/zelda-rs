@@ -458,7 +458,7 @@ impl ZeldaState {
         self.set_edge_transition_direction_bits(8);
         self.InitializeMirrorHDMA();
         self.set_overworld_map_state(0);
-        self.PaletteFilter_InitializeWhiteFilter();
+        self.palette_filter_initialize_white_filter();
         self.Overworld_LoadGFXAndScreenSize();
         self.increment_submodule();
         self.follower_link_state_mut().set_handler_state(20);
@@ -1300,7 +1300,7 @@ impl ZeldaState {
         self.set_bg1_y_offset(0);
         self.follower_link_state_mut().set_y_velocity(0);
         self.follower_link_state_mut().clear_immobilized();
-        self.Palette_RevertTranslucencySwap();
+        self.palette_revert_translucency_swap();
         self.follower_link_state_mut().set_handler_state(0);
         {
             self.follower_link_state_mut().set_receive_item_index(0);
@@ -1374,7 +1374,7 @@ impl ZeldaState {
         }
 
         if item == 0x1b || item == 0x1c {
-            self.Palette_UpdateGlovesColor();
+            self.palette_update_gloves_color();
         } else if matches!(item, 0x37..=0x39) {
             let bit = match item {
                 0x37 => 4,
@@ -1468,7 +1468,7 @@ impl ZeldaState {
             gfx = 0;
         } else if gfx == 0x20 || gfx == 0x2d || gfx == 0x2e {
             self.DecompressShieldGraphics();
-            self.Palette_Load_Shield();
+            self.palette_load_shield();
         }
         let receipt = ItemReceiptReturn {
             ancilla_slot: k as u8, item, chest_position: chest_pos,
@@ -1477,10 +1477,10 @@ impl ZeldaState {
             && self.begin_native_ground_item_graphics(gfx, receipt) {
             return GameCallStatus::Suspended;
         }
-        self.DecodeAnimatedSpriteTile_variable(gfx);
+        self.decode_animated_sprite_tile_variable(gfx);
         if (gfx == 6 || gfx == 0x18) && item != 0 {
             self.DecompressSwordGraphics();
-            self.Palette_Load_Sword();
+            self.palette_load_sword();
         }
         let receipt = ItemReceiptReturn {
             ancilla_slot: k as u8,
@@ -1702,7 +1702,7 @@ impl ZeldaState {
     }
 
     pub(super) fn wall_master_send_player_through_reset_fixed_prefix(&mut self) {
-        self.SaveDungeonKeys_misc();
+        self.save_dungeon_keys_misc();
         self.Dungeon_FlagRoomData_Quadrants();
         self.sprite_disable_all();
         self.sprite_reset_all_no_disable_fixed_prefix();
@@ -1736,7 +1736,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn SaveDungeonKeys_misc(&mut self) {
+    /// ROM: `SaveDungeonKeys_misc`
+    pub(super) fn save_dungeon_keys_misc(&mut self) {
         let idx = self.game_state.inventory.save_progress.palace_index_x2();
         if idx == 0xff {
             return;
@@ -2246,7 +2247,7 @@ impl ZeldaState {
             crate::cycle_ledger::charge_routine(0x00_80b5, 240);
         }
         match self.game_state.frame.main_module {
-            0 => self.Module00_Intro(),
+            0 => self.module00_intro(),
             1 => self.module01_file_select(),
             2 => self.module02_copy_file(),
             3 => self.module03_kill_file(),

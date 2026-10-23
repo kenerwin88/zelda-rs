@@ -5473,7 +5473,7 @@ impl ZeldaState {
 
     pub(super) fn link_state_zapped(&mut self) {
         self.cache_camera_properties_if_outdoors();
-        self.LinkZap_HandleMosaic();
+        self.link_zap_handle_mosaic();
 
         let delay = self
             .follower_link_state_mut()
@@ -5498,7 +5498,7 @@ impl ZeldaState {
                 .clear_sprite_damage_disable_timer();
             self.follower_link_state_mut().clear_electrocute_on_touch();
             self.follower_link_state_mut().clear_auxiliary_state();
-            self.Player_SetCustomMosaicLevel(0);
+            self.player_set_custom_mosaic_level(0);
         }
     }
 
@@ -7777,7 +7777,7 @@ impl ZeldaState {
             ancilla.set_x_velocity(x_velocity);
             ancilla.set_step(0);
         }
-        self.DecodeAnimatedSpriteTile_variable(12);
+        self.decode_animated_sprite_tile_variable(12);
         self.ancilla_set_xy(k, 0x0490, 0x0a8a);
     }
 

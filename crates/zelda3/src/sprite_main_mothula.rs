@@ -714,7 +714,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k)
                 .set_ai_state(state.wrapping_add(1));
             if state != 18 {
-                self.KholdstareShell_PaletteFiltering();
+                self.kholdstare_shell_palette_filtering();
             } else {
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.sprite_slot_view_mut(2).set_ai_state(2);
