@@ -101,6 +101,11 @@ const PORT_REPRESENTATION: &[(usize, usize, &str)] = &[
     // while it runs; Polyhedral_InitializeThread rebuilds them, and the ROM
     // leaves a CPU thread stack the native thread does not have.
     (0x1f00, 0x1ffd, "polygon thread workspace outside the thread"),
+    // The thread's bitmap is read only by its own NMI upload (covered by the
+    // video check) and cleared when the thread starts. Where an interrupted
+    // thread stops drawing is timing: a save-and-quit out of the intro leaves
+    // a partial bitmap here until the next polygon scene.
+    (0xe800, 0xefff, "POLYHEDRAL_BUFFER (polygon thread bitmap)"),
     (0x1dba0, 0x1dd7f, "HDMA_TABLE_DYNAMIC (port spotlight table)"),
 ];
 
@@ -135,7 +140,7 @@ fn timing_defined(ram: &[u8]) -> bool {
 }
 
 /// WRAM owned by the polygon thread while it is active.
-const POLY_THREAD_RANGES: &[(usize, usize)] = &[(0x1f00, 0x1fff), (0xe800, 0xefff)];
+const POLY_THREAD_RANGES: &[(usize, usize)] = &[(0x1f00, 0x1fff)];
 
 /// Scratch the port leaves differently everywhere except in the main module
 /// that gives it a lasting meaning: `(lo, hi, owning module, reason)`.
