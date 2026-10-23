@@ -237,12 +237,16 @@ impl ZeldaState {
         }
     }
 
-    /// Match an exact NMI state against a hot-reloaded parity-policy rule.
-    /// Prefixes keep independent experiments from being combined accidentally.
+    /// Match an exact NMI state against a parity-policy experiment rule from
+    /// the file `ZELDA3_PARITY_RUNTIME_CONFIG` names (read once per process).
+    /// Without it no rule matches. Prefixes keep independent experiments from
+    /// being combined accidentally.
     pub(crate) fn parity_runtime_nmi_rule_matches(&self, prefix: &str) -> bool {
-        let path = std::env::var_os("ZELDA3_PARITY_RUNTIME_CONFIG")
-            .unwrap_or_else(|| "config/parity-runtime.toml".into());
-        let Ok(text) = std::fs::read_to_string(path) else {
+        static CONFIG: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+        let Some(text) = CONFIG.get_or_init(|| {
+            crate::debug_env::var_os!("ZELDA3_PARITY_RUNTIME_CONFIG")
+                .and_then(|path| std::fs::read_to_string(path).ok())
+        }) else {
             return false;
         };
         let value = |name: &str| {

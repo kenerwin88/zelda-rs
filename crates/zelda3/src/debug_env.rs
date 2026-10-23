@@ -6,9 +6,9 @@
 //! `parity-debug` cargo feature (on by default, used by the parity profile and
 //! the tests) these snapshot each variable on first read; without it they are
 //! compile-time `None`, so release binaries carry none of the tracing
-//! branches. Behavior-affecting knobs (`ZELDA3_SAVE_DIR`,
-//! `ZELDA3_PARITY_RUNTIME_CONFIG`, the `ZELDA3_SNES9X_*`/`ZELDA3_ROM_*` timing
-//! knobs) deliberately do NOT use this module.
+//! branches. Behavior-affecting knobs (`ZELDA3_SAVE_DIR`, the
+//! `ZELDA3_SNES9X_*`/`ZELDA3_ROM_*` timing knobs) deliberately do NOT use
+//! this module.
 
 use std::env::VarError;
 use std::ffi::OsString;

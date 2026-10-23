@@ -1,7 +1,8 @@
-# Optional hot-reloaded timing diagnostics. The authoritative parity runner
-# supplies an empty configuration; checked-in defaults must never alter game
-# scheduling. Add rules only to a separate, explicitly selected experiment
-# file while investigating a mismatch.
+# Template for timing-diagnostic experiments. Nothing reads this file unless
+# ZELDA3_PARITY_RUNTIME_CONFIG names it (read once at the first NMI). The
+# authoritative parity runner supplies an empty configuration. Add rules only
+# to a separate, explicitly selected experiment file while investigating a
+# mismatch.
 #
 # Pre-slice NMI experiment: run the vblank boundary before an exact CPU slice.
 # boot_init_only_host_frame = 81
