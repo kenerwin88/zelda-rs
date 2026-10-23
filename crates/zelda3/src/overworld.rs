@@ -3301,7 +3301,7 @@ impl ZeldaState {
                 self.complete_module09_load_overlays_case_tail();
             }
             Module09LongLoadStep::LoadOverlayAndMap => {
-                self.Overworld_LoadOverlayAndMap();
+                self.overworld_load_overlay_and_map();
                 self.set_pending_nmi_subroutine(12);
                 self.set_screen_brightness(0x0f);
                 self.increment_core_update_disable_flag();

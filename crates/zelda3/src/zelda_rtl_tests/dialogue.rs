@@ -84,7 +84,7 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
         .load_decoded_dialogue(&[TEXT_COMMAND_START_US + 12]);
     state.messaging_state_mut().set_dialogue_scroll_speed(4);
 
-    state.RenderText_Draw_MessageCharacters();
+    state.render_text_draw_message_characters_and_complete_call();
     assert!(state.dialogue_scroll_is_copying_remaining_pixels());
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
     assert_eq!(state.game_state.display.core_update_disable_flag, 0);

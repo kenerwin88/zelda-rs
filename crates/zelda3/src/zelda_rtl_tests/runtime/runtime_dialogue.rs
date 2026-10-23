@@ -3313,7 +3313,7 @@ fn game_over_text_draw_authors_oam_without_rescheduling_the_chr_upload() {
     state.ancilla_slot_view_mut(1).set_x_low(0x98);
     state.set_pending_nmi_subroutine(0x77);
 
-    state.GameOverText_Draw();
+    state.game_over_text_draw();
 
     assert_eq!(
         &state.sprite_oam_shadow_buffer()[..16],

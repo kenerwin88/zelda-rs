@@ -1574,7 +1574,7 @@ impl ZeldaState {
                         // this return host rather than a fabricated next
                         // iteration.
                         state.save_menu_initialization_completed_pending = true;
-                        state.Module0E_0B_SaveMenu();
+                        state.module0e_0b_save_menu();
                     }
                     OriginalTimingIdleContinuedReturnCpuAction::DialogueEndpoint {
                         message_read_position,

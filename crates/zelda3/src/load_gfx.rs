@@ -1364,7 +1364,7 @@ impl ZeldaState {
                 t1
             };
             self.set_bg1_x(t2.wrapping_add(0x80) & !1);
-            self.OverworldMap_SetupHdma();
+            self.overworld_map_setup_hdma();
             self.set_hdma_enable_mask(0xc0);
         } else {
             self.set_mode7_zoom_step_counter(4);

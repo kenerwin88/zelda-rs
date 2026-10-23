@@ -1694,7 +1694,7 @@ impl ZeldaState {
             self.finish_game_over_text_render_call();
             while self.game_over_text_render_loop_active() {
                 self.game_over_text_render_call_in_flight = true;
-                self.Text_Render();
+                self.text_render();
                 assert!(
                     matches!(
                         self.dialogue_vwf_glyph_cpu_phase,

@@ -1641,7 +1641,7 @@ impl ZeldaState {
                     self.save_quit_reset_hold = true;
                     return;
                 }
-                self.Death_Func15(false);
+                self.death_func15(false);
             }
         }
         if let Some((boundary, resume_boundary)) =
@@ -2259,11 +2259,11 @@ impl ZeldaState {
             9 | 11 => self.module09_overworld(),
             12 => self.module_reserved_12(),
             13 => self.module_reserved_13(),
-            14 => self.Module0E_Interface(),
+            14 => self.module0e_interface(),
             15 => self.module0f_spotlight_close(),
             16 => self.module10_spotlight_open(),
             17 => self.Module11_DungeonFallingEntrance(),
-            18 => self.Module12_GameOver(),
+            18 => self.module12_game_over(),
             19 => self.module13_boss_victory_pendant(),
             20 => self.module14_attract(),
             21 => self.module15_mirror_warp_from_aga(),
@@ -2272,7 +2272,7 @@ impl ZeldaState {
             24 => self.module18_ganon_emerges(),
             25 => self.module19_triforce_room(),
             26 => self.module1_a_credits(),
-            27 => self.Module1B_SpawnSelect(),
+            27 => self.module1b_spawn_select(),
             _ => {}
         }
     }

@@ -252,7 +252,7 @@ impl ZeldaState {
             3 => {
                 self.set_birdtravel_status(8);
                 self.clear_bird_travel_stop_status(1);
-                self.FluteMenu_LoadSelectedScreen();
+                self.flute_menu_load_selected_screen();
                 if self.flute_menu_selected_screen_scheduled() {
                     // The source load spans hosts; its caller suffix and
                     // this module's LinkOam_Main run when it returns.
@@ -262,7 +262,7 @@ impl ZeldaState {
                 self.set_music_control(9);
             }
             4 => {
-                self.Overworld_LoadOverlayAndMap();
+                self.overworld_load_overlay_and_map();
                 self.set_subsubmodule(0);
             }
             5 => {
@@ -287,7 +287,7 @@ impl ZeldaState {
                     self.increment_overworld_map_state();
                 }
             }
-            8 => self.BirdTravel_Finish_Doit(),
+            8 => self.bird_travel_finish_doit(),
             _ => {}
         }
         self.link_oam_main();
@@ -3056,7 +3056,7 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_load_text_pointers_and_palettes(&mut self) {
-        self.Text_GenerateMessagePointers();
+        self.text_generate_message_pointers();
         self.overworld_load_all_palettes();
     }
 

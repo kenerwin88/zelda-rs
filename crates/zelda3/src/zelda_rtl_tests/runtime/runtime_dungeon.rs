@@ -339,7 +339,7 @@ fn death_restart_keeps_room_module_and_counters_until_sprite_reset_returns() {
         )],
     ));
 
-    state.Death_Func15(true);
+    state.death_func15(true);
     assert_eq!(
         (
             state.game_state.frame.main_module,
@@ -849,7 +849,7 @@ fn native_dungeon_map_drawing_consumes_its_measured_interruptions() {
             state.set_dungeon_room_index(room);
             state.pending_dungeon_map_room_drawing_nmi_slices = Some(nmi_slices);
 
-            state.Module0E_03_01_03_DrawRooms();
+            state.module0e_03_01_03_draw_rooms();
 
             assert_eq!(state.pending_dungeon_map_room_drawing_nmi_slices, None);
             if nmi_slices == 0 {
@@ -881,7 +881,7 @@ fn dungeon_map_room_drawing_without_a_source_return_remains_suspended_for_every_
         state.restore_live_rom_timing_after_checkpoint();
         state.set_dungeon_room_index(room);
 
-        state.Module0E_03_01_03_DrawRooms();
+        state.module0e_03_01_03_draw_rooms();
 
         assert_eq!(
             state.game_execution_scheduler.advance_work_one_nmi_slice(),
@@ -914,7 +914,7 @@ fn dungeon_map_floor_selection_respects_every_source_lower_bound() {
         state.set_dungeon_map_current_floor(0xa500 | u16::from(bottom));
         state.follower_link_state_mut().set_joypad1h_last(4);
         state.set_bg2_y(0x240);
-        state.DungeonMap_HandleMovementInput();
+        state.dungeon_map_handle_movement_input();
         assert_eq!(
             state.game_state.dungeon_map_display.dungmap_cur_floor(),
             u16::from(bottom)
@@ -940,7 +940,7 @@ fn dungeon_map_floor_selection_uses_word_increments_across_byte_wrap() {
         state.save_progress_mut().set_palace_index_x2(2);
         state.set_dungeon_map_current_floor(floor);
         state.follower_link_state_mut().set_joypad1h_last(input);
-        state.DungeonMap_HandleFloorSelect();
+        state.dungeon_map_handle_floor_select();
         assert_eq!(
             state.game_state.dungeon_map_display.dungmap_cur_floor(),
             expected
@@ -972,7 +972,7 @@ fn dungeon_map_room_drawing_consumes_same_host_iteration_return_without_room_sel
             vec![OriginalTimingSemanticReceipt::MainLoopIterationReturnedToWait],
         ));
 
-        state.Module0E_03_01_03_DrawRooms();
+        state.module0e_03_01_03_draw_rooms();
 
         assert!(state.game_execution_scheduler.is_idle());
         assert_eq!(state.ram.as_slice(), expected.ram.as_slice());

@@ -10313,6 +10313,7 @@ impl ZeldaState {
             ) < ANCILLA_CHECK_FOR_ENTRANCE_TRIGGER_ENTRANCE_TRIGGER_SIZE_X[what]
     }
 
+    /// ROM: `GameOverText_Draw`
     pub(super) fn game_over_text_draw(&mut self) {
         self.oam_state_mut().set_current_pointer(0x0800);
         self.oam_state_mut().set_current_extended_pointer(0x0a20);

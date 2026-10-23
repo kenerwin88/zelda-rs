@@ -935,7 +935,7 @@ fn native_save_menu_keeps_its_suffix_behind_text_initialization() {
     state.game_execution_scheduler.begin_host_frame();
     state.game_execution_scheduler.begin_main_loop_iteration();
 
-    state.Module0E_0B_SaveMenu();
+    state.module0e_0b_save_menu();
 
     assert!(matches!(state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishDialogueInitializationPrefix { .. })));
@@ -964,7 +964,7 @@ fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
     ));
     let ram_before = held.ram.to_vec();
 
-    held.Module0E_0B_SaveMenu();
+    held.module0e_0b_save_menu();
 
     assert_eq!(held.ram.as_slice(), ram_before.as_slice());
     assert!(held
@@ -976,7 +976,7 @@ fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
     expected.set_main_module(14);
     expected.set_submodule(11);
     expected.set_subsubmodule(0);
-    expected.Module0E_0B_SaveMenu();
+    expected.module0e_0b_save_menu();
 
     held.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
         1,
@@ -987,7 +987,7 @@ fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
             ),
         ],
     ));
-    held.Module0E_0B_SaveMenu();
+    held.module0e_0b_save_menu();
 
     assert_eq!(held.ram.as_slice(), expected.ram.as_slice());
     assert_eq!(held.game_state.frame, expected.game_state.frame);

@@ -321,7 +321,7 @@ fn desert_prayer_iris_checkpoint_preserves_primary_write_and_resumes_full_loop()
 
     let mut uninterrupted = ZeldaState::new();
     configure(&mut uninterrupted);
-    uninterrupted.DesertPrayer_InitializeIrisHDMA();
+    uninterrupted.desert_prayer_initialize_iris_hdma();
     for row in 0..240 {
         assert_eq!(
             resumed.spotlight_hdma_table_dynamic_entry(row),
@@ -360,7 +360,7 @@ fn desert_prayer_iris_before_primary_checkpoint_preserves_the_unpublished_word()
     resumed.complete_desert_prayer_iris(DesertPrayerIrisCaller::PaletteFilterCase3);
     let mut uninterrupted = ZeldaState::new();
     configure(&mut uninterrupted);
-    uninterrupted.DesertPrayer_BuildIrisHDMATable();
+    uninterrupted.desert_prayer_build_complete_iris_hdma_table();
     for row in 0..240 {
         assert_eq!(
             resumed.spotlight_hdma_table_dynamic_entry(row),

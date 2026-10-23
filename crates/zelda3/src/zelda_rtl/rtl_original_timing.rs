@@ -12152,7 +12152,7 @@ impl ZeldaState {
                         FluteMenuSelectedScreenStep::SelectedScreenSuffix,
                         "the flute selected-screen caller returned before its sprite reload",
                     );
-                    self.FluteMenu_LoadSelectedScreenAfterTransport();
+                    self.flute_menu_load_selected_screen_after_transport();
                     if self.game_state.frame.main_module == 0x18 {
                         // Module18_GanonEmerges state 3 finishes its caller
                         // suffix and the module's LinkOam_Main on the

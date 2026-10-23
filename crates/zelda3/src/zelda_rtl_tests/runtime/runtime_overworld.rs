@@ -1443,7 +1443,7 @@ fn map_fade_consumes_its_measured_blank_write_once() {
         // No classified Sprite_Main workload is available: the measurement
         // itself must own the active prefix, including a valid row-zero write.
         assert!(state.last_sprite_main_timing_workload.is_none());
-        if submodule == 3 { state.DungMap_Backup(); } else { state.WorldMap_FadeOut(); }
+        if submodule == 3 { state.dung_map_backup(); } else { state.world_map_fade_out(); }
         assert_eq!(state.active_display_force_blank_event, Some(scanline));
         assert_eq!(state.pending_map_force_blank_output_scanline, None);
         assert_eq!(state.game_state.display.screen_brightness, 0x80);
@@ -1464,7 +1464,7 @@ fn world_map_fade_out_uses_the_preceding_sprite_main_workload() {
     workload.record_garnish_table(true, 0);
     state.last_sprite_main_timing_workload = Some(workload);
 
-    state.WorldMap_FadeOut();
+    state.world_map_fade_out();
 
     assert_eq!(state.game_state.display.screen_brightness, 0x80);
     assert_eq!(state.overworld_map_state(), 1);

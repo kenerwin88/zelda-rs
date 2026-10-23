@@ -964,7 +964,7 @@ mod fast_forward_cycle_tests {
                 assert!(run.is_complete(),"native returned early, message {message} PC {:06x}",run.pc());
                 assert_eq!(work.output_position(),state.game_state.messaging.runtime.dialogue_msg_read_pos());
                 let clock = crate::cycle_ledger::master();
-                atomic.Text_LoadCharacterBuffer();
+                atomic.text_load_character_buffer();
                 assert_eq!(crate::cycle_ledger::master()-clock,total,"message {message}");
                 assert_eq!(&atomic.ram[0x11200..0x12000],&expected[0x11200..0x12000],"atomic message {message}");
                 assert_eq!(&atomic.ram[0x1cd0..0x1cf8],&expected[0x1cd0..0x1cf8],"atomic message {message}");
@@ -1009,12 +1009,12 @@ mod fast_forward_cycle_tests {
                     for (address,value) in run.take_cpu_wram_writes() { expected[address]=value; }
                 }
                 let clock = crate::cycle_ledger::master();
-                state.Text_LoadCharacterBuffer();
+                state.text_load_character_buffer();
                 // The decoder has not executed the caller's STZ instructions.
                 assert_ne!(state.game_state.messaging.runtime.dialogue_msg_read_pos(),0);
                 assert_eq!(state.ram[0x1ce6],0x5a);
                 state.reset_choice_text_cursors();
-                state.Text_InitVwfState();
+                state.text_init_vwf_state();
                 // Two caller JSRs and its RTS are outside these three bodies.
                 assert_eq!(crate::cycle_ledger::master()-clock+46+46+42,total);
                 assert_eq!(&state.ram[0x11200..0x12000],&expected[0x11200..0x12000]);
@@ -1283,7 +1283,7 @@ mod fast_forward_cycle_tests {
             assert_eq!(crate::cycle_ledger::master() - clock, total);
             assert_eq!(state.step_text_initialization_work(&mut work), None);
             let clock = crate::cycle_ledger::master();
-            atomic.Text_Initialize();
+            atomic.text_initialize();
             assert_eq!(crate::cycle_ledger::master() - clock, total);
             assert_eq!(atomic.ram, state.ram);
             instruction_count += count;
@@ -1497,7 +1497,7 @@ mod fast_forward_cycle_tests {
         state.messaging_state_mut().set_text_msgbox_topleft(0x61a4);
         let before = state.ram.clone();
         let clock = crate::cycle_ledger::master();
-        state.RenderText_Draw_Finish();
+        state.render_text_draw_finish();
         // Original $0E:CA35-CA6B costs 738, its one $D29C callee 204.
         assert_eq!(crate::cycle_ledger::master() - clock, 942);
         assert_eq!(&state.ram[0x1002..0x100a], &[0x61, 0xa4, 0x42, 0x2e, 0x7f, 0x38, 0xff, 0xff]);
@@ -2281,7 +2281,8 @@ impl ZeldaState {
         clock
     }
 
-    pub(super) fn Module0E_Interface(&mut self) {
+    /// ROM: `Module0E_Interface`
+    pub(super) fn module0e_interface(&mut self) {
         // A fast-forward message render slice: the ROM's NMI skips the core
         // game update (sprites/Link) while the main thread finishes the render.
         let mut skip_run = self.dialogue_fast_forward_hold_active;
@@ -2554,25 +2555,26 @@ impl ZeldaState {
         panic!("native dialogue caller failed to reach its next NMI");
     }
 
-    pub(super) fn Module_Messaging_0(&mut self) {
+    /// ROM: `Module_Messaging_0`
+    pub(super) fn module_messaging_0(&mut self) {
         // C Module_Messaging_0 is an assert(0) dispatch slot.
         panic!("Module_Messaging_0 hit unsupported C assert(0) path");
     }
 
     pub(super) fn RunInterface(&mut self) {
         match self.game_state.frame.submodule {
-            0 => self.Module_Messaging_0(),
+            0 => self.module_messaging_0(),
             1 => self.hud_module_run(),
             2 => self.RenderText(),
-            3 => self.Module0E_03_DungeonMap(),
-            4 => self.Module0E_04_RedPotion(),
-            5 => self.Module0E_05_DesertPrayer(),
-            6 => self.Module_Messaging_6(),
-            7 => self.Messaging_OverworldMap(),
-            8 => self.Module0E_08_GreenPotion(),
-            9 => self.Module0E_09_BluePotion(),
-            10 => self.Module0E_0A_FluteMenu(),
-            11 => self.Module0E_0B_SaveMenu(),
+            3 => self.module0e_03_dungeon_map(),
+            4 => self.module0e_04_red_potion(),
+            5 => self.module0e_05_desert_prayer(),
+            6 => self.module_messaging_6(),
+            7 => self.messaging_overworld_map(),
+            8 => self.module0e_08_green_potion(),
+            9 => self.module0e_09_blue_potion(),
+            10 => self.module0e_0a_flute_menu(),
+            11 => self.module0e_0b_save_menu(),
             // Master Sword item receipt sets submodule 43. C dispatches through
             // the 12-entry messaging table without bounds checks, landing on
             // kModule_BossVictory[3] in the adjacent static table.
@@ -2583,7 +2585,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Module_Messaging_6(&mut self) {
+    /// ROM: `Module_Messaging_6`
+    pub(super) fn module_messaging_6(&mut self) {
         // C Module_Messaging_6 is an assert(0) dispatch slot.
         panic!("Module_Messaging_6 hit unsupported C assert(0) path");
     }
@@ -2602,7 +2605,8 @@ impl ZeldaState {
             .unwrap_or(0)
     }
 
-    pub(super) fn Module0E_05_DesertPrayer(&mut self) {
+    /// ROM: `Module0E_05_DesertPrayer`
+    pub(super) fn module0e_05_desert_prayer(&mut self) {
         match self.game_state.frame.subsubmodule {
             0 => self.ResetTransitionPropsAndAdvance_ResetInterface(),
             1 => self.apply_palette_filter_bounce(),
@@ -2638,7 +2642,7 @@ impl ZeldaState {
                     );
                     return;
                 }
-                self.DesertPrayer_InitializeIrisHDMA();
+                self.desert_prayer_initialize_iris_hdma();
                 self.complete_desert_prayer_case2_after_iris();
             }
             3 => {
@@ -2693,7 +2697,7 @@ impl ZeldaState {
                     return;
                 }
                 self.apply_palette_filter_bounce();
-                self.DesertPrayer_BuildIrisHDMATable();
+                self.desert_prayer_build_complete_iris_hdma_table();
             }
             4 => {
                 if let Some(
@@ -2724,25 +2728,28 @@ impl ZeldaState {
                     );
                     return;
                 }
-                self.DesertPrayer_BuildIrisHDMATable();
+                self.desert_prayer_build_complete_iris_hdma_table();
             }
             _ => {}
         }
     }
 
-    pub(super) fn Module0E_04_RedPotion(&mut self) {
+    /// ROM: `Module0E_04_RedPotion`
+    pub(super) fn module0e_04_red_potion(&mut self) {
         if self.hud_refill_health() {
             self.finish_potion_refill();
         }
     }
 
-    pub(super) fn Module0E_08_GreenPotion(&mut self) {
+    /// ROM: `Module0E_08_GreenPotion`
+    pub(super) fn module0e_08_green_potion(&mut self) {
         if self.hud_refill_magic_power() {
             self.finish_potion_refill();
         }
     }
 
-    pub(super) fn Module0E_09_BluePotion(&mut self) {
+    /// ROM: `Module0E_09_BluePotion`
+    pub(super) fn module0e_09_blue_potion(&mut self) {
         if self.hud_refill_health() {
             self.set_submodule(8);
         }
@@ -2760,7 +2767,8 @@ impl ZeldaState {
         self.set_main_module(saved_module);
     }
 
-    pub(super) fn Module0E_0B_SaveMenu(&mut self) {
+    /// ROM: `Module0E_0B_SaveMenu`
+    pub(super) fn module0e_0b_save_menu(&mut self) {
         if self.rom_startup_timing()
             && self.game_state.messaging.runtime.module() == 0
             && matches!(
@@ -2814,7 +2822,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Module1B_SpawnSelect(&mut self) {
+    /// ROM: `Module1B_SpawnSelect`
+    pub(super) fn module1b_spawn_select(&mut self) {
         // The spawn-select prompt hosts the shared RenderText machinery; its
         // Text_Initialize is measured like Module0E's (route host 160304).
         self.arm_dialogue_initialization_schedule_if_needed();
@@ -2854,11 +2863,12 @@ impl ZeldaState {
         self.game_state.messaging = crate::game_state::MessagingState::load_from_ram(&self.ram);
     }
 
-    pub(super) fn DesertPrayer_InitializeIrisHDMA(&mut self) {
+    /// ROM: `DesertPrayer_InitializeIrisHDMA`
+    pub(super) fn desert_prayer_initialize_iris_hdma(&mut self) {
         self.CleanUpAndPrepDesertPrayerHDMA();
         self.set_spotlight_window_radius_byte(0x26);
         self.set_spotlight_window_state_byte(0);
-        self.DesertPrayer_BuildIrisHDMATable();
+        self.desert_prayer_build_complete_iris_hdma_table();
         self.increment_subsubmodule();
     }
 
@@ -2888,7 +2898,7 @@ impl ZeldaState {
         &mut self,
         caller: crate::zelda_rtl::DesertPrayerIrisCaller,
     ) {
-        self.DesertPrayer_BuildIrisHDMATable();
+        self.desert_prayer_build_complete_iris_hdma_table();
         if caller == crate::zelda_rtl::DesertPrayerIrisCaller::InitializeCase2 {
             self.increment_subsubmodule();
             self.complete_desert_prayer_case2_after_iris();
@@ -2922,11 +2932,12 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_desert_prayer_palette_filter_after_iris(&mut self) {
-        self.DesertPrayer_BuildIrisHDMATable();
+        self.desert_prayer_build_complete_iris_hdma_table();
         self.complete_module0e_interface_after_run();
     }
 
-    pub(super) fn DesertPrayer_BuildIrisHDMATable(&mut self) {
+    /// ROM: `DesertPrayer_BuildIrisHDMATable`
+    pub(super) fn desert_prayer_build_complete_iris_hdma_table(&mut self) {
         assert!(!self.desert_prayer_build_iris_hdma_table(None));
     }
 
@@ -3025,7 +3036,7 @@ impl ZeldaState {
                 }
                 r4.wrapping_sub(1)
             } else {
-                let pair = self.DesertHDMA_CalculateIrisShapeLine();
+                let pair = self.desert_hdma_calculate_iris_shape_line();
                 if pair.a == 0 {
                     spotlight_y_lower = 0;
                     self.set_spotlight_y_lower(0);
@@ -3168,7 +3179,8 @@ impl ZeldaState {
         false
     }
 
-    pub(super) fn DesertHDMA_CalculateIrisShapeLine(&self) -> Pair16U {
+    /// ROM: `DesertHDMA_CalculateIrisShapeLine`
+    pub(super) fn desert_hdma_calculate_iris_shape_line(&self) -> Pair16U {
         let y_buffer = self
             .game_state
             .display
@@ -3196,7 +3208,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn OverworldMap_SetupHdma(&mut self) {
+    /// ROM: `OverworldMap_SetupHdma`
+    pub(super) fn overworld_map_setup_hdma(&mut self) {
         let addr = PRAYING_IRIS_HDMA_SOURCE_ADDRS[self.overworld_map_flags() as usize];
         self.hdma_setup(addr, addr, 0x42, 0x1b, 0x1e, 10);
     }
@@ -3250,17 +3263,19 @@ impl ZeldaState {
         self.zelda_write_sram();
     }
 
-    pub(super) fn Animate_GAMEOVER_Letters(&mut self) {
+    /// ROM: `Animate_GAMEOVER_Letters`
+    pub(super) fn animate_gameover_letters(&mut self) {
         match self.ancilla_slot_view(0).ancilla_type() {
             0 => self.increment_submodule(),
-            1 => self.GameOverText_SweepLeft(),
-            2 => self.GameOverText_UnfurlRight(),
-            3 => self.GameOverText_Draw(),
+            1 => self.game_over_text_sweep_left(),
+            2 => self.game_over_text_unfurl_right(),
+            3 => self.game_over_text_draw(),
             _ => {}
         }
     }
 
-    pub(super) fn GameOverText_SweepLeft(&mut self) {
+    /// ROM: `GameOverText_SweepLeft`
+    pub(super) fn game_over_text_sweep_left(&mut self) {
         let mut k = self.game_state.minigame.flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
         self.ancilla_slot_view_mut(k).set_x_velocity(0x80);
@@ -3276,7 +3291,7 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(0).increment_ancilla_type();
                 self.messaging_state_mut().clear_game_over_letter_cursor();
                 self.set_sound_effect_2(38);
-                self.GameOverText_Draw();
+                self.game_over_text_draw();
                 return;
             }
         }
@@ -3293,10 +3308,11 @@ impl ZeldaState {
                     .decrement_game_over_letter_cursor();
             }
         }
-        self.GameOverText_Draw();
+        self.game_over_text_draw();
     }
 
-    pub(super) fn GameOverText_UnfurlRight(&mut self) {
+    /// ROM: `GameOverText_UnfurlRight`
+    pub(super) fn game_over_text_unfurl_right(&mut self) {
         let mut k = self.game_state.minigame.flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
         self.ancilla_slot_view_mut(k).set_x_velocity(0x60);
@@ -3310,7 +3326,7 @@ impl ZeldaState {
             if self.game_state.messaging.runtime.game_over_letter_cursor() == 8 {
                 self.increment_submodule();
                 self.ancilla_slot_view_mut(0).increment_ancilla_type();
-                self.GameOverText_Draw();
+                self.game_over_text_draw();
                 return;
             }
         }
@@ -3326,19 +3342,11 @@ impl ZeldaState {
                 break;
             }
         }
-        self.GameOverText_Draw();
-    }
-
-    pub(super) fn GameOverText_Draw(&mut self) {
-        // ROM $08:F5C4 is the OAM author for the animated GAME OVER letters.
-        // The similarly numbered NMI request uploads OBJ character data; it is
-        // not this routine. Keeping the two operations separate matters once
-        // the initial character upload has completed and the letters move on
-        // every subsequent main-thread iteration.
         self.game_over_text_draw();
     }
 
-    pub(super) fn Module12_GameOver(&mut self) {
+    /// ROM: `Module12_GameOver`
+    pub(super) fn module12_game_over(&mut self) {
         let entry_submodule = self.game_state.frame.submodule;
         let spotlight_radius = self.game_state.display.spotlight_hdma.window_radius();
         let live_goal_palette_fill =
@@ -3364,26 +3372,26 @@ impl ZeldaState {
                 live_table_progress.map(|progress| progress.progress),
             );
         match entry_submodule {
-            0 => self.GameOver_AdvanceImmediately(),
-            1 => self.Death_Func1(),
-            2 if !game_over_spotlight_entry_suspended => self.GameOver_DelayBeforeIris(),
+            0 => self.game_over_advance_immediately(),
+            1 => self.death_func1(),
+            2 if !game_over_spotlight_entry_suspended => self.game_over_delay_before_iris(),
             2 => {}
             3 if !game_over_spotlight_build_suspended && !game_over_goal_palette_suspended => {
-                self.GameOver_IrisWipe()
+                self.game_over_iris_wipe()
             }
             3 => {}
-            4 => self.Death_Func4(),
-            5 => self.GameOver_SplatAndFade(),
-            6 => self.Death_Func6(),
-            7 => self.Animate_GAMEOVER_Letters_bounce(),
-            8 => self.GameOver_Finalize_GAMEOVR(),
-            9 => self.GameOver_SaveAndOrContinue(),
-            10 => self.GameOver_InitializeRevivalFairy(),
-            11 => self.RevivalFairy_Main_bounce(),
-            12 => self.GameOver_RiseALittle(),
-            13 => self.GameOver_Restore0D(),
-            14 => self.GameOver_Restore0E(),
-            15 => self.GameOver_ResituateLink(),
+            4 => self.death_func4(),
+            5 => self.game_over_splat_and_fade(),
+            6 => self.death_func6(),
+            7 => self.animate_gameover_letters_bounce(),
+            8 => self.game_over_finalize_gameovr(),
+            9 => self.game_over_save_and_or_continue(),
+            10 => self.game_over_initialize_revival_fairy(),
+            11 => self.revival_fairy_main_bounce(),
+            12 => self.game_over_rise_a_little(),
+            13 => self.game_over_restore0d(),
+            14 => self.game_over_restore0e(),
+            15 => self.game_over_resituate_link(),
             _ => {}
         }
         let spotlight_suspended = game_over_spotlight_entry_suspended
@@ -3414,7 +3422,7 @@ impl ZeldaState {
             0,
             "a game-over entry table checkpoint requires the delay timer to expire",
         );
-        self.Death_InitializeGameOverLetters();
+        self.death_initialize_game_over_letters();
         self.spotlight_internal_before_table(0x7e, 0);
         let table_build = self.begin_iris_spotlight_configure_table_at_progress(progress);
         let iteration = SpotlightIteration::game_over_closing(
@@ -3541,12 +3549,14 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn GameOver_AdvanceImmediately(&mut self) {
+    /// ROM: `GameOver_AdvanceImmediately`
+    pub(super) fn game_over_advance_immediately(&mut self) {
         self.increment_submodule();
-        self.Death_Func1();
+        self.death_func1();
     }
 
-    pub(super) fn Death_Func1(&mut self) {
+    /// ROM: `Death_Func1`
+    pub(super) fn death_func1(&mut self) {
         let current_music = self.game_state.system_signals.current_music_control();
         let ambient_sound = self.game_state.system_signals.last_ambient_sound_effect();
         self.set_death_backup_current_music(current_music);
@@ -3594,19 +3604,21 @@ impl ZeldaState {
         self.increment_submodule();
     }
 
-    pub(super) fn GameOver_DelayBeforeIris(&mut self) {
+    /// ROM: `GameOver_DelayBeforeIris`
+    pub(super) fn game_over_delay_before_iris(&mut self) {
         self.messaging_state_mut().decrement_menu_animation_timer();
         if self.game_state.messaging.runtime.menu_animation_timer() != 0 {
             return;
         }
-        self.Death_InitializeGameOverLetters();
+        self.death_initialize_game_over_letters();
         self.iris_spotlight_close();
         self.set_object_color_window_selection(0x30);
         self.set_bg34_window_selection(0);
         self.increment_submodule();
     }
 
-    pub(super) fn GameOver_IrisWipe(&mut self) {
+    /// ROM: `GameOver_IrisWipe`
+    pub(super) fn game_over_iris_wipe(&mut self) {
         self.game_over_iris_wipe_before_table();
         self.game_over_iris_wipe_after_table();
     }
@@ -3667,7 +3679,7 @@ impl ZeldaState {
         self.messaging_state_mut().set_menu_animation_timer(64);
         self.set_countdown(0);
         self.set_darkening_or_lightening_screen(0);
-        self.Death_PrepFaint();
+        self.death_prep_faint();
     }
 
     pub(super) fn complete_game_over_iris_goal_palette_fill(&mut self, completed_stores: u8) {
@@ -3676,7 +3688,8 @@ impl ZeldaState {
         self.link_oam_main();
     }
 
-    pub(super) fn GameOver_SplatAndFade(&mut self) {
+    /// ROM: `GameOver_SplatAndFade`
+    pub(super) fn game_over_splat_and_fade(&mut self) {
         if self.game_state.messaging.runtime.menu_animation_timer() != 0 {
             self.messaging_state_mut().decrement_menu_animation_timer();
             return;
@@ -3719,7 +3732,8 @@ impl ZeldaState {
         self.increment_submodule();
     }
 
-    pub(super) fn Death_Func6(&mut self) {
+    /// ROM: `Death_Func6`
+    pub(super) fn death_func6(&mut self) {
         self.messaging_state_mut().set_menu_animation_timer(12);
         self.set_chr_halfslot_request(15);
         self.graphics_load_chr_half_slot();
@@ -3730,18 +3744,21 @@ impl ZeldaState {
         self.palette_load_sprite_main();
         self.increment_cgram_update_flag();
         self.increment_submodule();
-        self.Death_PlayerSwoon();
+        self.death_player_swoon();
     }
 
-    pub(super) fn Death_Func4(&mut self) {
-        self.Death_PlayerSwoon();
+    /// ROM: `Death_Func4`
+    pub(super) fn death_func4(&mut self) {
+        self.death_player_swoon();
     }
 
-    pub(super) fn Animate_GAMEOVER_Letters_bounce(&mut self) {
-        self.Animate_GAMEOVER_Letters();
+    /// ROM: `Animate_GAMEOVER_Letters_bounce`
+    pub(super) fn animate_gameover_letters_bounce(&mut self) {
+        self.animate_gameover_letters();
     }
 
-    pub(super) fn GameOver_Finalize_GAMEOVR(&mut self) {
+    /// ROM: `GameOver_Finalize_GAMEOVR`
+    pub(super) fn game_over_finalize_gameovr(&mut self) {
         if self.rom_startup_timing() {
             self.prepare_game_over_text_oam();
             if self.game_over_text_render_calls_remaining == 0
@@ -3749,7 +3766,7 @@ impl ZeldaState {
             {
                 self.messaging_state_mut().set_module(2);
                 self.dialogue_message_index_mut().set_value(3);
-                self.Text_Initialize_initModuleStateLoop();
+                self.text_initialize_init_module_state_loop();
                 self.messaging_state_mut().set_text_msgbox_topleft(0x61e8);
                 self.messaging_state_mut().set_text_render_state(2);
                 self.game_over_text_render_calls_remaining = 5;
@@ -3757,7 +3774,7 @@ impl ZeldaState {
             self.resume_game_over_text_render_loop();
             return;
         }
-        self.Animate_GAMEOVER_Letters();
+        self.animate_gameover_letters();
         let bak1 = self.game_state.frame.main_module;
         let bak2 = self.game_state.frame.submodule;
         self.messaging_state_mut().set_module(2);
@@ -3776,7 +3793,7 @@ impl ZeldaState {
         // CPU slice. Then author only the sixteen GAME OVER letter sprites,
         // exactly as the suspended ROM stack has done by its first vblank.
         self.clear_oam_buffer();
-        self.Animate_GAMEOVER_Letters();
+        self.animate_gameover_letters();
     }
 
     pub(crate) fn game_over_text_render_loop_active(&self) -> bool {
@@ -3790,7 +3807,7 @@ impl ZeldaState {
         while self.game_over_text_render_calls_remaining != 0 {
             let resumed_interrupted_call = self.game_over_text_render_call_in_flight;
             self.game_over_text_render_call_in_flight = true;
-            self.Text_Render();
+            self.text_render();
             if self.dialogue_fast_forward_hold_pending
                 || !self.dialogue_scroll_cpu_is_idle()
                 || self
@@ -3822,9 +3839,10 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn GameOver_SaveAndOrContinue(&mut self) {
-        self.GameOver_AnimateChoiceFairy();
-        self.Animate_GAMEOVER_Letters();
+    /// ROM: `GameOver_SaveAndOrContinue`
+    pub(super) fn game_over_save_and_or_continue(&mut self) {
+        self.game_over_animate_choice_fairy();
+        self.animate_gameover_letters();
 
         if self.game_state.player.follower_link.filtered_joypad_h() & 0x20 != 0 {
             self.increment_subsubmodule();
@@ -3863,10 +3881,11 @@ impl ZeldaState {
             return;
         }
         self.set_sound_effect_1(44);
-        self.Death_Func15(self.game_state.frame.subsubmodule != 2);
+        self.death_func15(self.game_state.frame.subsubmodule != 2);
     }
 
-    pub(super) fn Death_Func15(&mut self, count_as_death: bool) {
+    /// ROM: `Death_Func15`
+    pub(super) fn death_func15(&mut self, count_as_death: bool) {
         if let Some(receipt) = self.take_original_timing_sprite_reset_all_progress() {
             assert_eq!(
                 (
@@ -4077,7 +4096,8 @@ impl ZeldaState {
         self.load_overworld_songs();
     }
 
-    pub(super) fn GameOver_AnimateChoiceFairy(&mut self) {
+    /// ROM: `GameOver_AnimateChoiceFairy`
+    pub(super) fn game_over_animate_choice_fairy(&mut self) {
         self.set_oam_plain(
             0x14,
             0x34,
@@ -4088,18 +4108,21 @@ impl ZeldaState {
         );
     }
 
-    pub(super) fn GameOver_InitializeRevivalFairy(&mut self) {
+    /// ROM: `GameOver_InitializeRevivalFairy`
+    pub(super) fn game_over_initialize_revival_fairy(&mut self) {
         self.configure_revival_ancillae();
         self.player_resources_mut().set_heart_filler(56);
         self.increment_submodule();
         self.set_overworld_map_state(0);
     }
 
-    pub(super) fn RevivalFairy_Main_bounce(&mut self) {
+    /// ROM: `RevivalFairy_Main_bounce`
+    pub(super) fn revival_fairy_main_bounce(&mut self) {
         self.revival_fairy_main();
     }
 
-    pub(super) fn GameOver_RiseALittle(&mut self) {
+    /// ROM: `GameOver_RiseALittle`
+    pub(super) fn game_over_rise_a_little(&mut self) {
         if self.game_state.inventory.player_resources.heart_filler() == 0 {
             let palette = self
                 .game_state
@@ -4123,7 +4146,8 @@ impl ZeldaState {
         self.hud_refill_logic();
     }
 
-    pub(super) fn GameOver_Restore0D(&mut self) {
+    /// ROM: `GameOver_Restore0D`
+    pub(super) fn game_over_restore0d(&mut self) {
         if !self.hud_state().is_doing_heart_animation() {
             self.set_chr_halfslot_request(1);
             self.graphics_load_chr_half_slot();
@@ -4135,14 +4159,16 @@ impl ZeldaState {
         self.hud_refill_logic();
     }
 
-    pub(super) fn GameOver_Restore0E(&mut self) {
+    /// ROM: `GameOver_Restore0E`
+    pub(super) fn game_over_restore0e(&mut self) {
         self.graphics_load_chr_half_slot();
         let sub_screen_layers = self.game_state.display.ppu_scroll_copy.mapbak_ts();
         self.set_sub_screen_layers(sub_screen_layers);
         self.increment_submodule();
     }
 
-    pub(super) fn GameOver_ResituateLink(&mut self) {
+    /// ROM: `GameOver_ResituateLink`
+    pub(super) fn game_over_resituate_link(&mut self) {
         self.palette_filter_restore_bg_additive_strict();
         self.copy_color(
             (zelda3_palette::Bank::Main, 32),
@@ -4178,30 +4204,32 @@ impl ZeldaState {
         self.set_darkening_or_lightening_screen_word(darkening_or_lightening_screen);
     }
 
-    pub(super) fn Module0E_0A_FluteMenu(&mut self) {
+    /// ROM: `Module0E_0A_FluteMenu`
+    pub(super) fn module0e_0a_flute_menu(&mut self) {
         match self.overworld_map_state() {
-            0 => self.WorldMap_FadeOut(),
+            0 => self.world_map_fade_out(),
             1 => {
                 self.set_birdtravel_status(0);
-                self.WorldMap_LoadLightWorldMap();
+                self.world_map_load_light_world_map_with_suspension();
             }
-            2 => self.WorldMap_LoadSpriteGFX(),
-            3 => self.WorldMap_Brighten(),
+            2 => self.world_map_load_sprite_gfx(),
+            3 => self.world_map_brighten(),
             4 => {
                 self.messaging_state_mut().set_menu_animation_timer(0x10);
                 self.increment_overworld_map_state();
             }
-            5 => self.FluteMenu_HandleSelection(),
-            6 => self.WorldMap_RestoreGraphics(),
-            7 => self.FluteMenu_LoadSelectedScreen(),
-            8 => self.Overworld_LoadOverlayAndMap(),
-            9 => self.FluteMenu_FadeInAndQuack(),
+            5 => self.flute_menu_handle_selection(),
+            6 => self.world_map_restore_graphics(),
+            7 => self.flute_menu_load_selected_screen(),
+            8 => self.overworld_load_overlay_and_map(),
+            9 => self.flute_menu_fade_in_and_quack(),
             // C Module0E_0A_FluteMenu asserts outside states 0..=9.
             state => panic!("Module0E_0A_FluteMenu invalid overworld_map_state {state}"),
         }
     }
 
-    pub(super) fn FluteMenu_HandleSelection(&mut self) {
+    /// ROM: `FluteMenu_HandleSelection`
+    pub(super) fn flute_menu_handle_selection(&mut self) {
         if self.game_state.messaging.runtime.menu_animation_timer() == 0 {
             if (self.game_state.player.follower_link.joypad1l_last()
                 | self.game_state.player.follower_link.joypad1h_last())
@@ -4235,9 +4263,9 @@ impl ZeldaState {
 
         let mut pt = Point16U { x: 0, y: 0 };
         if self.game_state.frame.frame_counter & 0x10 != 0
-            && self.WorldMap_CalculateOamCoordinates(&mut pt)
+            && self.world_map_calculate_oam_coordinates(&mut pt)
         {
-            self.WorldMap_AddSprite(16, 2, 0x3e, 0, pt.x.wrapping_sub(4), pt.y.wrapping_sub(4));
+            self.world_map_add_sprite(16, 2, 0x3e, 0, pt.x.wrapping_sub(4), pt.y.wrapping_sub(4));
         }
 
         let ybak = self.game_state.player.special_exit_position.y();
@@ -4249,8 +4277,8 @@ impl ZeldaState {
             self.special_exit_position_mut()
                 .set_position(bird_x, bird_y);
 
-            if self.WorldMap_CalculateOamCoordinates(&mut pt) {
-                self.WorldMap_AddSprite(
+            if self.world_map_calculate_oam_coordinates(&mut pt) {
+                self.world_map_add_sprite(
                     i,
                     0,
                     if i == usize::from(self.birdtravel_status()) {
@@ -4267,8 +4295,9 @@ impl ZeldaState {
         self.special_exit_position_mut().set_position(xbak, ybak);
     }
 
-    pub(super) fn FluteMenu_LoadSelectedScreen(&mut self) {
-        self.FluteMenu_LoadSelectedScreenPrefix();
+    /// ROM: `FluteMenu_LoadSelectedScreen`
+    pub(super) fn flute_menu_load_selected_screen(&mut self) {
+        self.flute_menu_load_selected_screen_prefix();
 
         if self.game_state.messaging.runtime.menu_animation_timer() & 0x40 == 0 {
             if self.begin_original_timing_flute_menu_selected_screen() {
@@ -4277,10 +4306,11 @@ impl ZeldaState {
             self.flute_menu_load_transport();
         }
 
-        self.FluteMenu_LoadSelectedScreenAfterTransport();
+        self.flute_menu_load_selected_screen_after_transport();
     }
 
-    pub(super) fn FluteMenu_LoadSelectedScreenPrefix(&mut self) {
+    /// ROM: `FluteMenu_LoadSelectedScreenPrefix`
+    pub(super) fn flute_menu_load_selected_screen_prefix(&mut self) {
         self.clear_overworld_event_bits(0x3b, 0x20);
         self.clear_overworld_event_bits(0x7b, 0x20);
         let dung_267 = self.saved_room_flags(267) & !0x0080;
@@ -4289,7 +4319,8 @@ impl ZeldaState {
         self.set_saved_room_flags(40, dung_40);
     }
 
-    pub(super) fn FluteMenu_LoadSelectedScreenAfterTransport(&mut self) {
+    /// ROM: `FluteMenu_LoadSelectedScreenAfterTransport`
+    pub(super) fn flute_menu_load_selected_screen_after_transport(&mut self) {
         self.flute_menu_load_selected_screen_palettes();
         let t = self.game_state.world.location.overworld_screen_index() & 0xbf;
         self.DecompressAnimatedOverworldTiles(if t == 3 || t == 5 || t == 7 {
@@ -4317,7 +4348,8 @@ impl ZeldaState {
         self.set_music_control(music);
     }
 
-    pub(super) fn Overworld_LoadOverlayAndMap(&mut self) {
+    /// ROM: `Overworld_LoadOverlayAndMap`
+    pub(super) fn overworld_load_overlay_and_map(&mut self) {
         let bak1 = self.game_state.frame.main_module_word();
         let bak2 = self.overworld_map_state_word();
         self.overworld_load_and_build_screen();
@@ -4325,16 +4357,18 @@ impl ZeldaState {
         self.set_main_module_word(bak1);
     }
 
-    pub(super) fn FluteMenu_FadeInAndQuack(&mut self) {
+    /// ROM: `FluteMenu_FadeInAndQuack`
+    pub(super) fn flute_menu_fade_in_and_quack(&mut self) {
         self.increment_screen_brightness();
         if self.game_state.display.screen_brightness == 15 {
-            self.BirdTravel_Finish_Doit();
+            self.bird_travel_finish_doit();
         } else {
             self.sprite_main();
         }
     }
 
-    pub(super) fn BirdTravel_Finish_Doit(&mut self) {
+    /// ROM: `BirdTravel_Finish_Doit`
+    pub(super) fn bird_travel_finish_doit(&mut self) {
         self.set_overworld_map_state(0);
         self.set_subsubmodule(0);
         let saved_module = self.game_state.frame.saved_module_for_menu;
@@ -4346,21 +4380,23 @@ impl ZeldaState {
         self.sprite_main();
     }
 
-    pub(super) fn Messaging_OverworldMap(&mut self) {
+    /// ROM: `Messaging_OverworldMap`
+    pub(super) fn messaging_overworld_map(&mut self) {
         match self.overworld_map_state() {
-            0 => self.WorldMap_FadeOut(),
-            1 => self.WorldMap_LoadLightWorldMap(),
-            2 => self.WorldMap_LoadDarkWorldMap(),
-            3 => self.WorldMap_LoadSpriteGFX(),
-            4 => self.WorldMap_Brighten(),
-            5 => self.WorldMap_PlayerControl(),
-            6 => self.WorldMap_RestoreGraphics(),
-            7 => self.WorldMap_ExitMap(),
+            0 => self.world_map_fade_out(),
+            1 => self.world_map_load_light_world_map_with_suspension(),
+            2 => self.world_map_load_dark_world_map(),
+            3 => self.world_map_load_sprite_gfx(),
+            4 => self.world_map_brighten(),
+            5 => self.world_map_player_control(),
+            6 => self.world_map_restore_graphics(),
+            7 => self.world_map_exit_map(),
             _ => {}
         }
     }
 
-    pub(super) fn WorldMap_FadeOut(&mut self) {
+    /// ROM: `WorldMap_FadeOut`
+    pub(super) fn world_map_fade_out(&mut self) {
         self.decrement_screen_brightness();
         if self.game_state.display.screen_brightness != 0 {
             return;
@@ -4419,14 +4455,16 @@ impl ZeldaState {
         self.set_bg_mode(7);
     }
 
-    pub(super) fn WorldMap_LoadLightWorldMap(&mut self) {
+    /// ROM: `WorldMap_LoadLightWorldMap`
+    pub(super) fn world_map_load_light_world_map_with_suspension(&mut self) {
         if self.begin_world_map_light_load_work() {
             return;
         }
         self.world_map_load_light_world_map();
     }
 
-    pub(super) fn WorldMap_LoadDarkWorldMap(&mut self) {
+    /// ROM: `WorldMap_LoadDarkWorldMap`
+    pub(super) fn world_map_load_dark_world_map(&mut self) {
         if u16::from(self.game_state.world.location.overworld_screen_index()) & 0x40 != 0 {
             if let Some(tilemap) = self.asset_raw(68).map(Vec::from) {
                 let len = tilemap.len().min(1024);
@@ -4437,14 +4475,16 @@ impl ZeldaState {
         self.increment_overworld_map_state();
     }
 
-    pub(super) fn WorldMap_LoadSpriteGFX(&mut self) {
+    /// ROM: `WorldMap_LoadSpriteGFX`
+    pub(super) fn world_map_load_sprite_gfx(&mut self) {
         self.set_chr_halfslot_request(0x10);
         self.graphics_load_chr_half_slot();
         self.clear_chr_halfslot_request();
         self.increment_overworld_map_state();
     }
 
-    pub(super) fn WorldMap_Brighten(&mut self) {
+    /// ROM: `WorldMap_Brighten`
+    pub(super) fn world_map_brighten(&mut self) {
         self.increment_screen_brightness();
         if self.game_state.display.screen_brightness == 15 {
             self.increment_overworld_map_state();
@@ -4465,10 +4505,11 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn WorldMap_PlayerControl(&mut self) {
+    /// ROM: `WorldMap_PlayerControl`
+    pub(super) fn world_map_player_control(&mut self) {
         if self.overworld_map_flags() & 0x80 != 0 {
             self.and_overworld_map_flags(!0x80);
-            self.OverworldMap_SetupHdma();
+            self.overworld_map_setup_hdma();
         }
 
         if self.overworld_map_flags() == 0 && self.DidPressButtonForMap() {
@@ -4536,10 +4577,11 @@ impl ZeldaState {
             }
         }
 
-        self.WorldMap_HandleSprites();
+        self.world_map_handle_sprites();
     }
 
-    pub(super) fn WorldMap_RestoreGraphics(&mut self) {
+    /// ROM: `WorldMap_RestoreGraphics`
+    pub(super) fn world_map_restore_graphics(&mut self) {
         self.decrement_screen_brightness();
         if self.game_state.display.screen_brightness != 0 {
             return;
@@ -4586,10 +4628,11 @@ impl ZeldaState {
         self.set_bg2_y(bg2vofs);
         let tm_ts = self.game_state.display.ppu_scroll_copy.mapbak_tm_word();
         self.set_layer_masks_word(tm_ts);
-        self.Attract_SetUpConclusionHDMA();
+        self.attract_set_up_conclusion_hdma();
     }
 
-    pub(super) fn Attract_SetUpConclusionHDMA(&mut self) {
+    /// ROM: `Attract_SetUpConclusionHDMA`
+    pub(super) fn attract_set_up_conclusion_hdma(&mut self) {
         // $0A:BC33 points only channel 7 at the table; channel 6 keeps the
         // world map's ($0A:BDCF, indirect bank $0A) for later effects.
         self.hdma_setup(0, 0x0abddd, 0x42, 0x1b, 0x1e, 0);
@@ -4598,7 +4641,8 @@ impl ZeldaState {
         self.clear_core_update_disable_flag();
     }
 
-    pub(super) fn WorldMap_ExitMap(&mut self) {
+    /// ROM: `WorldMap_ExitMap`
+    pub(super) fn world_map_exit_map(&mut self) {
         self.clear_overworld_aux_or_main_offset();
         self.set_hud_palette(0);
         if self.rom_startup_timing() {
@@ -4633,13 +4677,14 @@ impl ZeldaState {
         self.set_music_control(0xf3);
     }
 
-    pub(super) fn WorldMap_HandleSprites(&mut self) {
+    /// ROM: `WorldMap_HandleSprites`
+    pub(super) fn world_map_handle_sprites(&mut self) {
         let ybak = self.game_state.player.special_exit_position.y();
         let xbak = self.game_state.player.special_exit_position.x();
 
         if self.game_state.frame.frame_counter & 0x10 != 0 {
-            if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
-                self.WorldMap_AddSprite(0, 2, 0x3e, 0, x.wrapping_sub(4), y.wrapping_sub(4));
+            if let Some((x, y)) = self.world_map_calculate_current_oam_coordinates() {
+                self.world_map_add_sprite(0, 2, 0x3e, 0, x.wrapping_sub(4), y.wrapping_sub(4));
             }
         }
 
@@ -4666,8 +4711,8 @@ impl ZeldaState {
             let bird_y = bird.y;
             self.special_exit_position_mut()
                 .set_position(bird_x, bird_y);
-            if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
-                self.WorldMap_AddSprite(
+            if let Some((x, y)) = self.world_map_calculate_current_oam_coordinates() {
+                self.world_map_add_sprite(
                     15,
                     2,
                     OVERWORLD_MAP_BIRD_FRAME_CHARS
@@ -4690,13 +4735,14 @@ impl ZeldaState {
                 & 1)
                 == 0
         {
-            self.WorldMap_HandleCrystalSprites();
+            self.world_map_handle_crystal_sprites();
         }
 
         self.special_exit_position_mut().set_position(xbak, ybak);
     }
 
-    fn WorldMap_HandleCrystalSprites(&mut self) {
+    /// ROM: `WorldMap_HandleCrystalSprites`
+    fn world_map_handle_crystal_sprites(&mut self) {
         let k = self
             .game_state
             .inventory
@@ -4707,10 +4753,10 @@ impl ZeldaState {
         }
         for crystal in 0..7 {
             let have_marker = if crystal < 3 {
-                self.OverworldMap_CheckForPendant(crystal)
-                    || self.OverworldMap_CheckForCrystal(crystal)
+                self.overworld_map_check_for_pendant(crystal)
+                    || self.overworld_map_check_for_crystal(crystal)
             } else {
-                self.OverworldMap_CheckForCrystal(crystal)
+                self.overworld_map_check_for_crystal(crystal)
             };
             if have_marker || (OVERWORLD_MAP_CRYSTAL_ICON_X_POSITIONS[crystal][k] as i16) < 0 {
                 continue;
@@ -4728,7 +4774,7 @@ impl ZeldaState {
                 self.special_exit_position_mut()
                     .offset_position(0u16.wrapping_sub(4), 0u16.wrapping_sub(4));
             }
-            if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
+            if let Some((x, y)) = self.world_map_calculate_current_oam_coordinates() {
                 let mut ext = 2;
                 if info >> 8 == 0 {
                     info = u16::from(
@@ -4738,13 +4784,14 @@ impl ZeldaState {
                         | 0x32;
                     ext = 0;
                 }
-                self.WorldMap_AddSprite(14 - crystal, ext, info as u8, (info >> 8) as u8, x, y);
+                self.world_map_add_sprite(14 - crystal, ext, info as u8, (info >> 8) as u8, x, y);
             }
         }
     }
 
-    pub(super) fn WorldMap_CalculateOamCoordinates(&mut self, pt: &mut Point16U) -> bool {
-        if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
+    /// ROM: `WorldMap_CalculateOamCoordinates`
+    pub(super) fn world_map_calculate_oam_coordinates(&mut self, pt: &mut Point16U) -> bool {
+        if let Some((x, y)) = self.world_map_calculate_current_oam_coordinates() {
             pt.x = x;
             pt.y = y;
             true
@@ -4753,7 +4800,8 @@ impl ZeldaState {
         }
     }
 
-    fn WorldMap_CalculateCurrentOamCoordinates(&self) -> Option<(u16, u16)> {
+    /// ROM: `WorldMap_CalculateCurrentOamCoordinates`
+    fn world_map_calculate_current_oam_coordinates(&self) -> Option<(u16, u16)> {
         let spexit = &self.game_state.player.special_exit_position;
         let y_spexit = spexit.y();
         let x_spexit = spexit.x();
@@ -4832,7 +4880,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn WorldMap_AddSprite(
+    /// ROM: `WorldMap_AddSprite`
+    pub(super) fn world_map_add_sprite(
         &mut self,
         spr: usize,
         big: u8,
@@ -4866,7 +4915,8 @@ impl ZeldaState {
         self.set_oam_plain(spr, x as u8, y as u8, ch, flags, big);
     }
 
-    pub(super) fn OverworldMap_CheckForPendant(&self, k: usize) -> bool {
+    /// ROM: `OverworldMap_CheckForPendant`
+    pub(super) fn overworld_map_check_for_pendant(&self, k: usize) -> bool {
         self.game_state
             .inventory
             .save_progress
@@ -4877,7 +4927,8 @@ impl ZeldaState {
                 != 0
     }
 
-    pub(super) fn OverworldMap_CheckForCrystal(&self, k: usize) -> bool {
+    /// ROM: `OverworldMap_CheckForCrystal`
+    pub(super) fn overworld_map_check_for_crystal(&self, k: usize) -> bool {
         self.game_state
             .inventory
             .save_progress
@@ -4888,30 +4939,32 @@ impl ZeldaState {
                 != 0
     }
 
-    pub(super) fn Module0E_03_DungeonMap(&mut self) {
+    /// ROM: `Module0E_03_DungeonMap`
+    pub(super) fn module0e_03_dungeon_map(&mut self) {
         self.replay_trace_ram_watch("dungmap-before-submodule");
         match self.overworld_map_state() {
-            0 => self.DungMap_Backup(),
-            1 => self.Module0E_03_01_DrawMap(),
-            2 => self.DungMap_LightenUpMap(),
-            3 => self.DungeonMap_HandleInputAndSprites(),
-            4 => self.DungMap_4(),
-            5 => self.DungMap_FadeMapToBlack(),
-            6 => self.DungeonMap_RecoverGFX(),
+            0 => self.dung_map_backup(),
+            1 => self.module0e_03_01_draw_map(),
+            2 => self.dung_map_lighten_up_map(),
+            3 => self.dungeon_map_handle_input_and_sprites(),
+            4 => self.dung_map_4(),
+            5 => self.dung_map_fade_map_to_black(),
+            6 => self.dungeon_map_recover_gfx(),
             7 => self.ToggleStarTilesAndAdvance(),
-            _ => self.DungMap_RestoreOld(),
+            _ => self.dung_map_restore_old(),
         }
         self.replay_trace_ram_watch("dungmap-after-submodule");
     }
 
-    pub(super) fn Module0E_03_01_DrawMap(&mut self) {
+    /// ROM: `Module0E_03_01_DrawMap`
+    pub(super) fn module0e_03_01_draw_map(&mut self) {
         self.replay_trace_ram_watch("dungmap-draw-before-init");
         match self.game_state.dungeon_map_display.dungmap_init_state() {
-            0 => self.Module0E_03_01_00_PrepMapGraphics(),
-            1 => self.Module0E_03_01_01_DrawLEVEL(),
-            2 => self.Module0E_03_01_02_DrawFloorsBackdrop(),
-            3 => self.Module0E_03_01_03_DrawRooms(),
-            4 => self.DungeonMap_DrawRoomMarkers(),
+            0 => self.module0e_03_01_00_prep_map_graphics(),
+            1 => self.module0e_03_01_01_draw_level(),
+            2 => self.module0e_03_01_02_draw_floors_backdrop(),
+            3 => self.module0e_03_01_03_draw_rooms(),
+            4 => self.dungeon_map_draw_room_markers(),
             // C dispatches through kDungMapInit and asserts in debug if this
             // state is outside the initialized table.
             state => panic!("Module0E_03_01_DrawMap invalid dungmap_init_state {state}"),
@@ -4919,7 +4972,8 @@ impl ZeldaState {
         self.replay_trace_ram_watch("dungmap-draw-after-init");
     }
 
-    pub(super) fn Module0E_03_01_00_PrepMapGraphics(&mut self) {
+    /// ROM: `Module0E_03_01_00_PrepMapGraphics`
+    pub(super) fn module0e_03_01_00_prep_map_graphics(&mut self) {
         if self.rom_startup_timing() {
             self.begin_dungeon_map_graphics_preparation();
             self.game_execution_scheduler.schedule_work(
@@ -4994,7 +5048,8 @@ impl ZeldaState {
         self.replay_trace_ram_watch("dungmap-prep-exit");
     }
 
-    pub(super) fn Module0E_03_01_01_DrawLEVEL(&mut self) {
+    /// ROM: `Module0E_03_01_01_DrawLEVEL`
+    pub(super) fn module0e_03_01_01_draw_level(&mut self) {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_LEVEL_LABEL_INDEX_BY_DUNGEON.len() - 1);
         let i = DUNGEON_MAP_LEVEL_LABEL_INDEX_BY_DUNGEON[dung] >> 1;
@@ -5011,7 +5066,8 @@ impl ZeldaState {
         self.increment_dungeon_map_init_state();
     }
 
-    pub(super) fn Module0E_03_01_02_DrawFloorsBackdrop(&mut self) {
+    /// ROM: `Module0E_03_01_02_DrawFloorsBackdrop`
+    pub(super) fn module0e_03_01_02_draw_floors_backdrop(&mut self) {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung];
@@ -5062,14 +5118,15 @@ impl ZeldaState {
             }
         }
         self.set_vram_upload_cursor((offs * 2) as u16);
-        self.DungeonMap_BuildFloorListBoxes(t5 as u8, t7_org);
+        self.dungeon_map_build_floor_list_boxes(t5 as u8, t7_org);
         let offset = self.game_state.display.vram_upload_cursor_usize();
         self.terminate_vram_upload_buffer_at(offset);
         self.increment_dungeon_map_init_state();
         self.set_bg_vram_load_mode(1);
     }
 
-    pub(super) fn DungeonMap_BuildFloorListBoxes(&mut self, t5: u8, mut r14: u16) {
+    /// ROM: `DungeonMap_BuildFloorListBoxes`
+    pub(super) fn dungeon_map_build_floor_list_boxes(&mut self, t5: u8, mut r14: u16) {
         let n = usize::from((t5 & 0x0f).wrapping_add(t5 >> 4)).max(1);
         r14 = r14
             .wrapping_sub(0x40 - 2)
@@ -5096,7 +5153,8 @@ impl ZeldaState {
         self.set_vram_upload_cursor((offs * 2) as u16);
     }
 
-    pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
+    /// ROM: `Module0E_03_01_03_DrawRooms`
+    pub(super) fn module0e_03_01_03_draw_rooms(&mut self) {
         if let Some(nmi_slices) = self.pending_dungeon_map_room_drawing_nmi_slices.take() {
             if nmi_slices == 0 {
                 self.complete_dungeon_map_room_drawing();
@@ -5145,13 +5203,13 @@ impl ZeldaState {
             self.set_dungeon_map_current_floor(dung_cur_floor);
             self.set_dungeon_map_idx(dungmap_idx);
         }
-        self.DungeonMap_DrawFloorNumbersByRoom(0, !0x1000);
-        self.DungeonMap_DrawBorderForRooms(0, !0x1000);
-        self.DungeonMap_DrawDungeonLayout(0);
+        self.dungeon_map_draw_floor_numbers_by_room(0, !0x1000);
+        self.dungeon_map_draw_border_for_rooms(0, !0x1000);
+        self.dungeon_map_draw_dungeon_layout(0);
         self.decrement_dungeon_map_current_floor_byte();
-        self.DungeonMap_DrawFloorNumbersByRoom(0x0300, !0x1000);
-        self.DungeonMap_DrawBorderForRooms(0x0300, !0x1000);
-        self.DungeonMap_DrawDungeonLayout(0x0300);
+        self.dungeon_map_draw_floor_numbers_by_room(0x0300, !0x1000);
+        self.dungeon_map_draw_border_for_rooms(0x0300, !0x1000);
+        self.dungeon_map_draw_dungeon_layout(0x0300);
         let dungmap_cur_floor = self
             .game_state
             .dungeon_map_display
@@ -5164,7 +5222,8 @@ impl ZeldaState {
         self.increment_dungeon_map_init_state();
     }
 
-    pub(super) fn DungeonMap_DrawBorderForRooms(&mut self, pd: u16, mask: u16) {
+    /// ROM: `DungeonMap_DrawBorderForRooms`
+    pub(super) fn dungeon_map_draw_border_for_rooms(&mut self, pd: u16, mask: u16) {
         for i in 0..4 {
             let idx = (((DUNGEON_MAP_ROOM_BORDER_CORNER_POSITIONS[i].wrapping_add(pd)) & 0x0fff)
                 >> 1) as usize;
@@ -5195,7 +5254,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn DungeonMap_DrawFloorNumbersByRoom(&mut self, pd: u16, r8: u16) {
+    /// ROM: `DungeonMap_DrawFloorNumbersByRoom`
+    pub(super) fn dungeon_map_draw_floor_numbers_by_room(&mut self, pd: u16, r8: u16) {
         let mut p = 0x00deu16;
         loop {
             let t = (((p.wrapping_add(pd)) & 0x0fff) >> 1) as usize;
@@ -5223,14 +5283,16 @@ impl ZeldaState {
         self.set_messaging_render_buffer_word(t + 1, q2 & r8);
     }
 
-    pub(super) fn DungeonMap_DrawDungeonLayout(&mut self, pd: i32) {
+    /// ROM: `DungeonMap_DrawDungeonLayout`
+    pub(super) fn dungeon_map_draw_dungeon_layout(&mut self, pd: i32) {
         for i in 0..5 {
             let arg_x = ((292 + 128 * i + pd) & 0x0fff) >> 1;
-            self.DungeonMap_DrawSingleRowOfRooms(i, arg_x);
+            self.dungeon_map_draw_single_row_of_rooms(i, arg_x);
         }
     }
 
-    pub(super) fn DungeonMap_DrawSingleRowOfRooms(&mut self, i: i32, mut arg_x: i32) {
+    /// ROM: `DungeonMap_DrawSingleRowOfRooms`
+    pub(super) fn dungeon_map_draw_single_row_of_rooms(&mut self, i: i32, mut arg_x: i32) {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung];
@@ -5313,7 +5375,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn DungeonMap_DrawRoomMarkers(&mut self) {
+    /// ROM: `DungeonMap_DrawRoomMarkers`
+    pub(super) fn dungeon_map_draw_room_markers(&mut self) {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t5 = (DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8;
@@ -5384,18 +5447,20 @@ impl ZeldaState {
         self.clear_dungeon_map_init_state();
     }
 
-    pub(super) fn DungeonMap_HandleInputAndSprites(&mut self) {
-        self.DungeonMap_HandleInput();
-        self.DungeonMap_DrawSprites();
+    /// ROM: `DungeonMap_HandleInputAndSprites`
+    pub(super) fn dungeon_map_handle_input_and_sprites(&mut self) {
+        self.dungeon_map_handle_input();
+        self.dungeon_map_draw_sprites();
     }
 
-    pub(super) fn DungeonMap_HandleInput(&mut self) {
+    /// ROM: `DungeonMap_HandleInput`
+    pub(super) fn dungeon_map_handle_input(&mut self) {
         if self.WantExitDungeonMap() {
             let overworld_map_state = self.overworld_map_state().wrapping_add(2);
             self.set_overworld_map_state(overworld_map_state);
             self.clear_dungeon_map_init_state();
         } else {
-            self.DungeonMap_HandleMovementInput();
+            self.dungeon_map_handle_movement_input();
         }
     }
 
@@ -5413,19 +5478,21 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn DungeonMap_HandleMovementInput(&mut self) {
-        self.DungeonMap_HandleFloorSelect();
+    /// ROM: `DungeonMap_HandleMovementInput`
+    pub(super) fn dungeon_map_handle_movement_input(&mut self) {
+        self.dungeon_map_handle_floor_select();
         if self
             .game_state
             .dungeon_map_display
             .dungmap_floor_scroll_step()
             != 0
         {
-            self.DungeonMap_ScrollFloors();
+            self.dungeon_map_scroll_floors();
         }
     }
 
-    pub(super) fn DungeonMap_HandleFloorSelect(&mut self) {
+    /// ROM: `DungeonMap_HandleFloorSelect`
+    pub(super) fn dungeon_map_handle_floor_select(&mut self) {
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(
             self.game_state.inventory.save_progress.palace_index_x2() >> 1,
         )
@@ -5473,9 +5540,9 @@ impl ZeldaState {
             scroll_draw_offset = scroll_draw_offset.wrapping_add(0x600) & 0x0fff;
         }
 
-        self.DungeonMap_DrawFloorNumbersByRoom(scroll_draw_offset, !0x1000);
-        self.DungeonMap_DrawBorderForRooms(scroll_draw_offset, !0x1000);
-        self.DungeonMap_DrawDungeonLayout(scroll_draw_offset as i32);
+        self.dungeon_map_draw_floor_numbers_by_room(scroll_draw_offset, !0x1000);
+        self.dungeon_map_draw_border_for_rooms(scroll_draw_offset, !0x1000);
+        self.dungeon_map_draw_dungeon_layout(scroll_draw_offset as i32);
         self.increment_dungeon_map_floor_scroll_step();
         let joypad_h = self.game_state.player.follower_link.joypad1h_last();
         self.set_dungeon_map_scroll_input(u16::from(joypad_h));
@@ -5500,7 +5567,8 @@ impl ZeldaState {
         self.set_pending_nmi_subroutine(8);
     }
 
-    pub(super) fn DungeonMap_ScrollFloors(&mut self) {
+    /// ROM: `DungeonMap_ScrollFloors`
+    pub(super) fn dungeon_map_scroll_floors(&mut self) {
         let x = self
             .game_state
             .dungeon_map_display
@@ -5531,7 +5599,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn DungeonMap_DrawSprites(&mut self) {
+    /// ROM: `DungeonMap_DrawSprites`
+    pub(super) fn dungeon_map_draw_sprites(&mut self) {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let r2 = (DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8;
@@ -5539,22 +5608,23 @@ impl ZeldaState {
 
         let mut spr_pos = 0usize;
         let mut r14 = 0u16;
-        self.DungeonMap_DrawLinkPointing(spr_pos, r2, floor);
+        self.dungeon_map_draw_link_pointing(spr_pos, r2, floor);
         spr_pos += 1;
         loop {
-            spr_pos = self.DungeonMap_DrawLocationMarker(spr_pos, r14);
+            spr_pos = self.dungeon_map_draw_location_marker(spr_pos, r14);
             r14 = r14.wrapping_add(1);
             if spr_pos == 9 {
                 break;
             }
         }
-        spr_pos = self.DungeonMap_DrawBlinkingIndicator(spr_pos);
-        spr_pos = self.DungeonMap_DrawBossIcon(spr_pos);
-        let _ = self.DungeonMap_DrawFloorNumberObjects(spr_pos);
-        self.DungeonMap_DrawFloorBlinker();
+        spr_pos = self.dungeon_map_draw_blinking_indicator(spr_pos);
+        spr_pos = self.dungeon_map_draw_boss_icon(spr_pos);
+        let _ = self.dungeon_map_draw_floor_number_objects(spr_pos);
+        self.dungeon_map_draw_floor_blinker();
     }
 
-    pub(super) fn DungeonMap_DrawLinkPointing(&mut self, spr_pos: usize, r2: u8, mut r3: u8) {
+    /// ROM: `DungeonMap_DrawLinkPointing`
+    pub(super) fn dungeon_map_draw_link_pointing(&mut self, spr_pos: usize, r2: u8, mut r3: u8) {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] as u8;
@@ -5574,7 +5644,8 @@ impl ZeldaState {
         self.set_oam_plain(spr_pos, 0x19, y, 0, flags, 2);
     }
 
-    pub(super) fn DungeonMap_DrawBlinkingIndicator(&mut self, spr_pos: usize) -> usize {
+    /// ROM: `DungeonMap_DrawBlinkingIndicator`
+    pub(super) fn dungeon_map_draw_blinking_indicator(&mut self, spr_pos: usize) -> usize {
         let marker_y = self
             .game_state
             .dungeon_map_display
@@ -5595,7 +5666,8 @@ impl ZeldaState {
         spr_pos + 1
     }
 
-    pub(super) fn DungeonMap_DrawLocationMarker(&mut self, mut spr_pos: usize, r14: u16) -> usize {
+    /// ROM: `DungeonMap_DrawLocationMarker`
+    pub(super) fn dungeon_map_draw_location_marker(&mut self, mut spr_pos: usize, r14: u16) -> usize {
         for i in (0..4).rev() {
             let r15 = self
                 .game_state
@@ -5636,7 +5708,8 @@ impl ZeldaState {
         spr_pos
     }
 
-    pub(super) fn DungeonMap_DrawFloorNumberObjects(&mut self, spr_pos: usize) -> usize {
+    /// ROM: `DungeonMap_DrawFloorNumberObjects`
+    pub(super) fn dungeon_map_draw_floor_number_objects(&mut self, spr_pos: usize) -> usize {
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(
             self.game_state.inventory.save_progress.palace_index_x2() >> 1,
         )
@@ -5688,7 +5761,8 @@ impl ZeldaState {
         pos
     }
 
-    pub(super) fn DungeonMap_DrawFloorBlinker(&mut self) {
+    /// ROM: `DungeonMap_DrawFloorBlinker`
+    pub(super) fn dungeon_map_draw_floor_blinker(&mut self) {
         let mut floor = self.game_state.dungeon_map_display.dungmap_cur_floor_byte();
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(
             self.game_state.inventory.save_progress.palace_index_x2() >> 1,
@@ -5750,7 +5824,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn DungeonMap_DrawBossIcon(&mut self, spr_pos: usize) -> usize {
+    /// ROM: `DungeonMap_DrawBossIcon`
+    pub(super) fn dungeon_map_draw_boss_icon(&mut self, spr_pos: usize) -> usize {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         if (self.saved_room_flags(usize::from(DUNGEON_MAP_BOSS_ROOM_BY_DUNGEON[dung])) & 0x0800)
@@ -5764,7 +5839,7 @@ impl ZeldaState {
         {
             return spr_pos;
         }
-        let spr_pos = self.DungeonMap_DrawBossIconByFloor(spr_pos);
+        let spr_pos = self.dungeon_map_draw_boss_icon_by_floor(spr_pos);
         if (self.game_state.frame.frame_counter & 0x0f) >= 10 {
             return spr_pos;
         }
@@ -5782,7 +5857,8 @@ impl ZeldaState {
         spr_pos + 1
     }
 
-    pub(super) fn DungeonMap_DrawBossIconByFloor(&mut self, spr_pos: usize) -> usize {
+    /// ROM: `DungeonMap_DrawBossIconByFloor`
+    pub(super) fn dungeon_map_draw_boss_icon_by_floor(&mut self, spr_pos: usize) -> usize {
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] as u8;
@@ -5809,7 +5885,8 @@ impl ZeldaState {
         spr_pos + 1
     }
 
-    pub(super) fn DungeonMap_RecoverGFX(&mut self) {
+    /// ROM: `DungeonMap_RecoverGFX`
+    pub(super) fn dungeon_map_recover_gfx(&mut self) {
         if self.rom_startup_timing() {
             self.begin_dungeon_map_recovery();
             self.game_execution_scheduler.schedule_work(
@@ -5919,7 +5996,8 @@ impl ZeldaState {
         self.increment_overworld_map_state();
     }
 
-    pub(super) fn DungMap_4(&mut self) {
+    /// ROM: `DungMap_4`
+    pub(super) fn dung_map_4(&mut self) {
         let scroll_target = self
             .game_state
             .dungeon_map_display
@@ -5944,14 +6022,16 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn DungMap_LightenUpMap(&mut self) {
+    /// ROM: `DungMap_LightenUpMap`
+    pub(super) fn dung_map_lighten_up_map(&mut self) {
         self.increment_screen_brightness();
         if self.game_state.display.screen_brightness == 0x0f {
             self.increment_overworld_map_state();
         }
     }
 
-    pub(super) fn DungMap_Backup(&mut self) {
+    /// ROM: `DungMap_Backup`
+    pub(super) fn dung_map_backup(&mut self) {
         self.decrement_screen_brightness();
         if self.game_state.display.screen_brightness != 0 {
             return;
@@ -6015,7 +6095,8 @@ impl ZeldaState {
         self.set_music_control(0xf2);
     }
 
-    pub(super) fn DungMap_FadeMapToBlack(&mut self) {
+    /// ROM: `DungMap_FadeMapToBlack`
+    pub(super) fn dung_map_fade_map_to_black(&mut self) {
         self.decrement_screen_brightness();
         if self.game_state.display.screen_brightness != 0 {
             return;
@@ -6065,7 +6146,8 @@ impl ZeldaState {
         self.increment_cgram_update_flag();
     }
 
-    pub(super) fn DungMap_RestoreOld(&mut self) {
+    /// ROM: `DungMap_RestoreOld`
+    pub(super) fn dung_map_restore_old(&mut self) {
         self.OrientLampLightCone();
         self.increment_screen_brightness();
         if self.game_state.display.screen_brightness != 0x0f {
@@ -6081,7 +6163,8 @@ impl ZeldaState {
         self.set_hdma_enable_mask(hdma_enable_mask);
     }
 
-    pub(super) fn Death_InitializeGameOverLetters(&mut self) {
+    /// ROM: `Death_InitializeGameOverLetters`
+    pub(super) fn death_initialize_game_over_letters(&mut self) {
         self.minigame_state_mut().set_flag_boomerang_in_place(0);
         for i in 0..8 {
             self.ancilla_slot_view_mut(i).set_x(0xb0);
@@ -6148,9 +6231,9 @@ impl ZeldaState {
                 near
             });
             match self.game_state.messaging.runtime.module() {
-                0 => self.Text_Initialize(),
-                1 => self.Text_Render(),
-                2 => self.RenderText_PostDeathSaveOptions(),
+                0 => self.text_initialize(),
+                1 => self.text_render(),
+                2 => self.render_text_post_death_save_options(),
                 _ => {}
             }
         }
@@ -6174,17 +6257,19 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RenderText_PostDeathSaveOptions(&mut self) {
+    /// ROM: `RenderText_PostDeathSaveOptions`
+    pub(super) fn render_text_post_death_save_options(&mut self) {
         self.dialogue_message_index_mut().set_value(3);
-        self.Text_Initialize_initModuleStateLoop();
+        self.text_initialize_init_module_state_loop();
         self.messaging_state_mut().set_text_msgbox_topleft(0x61e8);
         self.messaging_state_mut().set_text_render_state(2);
         for _ in 0..5 {
-            self.Text_Render();
+            self.text_render();
         }
     }
 
-    pub(super) fn Text_Initialize(&mut self) {
+    /// ROM: `Text_Initialize`
+    pub(super) fn text_initialize(&mut self) {
         if self.native_initializer_has_retained_entry() {
             let work = self.native_dialogue_initialization_caller_work()
                 .expect("native initializer requires its assets and message operands");
@@ -6540,7 +6625,8 @@ impl ZeldaState {
         self.text_initialize_module_state_prefix();
     }
 
-    pub(super) fn Text_Initialize_initModuleStateLoop(&mut self) {
+    /// ROM: `Text_Initialize_initModuleStateLoop`
+    pub(super) fn text_initialize_init_module_state_loop(&mut self) {
         self.text_initialize_module_state_prefix();
         self.complete_text_initialization_suffix();
     }
@@ -6610,7 +6696,7 @@ impl ZeldaState {
     pub(super) fn complete_text_initialization_suffix(&mut self) {
         // $0E:C4B4 JSR Text_LoadCharacterBuffer precedes the callee's work.
         crate::cycle_ledger::charge(46);
-        self.Text_LoadCharacterBuffer();
+        self.text_load_character_buffer();
         self.finish_text_initialization_after_character_buffer();
     }
 
@@ -6646,7 +6732,7 @@ impl ZeldaState {
 
     pub(super) fn complete_text_initialization_carry_suffix(&mut self) {
         if self.dialogue_character_load_progress.is_some() {
-            self.Text_LoadCharacterBuffer();
+            self.text_load_character_buffer();
         }
         self.finish_text_initialization_after_character_buffer();
         // The scheduler owns RenderText's open call while Text_Initialize is
@@ -6694,7 +6780,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Text_InitVwfState(&mut self) {
+    /// ROM: `Text_InitVwfState`
+    pub(super) fn text_init_vwf_state(&mut self) {
         // $0E:C4C9-$0E:C4E1: eight STZ abs and RTS.
         crate::cycle_ledger::charge_routine(0x0e_c4c9, 298);
         self.set_vwf_current_line(0);
@@ -6708,7 +6795,8 @@ impl ZeldaState {
         (decoded.param, decoded.command, decoded.multibyte)
     }
 
-    pub(super) fn Text_LoadCharacterBuffer(&mut self) {
+    /// ROM: `Text_LoadCharacterBuffer`
+    pub(super) fn text_load_character_buffer(&mut self) {
         self.text_load_character_buffer_until(None);
     }
 
@@ -6920,7 +7008,7 @@ impl ZeldaState {
             } else {
                 0
             };
-            *ch = self.Text_FilterPlayerNameCharacters((a & 0x0f | (a >> 1) & 0xf0) as u8);
+            *ch = self.text_filter_player_name_characters((a & 0x0f | (a >> 1) & 0xf0) as u8);
         }
         // Write all 6 chars (C writes p[0..6] unconditionally)
         decoded.extend_from_slice(&name);
@@ -6945,7 +7033,7 @@ impl ZeldaState {
             } else {
                 0
             };
-            *ch = self.Text_FilterPlayerNameCharacters((a & 0x0f | (a >> 1) & 0xf0) as u8);
+            *ch = self.text_filter_player_name_characters((a & 0x0f | (a >> 1) & 0xf0) as u8);
         }
         let mut len = name.len();
         while len != 0 && name[len - 1] == 0x59 {
@@ -6954,7 +7042,8 @@ impl ZeldaState {
         decoded.extend_from_slice(&name[..len]);
     }
 
-    pub(super) fn Text_FilterPlayerNameCharacters(&self, mut a: u8) -> u8 {
+    /// ROM: `Text_FilterPlayerNameCharacters`
+    pub(super) fn text_filter_player_name_characters(&self, mut a: u8) -> u8 {
         if a >= 0x5f {
             if a >= 0x76 {
                 a = a.wrapping_sub(0x42);
@@ -6969,7 +7058,8 @@ impl ZeldaState {
         a
     }
 
-    pub(super) fn Text_Render(&mut self) {
+    /// ROM: `Text_Render`
+    pub(super) fn text_render(&mut self) {
         // Text_Render ($0E:C8D9: LDA $1CD4 : JSL JumpTableLocal, 32 + 62 +
         // 414), a jump target of Messaging_Text_Near (or a JSR frame from the
         // post-death options loop); the state handlers are its jump targets.
@@ -6980,31 +7070,33 @@ impl ZeldaState {
             crate::cycle_ledger::charge(414 - 52);
         }
         match self.game_state.messaging.runtime.text_render_state() {
-            0 => self.RenderText_Draw_Border(),
-            1 => self.RenderText_Draw_BorderIncremental(),
-            2 => self.RenderText_Draw_CharacterTilemap(),
-            3 => self.RenderText_Draw_MessageCharacters(),
-            4 => self.RenderText_Draw_Finish(),
+            0 => self.render_text_draw_border(),
+            1 => self.render_text_draw_border_incremental(),
+            2 => self.render_text_draw_character_tilemap(),
+            3 => self.render_text_draw_message_characters_and_complete_call(),
+            4 => self.render_text_draw_finish(),
             _ => {}
         }
     }
 
-    pub(super) fn RenderText_Draw_Border(&mut self) {
+    /// ROM: `RenderText_Draw_Border`
+    pub(super) fn render_text_draw_border(&mut self) {
         // $0E:C8EA-$0E:C8F6 (170), six passes of $0E:C8F7-$0E:C8FF (140,
         // `BNE` taken 5 times), $0E:C901-$0E:C918 (292); a jump target of
         // Text_Render, so it charges into the open scope.
         crate::cycle_ledger::charge(170 + 6 * 140 + 5 * 6 + 292);
-        self.RenderText_DrawBorderInitialize();
-        let mut d = self.RenderText_DrawBorderRow(0x1002, 0);
+        self.render_text_draw_border_initialize();
+        let mut d = self.render_text_draw_border_row(0x1002, 0);
         for _ in 0..6 {
-            d = self.RenderText_DrawBorderRow(d, 6);
+            d = self.render_text_draw_border_row(d, 6);
         }
-        self.RenderText_DrawBorderRow(d, 12);
+        self.render_text_draw_border_row(d, 12);
         self.set_bg_vram_load_mode(1);
         self.messaging_state_mut().set_text_render_state(2);
     }
 
-    pub(super) fn RenderText_Draw_BorderIncremental(&mut self) {
+    /// ROM: `RenderText_Draw_BorderIncremental`
+    pub(super) fn render_text_draw_border_incremental(&mut self) {
         // Cycle ledger (a jump target of Text_Render, charging into the open
         // scope; m8 x8): $0E:C919-C920 LDA #$01, STA $14, LDA $1CD7, BEQ
         // (88). State 0 takes the BEQ (+6); states 1-6 run $0E:C922 CMP
@@ -7025,15 +7117,15 @@ impl ZeldaState {
             0 => {
                 crate::cycle_ledger::charge_routine(0x00_8781, 52);
                 crate::cycle_ledger::charge(88 + 6 + 62 + 414 - 52 + 294);
-                self.RenderText_DrawBorderInitialize();
-                self.RenderText_DrawBorderRow(d, 0);
+                self.render_text_draw_border_initialize();
+                self.render_text_draw_border_row(d, 0);
                 self.messaging_state_mut()
                     .increment_text_incremental_state();
             }
             1 => {
                 crate::cycle_ledger::charge_routine(0x00_8781, 52);
                 crate::cycle_ledger::charge(88 + 38 + 16 + 62 + 414 - 52 + 296);
-                self.RenderText_DrawBorderRow(d, 6);
+                self.render_text_draw_border_row(d, 6);
                 self.messaging_state_mut()
                     .increment_text_incremental_state();
             }
@@ -7041,7 +7133,7 @@ impl ZeldaState {
                 crate::cycle_ledger::charge_routine(0x00_8781, 52);
                 crate::cycle_ledger::charge(88 + 70 + 62 + 414 - 52 + 344);
                 self.messaging_state_mut().set_text_render_state(2);
-                self.RenderText_DrawBorderRow(d, 12);
+                self.render_text_draw_border_row(d, 12);
                 self.messaging_state_mut()
                     .increment_text_incremental_state();
             }
@@ -7049,13 +7141,15 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RenderText_Draw_CharacterTilemap(&mut self) {
+    /// ROM: `RenderText_Draw_CharacterTilemap`
+    pub(super) fn render_text_draw_character_tilemap(&mut self) {
         // $0E:C97D: JSR Text_BuildCharacterTilemap : INC $1CD4 : RTS (134).
         crate::cycle_ledger::charge(134);
-        self.Text_BuildCharacterTilemap();
+        self.text_build_character_tilemap();
     }
 
-    pub(super) fn RenderText_Draw_MessageCharacters(&mut self) {
+    /// ROM: `RenderText_Draw_MessageCharacters`
+    pub(super) fn render_text_draw_message_characters_and_complete_call(&mut self) {
         // The ROM's RenderText_Draw_MessageCharacters runs the complete
         // command/glyph step in the caller, then unconditionally publishes
         // the VWF update through NMI.  In particular, its opening attract
@@ -8097,7 +8191,7 @@ impl ZeldaState {
                     // Both the call and this headroom count CPU work. The
                     // dispatch runs before entry; refresh/HDMA stall time
                     // must not be added back to the raster-derived budget.
-                    command_done = self.RenderText_Draw_Scroll(
+                    command_done = self.render_text_draw_scroll(
                         cycles_left.saturating_sub(if exact_costs {
                             dispatch_master_cycles as u32
                         } else {
@@ -8150,11 +8244,11 @@ impl ZeldaState {
                     command_done = true;
                     exact_command_master_cycles = crate::cycle_models::vwf::SET_SPEED_MASTER_CYCLES;
                 }
-                TEXT_CMD_CHOOSE => self.RenderText_Draw_Choose2LowOr3(),
-                TEXT_CMD_ITEM => self.RenderText_Draw_ChooseItem(),
-                TEXT_CMD_SELCHG => self.RenderText_Draw_Choose2HiOr3(),
-                TEXT_CMD_CHOOSE3 => self.RenderText_Draw_Choose3(),
-                TEXT_CMD_CHOOSE2 => self.RenderText_Draw_Choose1Or2(),
+                TEXT_CMD_CHOOSE => self.render_text_draw_choose2_low_or3(),
+                TEXT_CMD_ITEM => self.render_text_draw_choose_item(),
+                TEXT_CMD_SELCHG => self.render_text_draw_choose2_hi_or3(),
+                TEXT_CMD_CHOOSE3 => self.render_text_draw_choose3(),
+                TEXT_CMD_CHOOSE2 => self.render_text_draw_choose1_or2(),
                 TEXT_CMD_WAITKEY | TEXT_CMD_END_MESSAGE => {
                     {
                         let countdown2 = self.game_state.messaging.runtime.text_wait_countdown2();
@@ -8341,12 +8435,13 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RenderText_Draw_Finish(&mut self) {
+    /// ROM: `RenderText_Draw_Finish`
+    pub(super) fn render_text_draw_finish(&mut self) {
         // $0E:CA35-CA6B: 738 clocks, including the border-initializer JSR
         // but not its separately charged body. Text_Render jumps here, so
         // the finish block belongs to the existing caller's ledger scope.
         crate::cycle_ledger::charge(738);
-        self.RenderText_DrawBorderInitialize();
+        self.render_text_draw_border_initialize();
         let top_left = self.game_state.messaging.runtime.text_msgbox_topleft_copy();
         self.write_vram_upload_buffer_word(0, top_left.swap_bytes());
         self.write_vram_upload_buffer_word(2, 0x2e42);
@@ -8920,15 +9015,17 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn RenderText_Draw_Choose2LowOr3(&mut self) {
-        self.RenderText_Draw_Choose2(1);
+    /// ROM: `RenderText_Draw_Choose2LowOr3`
+    pub(super) fn render_text_draw_choose2_low_or3(&mut self) {
+        self.render_text_draw_choose2(1);
     }
 
-    pub(super) fn RenderText_Draw_ChooseItem(&mut self) {
+    /// ROM: `RenderText_Draw_ChooseItem`
+    pub(super) fn render_text_draw_choose_item(&mut self) {
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
-                self.RenderText_FindYItem_Next();
+                self.render_text_find_y_button_item_next();
             }
         } else if (self.game_state.player.follower_link.filtered_joypad_h()
             | self.game_state.player.follower_link.filtered_joypad_l())
@@ -8941,16 +9038,17 @@ impl ZeldaState {
                 self.multiselect_choice_mut().increment_value();
             } else if self.game_state.player.follower_link.filtered_joypad_h() & 10 != 0 {
                 self.multiselect_choice_mut().decrement_value();
-                self.RenderText_FindYItem_Previous();
-                self.RenderText_Refresh();
+                self.render_text_find_y_button_item_previous();
+                self.render_text_refresh();
                 return;
             }
-            self.RenderText_FindYItem_Next();
-            self.RenderText_Refresh();
+            self.render_text_find_y_button_item_next();
+            self.render_text_refresh();
         }
     }
 
-    pub(super) fn RenderText_FindYItem_Previous(&mut self) {
+    /// ROM: `RenderText_FindYItem_Previous`
+    pub(super) fn render_text_find_y_button_item_previous(&mut self) {
         loop {
             let mut x = self.multiselect_choice().value();
             if (x as i8) < 0 {
@@ -8966,10 +9064,11 @@ impl ZeldaState {
             }
             self.multiselect_choice_mut().decrement_value();
         }
-        self.RenderText_DrawSelectedYItem();
+        self.render_text_draw_selected_y_button_item();
     }
 
-    pub(super) fn RenderText_FindYItem_Next(&mut self) {
+    /// ROM: `RenderText_FindYItem_Next`
+    pub(super) fn render_text_find_y_button_item_next(&mut self) {
         loop {
             let mut x = self.multiselect_choice().value();
             if x >= 32 {
@@ -8988,10 +9087,11 @@ impl ZeldaState {
             }
             self.multiselect_choice_mut().increment_value();
         }
-        self.RenderText_DrawSelectedYItem();
+        self.render_text_draw_selected_y_button_item();
     }
 
-    pub(super) fn RenderText_DrawSelectedYItem(&mut self) {
+    /// ROM: `RenderText_DrawSelectedYItem`
+    pub(super) fn render_text_draw_selected_y_button_item(&mut self) {
         let item = self.multiselect_choice().value();
         // Raw RAM (not inventory_item, which is bounded to 28 slots) — matches C and covers the
         // multiselect index range 0..=32 (see RenderText_FindYItem_Next).
@@ -9007,11 +9107,13 @@ impl ZeldaState {
         self.set_vwf_tile_word_at_byte_offset(0x0ee, p[3]);
     }
 
-    pub(super) fn RenderText_Draw_Choose2HiOr3(&mut self) {
-        self.RenderText_Draw_Choose2(11);
+    /// ROM: `RenderText_Draw_Choose2HiOr3`
+    pub(super) fn render_text_draw_choose2_hi_or3(&mut self) {
+        self.render_text_draw_choose2(11);
     }
 
-    fn RenderText_Draw_Choose2(&mut self, message_base: u16) {
+    /// ROM: `RenderText_Draw_Choose2`
+    fn render_text_draw_choose2(&mut self, message_base: u16) {
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
@@ -9037,13 +9139,14 @@ impl ZeldaState {
             self.set_sound_effect_2(32);
             self.dialogue_message_index_mut()
                 .set_value(message_base + u16::from(t));
-            self.Text_LoadCharacterBuffer();
+            self.text_load_character_buffer();
             self.reset_choice_text_cursors();
-            self.Text_InitVwfState();
+            self.text_init_vwf_state();
         }
     }
 
-    pub(super) fn RenderText_Draw_Choose3(&mut self) {
+    /// ROM: `RenderText_Draw_Choose3`
+    pub(super) fn render_text_draw_choose3(&mut self) {
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
@@ -9073,13 +9176,14 @@ impl ZeldaState {
             self.set_sound_effect_2(32);
             self.dialogue_message_index_mut()
                 .set_value(u16::from(choice) + 6);
-            self.Text_LoadCharacterBuffer();
+            self.text_load_character_buffer();
             self.reset_choice_text_cursors();
-            self.Text_InitVwfState();
+            self.text_init_vwf_state();
         }
     }
 
-    pub(super) fn RenderText_Draw_Choose1Or2(&mut self) {
+    /// ROM: `RenderText_Draw_Choose1Or2`
+    pub(super) fn render_text_draw_choose1_or2(&mut self) {
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
@@ -9101,9 +9205,9 @@ impl ZeldaState {
             self.set_sound_effect_2(32);
             self.dialogue_message_index_mut()
                 .set_value(u16::from(t) + 9);
-            self.Text_LoadCharacterBuffer();
+            self.text_load_character_buffer();
             self.reset_choice_text_cursors();
-            self.Text_InitVwfState();
+            self.text_init_vwf_state();
         }
     }
 
@@ -9120,13 +9224,14 @@ impl ZeldaState {
         assert!(self.dialogue_scroll_cpu_is_idle());
         assert!(self.dialogue_live_message_read_position_target.is_none());
         assert!(
-            !self.RenderText_Draw_Scroll(0, u64::MAX),
+            !self.render_text_draw_scroll(0, u64::MAX),
             "a suspended source scroll entry cannot complete the text line"
         );
         assert!(!self.dialogue_scroll_cpu_is_idle());
     }
 
-    pub(super) fn RenderText_Draw_Scroll(
+    /// ROM: `RenderText_Draw_Scroll`
+    pub(super) fn render_text_draw_scroll(
         &mut self,
         cycles_before_vblank: u32,
         call_master_cycles: u64,
@@ -9501,7 +9606,8 @@ impl ZeldaState {
         false
     }
 
-    pub(super) fn RenderText_SetDefaultWindowPosition(&mut self) {
+    /// ROM: `RenderText_SetDefaultWindowPosition`
+    pub(super) fn render_text_set_default_window_position(&mut self) {
         // $0E:D280-$0E:D29B: straight line, `LDA $D391,X` with a 16-bit index.
         crate::cycle_ledger::charge_routine(0x0e_d280, 364);
         let y = self
@@ -9515,7 +9621,8 @@ impl ZeldaState {
             .set_text_msgbox_topleft(TEXT_POSITIONS[flag]);
     }
 
-    pub(super) fn RenderText_DrawBorderInitialize(&mut self) {
+    /// ROM: `RenderText_DrawBorderInitialize`
+    pub(super) fn render_text_draw_border_initialize(&mut self) {
         // $0E:D29C-$0E:D2AA: straight line.
         crate::cycle_ledger::charge_routine(0x0e_d29c, 204);
         let top_left = self.game_state.messaging.runtime.text_msgbox_topleft();
@@ -9523,7 +9630,8 @@ impl ZeldaState {
             .set_text_msgbox_topleft_copy(top_left);
     }
 
-    pub(super) fn RenderText_DrawBorderRow(&mut self, mut d: usize, y: usize) -> usize {
+    /// ROM: `RenderText_DrawBorderRow`
+    pub(super) fn render_text_draw_border_row(&mut self, mut d: usize, y: usize) -> usize {
         // $0E:D2AB-$0E:D2D7 (602), 22 passes of $0E:D2D8-$0E:D2DF (144,
         // `BNE` taken 21 times), $0E:D2E1-$0E:D2EB (190).
         crate::cycle_ledger::charge_routine(0x0e_d2ab, 602 + 22 * 144 + 21 * 6 + 190);
@@ -9547,7 +9655,8 @@ impl ZeldaState {
         d
     }
 
-    pub(super) fn Text_BuildCharacterTilemap(&mut self) {
+    /// ROM: `Text_BuildCharacterTilemap`
+    pub(super) fn text_build_character_tilemap(&mut self) {
         // $0E:D2EC-$0E:D2F0 (46), 126 passes of $0E:D2F1-$0E:D2FF (216,
         // `BCC` taken 125 times), $0E:D301: JSR RenderText_Refresh : SEP
         // #$30 : RTS (110; the callee charges itself).
@@ -9558,11 +9667,12 @@ impl ZeldaState {
             tile = tile.wrapping_add(1);
         }
         self.messaging_state_mut().set_text_tilemap_cur(tile);
-        self.RenderText_Refresh();
+        self.render_text_refresh();
         self.messaging_state_mut().increment_text_render_state();
     }
 
-    pub(super) fn RenderText_Refresh(&mut self) {
+    /// ROM: `RenderText_Refresh`
+    pub(super) fn render_text_refresh(&mut self) {
         // $0E:D307-$0E:D31C (264, JSR priced as the call), six rows of
         // $0E:D31D-$0E:D33A (386) with 21 passes of $0E:D33B-$0E:D348 (218,
         // `BNE` taken 20 times) and $0E:D349-$0E:D34C (70, `BNE` taken 5
@@ -9571,7 +9681,7 @@ impl ZeldaState {
             0x0e_d307,
             264 + 6 * (386 + 21 * 218 + 20 * 6 + 70) + 5 * 6 + 174,
         );
-        self.RenderText_DrawBorderInitialize();
+        self.render_text_draw_border_initialize();
         let top_left = self
             .game_state
             .messaging
@@ -9605,7 +9715,8 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(1);
     }
 
-    pub(super) fn Text_GenerateMessagePointers(&mut self) {
+    /// ROM: `Text_GenerateMessagePointers`
+    pub(super) fn text_generate_message_pointers(&mut self) {
         let Some(dialogue_blk) = self.asset_memblk(94, self.dialogue_blk_index) else {
             return;
         };
@@ -9621,7 +9732,8 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn Death_PlayerSwoon(&mut self) {
+    /// ROM: `Death_PlayerSwoon`
+    pub(super) fn death_player_swoon(&mut self) {
         let mut k = self.game_state.player.follower_link.item_action_step_var() as usize;
         self.follower_link_state_mut()
             .decrement_y_button_action_timer();
@@ -9665,7 +9777,8 @@ impl ZeldaState {
         self.set_oam_plain(0x74, x, y, 0xaa, flags, 2);
     }
 
-    pub(super) fn Death_PrepFaint(&mut self) {
+    /// ROM: `Death_PrepFaint`
+    pub(super) fn death_prep_faint(&mut self) {
         self.follower_link_state_mut().set_facing(2);
         self.follower_link_state_mut().set_faint_animation_active(1);
         self.follower_link_state_mut().clear_item_action_step_var();
