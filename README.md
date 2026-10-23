@@ -39,9 +39,8 @@ cargo test -p snes -p zelda3 -p platform -p renderer -p assets
 python3 scripts/create_ci_assets.py --out-dir "$PWD/target/ci-assets/zelda3_assets"
 ZELDA3_ASSETS_DIR="$PWD/target/ci-assets/zelda3_assets" cargo check -p zelda3-bin
 ZELDA3_ROM=/path/to/zelda3.sfc cargo build -p zelda3-bin --release
-./target/release/zelda3         # standalone playable binary, no ROM needed at runtime
-./target/release/zelda3 <path-to-zelda3.sfc>
-./target/release/zelda3 --lockstep <path-to-zelda3.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--trace-state]
+./target/release/zelda3         # the game: lagless, no ROM needed at runtime
+./target/release/zelda3 --rom-timing [<path-to-zelda3.sfc>]  # cartridge frame timing (parity oracle)
 ```
 
 CI runs ROM-free package checks and builds `zelda3-bin` against generated
@@ -157,7 +156,7 @@ session and replay it through both engines:
 
 ```bash
 ZELDA3_RECORD_INPUT_SESSION="$PWD/target/manual-pot-route" \
-  cargo run -p zelda3-bin -- /path/to/zelda3.sfc
+  cargo run -p zelda3-bin -- --rom-timing /path/to/zelda3.sfc
 
 python3 scripts/replay_snes9x_session.py \
   target/manual-pot-route \

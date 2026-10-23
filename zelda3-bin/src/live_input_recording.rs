@@ -29,6 +29,10 @@ impl LiveInputRecording {
         let Some(dir) = env::var_os(RECORDING_ENV) else {
             return Ok(None);
         };
+        // Snes9x replays a poll per cartridge frame, lag frames included.
+        if game.lag_free() {
+            return Err(format!("{RECORDING_ENV} needs the cartridge's frame timing; launch with --rom-timing"));
+        }
         Self::start(Path::new(&dir), game).map(Some)
     }
 

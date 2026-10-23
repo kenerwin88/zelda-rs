@@ -27,6 +27,9 @@ struct FrontendSmokeOptions {
     frames: u32,
     frame_pacing: bool,
     require_audio: bool,
+    /// The cartridge's frame-exact schedule instead of the shipped lagless game.
+    /// Implied by `--rom`.
+    rom_timing: bool,
     rom_path: Option<String>,
     input_script: InputScript,
     load_sram: Option<String>,
@@ -39,6 +42,7 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
     let mut frames_set = false;
     let mut frame_pacing = true;
     let mut require_audio = false;
+    let mut rom_timing = false;
     let mut rom_path = None;
     let mut input_script = InputScript::default();
     let mut load_sram = None;
@@ -49,16 +53,17 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
         match args[i].as_str() {
             "--no-frame-pacing" => frame_pacing = false,
             "--require-audio" => require_audio = true,
+            "--rom-timing" => rom_timing = true,
             "--rom" => {
                 let value = args.get(i + 1).ok_or_else(|| {
-                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --rom requires a path".to_string()
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path]; --rom requires a path".to_string()
                 })?;
                 rom_path = Some(value.clone());
                 i += 1;
             }
             "--input-script" => {
                 let value = args.get(i + 1).ok_or_else(|| {
-                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --input-script requires a path".to_string()
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path]; --input-script requires a path".to_string()
                 })?;
                 input_script = InputScript::from_path(Path::new(value))
                     .map_err(|err| format!("failed to parse input script {value}: {err}"))?;
@@ -66,21 +71,21 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
             }
             "--load-sram" => {
                 let value = args.get(i + 1).ok_or_else(|| {
-                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --load-sram requires a path".to_string()
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path]; --load-sram requires a path".to_string()
                 })?;
                 load_sram = Some(value.clone());
                 i += 1;
             }
             "--replay-save" => {
                 let value = args.get(i + 1).ok_or_else(|| {
-                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path] [--replay-save path] [--replay-start-frame n]; --replay-save requires a path".to_string()
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path] [--replay-save path] [--replay-start-frame n]; --replay-save requires a path".to_string()
                 })?;
                 replay_save = Some(value.clone());
                 i += 1;
             }
             "--replay-start-frame" => {
                 let value = args.get(i + 1).ok_or_else(|| {
-                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path] [--replay-save path] [--replay-start-frame n]; --replay-start-frame requires a frame".to_string()
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path] [--replay-save path] [--replay-start-frame n]; --replay-start-frame requires a frame".to_string()
                 })?;
                 replay_start_frame = value.parse().map_err(|_| {
                     format!("--frontend-smoke invalid --replay-start-frame={value:?}")
@@ -89,20 +94,20 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
             }
             value if value.starts_with("--") => {
                 return Err(format!(
-                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; unknown option {value:?}"
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path]; unknown option {value:?}"
                 ));
             }
             value if !frames_set => {
                 frames = value.parse().map_err(|_| {
                     format!(
-                        "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; invalid frames={value:?}"
+                        "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path]; invalid frames={value:?}"
                     )
                 })?;
                 frames_set = true;
             }
             value => {
                 return Err(format!(
-                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; unknown option {value:?}"
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path]; unknown option {value:?}"
                 ));
             }
         }
@@ -112,6 +117,7 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
         frames,
         frame_pacing,
         require_audio,
+        rom_timing,
         rom_path,
         input_script,
         load_sram,
@@ -133,11 +139,15 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         eprintln!("--frontend-smoke --replay-start-frame requires --replay-save");
         process::exit(2);
     }
-    let mut game = options
-        .rom_path
-        .as_deref()
-        .map(load_play_state)
-        .unwrap_or_else(load_default_play_state);
+    let mut game = match options.rom_path.as_deref() {
+        Some(rom_path) => load_play_state(rom_path),
+        None if options.rom_timing => load_default_play_state(),
+        None => {
+            let mut game = crate::load_romless_play_state();
+            game.set_lag_free(true);
+            game
+        }
+    };
     if let Some(path) = options.load_sram.as_deref() {
         let sram = read_file_or_exit(Path::new(path), "SRAM");
         apply_sram_to_game_or_exit(&mut game, Path::new(path), &sram);
@@ -251,12 +261,23 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
     }
 }
 
-pub(crate) fn run_play(rom_path: &str) {
-    run_play_with_state(load_play_state(rom_path));
+/// The shipped game: lagless, every frame one complete main-loop iteration,
+/// from the embedded asset pack (the cartridge image is not needed).
+pub(crate) fn run_play() {
+    let mut game = crate::load_romless_play_state();
+    game.set_lag_free(true);
+    run_play_with_state(game);
 }
 
-pub(crate) fn run_standalone_play() {
-    run_play_with_state(crate::load_romless_play_state());
+/// `--rom-timing`: the cartridge's frame-exact schedule, lag frames included.
+/// This is the Snes9x parity oracle's timing, not the shipped game. With a
+/// ROM the cycle-exact timing plans execute it; without one the game runs on
+/// their unmeasured schedules.
+pub(crate) fn run_rom_timing_play(rom_path: Option<&str>) {
+    run_play_with_state(match rom_path {
+        Some(rom_path) => load_play_state(rom_path),
+        None => crate::load_romless_play_state(),
+    });
 }
 
 fn run_play_with_state(mut game: ZeldaState) {
@@ -344,7 +365,8 @@ fn run_play_with_state(mut game: ZeldaState) {
                                 process::exit(2);
                             }
                             match load_developer_destination(id) {
-                                Ok((next_game, next_frame)) => {
+                                Ok((mut next_game, next_frame)) => {
+                                    next_game.set_lag_free(game.lag_free());
                                     game = next_game;
                                     host_frame = next_frame;
                                     game_started = true;
@@ -561,7 +583,7 @@ mod host_menu_play_tests {
         let error = parse_frontend_smoke_options(&args).unwrap_err();
         assert_eq!(
             error,
-            "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; unknown option \"--fast\""
+            "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom-timing] [--rom path] [--input-script path] [--load-sram path]; unknown option \"--fast\""
         );
     }
 }

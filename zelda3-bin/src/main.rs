@@ -77,7 +77,7 @@ use hd_authoring_commands::{run_dump_hd_capture, run_slice_hd_cells};
 use image_output::write_rgba_frame_png;
 use index_dump_commands::{run_dump_dungeon_index_tiles, run_dump_sprite_index_tiles};
 use overworld_dump_commands::{run_dump_unique_overworld_cells, run_dump_unique_overworld_tiles};
-use play_commands::{run_frontend_smoke, run_play, run_standalone_play};
+use play_commands::{run_frontend_smoke, run_play, run_rom_timing_play};
 use render_diagnostics::format_render_ppu_summary;
 use replay_diagnostics::{
     replay_checksum_bytes, replay_checksum_ram_range, replay_save_ancilla_dump,
@@ -345,11 +345,13 @@ fn main() {
         run_coverage_probe(&args[2..]);
         return;
     }
-    if let Some(rom_path) = args.get(1) {
-        run_play(rom_path);
-    } else {
-        run_standalone_play();
+    if args.get(1).map(String::as_str) == Some("--rom-timing") {
+        run_rom_timing_play(args.get(2).map(String::as_str));
+        return;
     }
+    // A cartridge path is accepted for compatibility; the lagless game runs
+    // from the embedded asset pack.
+    run_play();
 }
 
 fn rom_first_oracle_flag_error(args: &[String]) -> Option<&'static str> {
