@@ -360,7 +360,7 @@ mod tests {
             let mut source = snes::RomCpuTimingProbe::new(machine, clock,
                 actual.native_ppu.as_ref().unwrap().read_state()).unwrap();
             source.attach_apu_port_owner(actual.native_apu_port_owner_for_test()).unwrap();
-            if opening {actual.Module10_SpotlightOpen();} else {actual.Module0F_SpotlightClose();}
+            if opening {actual.module10_spotlight_open();} else {actual.module0f_spotlight_close();}
             if actual.native_startup_cpu.as_ref().unwrap().startup.intro_clear_accepted_context().is_none()
                 && actual.native_startup_cpu.as_ref().unwrap().startup.intro_tail_returned_context().is_none() {
                 // A host exit can precede the NMI deadline by one instruction.

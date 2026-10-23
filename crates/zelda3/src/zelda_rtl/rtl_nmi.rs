@@ -760,7 +760,7 @@ impl ZeldaState {
                     }
                 }
                 if !matches!(suffix, OverworldSuffixResume::Rain(_)) {
-                    self.OverworldOverlay_HandleRain();
+                    self.overworld_overlay_handle_rain();
                 }
                 self.complete_pending_main_loop_common_suffix_after_module_return();
                 self.game_execution_scheduler.finish_call_stack_at_main_wait_before_nmi();

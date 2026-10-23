@@ -7700,7 +7700,7 @@ impl ZeldaState {
             ),
             "the initial bird-travel Sprite_ResetAll checkpoint requires a host or NMI boundary",
         );
-        self.FluteMenu_LoadTransportThroughInitialSpriteDisable();
+        self.flute_menu_load_transport_through_initial_sprite_disable();
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishFluteMenuSelectedScreen {
                 step: FluteMenuSelectedScreenStep::InitialSpriteReset,
@@ -12872,7 +12872,7 @@ impl ZeldaState {
                             *sprite_main_return_claims,
                         );
                     }
-                    self.Overworld_LoadAmbientOverlay(false);
+                    self.overworld_load_ambient_overlay(false);
                     self.complete_module09_overworld_after_submodule();
                     if authoritative_scheduled_caller_return_timeline.is_some() {
                         self.finish_original_timing_sprite_main_return_claim_scope();

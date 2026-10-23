@@ -370,7 +370,7 @@ impl ZeldaState {
             if self.game_state.world.location.is_indoors() {
                 self.handle_layer_of_destination();
             } else if self.game_state.world.location.overworld_screen_index() != 5 {
-                self.Overworld_GetPitDestination();
+                self.overworld_get_pit_destination();
                 self.set_main_module(17);
                 self.set_submodule(0);
                 self.set_subsubmodule(0);

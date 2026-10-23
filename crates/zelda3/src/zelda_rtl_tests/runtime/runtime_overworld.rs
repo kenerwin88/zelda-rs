@@ -106,7 +106,7 @@ fn overworld_map16_stripes_follow_rom_long_indexed_wram_reads_past_bg2_page() {
         write_le_u16(&mut state.ram, DUNG_BG2 + source_offset, value);
     }
 
-    state.BufferAndBuildMap16Stripes_X(0);
+    state.buffer_and_build_map16_stripes_x(0);
 
     let captured = std::array::from_fn(|index| {
         state
@@ -1042,9 +1042,9 @@ fn module09_world_map_bodies_use_the_original_rom_cpu_schedule() {
         state.game_execution_scheduler.begin_main_loop_iteration();
 
         if submodule == 0x20 {
-            state.Overworld_LoadOverlays2();
+            state.overworld_load_overlays2();
         } else {
-            state.Overworld_LoadAmbientOverlayFalse();
+            state.overworld_load_ambient_overlay_false();
         }
 
         assert_eq!(
@@ -1229,7 +1229,7 @@ fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
     state.sync_native_game_state_from_ram();
     assert_eq!(pre_overworld_overlays_cpu_plan(&state), (0, vec![], vec![]));
     state.pre_overworld_overlays_cpu_nmis = Some(0);
-    state.PreOverworld_LoadOverlays();
+    state.pre_overworld_load_overlays();
     assert_eq!(state.game_state.frame.submodule, 2);
     assert_eq!(state.pre_overworld_overlays_cpu_nmis, None);
 }
@@ -1625,7 +1625,7 @@ fn overworld_mosaic_sprite_graphics_defers_its_source_suffix() {
     state.set_countdown(0);
     state.set_subsubmodule(0);
 
-    state.OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic();
+    state.overworld_mosaic_transition_load_sprite_graphics_and_set_mosaic();
 
     assert_eq!(
         state.game_execution_scheduler.current_work(),
@@ -1734,7 +1734,7 @@ fn c_overworld_handle_rain_color_math_branches_are_source_exact() {
         state.set_color_math_control(0x55);
         state.set_sound_effect_1(0);
 
-        state.OverworldOverlay_HandleRain();
+        state.overworld_overlay_handle_rain();
 
         assert_eq!(
             state.game_state.display.palette_filter.color_math_control(),

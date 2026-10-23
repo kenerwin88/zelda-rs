@@ -9250,7 +9250,7 @@ impl ZeldaState {
                 self.door_debris_mut()
                     .set_y_low_and_x_low_from_word(k, debris);
 
-                self.Overworld_DoMapUpdate32x32_B();
+                self.overworld_do_map_update32x32_b();
 
                 if self.game_state.system_signals.sound_effect_2() & 0x3f != 0x1b {
                     self.set_sound_effect_1_with_link_pan(0x22);

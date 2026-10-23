@@ -55,9 +55,9 @@ fn initial_scroll_resumes_without_replaying_stripes_or_coordinate_tails() {
                 let mut actual = initial.clone();
                 let mut frozen = initial.clone();
                 let (a, b) = if horizontal {
-                    (actual.BufferAndBuildMap16Stripes_X(7), frozen.reference_BufferAndBuildMap16Stripes_X(7))
+                    (actual.buffer_and_build_map16_stripes_x(7), frozen.reference_BufferAndBuildMap16Stripes_X(7))
                 } else {
-                    (actual.BufferAndBuildMap16Stripes_Y(7), frozen.reference_BufferAndBuildMap16Stripes_Y(7))
+                    (actual.buffer_and_build_map16_stripes_y(7), frozen.reference_BufferAndBuildMap16Stripes_Y(7))
                 };
                 assert_eq!(a, b);
                 assert_eq!(actual.ram, frozen.ram);
@@ -82,7 +82,7 @@ fn quadrant_publication_resumes_each_word_without_redrawing_completed_tiles() {
         let mut expected = base.clone();
         // The independent bulk path predates the resumable four-quadrant caller.
         for (dst, area) in [(0x2000, 0), (0x2040, 1), (0x3000, 8), (0x3040, 9)] {
-            expected.Overworld_DecompressAndDrawOneQuadrant(dst, i32::from(screen) + area);
+            expected.overworld_decompress_and_draw_one_quadrant(dst, i32::from(screen) + area);
         }
         for cut in [0, 1, 2, 3, 4, 63, 1023, 1024, 1025, 2047, 3073, 4095, 4096] {
             let mut resumed = base.clone();
@@ -101,7 +101,7 @@ fn quadrant_publication_resumes_each_word_without_redrawing_completed_tiles() {
             resumed.advance_overworld_quadrant_cursor(&mut cursor, cut);
             assert_eq!(resumed.ram, once);
             resumed.native_overworld_quadrants = Some(cursor);
-            resumed.Overworld_DecompressAndDrawAllQuadrants();
+            resumed.overworld_decompress_and_draw_all_quadrants();
             assert!(resumed.native_overworld_quadrants.is_none());
             assert_eq!(resumed.ram, expected.ram, "screen={screen} cut={cut}");
             assert_eq!(resumed.game_state, expected.game_state);
@@ -112,7 +112,7 @@ fn quadrant_publication_resumes_each_word_without_redrawing_completed_tiles() {
         expected.ram[0x14400] = 0x79;
         let completed = expected.ram.clone();
         expected.native_overworld_quadrants = Some(cursor);
-        expected.Overworld_DecompressAndDrawAllQuadrants();
+        expected.overworld_decompress_and_draw_all_quadrants();
         assert_eq!(expected.ram, completed);
     }
 }

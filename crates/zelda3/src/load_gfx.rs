@@ -3888,7 +3888,7 @@ impl ZeldaState {
                 self.do3_to_4_low_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
             }
             5 => {
-                self.PreOverworld_LoadOverlays();
+                self.pre_overworld_load_overlays();
                 if matches!(
                     self.game_state.world.location.overworld_screen_index(),
                     27 | 91
@@ -3904,7 +3904,7 @@ impl ZeldaState {
                 self.set_core_update_disable_flag(13);
             }
             7 => {
-                self.Overworld_DrawScreenAtCurrentMirrorPosition();
+                self.overworld_draw_screen_at_current_mirror_position();
                 self.increment_core_update_disable_flag();
             }
             8 => {

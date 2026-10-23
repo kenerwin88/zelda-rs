@@ -459,7 +459,7 @@ impl ZeldaState {
         self.InitializeMirrorHDMA();
         self.set_overworld_map_state(0);
         self.palette_filter_initialize_white_filter();
-        self.Overworld_LoadGFXAndScreenSize();
+        self.overworld_load_gfx_and_screen_size();
         self.increment_submodule();
         self.follower_link_state_mut().set_handler_state(20);
         self.set_bg1_x_offset(0);
@@ -475,13 +475,13 @@ impl ZeldaState {
 
     fn kill_aghanim_func2(&mut self) {
         self.set_hdma_enable_mask(192);
-        self.MirrorWarp_BuildWavingHDMATable();
+        self.mirror_warp_build_waving_hdma_table();
         self.increment_submodule();
         self.set_subsubmodule(0);
     }
 
     fn kill_aghanim_func3(&mut self) {
-        self.MirrorWarp_BuildWavingHDMATable();
+        self.mirror_warp_build_waving_hdma_table();
         if self.game_state.frame.subsubmodule != 0 {
             self.set_subsubmodule(0);
             self.increment_submodule();
@@ -489,7 +489,7 @@ impl ZeldaState {
     }
 
     fn kill_aghanim_func4(&mut self) {
-        self.MirrorWarp_BuildDewavingHDMATable();
+        self.mirror_warp_build_dewaving_hdma_table();
         if self.game_state.frame.subsubmodule != 0 {
             self.set_subsubmodule(0);
             self.increment_submodule();
@@ -564,7 +564,7 @@ impl ZeldaState {
             return;
         }
         self.ResetAncillaAndCutscene();
-        self.Overworld_SetSongList();
+        self.overworld_set_song_list();
         self.set_overworld_event_bits(0x1b, 32);
         self.save_progress_mut().set_palace_index_x2(255);
         self.set_submodule(0);
@@ -1075,8 +1075,8 @@ impl ZeldaState {
             1 => self.dungeon_start_victory_spin(),
             2 => self.dungeon_run_victory_spin(),
             3 => self.dungeon_close_victory_spin(),
-            4 => self.Dungeon_PrepExitWithSpotlight(),
-            5 => self.Spotlight_ConfigureTableAndControl(),
+            4 => self.dungeon_prep_exit_with_spotlight(),
+            5 => self.spotlight_configure_table_and_control_without_caller_interruption(),
             _ => {}
         }
         if let Some((boundary, resume_boundary)) =
@@ -1312,7 +1312,7 @@ impl ZeldaState {
         self.set_main_module(saved_module);
         self.set_submodule(0);
         self.set_subsubmodule(0);
-        self.OpenSpotlight_Next2();
+        self.open_spotlight_next2();
     }
 
     pub(super) fn triforce_room_link_approach_triforce(&mut self) {
@@ -1458,7 +1458,7 @@ impl ZeldaState {
             let sfx = 0x2d | self.link_calculate_sfx_pan();
             self.set_sound_effect_2(sfx);
         } else if item == 1 {
-            self.Overworld_SetSongList();
+            self.overworld_set_song_list();
         } else {
             self.item_receipt_give_bottled_item(item);
         }
@@ -1756,7 +1756,7 @@ impl ZeldaState {
         let attribute = if self.game_state.world.location.is_indoors() {
             self.HandleItemTileAction_Dungeon(x, y)
         } else {
-            self.Overworld_ToolAndTileInteraction(x, y) as u8
+            self.overworld_tool_and_tile_interaction(x, y) as u8
         };
         crate::tile_definition::NativeTile::from_cartridge(attribute)
     }
@@ -2255,13 +2255,13 @@ impl ZeldaState {
             5 => self.module05_load_file(),
             6 => self.module_pre_dungeon(),
             7 => self.module07_dungeon(),
-            8 | 10 => self.Module08_OverworldLoad(),
-            9 | 11 => self.Module09_Overworld(),
+            8 | 10 => self.module08_overworld_load(),
+            9 | 11 => self.module09_overworld(),
             12 => self.module_reserved_12(),
             13 => self.module_reserved_13(),
             14 => self.Module0E_Interface(),
-            15 => self.Module0F_SpotlightClose(),
-            16 => self.Module10_SpotlightOpen(),
+            15 => self.module0f_spotlight_close(),
+            16 => self.module10_spotlight_open(),
             17 => self.Module11_DungeonFallingEntrance(),
             18 => self.Module12_GameOver(),
             19 => self.module13_boss_victory_pendant(),

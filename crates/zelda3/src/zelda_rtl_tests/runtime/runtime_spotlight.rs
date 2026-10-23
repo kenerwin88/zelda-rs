@@ -3294,7 +3294,7 @@ fn fresh_overworld_iris_goal_retains_its_partial_reset() {
         ))
         .unwrap();
     assert_eq!(state.original_timing_main_loop_interruption(), Some(phase));
-    state.Module10_SpotlightOpen();
+    state.module10_spotlight_open();
     assert_eq!(state.game_state.frame.main_module, 0x10);
     assert_eq!(state.game_state.frame.submodule, 1);
     assert!(matches!(
@@ -4861,7 +4861,7 @@ fn live_overworld_spotlight_goal_receipt_matches_native_c_endpoint() {
         vec![OriginalTimingSemanticReceipt::OverworldSpotlightGoalCallerReturned],
     ));
 
-    state.Module10_SpotlightOpen();
+    state.module10_spotlight_open();
 
     // Pinned C completes IrisSpotlight_ConfigureTable, restores module 9, and
     // then OpenSpotlight_Next2 selects submodule 10 from Link's facing.

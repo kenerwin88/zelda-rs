@@ -6324,7 +6324,7 @@ impl ZeldaState {
                         (what, pt.x, pt.y)
                     } else {
                         let mut pt = Point16U { x: 0, y: 0 };
-                        let what = self.Overworld_HandleLiftableTiles(&mut pt);
+                        let what = self.overworld_handle_liftable_tiles(&mut pt);
                         (what, pt.x, pt.y)
                     };
                     self.follower_link_state_mut().set_handler_state(24);
@@ -10729,7 +10729,7 @@ impl ZeldaState {
                     (attr, pt.x, pt.y)
                 } else {
                     let mut pt = Point16U { x: 0, y: 0 };
-                    let attr = self.Overworld_HandleLiftableTiles(&mut pt);
+                    let attr = self.overworld_handle_liftable_tiles(&mut pt);
                     (attr, pt.x, pt.y)
                 };
                 let Some(idx) = LINK_PERFORM_THROW_LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE

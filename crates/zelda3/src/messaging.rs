@@ -2433,7 +2433,7 @@ impl ZeldaState {
         );
         self.link_oam_main();
         if outdoors {
-            self.OverworldOverlay_HandleRain();
+            self.overworld_overlay_handle_rain();
         }
         self.hud_refill_logic();
         if self.game_state.frame.submodule != 2 {
@@ -2780,7 +2780,7 @@ impl ZeldaState {
             }
         }
         if self.game_state.world.location.is_outdoors() {
-            self.Overworld_DwDeathMountainPaletteAnimation();
+            self.overworld_dw_death_mountain_palette_animation();
         }
         self.RenderText();
         if self.game_execution_scheduler.work_suspends_translated_call_stack() {
@@ -4152,7 +4152,7 @@ impl ZeldaState {
             return;
         }
         if self.game_state.world.location.is_outdoors() {
-            self.Overworld_SetFixedColAndScroll();
+            self.overworld_set_fixed_col_and_scroll();
         }
         let sub_screen_layers = self.game_state.display.ppu_scroll_copy.mapbak_ts();
         self.set_sub_screen_layers(sub_screen_layers);
@@ -4274,7 +4274,7 @@ impl ZeldaState {
             if self.begin_original_timing_flute_menu_selected_screen() {
                 return;
             }
-            self.FluteMenu_LoadTransport();
+            self.flute_menu_load_transport();
         }
 
         self.FluteMenu_LoadSelectedScreenAfterTransport();
@@ -4290,20 +4290,20 @@ impl ZeldaState {
     }
 
     pub(super) fn FluteMenu_LoadSelectedScreenAfterTransport(&mut self) {
-        self.FluteMenu_LoadSelectedScreenPalettes();
+        self.flute_menu_load_selected_screen_palettes();
         let t = self.game_state.world.location.overworld_screen_index() & 0xbf;
         self.DecompressAnimatedOverworldTiles(if t == 3 || t == 5 || t == 7 {
             0x58
         } else {
             0x5a
         });
-        self.Overworld_SetFixedColAndScroll();
+        self.overworld_set_fixed_col_and_scroll();
         self.clear_overworld_aux_or_main_offset();
         self.set_hud_palette(0);
         self.InitializeTilesets();
         self.increment_overworld_map_state();
         self.dungeon_room_load_mut().set_draw_width_indicator(0);
-        self.Overworld_LoadOverlays2();
+        self.overworld_load_overlays2();
         self.decrement_submodule();
         self.set_sound_effect_2(16);
         let m = self.overworld_config_table().current_music();
@@ -4320,7 +4320,7 @@ impl ZeldaState {
     pub(super) fn Overworld_LoadOverlayAndMap(&mut self) {
         let bak1 = self.game_state.frame.main_module_word();
         let bak2 = self.overworld_map_state_word();
-        self.Overworld_LoadAndBuildScreen();
+        self.overworld_load_and_build_screen();
         self.set_overworld_map_state_word(bak2.wrapping_add(1));
         self.set_main_module_word(bak1);
     }

@@ -78,7 +78,7 @@ impl ZeldaState {
         if k != 6 && k != 15 {
             self.LoadOverworldFromDungeon();
         } else {
-            self.Overworld_EnterSpecialArea();
+            self.overworld_enter_special_area();
         }
         self.set_music_control(0);
         self.set_ambient_sound_effect(0);
@@ -110,7 +110,7 @@ impl ZeldaState {
             self.TransferFontToVRAM();
         }
         self.overworld_load_palettes_inner();
-        self.Overworld_SetFixedColAndScroll();
+        self.overworld_set_fixed_col_and_scroll();
         if self.game_state.world.location.overworld_screen_index() >= 128 {
             self.palette_set_ow_bg_color();
         }
@@ -119,7 +119,7 @@ impl ZeldaState {
     }
 
     pub(super) fn credits_load_scene_overworld_overlay(&mut self) {
-        self.Overworld_LoadOverlays2();
+        self.overworld_load_overlays2();
         self.set_music_control(0);
         self.set_ambient_sound_effect(0);
         self.decrement_submodule();
@@ -127,7 +127,7 @@ impl ZeldaState {
     }
 
     pub(super) fn credits_load_scene_overworld_load_map(&mut self) {
-        self.Overworld_LoadAndBuildScreen();
+        self.overworld_load_and_build_screen();
         self.credits_prep_and_load_sprites();
         self.ending_scratch_mut().clear_primary_word();
         self.set_subsubmodule(0);
@@ -153,7 +153,7 @@ impl ZeldaState {
         self.set_overworld_palette_aux2_hi(3);
         self.palette_load_ow_bg2();
         self.overworld_copy_palettes_to_cache();
-        self.Overworld_LoadOverlays2();
+        self.overworld_load_overlays2();
         self.set_bg1_y_low(0);
         self.set_bg1_x_low(0);
         self.decrement_submodule();
@@ -481,7 +481,7 @@ impl ZeldaState {
             }
             12 => {
                 if self.ending_scratch_mut().decrement_primary_low() == 0 {
-                    self.Palette_AnimGetMasterSword2();
+                    self.palette_anim_get_master_sword2();
                     self.increment_submodule();
                 }
             }
@@ -560,12 +560,12 @@ impl ZeldaState {
         self.set_dungeon_room(0x189);
         self.erase_tile_maps_normal();
         self.palette_revert_translucency_swap();
-        self.Overworld_EnterSpecialArea();
+        self.overworld_enter_special_area();
     }
 
     /// Case 2's overlay load and case advance (route hosts 1557672-1557676).
     fn triforce_room_load_case2_overlays(&mut self) {
-        self.Overworld_LoadOverlays2();
+        self.overworld_load_overlays2();
         self.increment_subsubmodule();
         self.set_main_module(25);
         self.set_submodule(0);
@@ -586,7 +586,7 @@ impl ZeldaState {
     /// Case 4.
     fn triforce_room_load_case4_screen(&mut self) {
         let bak0 = self.game_state.frame.subsubmodule;
-        self.Module08_02_LoadAndAdvance();
+        self.module08_02_load_and_advance();
         self.set_subsubmodule(bak0.wrapping_add(1));
         self.set_screen_brightness(15);
         self.set_countdown(31);

@@ -12,7 +12,7 @@ fn overworld_big_door_reads_the_dungeon_door_owner() {
     state.dungeon_doors_mut().set_door_animation_step(3);
     assert_eq!(read_le_u16(&state.ram, DOOR_ANIMATION_STEP_INDICATOR), 3);
 
-    state.Module09_09_OpenBigDoorFromExiting();
+    state.module09_09_open_big_door_from_exiting();
 
     // Step 3 completes the door: the module arms the walk-out countdown and advances.
     assert_eq!(state.game_state.frame.submodule, 1);

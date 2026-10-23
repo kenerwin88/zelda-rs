@@ -2296,7 +2296,7 @@ fn live_module10_lower_write_receipt_defers_the_goal_transition_to_the_next_host
     ));
     state.game_execution_scheduler.begin_host_frame();
 
-    state.Module10_SpotlightOpen();
+    state.module10_spotlight_open();
 
     assert_eq!(state.game_state.frame.main_module, 0x10);
     assert_eq!(state.game_state.frame.submodule, 1);

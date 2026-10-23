@@ -13928,7 +13928,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_19_MirrorFade(&mut self) {
-        self.Overworld_ResetMosaic_alwaysIncrease();
+        self.overworld_reset_mosaic_always_increase();
         self.decrement_screen_brightness();
         if self.game_state.display.screen_brightness != 0 {
             return;
