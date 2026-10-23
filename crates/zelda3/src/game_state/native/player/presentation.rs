@@ -400,3 +400,21 @@ impl PlayerPresentationState {
         self.link_dma_staging_index = value;
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { PlayerPresentationState {
+    wram: [
+        oam_x_offset, oam_y_offset, visibility_status, blink_countdown,
+        spin_animation_step_counter, animation_step, opening_pose, water_ripple_or_grass_state,
+        primary_water_grass_timer, secondary_water_grass_timer, frame_change_counter,
+        sprite_oam_state_timer, throw_oam_state_index, item_hold_pose, force_hold_sword_up,
+        dash_noise_requested, faint_animation_active, index_of_dashing_sfx, spin_offsets,
+        link_dma_graphics_index, link_dma_left_sprite_bank, link_dma_right_sprite_bank,
+        sword_dma_graphics_index, shield_dma_graphics_index, link_dma_staging_index,
+        palette_bits_of_oam, player_pose_draw_counter, player_special_draw_flag,
+        sleep_in_bed_state,
+    ],
+    children: [],
+    metadata: [],
+} }

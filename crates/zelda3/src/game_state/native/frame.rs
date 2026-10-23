@@ -197,3 +197,14 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
         fn increment_modal_pause_flag() -> u8;
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { FrameState {
+    wram: [
+        main_module, submodule, subsubmodule, frame_counter, saved_module_for_menu,
+        modal_pause_flag,
+    ],
+    children: [],
+    metadata: [],
+} }

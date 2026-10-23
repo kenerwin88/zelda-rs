@@ -11777,13 +11777,13 @@ fn tolerate_unconsumed_song_end_poll_for_diagnostics() -> bool {
 }
 
 impl ZeldaState {
-    /// Single definition of regression state (ledger schema 1).
+    /// Single definition of regression state (ledger schema 3, state domain v2).
     /// Hashes WRAM and SRAM, then explicit native owners/control fields using
     /// fixed-width little-endian bincode streamed into FNV-1a (no allocation).
     /// This is deliberately not a checkpoint or a hash of Rust memory layout.
     /// Excludes immutable assets/ROM, PPU/display queues, audio internals and
     /// most serde-skipped timing continuations. PCM is checked by the ledger.
-    /// Extend this definition/version when migrating ownership away from WRAM.
+    /// WRAM-backed native mirrors are excluded regardless of their refresh timing.
     pub fn canonical_state_hash(&self) -> u64 {
         struct Digest(u64);
         impl std::io::Write for Digest {
@@ -11799,13 +11799,12 @@ impl ZeldaState {
         }
         use std::io::Write;
         let mut digest = Digest(0xcbf29ce484222325);
-        digest.write_all(b"zelda3-state-v1").unwrap();
+        digest.write_all(b"zelda3-state-v2").unwrap();
         digest.write_all(&self.wram_image()).unwrap();
         digest.write_all(&self.sram).unwrap();
         bincode::serialize_into(
             &mut digest,
             &(
-                &self.game_state,
                 self.initialized,
                 self.apply_links_movement_to_camera_called,
                 self.wanted_zelda_features,
@@ -11824,6 +11823,7 @@ impl ZeldaState {
             ),
         )
         .expect("regression state serialization");
+        self.game_state.hash_non_wram_fields(&mut digest);
         digest.0
     }
 

@@ -3306,3 +3306,94 @@ impl<'a> NativeMazeGameTimerBridgeMut<'a> {
         fn capture_snapshot();
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { SpriteState {
+    wram: [],
+    children: [
+        system, workspace, sprite_slots, ancilla_slots, maze_game_timer, prize_drop_cycle,
+        dual_layer_tile_cache, draw_hitbox_work, enemy_damage_subclasses, tagalong_trail,
+        chain_chomp_history, ether_orbit, overworld_sprite_presence, overworld_sprite_loaded,
+        failed_spin_sparkle_spawn, garnish_runtime, follower_runtime, cached_sprites,
+    ],
+    metadata: [],
+} }
+non_wram_hash! { CachedSpritesState {
+    wram: [slots],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { FailedSpinSparkleSpawnState {
+    wram: [item_to_link, step, timer, aux_timer, x, y],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldSpriteLoadedState {
+    wram: [flags],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldSpritePresenceState {
+    wram: [markers],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { EtherOrbitState {
+    wram: [angles, radius, beam_y, beam_adjusted_y, orbit_x, orbit_y, spin_countdown, orb_x, orb_y],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { ChainChompHistoryState {
+    wram: [x_positions, y_positions],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { EnemyDamageSubclassTableState {
+    wram: [subclasses],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SpriteDrawHitboxWorkState {
+    wram: [draw_position_x, draw_position_y, hitbox_y_offset, draw_flags_or_hitbox_x_offset],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DualLayerTileCacheState {
+    wram: [tiles],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PrizeDropCycleState {
+    wram: [next_indices],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { MazeGameTimerState {
+    wram: [elapsed_low, elapsed_high, snapshot_low, snapshot_high],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SpriteSlotsState {
+    wram: [work],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SpriteWorkspaceState {
+    wram: [
+        room_origin_x_high, room_origin_y_high, pickup_slot_cache, shared_scratch_a, tile,
+        reset_scratch_a, reset_scratch_b, graphics_subsets, draw_priority_override,
+        current_sprite_x, current_sprite_y, zero_page_work, where_in_room,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SpriteSystemState {
+    wram: [
+        limit_instance, blind_head_anim_counter, chr_halfslot_state, alert_flag, graphics_index,
+        saved_special_exit_graphics_index, alt_sprite_spawned_flag, cur_object_index,
+        alt_sprites_flag, ranged_based_toggler,
+    ],
+    children: [],
+    metadata: [],
+} }

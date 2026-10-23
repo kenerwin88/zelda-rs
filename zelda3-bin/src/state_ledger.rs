@@ -10,6 +10,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Record {
+    #[serde(deserialize_with = "record_schema")]
     schema: u32,
     frame: u32,
     input: u16,
@@ -25,6 +26,16 @@ pub(crate) struct Record {
     room: u16,
 }
 
+fn record_schema<'de, D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<u32, D::Error> {
+    let schema = u32::deserialize(deserializer)?;
+    if schema != 3 {
+        return Err(serde::de::Error::custom(
+            "incompatible state ledger: schema 3 / zelda3-state-v2 required; re-record v1 baselines",
+        ));
+    }
+    Ok(schema)
+}
+
 impl Record {
     pub(crate) fn capture(
         frame: u32,
@@ -37,7 +48,7 @@ impl Record {
         let audio = audio.iter().flat_map(|sample| sample.to_le_bytes());
         let image = game.wram_image();
         Self {
-            schema: 2,
+            schema: 3,
             frame,
             input,
             lag_free: game.lag_free(),
@@ -455,6 +466,10 @@ mod tests {
         let mut matching = make(line.clone());
         matching.observe(&record).unwrap();
         matching.finish().unwrap();
+        let mut legacy = serde_json::to_value(&record).unwrap();
+        legacy["schema"] = 2.into();
+        let error = make(legacy.to_string() + "\n").observe(&record).unwrap_err().to_string();
+        assert!(error.contains("zelda3-state-v2 required; re-record v1 baselines"));
         let mut short = make(String::new());
         let error = short.observe(&record).unwrap_err().to_string();
         assert!(error.contains("frame=12 fields=missing_record"));

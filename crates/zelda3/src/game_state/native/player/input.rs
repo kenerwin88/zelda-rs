@@ -103,3 +103,14 @@ impl PlayerInputState {
         value
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { PlayerInputState {
+    wram: [
+        button_mask_b_y, filtered_joypad_h, filtered_joypad_l, joypad1h_last, joypad1l_last,
+        joypad1h_last2, joypad1l_last2, button_b_frames,
+    ],
+    children: [],
+    metadata: [],
+} }

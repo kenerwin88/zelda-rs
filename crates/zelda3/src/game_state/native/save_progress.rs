@@ -506,3 +506,16 @@ impl<'a> NativeSaveProgressBridgeMut<'a> {
         write_le_u16(self.ram, SAVE_DUNG_INFO + SAVE_CHECKSUM_OFFSET, value);
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { SaveProgressState {
+    wram: [
+        palace_index_x2, hud_current_items, hud_current_item_high, rooms, progress_indicator,
+        progress_flags, map_icons_indicator, which_starting_point, progress_indicator_3,
+        dark_world_state, deaths_per_palace, pending_death_save_counter,
+        total_death_save_counter, checksum, post_message_refresh_flag,
+    ],
+    children: [],
+    metadata: [],
+} }

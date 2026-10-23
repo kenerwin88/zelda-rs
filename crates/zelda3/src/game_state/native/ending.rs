@@ -1159,3 +1159,39 @@ impl<'a> NativeEndingCreditBridgeMut<'a> {
         self.sync();
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { EndingState {
+    wram: [],
+    children: [attract_scene, intro_scene, intro_actors, credits],
+    metadata: [],
+} }
+non_wram_hash! { EndingCreditState {
+    wram: [palace_death_count_digit_step, death_count_digit_tile_base],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { IntroActorState {
+    wram: [slots],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { IntroSceneState {
+    wram: [triangle_motion_pause, sprite_oam_cursor, triforce_countdown],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { AttractSceneState {
+    wram: [
+        state_word, sequence, scene_timer, scene_substep, x_base, y_base, story_text_pointer,
+        oam_index, maiden_warp_step, intro_step_index, intro_step_timer, intro_frame_counter,
+        intro_did_run_step, intro_palette_flash_count, legend_flag, next_legend_gfx,
+        bg2_vofs_backup, throne_fade_timer, prison_zelda_y_base, anim_step_counter,
+        soldier_anim_step, prison_soldier_x_lo, scene_frame_counter, scene_done_flag,
+        legend_ctr, fade_in_complete_flag, fade_in_done_flag, substep_delay_counter,
+        maiden_warp_timer_a, maiden_warp_timer_b,
+    ],
+    children: [],
+    metadata: [],
+} }

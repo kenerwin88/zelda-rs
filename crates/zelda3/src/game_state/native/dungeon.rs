@@ -4613,3 +4613,161 @@ impl<'a> NativeDungeonHeaderBridgeMut<'a> {
         fn clear_header_tag(index: usize);
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { DungeonState {
+    wram: [],
+    children: [
+        header, scratch_word, entrance_backup, torch, savegame_state, bg2_attributes,
+        stair_lists, stair_movement, moving_floor, room_tracking, object_tracking, doors,
+        room_load, environment, room_tilemaps, room_items, room_effects, room_parser,
+        door_setup, room_runtime, movable_blocks,
+    ],
+    metadata: [],
+} }
+non_wram_hash! { DungeonMovableBlockState {
+    wram: [records],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomRuntimeState {
+    wram: [room_tag_skip_count, landing_class, room_index_x3, reserved_gfx_config_word],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomDoorSetupState {
+    wram: [
+        adjacent_door_flags, adjacent_doors, exit_door_count_x2, exit_door_addresses,
+        invisible_door_marker, active_room_load_ptr, active_room_load_ptr_bank,
+        width_road_address, reset_xy_check_flags,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomParserState {
+    wram: [
+        star_switch_count_x2, star_switch_tilemap_positions, toggle_floor_count_x2,
+        toggle_palace_count_x2, toggle_floor_positions, toggle_palace_positions,
+        floor_1_filler_tiles, floor_2_filler_tiles, room_layout_and_starting_quadrant,
+        pot_reveal_masks, tile_attributes,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomEffectsState {
+    wram: [
+        blast_wall_x_open, blast_wall_y_open, crush_wall_progress, blast_wall_door_index_x2,
+        moving_wall_dot_pointer, moving_wall_write_point, star_tile_phase,
+        fixed_color_plusminus, trap_trigger_latch, bomb_trap_activation,
+        moving_wall_replacement_buffer,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomItemState {
+    wram: [
+        num_chests_x2, num_big_key_locks_x2, replacement_tile_destination_x2,
+        replacement_tile_source_x2, chest_locations, replacement_tilemap_quads,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomTilemapState {
+    wram: [bg1_tiles, bg2_tiles, line_pointer_bytes],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonEnvironmentState {
+    wram: [
+        water_puzzle_state_changed, trapdoors_down, somaria_block_switch_counter,
+        somaria_block_bg_check_flag, orange_blue_barrier_state, moving_floor_check_flags,
+        movable_block_was_pushed, block_trap_related_tile,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomLoadState {
+    wram: [
+        header_collision, header_collision_2, header_collision_2_mirror, bg2_properties,
+        bg2_properties_backup, layout_quadrant_key, quadrants_visited, quadrant_upload_index,
+        draw_width_indicator, draw_height_indicator, overlay_to_load, selected_key_door_x2,
+        load_ptr_offset, loading_bg_offset_h, loading_bg_offset_v,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonDoorState {
+    wram: [
+        opened_doors, opened_doors_including_adjacent, current_door_index, current_door_pos,
+        animation_step, open_counter, door_tilemap_addresses, door_types, door_directions,
+        switch_triggered, barrier_or_switch_flag,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonObjectTrackingState {
+    wram: [
+        misc_object_index, replacement_tile_states, object_data_positions,
+        object_tilemap_positions, changeable_object_indices, big_rock_starting_address,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonRoomTrackingState {
+    wram: [room_index2, previous_room_index, history],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonMovingFloorState {
+    wram: [y_velocity, x_velocity, x_offset, y_offset, move_flags],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonStairMovementState {
+    wram: [
+        current_floor_word, cached_floor, staircase_index, move_counter, current_plane,
+        lower_level_status, tilemap_pos_x2, in_room_kind, countdown,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonStairListsState {
+    wram: [counters, inter_staircases, stairs_table_1, stairs_table_2],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonBg2AttributeState {
+    wram: [attrs],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonSavegameState {
+    wram: [state_bits],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonTorchState {
+    wram: [
+        timers, target, lit_torches, lights_out_request, lights_out_request_copy,
+        dark_with_lantern, ganon_torch_count, torches_start_index, torch_index,
+        torch_data_words,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonEntranceBackupState {
+    wram: [exit_tile_themes],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonScratchWordState {
+    wram: [r16, r18],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonHeaderState {
+    wram: [tags, travel_destinations, plane_scratch],
+    children: [],
+    metadata: [],
+} }

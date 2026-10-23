@@ -49,7 +49,7 @@ def main():
     inputs, sram = cache / 'oracle-av-hashes.jsonl', cache / 'initial.srm'
     # Pin all launch inputs alongside the result; the ledger is a streaming data file.
     provenance = {
-        'schema': 2, 'mode': args.mode, 'frames': args.frames, 'interval': args.interval, 'rgb': args.rgb,
+        'schema': 3, 'state_domain': 'zelda3-state-v2', 'mode': args.mode, 'frames': args.frames, 'interval': args.interval, 'rgb': args.rgb,
         'input_sha256': sha256(inputs), 'sram_sha256': sha256(sram),
         'rom_sha256': sha256(args.rom) if args.rom else None,
         'binary_sha256': sha256(args.binary),
@@ -59,7 +59,9 @@ def main():
     metadata = Path(str(args.ledger) + '.meta.json')
     if args.action == 'compare' and metadata.exists():
         original = json.loads(metadata.read_text())
-        for key in ['schema', 'mode', 'frames', 'interval', 'rgb', 'input_sha256', 'sram_sha256', 'rom_sha256']:
+        if original.get('schema') != 3 or original.get('state_domain') != 'zelda3-state-v2':
+            parser.error('incompatible baseline: schema 3 / zelda3-state-v2 required; re-record v1 baselines')
+        for key in ['schema', 'state_domain', 'mode', 'frames', 'interval', 'rgb', 'input_sha256', 'sram_sha256', 'rom_sha256']:
             if original.get(key, False if key == 'rgb' else None) != provenance[key]:
                 parser.error(f'baseline launch mismatch: {key}')
     env = {key: value for key, value in os.environ.items() if not key.startswith('ZELDA3_')}

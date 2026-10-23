@@ -855,3 +855,41 @@ impl<'a> NativePolyRasterEdgeBridgeMut<'a> {
         fn increment_y1_cur();
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { PolyState {
+    wram: [],
+    children: [runtime, projected_vertices, face_coords, raster_edge],
+    metadata: [],
+} }
+non_wram_hash! { PolyRasterEdgeState {
+    wram: [
+        total_num_steps, x0_current, y0_current, x0_target, y0_trigger, x1_current, y1_current,
+        x1_target, y1_trigger, current_vertex_index0, current_vertex_index1,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PolyFaceCoordsState {
+    wram: [coords],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PolyProjectedVerticesState {
+    wram: [x, y],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PolyRuntimeState {
+    wram: [
+        config1, color_mode, model, angle_a, angle_b, base_x, base_y, shape_depth_bias,
+        num_vertices, num_polys, fromlut_x, fromlut_y, fromlut_z, vertex_table_pointer,
+        face_table_pointer, f0, f1, f2, rotation_sin_a, rotation_cos_a, rotation_sin_b,
+        rotation_cos_b, rotation_e0, rotation_e1, rotation_e2, rotation_e3, num_vertex_in_poly,
+        raster_color_config, tmp0, tmp1, tmp2, raster_color0, raster_color1, raster_dst_ptr,
+        x0_fraction, x0_step, x1_fraction, x1_step, raster_full_word_count,
+    ],
+    children: [],
+    metadata: [],
+} }

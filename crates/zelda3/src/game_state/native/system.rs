@@ -578,3 +578,25 @@ fn read_le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
         slice[0], slice[1], slice[2], slice[3], slice[4], slice[5], slice[6], slice[7],
     ]))
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { SystemSignalsState {
+    wram: [
+        music_control, current_music_control, last_music_control, queued_music_control,
+        resident_song_bank_kind, sound_effect_1, sound_effect_2, ambient_sound_effect,
+        last_ambient_sound_effect, msu_volume, apui00, raw_sfx_pan_value, update_cgram_flag,
+        update_hud_flag, game_over_check_flag, restart_check_flag, bugs_fixed,
+        death_backup_current_music, death_backup_ambient_sound,
+    ],
+    children: [msu_resume_primary, msu_resume_alternate],
+    metadata: [],
+} }
+non_wram_hash! { MsuResumeInfoState {
+    wram: [
+        tag, offset, samples_until_repeat, range_cur, range_repeat, initial_packet_bytes,
+        orig_track, actual_track,
+    ],
+    children: [],
+    metadata: [],
+} }

@@ -43,7 +43,7 @@ malformed or noncontiguous frames.
 
 ## Record contract and limits
 
-Each record-schema-2 JSON line describes the **post-frame** state, after game update, 735
+Each record-schema-3 JSON line describes the **post-frame** state, after game update, 735
 stereo PCM sample frames, unused-audio discard and headless display publication. `frame`
 is the zero-based input index (frame 0 is after the first update). Records contain
 numeric `input`, boolean `lag_free`, hexadecimal FNV-1a-64 `state`, `display`, `sram`
@@ -51,39 +51,74 @@ and `audio`, optional `rgb`, plus `main`, `sub` and little-endian dungeon `room`
 samples in little-endian interleaved order at the smoke's fixed sample cadence, not the
 oracle's variable audio cadence.
 
-`ZeldaState::canonical_state_hash()` remains **state domain v1**, byte-for-byte
-unchanged by this revision. Record schema 2 adds mandatory `display` and `lag_free`
-fields; it does not change the canonical state inputs. Schema-1 ledgers must be
-re-recorded because they have no display coverage.
+`ZeldaState::canonical_state_hash()` uses **state domain v2**. Record schema 3
+and metadata schema 3 (`state_domain: "zelda3-state-v2"`) reject v1 baselines
+with an explicit re-record message. No engine/checkpoint layout changes are involved.
 
 The exact canonical state wire order is:
 
-1. Literal domain bytes `zelda3-state-v1`, all `ram` bytes (WRAM), all `sram` bytes.
-2. A bincode-1 tuple, in order: `game_state`, `initialized`,
+1. Literal domain bytes `zelda3-state-v2`, all `wram_image()` bytes, all `sram` bytes.
+2. A bincode-1 tuple, in order: `initialized`,
    `apply_links_movement_to_camera_called`, `wanted_zelda_features`,
    `previous_host_controller_input`, `dialogue_blk_index as u64`,
    `dialogue_font_blk_index as u64`, `dialogue_flags`,
    `dialogue_scroll_continuation`, `dialogue_fast_forward_hold_pending`,
-   `dialogue_fast_forward_hold_active`, `lag_free`, `lag_free_thread_credit`,
-   `gloves_color`.
+   `dialogue_fast_forward_hold_active`, `lag_free`, the retired thread-credit slot
+   (`0u8`, retained from v1), `gloves_color`.
+3. `game_state.hash_non_wram_fields`, recursively in the explicit child order
+   declared by each state's `non_wram_hash!` invocation. **Currently emits no bytes:**
+   the audited game fields all have cartridge WRAM homes. This is not a blanket
+   default: each invocation exhaustively classifies fields, so a new field fails
+   compilation until explicitly classified. Equipment's classification expands
+   from its existing field macro.
 
-`game_state` includes every serde-serialized field recursively in its native owners:
-`frame`, `system_signals`, `enhanced_features`, `scratch_counter`, `minigame`,
-`intro_sword`, `archery_game`, `sprite_battle`, `memorized_tiles`, `dungeon_secret`,
-`save_load_transfer`, `dungeon_map_display`, `dungeon`, `sprites`, `player`,
-`inventory`, `world`, `poly`, `display`, `effects`, `ending`, `messaging`, `oam`.
-The serde-skipped `game_state.display.palette_provenance` is excluded. Bincode 1's
-fixed-width little-endian encoding is used; host-sized dialogue indices are cast to
-u64. No raw struct bytes, pointers or unordered debug dumps are hashed. Changes to
-these native serialized types also change the state contract and require a state
-domain/version update even if `canonical_state_hash()` itself is untouched.
+The WRAM audit follows `load_from_ram` and all publication paths, including
+write-through setters and partial/mode-gated codecs; omission from the bulk
+`write_to_ram` alone does not make a field native-only. Coverage by sub-state:
+
+| Group | WRAM representation checked |
+|---|---|
+| frame, system signals, enhanced features | module/counter/flags, sound controls, both MSU resume records, feature word |
+| scratch counter, minigame, intro sword, archery, sprite battle | scratch bytes/words, timers, counters, positions and RGB bytes |
+| memorized tiles, dungeon secret, save transfer, dungeon map | count-sized address/value tables, secret fields, transfer offset, map state and marker words |
+| dungeon | header/scratch/entrance/torch, savegame, attributes, stair tables/counters, doors, room buffers/parser/effects/items/tracking, movable blocks |
+| sprites | slot banks, workspace, cached banks (including aliased borrowed slots), trails/history, ether, maze/prize/damage/hitbox tables, presence/loaded flags, garnish/follower runtime |
+| player | special exit, follower-link input/presentation/movement/actions, swim acceleration, pushed blocks, subpixel accumulator and tile detection |
+| inventory | equipment/bottles, keys, resources including all magic fields, mirror warp, progress/rooms/deaths/checksum/HUD |
+| world | location/scroll/camera/palette/region/transient, overworld tables/UI/weather/travel/map16/entrance/exit/transition, room bounds |
+| poly | runtime, projected vertices, face coordinates and raster edges |
+| display | register copies, source pointers, palette/HUD/HDMA/scroll buffers and filter state |
+| effects | angle scratch, quake/bombos/tower, pond/debris, split sprite histories, entrance effects and digging prize |
+| ending, messaging, OAM | scenes/actors/credits, file menus/dialogue/VWF buffers, shadow/extended tables, allocator regions and priority words |
+
+Included non-WRAM `GameState` fields: **none**. The sole metadata exclusion is
+`display.palette_provenance`: its type explicitly defines it as derived metadata,
+skips it in snapshots and ignores it for coherence. It holds palette mirror
+values/source tags/Unknown markers, not additional cartridge execution state;
+including it would fingerprint annotation/cache history. Immutable defaults,
+vector capacities and unused gaps in physical-address work banks likewise do
+not create native execution fields. Mode-reused bytes remain represented once
+by the exported cartridge image regardless of the number of stale native views.
+
+Bincode 1 uses fixed-width little-endian encoding; host-sized dialogue indices
+are cast to u64. No raw struct bytes, pointers or unordered debug dumps are hashed.
+Refreshing any WRAM-backed mirror, including deferred resource adoption after a
+save clear, must leave v2 unchanged when the image and other inputs are unchanged.
+
+The owned-WRAM registry remains empty in this step. `wram_image` borrows RAM in
+that case; a nonempty registry makes one backing copy and calls each narrow
+`export_owned` callback directly on it. `import_owned` reads only that owner's
+registered bytes; unowned bytes copy to RAM. Codecs may not invoke broad legacy
+projection. Unit coverage tests export-after-import identity and checks all
+foreign bytes against multiple sentinels for every production range, plus a
+nonempty test owner before production owners are enabled.
 
 **All other `ZeldaState` fields are outside `state`.** In particular, this excludes
 `ppu` (including VRAM/CGRAM/OAM/registers/latches), display publication/history queues,
 CPU registers and CPU/timing/scheduler continuations not present in `game_state`,
 all audio/APU/SPC/DSP internals, immutable assets/ROM/source art, diagnostic counters,
-and lag-free timing/poly-thread continuations other than `lag_free` and
-`lag_free_thread_credit`. The separate `sram` hash duplicates SRAM coverage for
+and lag-free timing/poly-thread continuations other than `lag_free`
+(the retired credit wire slot above is a constant). The separate `sram` hash duplicates SRAM coverage for
 localization; `audio` checks emitted PCM, not hidden audio state.
 
 `display` always runs without a renderer. It hashes the **already captured presented
@@ -144,7 +179,7 @@ state fields are changed by this tooling.
 
 ## Validation and timing
 
-### Reviewer revision (record schema 2)
+### Reviewer revision (record schema 2, historical state v1)
 
 2026-10-22, parity profile, interval 1, ROM-less launch, CPU-only. The longest
 completed prefix is **200,000 frames per run**, twice in default mode and twice

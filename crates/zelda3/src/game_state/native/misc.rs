@@ -1239,3 +1239,69 @@ impl<'a> NativeEnhancedFeaturesBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { DungeonMapDisplayState {
+    wram: [
+        scroll_draw_offset, scroll_input, marker_x_offset, marker_y_offset,
+        location_marker_base_y, init_state, current_floor, floor_scroll_step, idx,
+        scroll_target_y, player_marker_x, player_marker_y,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SaveLoadTransferState {
+    wram: [source_offset],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DungeonSecretState {
+    wram: [pending_kind, pending_kind_high, overworld_substitution_counter],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { MemorizedTileState {
+    wram: [count, addresses, values],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SpriteBattleState {
+    wram: [
+        sprites_killed, times_hurt_by_sprites, item_drop_luck, luck_kill_counter,
+        item_drop_counter, damage_type_determiner, damaging_enemies_timer,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { ArcheryGameState {
+    wram: [hit_counter, arrows_left, out_of_arrows],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { IntroSwordState {
+    wram: [
+        y_position, sparkle_timer, sparkle_step, animation_step, sparkle_y_offset,
+        flash_rgb_channel, flash_rgb_channel_high,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { MinigameState {
+    wram: [
+        archery_or_digging_game_mode, credits, boomerang_in_place_flag, boomerang_temp_x,
+        boomerang_temp_y,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { ScratchCounterState {
+    wram: [value],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { EnhancedFeaturesState {
+    wram: [bits],
+    children: [],
+    metadata: [],
+} }

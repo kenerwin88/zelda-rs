@@ -420,3 +420,17 @@ impl<'a> NativeGarnishRuntimeBridgeMut<'a> {
         fn clear_haunted_grove_flute_event_latch();
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { GarnishRuntimeState {
+    wram: [
+        active_type, boulder_trap_count, boulder_trap_timer, sprite_collision_x_size,
+        sprite_collision_y_size, sprite_collision_x_base, sprite_collision_y_base,
+        active_overlord_index, haunted_grove_flute_event_latch, repulsespark_timer,
+        repulsespark_anim_delay, repulsespark_floor_status, repulsespark_x_low,
+        repulsespark_y_low,
+    ],
+    children: [],
+    metadata: [],
+} }

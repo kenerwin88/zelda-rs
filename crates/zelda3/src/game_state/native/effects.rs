@@ -3140,3 +3140,83 @@ impl<'a> NativeDoorDebrisBridgeMut<'a> {
         }
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { EffectState {
+    wram: [],
+    children: [
+        angle_scratch, quake_spell, quake_bolts, bombos_spell, tower_seal,
+        happiness_pond_rupees, weather_vane_debris, sprite_histories, entrance_effects,
+        digging_game_prize,
+    ],
+    metadata: [],
+} }
+non_wram_hash! { DiggingGamePrizeState {
+    wram: [attempts, spawned_marker],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { EntranceEffectState {
+    wram: [
+        phases, timers, state, secondary_state, center_y, center_x, direction, y_positions,
+        x_positions, fireball_timers,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SpriteHistoryScratchState {
+    wram: [
+        moldorm_x, moldorm_y, swamola_target_x, swamola_target_y, swamola_history_x,
+        swamola_history_y, beamos_laser_x, beamos_laser_y, lanmola_z_offsets,
+        lanmola_directions,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WeatherVaneDebrisState {
+    wram: [y, x, z, y_velocity, x_velocity, z_velocity, animation_timer, draw_state],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { HappinessPondRupeesState {
+    wram: [
+        active, y_low, y_high, x_low, x_high, z, y_velocity, x_velocity, z_velocity, y_subpixel,
+        x_subpixel, z_subpixel, item_to_link, timer, step,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { TowerSealState {
+    wram: [
+        ring_radius, center_x, center_y, wait_countdown, orbit_angles, base_sparkle_x,
+        base_sparkle_y, sparkle_phases, sparkle_timers, sparkle_x, sparkle_y,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { BombosSpellState {
+    wram: [
+        mode, fire_column_radius, blast_release_locked, blast_release_countdown,
+        fire_column_timers, fire_column_phases, fire_column_radial_angles, fire_column_x,
+        fire_column_y, blast_phases, blast_timers, fire_column_seed_x, fire_column_seed_y,
+        blast_x, blast_y,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { QuakeBoltState {
+    wram: [timers, phases],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { QuakeSpellState {
+    wram: [active_bolt_limit, pending_step, origin_x, origin_y, screen_shake_y],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { EffectAngleScratchState {
+    wram: [angles],
+    children: [],
+    metadata: [],
+} }

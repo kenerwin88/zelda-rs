@@ -1621,3 +1621,83 @@ impl<'a> NativeSharedMessageTimerBridgeMut<'a> {
         fn tick() -> u16;
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { MessagingState {
+    wram: [],
+    children: [
+        select_file_menu, dialogue_message_index, multiselect_choice, dialogue_number,
+        dialogue_source_offset, decoded_text, dialogue_pointers, runtime, shared_message_timer,
+        render_buffer, vwf_render,
+    ],
+    metadata: [],
+} }
+non_wram_hash! { VwfRenderState {
+    wram: [
+        glyph_advance_prefix_sums, glyph_cursor, next_line_requested, current_line,
+        line_render_offset, tile_words,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { MessagingRenderBufferState {
+    wram: [bytes],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SharedMessageTimerState {
+    wram: [timer],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { MessagingRuntimeState {
+    wram: [
+        module, text_render_state, text_wait_countdown2, menu_animation_timer,
+        game_over_letter_cursor, dialogue_text_color, dialogue_scroll_speed,
+        text_incremental_state, vwf_line_speed_cur, vwf_line_speed, text_wait_countdown,
+        text_msgbox_topleft, text_msgbox_topleft_copy, text_tilemap_cur, dialogue_msg_read_pos,
+        message_or_sprite_state_cache,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DialoguePointerTableState {
+    wram: [pointers],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DecodedMessageTextState {
+    wram: [bytes],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DialogueSourceOffsetState {
+    wram: [bank_offset_low_nibble],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DialogueNumberState {
+    wram: [low_pair, high_pair],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { MultiselectChoiceState {
+    wram: [value, backup],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { DialogueMessageIndexState {
+    wram: [value],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SelectFileMenuState {
+    wram: [
+        save_slot_flags, cursor, transition_scratch, choice_work, remembered_cursor,
+        name_scroll_x, name_column, name_cursor_y, name_slot, name_scroll_x_step,
+        name_scroll_y_step, name_row, name_scroll_x_direction,
+    ],
+    children: [],
+    metadata: [],
+} }

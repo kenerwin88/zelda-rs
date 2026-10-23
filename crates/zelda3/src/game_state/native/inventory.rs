@@ -59,6 +59,10 @@ macro_rules! equipment_fields {
             bottles: [u8; BOTTLE_SLOT_COUNT],
         }
 
+        non_wram_hash! { InventoryItemsState {
+            wram: [$($field,)+ bottles], children: [], metadata: [],
+        } }
+
         impl InventoryItemsState {
             pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
                 Self {
@@ -1122,3 +1126,34 @@ fn read_word(ram: &[u8], offset: usize) -> u16 {
         0
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { InventoryState {
+    wram: [],
+    children: [dungeon_key_slots, player_resources, mirror_warp, save_progress, items],
+    metadata: [],
+} }
+non_wram_hash! { MirrorWarpState {
+    wram: [
+        target_index, target_offsets, velocity_deltas, wave_offset, displacement, subpixel,
+        reserved, wave_length, spacing_a, spacing_b, load_step_counter, animation_counter,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PlayerResourcesState {
+    wram: [
+        bombs, equipped_bottle_index, rupees_goal, rupees_actual, compass_flags, big_key_flags,
+        dungeon_map_flags, rupees_in_pond, heart_pieces, health_capacity, current_health, keys,
+        bomb_upgrade_level, arrow_upgrade_level, heart_filler, pendant_flags, bomb_filler,
+        arrow_filler, arrows, ability_flags, crystal_flags, low_health_beep_timer,
+    ],
+    children: [magic],
+    metadata: [],
+} }
+non_wram_hash! { DungeonKeySlotsState {
+    wram: [keys_earned],
+    children: [],
+    metadata: [],
+} }

@@ -5,14 +5,14 @@ use super::ZeldaState;
 use std::borrow::Cow;
 
 /// One exclusive native range, with inclusive cartridge addresses.
-/// The codec may address the whole image, but only this range is exported.
+/// The codec must touch only this registered range in the whole image.
 /// An owner's import callback must load only that owner's registered fields.
 pub struct NativeOwnedWramRange {
     pub lo: usize,
     pub hi: usize,
     pub owner: &'static str,
-    export: fn(&ZeldaState, &mut [u8]),
-    import: fn(&mut ZeldaState, &[u8]),
+    export_owned: fn(&ZeldaState, &mut [u8]),
+    import_owned: fn(&mut ZeldaState, &[u8]),
 }
 
 /// Sorted, disjoint ranges whose bytes no longer live in ZeldaState::ram.
@@ -31,13 +31,10 @@ impl ZeldaState {
             return Cow::Borrowed(&self.ram);
         }
         let mut image = self.ram.clone();
-        // Isolate each codec: a broad legacy write_to_ram must never overwrite
-        // another owner's bytes (or unowned bytes) in the exported image.
-        let mut scratch = self.ram.clone();
+        // Each codec is narrow by contract and tested against its registry range.
+        // One backing copy, with no per-range WRAM scratch copies.
         for range in registry {
-            scratch.copy_from_slice(&self.ram);
-            (range.export)(self, &mut scratch);
-            image[range.lo..=range.hi].copy_from_slice(&scratch[range.lo..=range.hi]);
+            (range.export_owned)(self, &mut image);
         }
         Cow::Owned(image)
     }
@@ -67,7 +64,7 @@ impl ZeldaState {
             assert!(next <= range.lo && range.lo <= range.hi && range.hi < image.len(),
                 "owned WRAM ranges must be sorted, disjoint and in bounds");
             self.ram[next..range.lo].copy_from_slice(&image[next..range.lo]);
-            (range.import)(self, image);
+            (range.import_owned)(self, image);
             next = range.hi + 1;
         }
         self.ram[next..].copy_from_slice(&image[next..]);
@@ -89,7 +86,7 @@ impl ZeldaState {
         if NATIVE_OWNED_WRAM.is_empty() { return; }
         let image = self.ram.clone();
         for range in NATIVE_OWNED_WRAM {
-            (range.import)(self, &image);
+            (range.import_owned)(self, &image);
         }
         self.poison_owned_wram();
     }
@@ -112,11 +109,10 @@ mod tests {
     // that a production subsystem has passed the sole-ownership gate.
     const TEST_OWNER: &[NativeOwnedWramRange] = &[NativeOwnedWramRange {
         lo: 0x1a, hi: 0x1a, owner: "test frame counter",
-        export: |state, image| {
+        export_owned: |state, image| {
             image[0x1a] = state.game_state.frame.frame_counter;
-            image[0x1b] = 0xff; // Deliberately overbroad codec, must be contained.
         },
-        import: |state, image| { state.game_state.frame.frame_counter = image[0x1a]; },
+        import_owned: |state, image| { state.game_state.frame.frame_counter = image[0x1a]; },
     }];
 
     #[test]
@@ -151,6 +147,42 @@ mod tests {
     }
 
     #[test]
+    fn every_owned_codec_roundtrips_without_writing_foreign_bytes() {
+        // Exercise the production registry as it grows, plus a nonempty pilot
+        // registry so this contract is tested before any real owner is enabled.
+        for registry in [NATIVE_OWNED_WRAM, TEST_OWNER] {
+            for range in registry {
+                for seed in [0u8, 0x5a, 0xff] {
+                    let mut state = ZeldaState::new();
+                    let source: Vec<u8> = (0..state.ram.len())
+                        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(seed))
+                        .collect();
+                    (range.import_owned)(&mut state, &source);
+                    for sentinel in [0u8, 0xa5, 0xff] {
+                        let mut image = vec![sentinel; source.len()];
+                        (range.export_owned)(&state, &mut image);
+                        assert_eq!(&image[range.lo..=range.hi], &source[range.lo..=range.hi],
+                            "{} import/export", range.owner);
+                        assert!(image[..range.lo].iter().chain(&image[range.hi + 1..])
+                            .all(|&byte| byte == sentinel), "{} wrote foreign bytes", range.owner);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn state_v2_ignores_wram_mirror_refreshes_across_all_substates() {
+        let mut state = ZeldaState::new();
+        state.ram[0x1a] = 7;
+        let before = state.canonical_state_hash();
+        state.game_state = crate::game_state::GameState::load_from_ram(&state.ram);
+        assert_eq!(before, state.canonical_state_hash());
+        state.ram[0x1a] = 8;
+        assert_ne!(before, state.canonical_state_hash());
+    }
+
+    #[test]
     #[should_panic(expected = "WRAM image length")]
     fn malformed_import_is_rejected_before_mutation() {
         ZeldaState::new().import_wram_image(&[0; 8]);
@@ -164,7 +196,7 @@ mod tests {
         state.player_magic_mut().set_magic_power(41);
         state.clear_live_save();
         // The existing live-save boundary intentionally imports progress
-        // only. Immediately adopting resources changes serialized native state;
+        // only. Immediately adopting resources changes the legacy native mirror;
         // exporting the old native fields instead changes the WRAM image.
         assert_eq!(state.game_state.inventory.player_resources.bombs(), 7);
         assert_eq!(state.game_state.inventory.player_resources.magic.amount(), 41);
@@ -173,6 +205,6 @@ mod tests {
         let old_hash = state.canonical_state_hash();
         state.game_state.inventory.player_resources =
             crate::game_state::InventoryState::load_from_ram(&state.ram).player_resources;
-        assert_ne!(state.canonical_state_hash(), old_hash);
+        assert_eq!(state.canonical_state_hash(), old_hash);
     }
 }

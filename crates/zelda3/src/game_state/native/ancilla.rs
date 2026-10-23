@@ -661,3 +661,11 @@ impl SlotBankBytes for AncillaSlotsState {
         self.set_byte(slot, offset, value);
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { AncillaSlotsState {
+    wram: [work],
+    children: [],
+    metadata: [],
+} }

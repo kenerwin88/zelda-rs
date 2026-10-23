@@ -745,3 +745,16 @@ fn bytewise_extended_offset(addr: usize) -> Option<usize> {
     let offset = addr.checked_sub(BYTEWISE_EXTENDED_OAM)?;
     (offset < BYTEWISE_EXTENDED_OAM_BYTES).then_some(offset)
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { OamState {
+    wram: [
+        priority_value, current_pointer, current_extended_pointer, sprite_sorting_setting,
+        priority_value_2, sort_sprites_offset, player_oam_computed_value,
+        turtle_rock_priority_flag, region_base, region_alloc, shadow_entries, packed_extended,
+        bytewise_extended,
+    ],
+    children: [],
+    metadata: [],
+} }

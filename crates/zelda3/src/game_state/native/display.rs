@@ -5531,3 +5531,114 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         );
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { DisplayState {
+    wram: [
+        screen_brightness, nmi_update_latch, core_update_disable_flag, pending_nmi_subroutine,
+        bg_vram_load_mode, pending_tilemap_update_destination_page,
+        pending_tilemap_update_source_offset, bg_mode, main_screen_layers, sub_screen_layers,
+        bg12_window_selection, bg34_window_selection, object_color_window_selection,
+        main_screen_window_layers, sub_screen_window_layers, nmi_copy_packets_request,
+        pending_polyhedral_update, chr_halfslot_request, nmi_thread_active,
+        nmi_thread_stack_pointer, irq_control_flag, vertical_irq_trigger,
+        crystal_rotation_counter, sprite_dma_head_pointer, sprite_dma_body_pointer,
+        hdma_enable_mask, mosaic_copy, mosaic_level, mosaic_target_level, mosaic_direction,
+        nmi_load_target_address, vram_upload_cursor, incremental_vram_upload_counter,
+        bg_tile_animation_countdown, message_dma_destination_address, message_dma_tile_base,
+        message_dma_tile_limit, message_dma_tile_sentinel, travel_bird_tile_offset,
+        animated_tile_data_source_address, animated_tile_vram_destination_address,
+        attract_vram_destination_address,
+    ],
+    children: [
+        link_dma_sources, palette_buffer, palette_filter, trinexx_palette, hud_runtime,
+        hud_tilemap, hud_inventory_order, water_hdma_window, overworld_palette_backup,
+        ppu_scroll_copy, spotlight_hdma,
+    ],
+    metadata: [palette_provenance],
+} }
+non_wram_hash! { SpotlightHdmaState {
+    wram: [
+        y_lower, y_upper, window_x_center, window_state, window_radius, window_y_buffer,
+        dynamic_table,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PpuScrollCopyState {
+    wram: [
+        bg1_h_copy, bg1_v_copy, bg2_h_copy, bg2_v_copy, bg1_h_copy2, bg1_v_copy2, bg2_h_copy2,
+        bg2_v_copy2, bg3_h_copy2, bg3_v_copy2, bg2_h_copy2_cached, bg2_v_copy2_cached,
+        map_backup_bg1_h_copy2, map_backup_bg2_h_copy2, map_backup_bg1_v_copy2,
+        map_backup_bg2_v_copy2, special_exit_bg2_h_copy2, special_exit_bg2_v_copy2,
+        exit_bg2_h_copy2, exit_bg2_v_copy2, mode7_center_x, mode7_center_y, bg1_h_subpixel,
+        bg1_v_subpixel, mapbak_tm, mapbak_ts, mapbak_main_tile_theme_index,
+        mapbak_sprite_graphics_index, mapbak_aux_tile_theme_index, mapbak_bg1_x_offset,
+        mapbak_bg1_y_offset, mapbak_cgwsel, mapbak_hdmaen,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldPaletteBackupState {
+    wram: [main_indoors, aux3_bg_palette_7, main_indoors_copy],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WaterHdmaWindowState {
+    wram: [
+        window_x, window_y, window_y_radius, window_x_radius, window_y_target,
+        window_y_radius_alt, watergate_spotlight_y_upper, watergate_pointer,
+        watergate_tilemap_pos_x2,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { HudInventoryOrderState {
+    wram: [order],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { HudTilemapState {
+    wram: [floor_changed_timer, tile_indices],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { HudRuntimeState {
+    wram: [
+        super_bomb_indicator_timer, super_bomb_indicator_counter, rupee_sfx_sound_delay,
+        heart_animation_active, heart_refill_countdown, heart_refill_animation_subpixel,
+        flashing_circle_timer, equipment_menu_exit_state, bottle_menu_row, module_tick_counter,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { TrinexxPaletteState {
+    wram: [red_shell_delay, blue_shell_delay, red_shell_step, blue_shell_step],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PaletteFilterState {
+    wram: [
+        countdown, countdown_high, darkening_or_lightening_screen,
+        darkening_or_lightening_screen_high, color_window_selection, color_math_control,
+        fixed_color_red, fixed_color_green, fixed_color_blue,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PaletteBufferState {
+    wram: [
+        main, aux, overworld_backup, overworld_aux_or_main_offset, sprite_palette_0_left,
+        sprite_palette_5_left, sprite_palette_6_left, main_palette_indoors, hud_palette,
+        sprite_palette_6_right_indoors, overworld_aux2_bg_palettes_5_to_7_high,
+        overworld_aux3_bg_palette_7_low, overworld_palette_mode,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { LinkDmaSources {
+    wram: [sources],
+    children: [],
+    metadata: [],
+} }

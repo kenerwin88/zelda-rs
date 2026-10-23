@@ -825,3 +825,25 @@ impl PlayerActionsState {
         self.bunny_mirror = 1;
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { PlayerActionsState {
+    wram: [
+        menu_block_flag, handler_state, immobilized, action_state_bits, auxiliary_state,
+        picking_throw_state, spin_attack_delay_timer, spin_attack_step_counter,
+        spin_attack_state, spin_attack_sound_latch, incapacitated_timer, y_button_action_flags,
+        y_button_action_step, y_button_action_timer, defense_flags, item_receipt_method,
+        action_handler_timer, bunny_transform_timer, bunny_state, bunny_mirror,
+        temp_bunny_timer, transform_poof_needed, magic_spell_player_lock, item_holding_timer,
+        ancilla_interactive_reset_flag, item_action_step, item_action_debug_value_2,
+        item_debug_value_1, given_damage, pull_action_state, current_item_y,
+        current_item_active, receive_item_index, item_in_hand, item_pickup_in_progress,
+        selected_rod, ancilla_pickup_flag, sprite_pickup_flag, sprite_pickup_flag_cached,
+        pull_for_rupees_sprite_needed, hookshot_interlock, hookshot_grave_latch,
+        electrocute_on_touch, cape_mode, cape_decrement_counter, sword_delay_timer,
+        transforming, flute_countdown, hookshot_bg_check_off_timer, sprite_damage_disabled,
+    ],
+    children: [],
+    metadata: [],
+} }

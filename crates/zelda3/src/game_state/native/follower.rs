@@ -556,3 +556,21 @@ impl<'a> NativeTagalongSlotBridgeMut<'a> {
         debug_assert_eq!(*self.state, TagalongTrailState::load_from_ram(self.ram));
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { FollowerRuntimeState {
+    wram: [
+        indicator, data_index, appearance_none_flag, dropped, hookshot_interlock,
+        hookshot_release_tail_index, tail_write_index, event_flags, reacquire_timer_low,
+        shared_state_a, draw_anim_frame, jump_timer, saved_y, saved_x, saved_indoor_flag,
+        saved_floor, palette_swap_flag, zelda_rescue_cutscene_state,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { TagalongTrailState {
+    wram: [x_low, x_high, y_low, y_high, z, layer_bits],
+    children: [],
+    metadata: [],
+} }

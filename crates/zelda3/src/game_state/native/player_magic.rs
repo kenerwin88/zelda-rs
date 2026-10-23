@@ -177,3 +177,11 @@ mod tests {
         }
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { PlayerMagicState {
+    wram: [amount, refill, consumption_level],
+    children: [],
+    metadata: [],
+} }

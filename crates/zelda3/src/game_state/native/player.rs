@@ -2050,3 +2050,58 @@ impl<'a> NativeSpecialExitPositionBridgeMut<'a> {
         self.state.restore_player_position_to_ram(self.ram);
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { PlayerState {
+    wram: [],
+    children: [
+        special_exit_position, follower_link, swim_acceleration, pushed_block,
+        bg1_movement_accumulator, tile_detection,
+    ],
+    metadata: [],
+} }
+non_wram_hash! { TileDetectionState {
+    wram: [
+        probe_y, probe_x, tile_collision_bits_primary, tile_collision_bits_secondary,
+        liftable_tile_index, liftable_action_index_primary, liftable_action_index_secondary,
+        interaction_scratch_y, interaction_scratch_x, location_calc_mask, interacting_tile,
+        pit_tile, deepwater, normal_tiles, misc_tiles, thick_grass, diagonal_tile, stair_tile,
+        block_flags, door_direction_flags, diag_state, moving_floor_tiles, icy_floor,
+        water_staircase, shallow_water, destruction_aftermath, read_something, vertical_ledge,
+        horizontal_ledge, ledges_down_leftright, diagonal_ledge_tiles, chest,
+        key_lock_gravestones, tile_type, spike_floor_and_triggers, dashable_tiles,
+        staircase_cache, slope_collision_bits, collision_bits, layer_collision_flags,
+        inroom_staircase, fall_hole_scan_index,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { Bg1MovementAccumulatorState {
+    wram: [y_subpixel, x_subpixel],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { PushedBlockState {
+    wram: [
+        x_high, x_low, target, y_high, y_low, subpixel, facing_player, animation_mode,
+        animation_timer, push_direction,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { SwimAccelerationState {
+    wram: [mode, speed_active_flag, max_speed, acceleration_direction, acceleration],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { FollowerLinkState {
+    wram: [],
+    children: [input, presentation, movement, actions],
+    metadata: [],
+} }
+non_wram_hash! { SpecialExitPositionState {
+    wram: [x, y],
+    children: [],
+    metadata: [],
+} }

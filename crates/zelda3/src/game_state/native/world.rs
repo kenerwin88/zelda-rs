@@ -3457,3 +3457,162 @@ impl<'a> NativeOverworldTransitionBridgeMut<'a> {
         fn set_previous_screen_transition(value: u8);
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { WorldState {
+    wram: [],
+    children: [
+        location, scroll, camera_boundaries, palette_theme, region, transient, overworld,
+        room_bounds,
+    ],
+    metadata: [],
+} }
+non_wram_hash! { RoomBoundsState {
+    wram: [y_bounds, x_bounds],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldState {
+    wram: [],
+    children: [
+        event_info, config_table, map_ui, weather_vane, bird_travel_destinations, map_zoom,
+        screen_size, scroll_delta, map16, entrance, exit, transition,
+    ],
+    metadata: [],
+} }
+non_wram_hash! { OverworldTransitionState {
+    wram: [
+        edge_direction_bits, direction_bits, direction_enum, screen_transition,
+        transition_counter, countdown, previous_direction_bits, previous_direction_bits2,
+        previous_screen_transition,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldExitState {
+    wram: [exit_screen, special_exit_screen],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldEntranceState {
+    wram: [special_entrance_trigger, sequence_counter],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldMap16State {
+    wram: [special_exit_src_off, exit_src_off],
+    children: [active_load, previous_load],
+    metadata: [],
+} }
+non_wram_hash! { OverworldMap16LoadState {
+    wram: [src_off, dst_off, y_unit],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldScrollDeltaState {
+    wram: [bytes],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldScreenSizeState {
+    wram: [big_area, big_area_backup, right_bottom_scroll_bound],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldMapZoomState {
+    wram: [step_counter, timer],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { BirdTravelDestinationsState {
+    wram: [slots],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WeatherVaneState {
+    wram: [countdown, music_latch, source_slot, oam_offset],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldMapUiState {
+    wram: [map_state, map_flags],
+    children: [bird_travel_statuses],
+    metadata: [],
+} }
+non_wram_hash! { BirdTravelStatusesState {
+    wram: [slots],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldConfigTableState {
+    wram: [music, sprite_palette, sprite_graphics],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { OverworldEventInfoState {
+    wram: [info],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WorldTransientState {
+    wram: [
+        custom_spell_animation_flag, allow_scroll_z, boss_prize_graphics_countdown,
+        big_key_door_message_triggered, savegame_master_sword_flags, standing_in_doorway_cached,
+        cached_room_bounds_y_start, cached_room_bounds_y_end, cached_room_bounds_x_start,
+        cached_room_bounds_x_end, overworld_peg_puzzle_progress,
+        overworld_hole_tilemap_position, overworld_bomb_tile_sweep_x,
+        overworld_bomb_tile_sweep_y_end, room_transitioning_flags, tile_interaction_shared_flag,
+        quadrant_fullsize_x, quadrant_fullsize_y, cached_quadrant_fullsize_x,
+        cached_quadrant_fullsize_y, special_exit_tilemap_layer_copy, exit_tilemap_layer_copy,
+        move_overlay_counter, overworld_hole_scan_step, overworld_map16_stripe,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WorldRegionState {
+    wram: [
+        current_area_of_player, overworld_area_index, special_exit_area_index, exit_area_index,
+        previous_screen_index, overlay_index, rng_seed, dark_world_region_index,
+        area_changed_flag, entrance_id, overworld_entrance_value,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WorldPaletteThemeState {
+    wram: [
+        last_light_vs_dark_world, aux_bg_subset, overworld_palette_aux1_hi,
+        palette_main_indoors_copy, misc_sprites_graphics_index, overworld_tile_theme_index,
+        main_tile_theme_index, aux_tile_theme_index, special_exit_overworld_tile_theme_index,
+        special_exit_main_tile_theme_index, special_exit_aux_tile_theme_index,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WorldCameraBoundariesState {
+    wram: [
+        camera_y_low, camera_y_hi, camera_x_low, camera_x_hi, scroll_targets,
+        cached_scroll_targets, special_exit_scroll_targets, exit_scroll_targets,
+        scroll_counters, special_exit_scroll_counters, exit_scroll_counters,
+        special_exit_camera_y_low, special_exit_camera_x_low, exit_camera_y_low,
+        exit_camera_x_low, cached_camera_y_low, cached_camera_x_low, exit_room_bounds_y_start,
+        exit_room_bounds_y_end, exit_room_bounds_x_start, exit_room_bounds_x_end,
+        special_exit_room_bounds_y_start, special_exit_room_bounds_y_end,
+        special_exit_room_bounds_x_start, special_exit_room_bounds_x_end,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WorldScrollState {
+    wram: [
+        bg1_x_offset, bg1_y_offset, overworld_offset_base_x, overworld_offset_base_y,
+        overworld_offset_mask_x, overworld_offset_mask_y,
+    ],
+    children: [],
+    metadata: [],
+} }
+non_wram_hash! { WorldLocationState {
+    wram: [dungeon_room, overworld_screen, indoor_flag],
+    children: [],
+    metadata: [],
+} }

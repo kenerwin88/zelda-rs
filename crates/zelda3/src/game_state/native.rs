@@ -4,6 +4,22 @@
 //! proven subsystem by subsystem. Native structs own domain fields and can be
 //! projected to or loaded from WRAM during the transition.
 
+// Explicit state-v2 classification, not a blanket default. Exhaustive patterns
+// force every newly added field to receive a WRAM/native/metadata decision.
+// WRAM fields are audited against each type's load and publication codecs.
+macro_rules! non_wram_hash {
+    ($ty:ident { wram: [$($wram:ident),* $(,)?],
+        children: [$($child:ident),* $(,)?], metadata: [$($meta:ident),* $(,)?], }) => {
+        impl $ty {
+            pub(crate) fn hash_non_wram_fields(&self, sink: &mut impl std::io::Write) {
+                let Self { $($wram: _,)* $($child,)* $($meta: _,)* } = self;
+                let _ = &sink;
+                $($child.hash_non_wram_fields(sink);)*
+            }
+        }
+    };
+}
+
 #[macro_use]
 mod bridge_methods;
 pub(crate) mod ram_target;
@@ -494,3 +510,16 @@ impl GameState {
 
 #[cfg(test)]
 mod native_tests;
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { GameState {
+    wram: [],
+    children: [
+        frame, system_signals, enhanced_features, scratch_counter, minigame, intro_sword,
+        archery_game, sprite_battle, memorized_tiles, dungeon_secret, save_load_transfer,
+        dungeon_map_display, dungeon, sprites, player, inventory, world, poly, display, effects,
+        ending, messaging, oam,
+    ],
+    metadata: [],
+} }

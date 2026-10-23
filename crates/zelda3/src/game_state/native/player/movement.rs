@@ -1540,3 +1540,32 @@ impl PlayerMovementState {
         self.speed_setting = 0;
     }
 }
+
+// State-v2 audit: cartridge fields (including targeted/mode-gated writes)
+// are covered by wram_image; recurse only to classify native children.
+non_wram_hash! { PlayerMovementState {
+    wram: [
+        x, y, z, z_mirror, x_subpixel, y_subpixel, x_velocity, y_velocity, actual_x_velocity,
+        actual_y_velocity, z_velocity, z_velocity_copy, z_velocity_mirror,
+        z_velocity_copy_mirror, recoil_z_velocity_for_dungeon_reset, recoil_timer, floor,
+        lower_level_mirror_state, cached_lower_level_state, cached_lower_level_mirror_state,
+        direction, direction_lock, direction_mask_a, direction_mask_b, last_direction,
+        last_direction_moved_towards, moving_against_diag_tile, movement_flag, quadrant_x,
+        quadrant_y, cached_quadrant_x, cached_quadrant_y, num_orthogonal_directions,
+        swim_direction_flags, facing, facing_mirror, cached_facing, speed_setting,
+        speed_modifier, dash_counter, dash_countdown, jump_ledge_timer, about_to_jump_off_ledge,
+        push_fatigue_timer, gravestone_push_timeout, running, doorway_state, deep_water_state,
+        swim_fast_state, hard_swim_stroke, swim_stroke_frame_counters, swim_stroke_anim_step,
+        swimming_countdown, conveyor_belt_state, tile_below, tile_action_index,
+        tile_collision_flag, whirlpool_trigger, prevent_movement, cached_tile_action_index,
+        force_move_any_direction, position_mode, near_moveable_statue_flag, grabbing_wall,
+        somaria_platform_state, near_pit_state, pit_data_index, pit_correction_timer,
+        pit_correction_active, moving_against_diag_deadlocked, incapacitated_camera_timer,
+        hop_origin_coord, cached_x, cached_y, copied_x, copied_y, previous_x, previous_y,
+        safe_return_x, safe_return_y, bit9_of_xcoord, cheat_walk_through_walls,
+        x_page_movement_delta, y_page_movement_delta, moving_floor_x, moving_floor_y,
+        drag_player_x, drag_player_y,
+    ],
+    children: [],
+    metadata: [],
+} }
