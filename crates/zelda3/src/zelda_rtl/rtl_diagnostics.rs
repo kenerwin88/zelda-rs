@@ -324,6 +324,11 @@ impl ZeldaState {
         inputs: i32,
         replay_input_override: Option<u16>,
     ) -> bool {
+        if self.native_held_frames_pending() != 0 {
+            let replay = self.state_recorder.replay_mode;
+            self.run_native_held_frame(Self::sanitize_frame_inputs(inputs));
+            return replay;
+        }
         self.poison_owned_wram();
         self.rom_random_replay.begin_frame();
         let raw_inputs = inputs as u16;

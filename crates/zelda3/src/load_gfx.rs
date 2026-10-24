@@ -5930,6 +5930,10 @@ impl ZeldaState {
                 continue;
             }
             let mut r8 = 0x00ff;
+            if price {
+                self.native_iris_row_work(build.pending_circle_input.is_some()
+                    || build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper());
+            }
             if let Some(t) = build.pending_circle_input.take() {
                 // Resume at $F375: JSR IrisSpotlight_CalculateCircleValue
                 // (the callee charges itself).
@@ -6048,6 +6052,7 @@ impl ZeldaState {
             copied_words,
             224 - copied_words,
         );
+        self.native_iris_projection_work();
     }
 
     /// Resume the C routine immediately after its table copy.

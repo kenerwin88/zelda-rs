@@ -10524,11 +10524,15 @@ pub struct ZeldaState {
     #[serde(default)]
     #[serde(skip)]
     rom_startup_timing: bool,
-    /// Lag-free play: each frame runs one complete main-loop iteration. Work
-    /// the cartridge spreads over lag frames (a long glyph render) finishes
-    /// inside the iteration instead of being sliced to the ROM's CPU budget.
+    /// Lag-free play: main runs complete logical iterations, with native work
+    /// budgets inserting NMI-only presentation frames. Unbudgeted work (such
+    /// as a long glyph render) still finishes atomically in its iteration.
     #[serde(skip)]
     pub(crate) lag_free: bool,
+    /// Native work-derived presentation pacing; never serialized or seeded
+    /// from a cartridge lag receipt.
+    #[serde(skip)]
+    pub(crate) native_pacing: rtl_native_pacing::NativePacing,
     /// Lag-free: the frame's ROM-equivalent CPU cost (cycle ledger plus the
     /// glyph renderer's modelled cost), from which the frames the cartridge
     /// would have taken follow while a preemptive polygon thread runs.
@@ -13667,6 +13671,7 @@ impl ZeldaState {
             dialogue_flags: 0,
             rom_startup_timing: false,
             lag_free: false,
+            native_pacing: Default::default(),
             lag_free_frame_master_start: 0,
             lag_free_vwf_master: 0,
             lag_free_last_main_master: 0,
@@ -13983,6 +13988,7 @@ impl ZeldaState {
     }
 
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
+        self.native_pacing = Default::default();
         self.lag_free_intro_schedule = self.lag_free.then_some(0);
         self.native_cpu_math = crate::cycle_models::native_cpu_math::NativeCpuMath::snes9x_reset();
         self.native_startup_cpu = None;
@@ -14194,7 +14200,7 @@ impl ZeldaState {
         self.emu_synchronize_whole_state();
     }
 
-    /// Run each frame as one complete main-loop iteration (see `lag_free`).
+    /// Run complete main-loop iterations with native presentation holds.
     pub fn set_lag_free(&mut self, enabled: bool) {
         self.lag_free = enabled;
         if enabled && self.frame_ctr_dbg == 0 && !self.boot_memory_initialized {
@@ -14901,6 +14907,7 @@ impl ZeldaState {
             ));
         }
         self.lag_free_intro_schedule = None;
+        self.native_pacing = Default::default();
         self.import_wram_image(wram);
         self.sram[..sram.len()].copy_from_slice(sram);
         self.ppu.vram = vram
@@ -17214,6 +17221,7 @@ mod rtl_dialogue;
 mod rtl_dungeon;
 mod rtl_frame_lanes;
 mod rtl_nmi;
+mod rtl_native_pacing;
 mod rtl_native_exact_cpu;
 #[path = "zelda_rtl/native_item_graphics.rs"]
 mod native_item_graphics;

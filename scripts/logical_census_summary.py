@@ -47,6 +47,7 @@ poly = {int(m.group(1)): (int(m.group(2)), int(m.group(3) or 0)) for m in
          for line in lines) if m}
 poly_fields = {int(row['start']): row for row in
                (parse_segment(line) for line in lines if line.startswith('logical-segment-poly '))}
+pacing = [parse_segment(line) for line in lines if line.startswith('logical-segment-pacing ')]
 tot = collections.Counter()
 by_first = collections.Counter()
 examples = {}
@@ -121,6 +122,14 @@ for seg in segments:
     worst.append((content, start, matched, compared, seg.get('module')))
 
 vc = tot['video_compared'] or 1
+if pacing:
+    expected = {num(row, 'start'): num(row, 'iterations') for row in segments}
+    observed = {num(row, 'start'): num(row, 'iterations') for row in pacing}
+    tot['gate_failures'] += int(expected != observed or len(pacing) != len(segments))
+    tot['gate_failures'] += sum(not (0 <= num(row, 'equal') <= num(row, 'iterations'))
+                                or num(row, 'held') < 0 or num(row, 'lag') < 0 for row in pacing)
+    print('native pacing: iterations={} equal={} held={} ledger_lag={}'.format(
+        *(sum(num(row, key) for row in pacing) for key in ('iterations', 'equal', 'held', 'lag'))))
 print(f"timing-defined attract segments: {tot['timing_defined_segments']} "
       f"({tot['timing_defined_iterations']} iterations), reported apart")
 print(f"segments {tot['segments']}  iterations {tot['iterations']}  fully clean {tot['fully_clean_segments']}  "

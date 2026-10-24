@@ -1,11 +1,11 @@
 //! Lag-free parity: replay the ROM's logical-frame ledger one main-loop
-//! iteration per engine frame and compare WRAM and video after each iteration.
+//! iteration at a time and compare WRAM and video after each iteration.
 //!
 //! The ledger comes from `crates/snes/examples/logical_frame_ledger.rs`, which
 //! runs the cartridge on the in-repo source CPU and cuts the route at every NMI
-//! that lands in the wait loop. Lag frames vanish here by construction: each
-//! engine frame is one completed iteration, fed the joypad word and cartridge
-//! RNG outputs that the ROM's iteration consumed.
+//! that lands in the wait loop. Native work budgets may insert NMI-only
+//! presentation frames; their count is compared with `lag_nmis`, never driven
+//! by it. Each completed iteration consumes its joypad word and cartridge RNG.
 //!
 //! Usage: zelda3 --logical-replay LEDGER_DIR SRAM [--frames N] [--image pre|post]
 //!        [--offset K] [--report N] [--ignore lo-hi,...] [--histogram PATH]
@@ -13,7 +13,7 @@
 //!        [--apu-trace lo-hi] [--start K] [--dump-wram K:DIR] [--live-apu-reads]
 //!        [--poly-uploads] [--single-seed] [--outcome-trace PATH]
 //!        [--windows LO-HI,...] (inclusive uninterrupted seeded probes)
-//!        [--audio-pcm PATH] (little-endian interleaved stereo, 534 pairs per iteration)
+//!        [--audio-pcm PATH] (little-endian stereo, 534 pairs per presentation frame)
 //!
 //! The cartridge's `$2140` reads (song-end polls) are replayed per iteration
 //! like the RNG: their values depend on elapsed SPC time, which lag changes.
@@ -464,6 +464,9 @@ struct Segment {
     last_problem: Option<u64>,
     /// Frames that ended with translated work scheduled for a later frame.
     deferred_work_frames: u64,
+    pacing_equal: u64,
+    pacing_held: u64,
+    pacing_lag: u64,
 }
 
 /// An engine with no miss in this many iterations before a seed boundary is
@@ -531,6 +534,9 @@ impl Segment {
             continued: false,
             last_problem: None,
             deferred_work_frames: 0,
+            pacing_equal: 0,
+            pacing_held: 0,
+            pacing_lag: 0,
         }
     }
 
@@ -604,6 +610,8 @@ impl Segment {
             self.deferred_work_frames,
             self.lag_diverged
         );
+        println!("logical-segment-pacing start={} iterations={} equal={} held={} lag={}",
+            self.start, self.iterations, self.pacing_equal, self.pacing_held, self.pacing_lag);
         if self.poly_iterations != 0 {
             println!(
                 "logical-segment-poly start={} iterations={} wram_diverged={} rng_unconsumed={} rng_extra={}",
@@ -1331,6 +1339,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut written: Vec<bool> = images.image.iter().map(|&byte| byte != POWER_ON_FILL).collect();
     let mut segment = Segment::starting(0);
     let mut audio_buffer = vec![0i16; AUDIO_SAMPLES * 2];
+    // Entry-context census: [iterations, equal counts, held frames, lag NMIs].
+    let mut pacing_categories = std::collections::BTreeMap::<(u8, u8), [u64; 4]>::new();
     let mut last_apu_push = game.zelda_last_pushed_apu_ports().0;
     let mut engine_ports = game.zelda_last_pushed_apu_ports().1;
     let mut rom_ports = [0u8; 4];
@@ -1509,12 +1519,29 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 }
             }
         }
+        let mut native_held = 0u32;
+        let mut engine_commands = Vec::new();
+        let last_apu_push_before = last_apu_push;
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            game.zelda_run_frame(i32::from(input));
-            // The audio side consumes the frame's commands and takes the SPC's
-            // acknowledgements, which the next NMI needs to clear a port and
-            // send a repeated command, as in a frontend.
-            game.zelda_render_audio(&mut audio_buffer, AUDIO_SAMPLES as i32, 2);
+            loop {
+                game.zelda_run_frame(i32::from(input));
+                // The audio side consumes the frame's commands and takes the
+                // SPC acknowledgements before the next main or held callback.
+                game.zelda_render_audio(&mut audio_buffer, AUDIO_SAMPLES as i32, 2);
+                if let Some(output) = audio_pcm.as_mut() {
+                    use std::io::Write;
+                    for sample in &audio_buffer {
+                        output.write_all(&sample.to_le_bytes()).expect("write PCM trace");
+                    }
+                }
+                let (pushes, ports) = game.zelda_last_pushed_apu_ports();
+                if pushes != last_apu_push {
+                    engine_commands.extend(port_commands((0..4u8).zip(ports), &mut engine_ports));
+                }
+                last_apu_push = pushes;
+                if game.native_held_frames_pending() == 0 { break; }
+                native_held += 1;
+            }
         }));
         if ran.is_err() {
             segment.panicked = Some(iteration_index.max(0) as u64);
@@ -1530,12 +1557,6 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             continue;
         }
         let observed_polls = game.take_song_end_poll_observations();
-        if let Some(output) = audio_pcm.as_mut() {
-            use std::io::Write;
-            for sample in &audio_buffer {
-                output.write_all(&sample.to_le_bytes()).expect("write PCM trace");
-            }
-        }
         previous_gameplay_poll = !observed_polls.is_empty();
         if !apu_read_replay && let Some(iteration) = iteration {
             let expected: Vec<bool> = iteration.apu_reads.iter()
@@ -1559,14 +1580,15 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
         }
         let (pushes, ports) = game.zelda_last_pushed_apu_ports();
-        let last_apu_push_before = last_apu_push;
-        let engine_commands = if pushes != last_apu_push {
-            port_commands((0..4u8).zip(ports), &mut engine_ports)
-        } else {
-            Vec::new()
-        };
-        last_apu_push = pushes;
         let Some(iteration) = iteration else { continue };
+        segment.pacing_equal += u64::from(native_held == iteration.lag_nmis);
+        segment.pacing_held += u64::from(native_held);
+        segment.pacing_lag += u64::from(iteration.lag_nmis);
+        let pacing = pacing_categories.entry((images.image[0x10], images.image[0x11])).or_default();
+        pacing[0] += 1;
+        pacing[1] += u64::from(native_held == iteration.lag_nmis);
+        pacing[2] += u64::from(native_held);
+        pacing[3] += u64::from(iteration.lag_nmis);
         let index = iteration_index as usize;
         if apu_trace.is_some_and(|(lo, hi)| (lo..=hi).contains(&iteration.index)) {
             println!(
@@ -1706,6 +1728,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             serde_json::to_writer(&mut *trace, &serde_json::json!({
                 "iteration": iteration.index,
                 "lag_nmis": iteration.lag_nmis,
+                "native_held": native_held,
                 "open_host": iteration.open_host,
                 "picture_host": iteration.picture_host,
                 "engine_polls": observed_polls,
@@ -1823,7 +1846,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             .filter(|&address| compared_now[address] && engine_image[address] != images.image[address])
             .collect();
         lag_carried.retain(|address| differing.binary_search(address).is_ok());
-        if iteration.lag_nmis != 0 {
+        if iteration.lag_nmis != native_held {
             lag_carried.extend(differing.iter().copied());
         }
         segment.start_module.get_or_insert(images.image[0x10]);
@@ -1853,8 +1876,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 || (images.image[0x11] == 10 && (0x11000..=0x113ff).contains(&a)));
         let lag_difference = !exact_intro && (map_overrun
             || (differing.iter().all(|&address| address == 0x0cfd)
-                && (iteration.lag_nmis != 0
-                    || differing.iter().all(|address| lag_carried.contains(address)))));
+                && differing.iter().all(|address| lag_carried.contains(address))));
         let category = if ranges.is_empty() { "clean" }
             else if exact_intro { "unexplained-intro" }
             else if poly_active { "polygon" }
@@ -1938,6 +1960,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         video.drain(&iterations, &mut segment);
     }
     segment.report(video.is_some());
+    for ((module, submodule), [iterations, equal, held, lag]) in pacing_categories {
+        println!("logical-pacing-category module={module:02x}/{submodule:02x} iterations={iterations} equal={equal} held={held} lag={lag}");
+    }
     if let Some(path) = histogram_path {
         let lines: String = histogram
             .iter()
