@@ -345,6 +345,7 @@ impl ZeldaState {
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         if self.lag_free {
             self.lag_free_frame_master_start = crate::cycle_ledger::master();
+            crate::cycle_ledger::profile_main_begin();
             self.lag_free_vwf_master = 0;
             self.lag_free_go_master = None;
             self.lag_free_lag_phases_run = false;

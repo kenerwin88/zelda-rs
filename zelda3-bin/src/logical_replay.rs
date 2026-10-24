@@ -1162,6 +1162,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut windows: Vec<(u64, u64)> = Vec::new();
     let mut outcome_trace: Option<BufWriter<fs::File>> = None;
     let mut pacing_predictor: Option<BufWriter<fs::File>> = None;
+    let mut routine_profile: Option<BufWriter<fs::File>> = None;
+    let mut routine_profile_iterations: Vec<(u64, u64)> = Vec::new();
     let mut audio_pcm: Option<BufWriter<fs::File>> = None;
     let mut classification_trace: Option<BufWriter<fs::File>> = None;
     let mut poly_uploads: Option<PolyUploads> = None;
@@ -1175,6 +1177,21 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             })
         };
         match args[index].as_str() {
+            "--routine-profile-iterations" => {
+                routine_profile_iterations = value(index).split(',').map(|range| {
+                    let (lo, hi) = range.split_once('-').unwrap_or((range, range));
+                    let (lo, hi) = (lo.parse().expect("profile start"), hi.parse().expect("profile end"));
+                    assert!(lo <= hi, "profile window must be ordered");
+                    (lo, hi)
+                }).collect();
+            }
+            "--routine-profile" => {
+                use std::io::Write;
+                assert!(cfg!(feature = "parity-debug"), "--routine-profile requires parity-debug");
+                let mut file = BufWriter::new(fs::File::create(value(index)).expect("create routine profile"));
+                writeln!(file, "iteration,routine,calls,inclusive,exclusive").expect("profile header");
+                routine_profile = Some(file);
+            }
             "--windows" => {
                 windows = value(index).split(',').map(|range| {
                     let (lo, hi) = range.split_once('-').expect("--windows LO-HI,...");
@@ -1547,6 +1564,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let mut engine_commands = Vec::new();
         let last_apu_push_before = last_apu_push;
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let profiling = routine_profile.is_some() && iteration.is_some_and(|iteration|
+                routine_profile_iterations.is_empty() || routine_profile_iterations.iter()
+                    .any(|&(lo, hi)| (lo..=hi).contains(&iteration.index)));
+            zelda3::cycle_ledger::profile_iteration(profiling);
             loop {
                 game.zelda_run_frame(i32::from(input));
                 if first_callback {
@@ -1556,6 +1577,15 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     main_master = game.lag_free_main_master();
                     vwf_master = game.lag_free_vwf_master();
                     main_silent = zelda3::cycle_ledger::silent_calls() - silent_before;
+                    let rows = zelda3::cycle_ledger::take_routine_profile();
+                    if let (true, Some(file), Some(iteration)) = (profiling, routine_profile.as_mut(), iteration) {
+                        use std::io::Write;
+                        for (address, [calls, inclusive, exclusive]) in rows {
+                            writeln!(file, "{},{address:06x},{calls},{inclusive},{exclusive}", iteration.index).expect("routine profile");
+                        }
+                        writeln!(file, "{},vwf,0,{vwf_master},{vwf_master}", iteration.index).expect("VWF profile");
+                        writeln!(file, "{},total,1,{main_master},{main_master}", iteration.index).expect("profile total");
+                    }
                     first_callback = false;
                 }
                 if game.native_last_callback_masked_nmi() {

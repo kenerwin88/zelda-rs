@@ -13,6 +13,14 @@
 
 use std::cell::{Cell, RefCell};
 use std::io::Write;
+use std::collections::BTreeMap;
+
+/// Diagnostic work only; address zero is work outside every annotated scope.
+#[derive(Default)]
+struct RoutineProfile {
+    active: bool,
+    rows: BTreeMap<u32, [u64; 3]>, // calls, inclusive, exclusive
+}
 
 #[derive(Debug, Default)]
 struct Ledger {
@@ -22,6 +30,7 @@ struct Ledger {
     /// depth, so a routine's record excludes its annotated callees (a self
     /// cost, comparable with the profiler's own-instruction totals).
     nested: Vec<u64>,
+    addresses: Vec<u32>,
     /// Completed routine self charges this host frame: (ROM address, master).
     completed: Vec<(u32, u64)>,
 }
@@ -39,6 +48,36 @@ thread_local! {
     /// routines the ledger does not price yet (see `probe_annotation`).
     static SILENT_CALLS: Cell<u64> = const { Cell::new(0) };
     static LEDGER: RefCell<Ledger> = RefCell::new(Ledger::default());
+    static PROFILE: RefCell<Option<RoutineProfile>> = const { RefCell::new(None) };
+}
+
+/// Enable collection for one logical iteration (the CLI owns the output).
+pub fn profile_iteration(enabled: bool) {
+    PROFILE.with(|profile| *profile.borrow_mut() = enabled.then(RoutineProfile::default));
+}
+
+pub(crate) fn profile_main_begin() {
+    PROFILE.with(|profile| {
+        if let Some(profile) = profile.borrow_mut().as_mut() {
+            profile.active = true;
+            LEDGER.with(|ledger| {
+                for address in &ledger.borrow().addresses {
+                    profile.rows.entry(*address).or_default()[0] += 1;
+                }
+            });
+        }
+    });
+}
+
+pub(crate) fn profile_main_end() {
+    PROFILE.with(|profile| {
+        if let Some(profile) = profile.borrow_mut().as_mut() { profile.active = false; }
+    });
+}
+
+/// VWF's separate counter is deliberately emitted separately by the caller.
+pub fn take_routine_profile() -> BTreeMap<u32, [u64; 3]> {
+    PROFILE.with(|profile| profile.borrow_mut().take().map_or_else(BTreeMap::new, |p| p.rows))
 }
 
 /// Master cycles charged so far on this thread.
@@ -52,6 +91,21 @@ pub fn master() -> u64 {
 pub fn charge(master: u64) {
     if MUTED.with(Cell::get) == 0 {
         MASTER.with(|total| total.set(total.get() + master));
+        PROFILE.with(|profile| {
+            if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active) {
+                LEDGER.with(|ledger| {
+                    let ledger = ledger.borrow();
+                    let address = ledger.addresses.last().copied().unwrap_or(0);
+                    profile.rows.entry(address).or_default()[2] += master;
+                    if ledger.addresses.is_empty() {
+                        profile.rows.entry(0).or_default()[1] += master;
+                    }
+                    for address in &ledger.addresses {
+                        profile.rows.entry(*address).or_default()[1] += master;
+                    }
+                });
+            }
+        });
     }
 }
 
@@ -78,7 +132,16 @@ pub struct RoutineScope {
 pub fn routine(address: u32) -> RoutineScope {
     let muted = MUTED.with(Cell::get) > 0;
     if !muted {
-        LEDGER.with(|ledger| ledger.borrow_mut().nested.push(0));
+        LEDGER.with(|ledger| {
+            let mut ledger = ledger.borrow_mut();
+            ledger.nested.push(0);
+            ledger.addresses.push(address);
+        });
+        PROFILE.with(|profile| {
+            if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active) {
+                profile.rows.entry(address).or_default()[0] += 1;
+            }
+        });
         SCOPES_OPENED.with(|count| count.set(count.get() + 1));
     }
     RoutineScope {
@@ -97,6 +160,7 @@ impl Drop for RoutineScope {
         LEDGER.with(|ledger| {
             let mut ledger = ledger.borrow_mut();
             let nested = ledger.nested.pop().unwrap_or(0);
+            assert_eq!(ledger.addresses.pop(), Some(self.address));
             if let Some(parent) = ledger.nested.last_mut() {
                 *parent += inclusive;
             }
@@ -203,6 +267,32 @@ pub(crate) fn measure_routine_self_work(address: u32, run: impl FnOnce()) -> u64
 #[cfg(test)]
 mod annotation_probe_tests {
     use super::*;
+
+    #[test]
+    fn routine_profile_reconciles_nested_muted_and_unscoped_main_work() {
+        profile_iteration(true);
+        charge(100); // Before main: excluded.
+        let parent = routine(0x008034);
+        profile_main_begin();
+        charge(10);
+        {
+            let _child = routine(0x018000);
+            charge(20);
+            muted(|| charge_routine(0x028000, 500));
+        }
+        charge_routine(0x038000, 0); // Coverage includes zero-priced calls.
+        drop(parent);
+        charge(3);
+        profile_main_end();
+        charge_routine(0x0080c9, 1000); // Closing handler: excluded.
+        let rows = take_routine_profile();
+        assert_eq!(rows[&0x008034], [1, 30, 10]);
+        assert_eq!(rows[&0x018000], [1, 20, 20]);
+        assert_eq!(rows[&0x038000], [1, 0, 0]);
+        assert_eq!(rows[&0], [0, 3, 3]);
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows.values().map(|row| row[2]).sum::<u64>(), 33);
+    }
 
     #[test]
     fn a_probed_call_is_silent_only_when_it_neither_charges_nor_opens_a_scope() {

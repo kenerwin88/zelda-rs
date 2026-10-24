@@ -9857,6 +9857,18 @@ impl ZeldaState {
             return;
         };
         let dialogue = find_index_in_memblk(dialogue_blk, 1).ptr.to_vec();
+        if self.lag_free {
+            // $0E:D3EB..D44A: the ROM walks encoded messages to derive these
+            // pointers. The asset lengths replace that walk, but its actual
+            // token/argument paths still determine the source work price.
+            let messages: Vec<_> = (0..397).map(|i|
+                find_index_in_memblk(MemBlk { ptr: &dialogue }, i).ptr).collect();
+            if let Some(master) = crate::cycle_models::text_pointers::message_streams(&messages)
+                .and_then(|streams| crate::cycle_models::text_pointers::scan_master_cycles(&streams))
+            {
+                crate::cycle_ledger::charge_routine(0x0e_d3eb, master);
+            }
+        }
         let mut p = 0x1c8000u32;
         for i in 0..398 {
             if i == 359 {

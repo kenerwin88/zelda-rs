@@ -433,6 +433,7 @@ impl ZeldaState {
             self.lag_free_intro_poly_after_main();
         }
         let ledger_before = crate::cycle_ledger::master();
+        crate::cycle_ledger::profile_main_end();
         self.silent_ledger_calls_at_nmi_acceptance = crate::cycle_ledger::silent_calls();
         self.nmi_dma_accounting = Some(NmiDmaAccounting::default());
         self.native_note_handler_updates(0);

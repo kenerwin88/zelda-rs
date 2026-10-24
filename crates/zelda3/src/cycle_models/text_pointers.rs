@@ -59,6 +59,46 @@ pub(crate) fn message_streams(messages: &[&[u8]]) -> Option<[Vec<u8>; 2]> {
     Some(streams)
 }
 
+/// `$0E:D3EB..D44A`, M8/X8 entry, then M16/X16. Prices the actual encoded
+/// tokens used to produce the pointer table; command arguments are skipped by
+/// the ROM's length table. Derived with scripts/rom_block_costs.py, excluding
+/// the caller's JSL. No raster, interrupt or duration measurement enters here.
+pub(crate) fn scan_master_cycles(streams: &[Vec<u8>; 2]) -> Option<u64> {
+    let mut master = 214 + 202; // Entry and first pointer publication.
+    for (bank, stream) in streams.iter().enumerate() {
+        let mut offset = 0;
+        loop {
+            let token = *stream.get(offset)?;
+            let length = if (0x67..0x80).contains(&token) {
+                usize::from(table_byte(0x0ed36b + u32::from(token))?)
+            } else { 1 };
+            if length == 0 { return None; }
+            master += 204 + if token < 0x67 { 6 + 24 }
+                else { 40 + if token < 0x80 { 6 } else { 24 } };
+            master += 118;
+            offset = offset.checked_add(length)?;
+            if offset > stream.len() { return None; }
+            if token == 0x7f {
+                master += 6 + 202; // BEQ and next pointer.
+                continue;
+            }
+            master += 40;
+            if token == 0x80 {
+                if bank != 0 || stream.get(offset) != Some(&0xff) { return None; }
+                master += 176 + 202; // Switch physical bank; overwrite sentinel pointer.
+                break;
+            }
+            master += 6 + 40;
+            if token == 0xff {
+                if bank != 1 || stream.get(offset) != Some(&0xff) { return None; }
+                return Some(master + 94);
+            }
+            master += 6;
+        }
+    }
+    None
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Call,
@@ -640,6 +680,7 @@ mod tests {
                     let mut palette = false;
                     let mut steps = 0;
                     let mut vblanks = 0;
+                    let mut scan_master = 0;
                     while !work.complete() {
                         let phase = work.phase;
                         let operand_address =
@@ -693,7 +734,8 @@ mod tests {
                             })
                             .collect::<Vec<_>>();
                         let mut actual = Vec::new();
-                        work.step(&mut native, &mut clock, |at, access| {
+                        let scan_instruction = work.routine() == 0x0ed3eb;
+                        let instruction_master = work.step(&mut native, &mut clock, |at, access| {
                             let read = |address: u32| {
                                 if address < 0x2000 {
                                     ram[address as usize]
@@ -730,6 +772,7 @@ mod tests {
                             actual.push((at, access, value));
                             value
                         });
+                        if scan_instruction { scan_master += instruction_master.unwrap(); }
                         assert_eq!(
                             actual, expected,
                             "synthetic={synthetic} phase={phase:?} v={v} h={h} odd={odd}"
@@ -753,6 +796,10 @@ mod tests {
                         assert_eq!(clock, *source.timeline(), "phase={phase:?}");
                         // Host suspension retains the native phase, including saved flags.
                         if work.complete() && !palette {
+                            assert_eq!(scan_master_cycles(&[
+                                rom[0xe0000..0xe8000].to_vec(),
+                                rom[0x75f40..0x78000].to_vec(),
+                            ]), Some(scan_master), "ROM token prices, synthetic={synthetic}");
                             assert_eq!((native.bank, native.pc, native.sp), (2, 0x811a, 0x1fc));
                             work.begin_palette_clear();
                             palette = true;

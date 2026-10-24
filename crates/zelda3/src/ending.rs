@@ -19,6 +19,61 @@ use crate::zelda_rtl::misc::DUNG_ANIMATED_TILES;
 mod ending_shared;
 use ending_shared::*;
 
+#[cfg(test)]
+mod pacing_cost_tests {
+    use super::*;
+
+    #[test]
+    fn triangle_motion_prices_the_roms_zero_positive_and_negative_paths() {
+        use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+            CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+        let Ok(rom) = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")) else { return; };
+        for slot in [0, 7] {
+            for x in [0, 1, 0x7f, 0x80, 0xff] {
+                for y in [0, 1, 0x7f, 0x80, 0xff] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    native.intro_actor_mut(slot).set_x_velocity(x);
+                    native.intro_actor_mut(slot).set_y_velocity(y);
+                    let mut snes = Snes::new();
+                    snes.cart.load(CartType::LoRom, &rom, 0x2000);
+                    snes.ram.copy_from_slice(&native.wram_image());
+                    snes.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                    snes.cpu.e = false;
+                    snes.cpu.unpack_flags(0x30);
+                    snes.cpu.k = 12;
+                    snes.cpu.db = 0;
+                    snes.cpu.dp = 0;
+                    snes.cpu.pc = 0xc9f1;
+                    snes.cpu.sp = 0x1fc;
+                    snes.cpu.x = slot as u16;
+                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                    let mut source = RomCpuTimingProbe::new(snes, clock,
+                        SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut measured = 0;
+                    for _ in 0..100 {
+                        let step = source.step().unwrap();
+                        measured += step.transactions.iter()
+                            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                        if source.snes().cpu.pc == 0x8000 { break; }
+                    }
+                    assert_eq!(source.snes().cpu.pc, 0x8000);
+                    let start = crate::cycle_ledger::master();
+                    native.animate_scene_sprite_move_triangle(slot);
+                    assert_eq!(crate::cycle_ledger::master() - start, measured,
+                        "slot={slot} x={x:02x} y={y:02x}");
+                    let image = native.wram_image();
+                    for base in [0x1e28, 0x1e30, 0x1e38, 0x1e40, 0x1e48, 0x1e50] {
+                        assert_eq!(image[base + slot], source.snes().ram[base + slot]);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn native_poly_palette_byte(address: u32) -> Option<u8> {
     (0x0cc425..0x0cc435).contains(&address).then(|| {
         let offset=(address-0x0cc425) as usize;
@@ -3368,6 +3423,16 @@ impl ZeldaState {
     }
 
     pub(super) fn animate_scene_sprite_move_triangle(&mut self, k: usize) {
+        if self.lag_free {
+            // $0C:C9F1..CA4B, M8/X8. Each axis tests velocity (48);
+            // zero takes BEQ (+6), moving executes 310 plus the signed
+            // branch (negative +30, nonnegative taken +6) and 154 stores.
+            // All eight actor indices stay within the indexed pages.
+            let axis = |velocity: u8| 48 + if velocity == 0 { 6 }
+                else { 310 + if velocity & 0x80 != 0 { 30 } else { 6 } + 154 };
+            crate::cycle_ledger::charge_routine(0x0c_c9f1,
+                axis(self.intro_actor(k).x_velocity()) + axis(self.intro_actor(k).y_velocity()) + 42);
+        }
         if self.intro_actor(k).x_velocity() != 0 {
             self.intro_actor_mut(k).move_x();
         }

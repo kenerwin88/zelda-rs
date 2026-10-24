@@ -33,6 +33,9 @@
 //! most frames; it is a diagnostic, not the authority).
 //! `ZELDA3_LEDGER_FRAMES=<lo>-<hi>[,...]` draws just those windows and writes
 //! `frames/host-<n>.ppm`, plus the PPU registers, OAM and VRAM beside it.
+//! `ZELDA3_LEDGER_PROFILE=<lo>-<hi>[,...]` writes inclusive/exclusive main
+//! instruction clocks to `routine-profile.csv`. `ZELDA3_LEDGER_PROFILE_ONLY=1`
+//! suppresses the ordinary image/iteration streams; use a fresh output dir.
 
 use sha2::{Digest, Sha256};
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
@@ -129,12 +132,16 @@ struct Iteration {
 struct XorStream {
     previous: Vec<u8>,
     scratch: Vec<u8>,
-    encoder: zstd::Encoder<'static, BufWriter<fs::File>>,
+    encoder: Option<zstd::Encoder<'static, BufWriter<fs::File>>>,
 }
 
 impl XorStream {
     fn create(path: PathBuf) -> Result<Self, Box<dyn Error>> {
-        let encoder = zstd::Encoder::new(BufWriter::new(fs::File::create(path)?), 6)?;
+        let encoder = if env::var_os("ZELDA3_LEDGER_PROFILE_ONLY").is_some() {
+            None
+        } else {
+            Some(zstd::Encoder::new(BufWriter::new(fs::File::create(path)?), 6)?)
+        };
         Ok(Self {
             previous: vec![0; WRAM_LEN],
             scratch: vec![0; WRAM_LEN],
@@ -143,16 +150,17 @@ impl XorStream {
     }
 
     fn push(&mut self, wram: &[u8]) -> Result<(), Box<dyn Error>> {
+        let Some(encoder) = self.encoder.as_mut() else { return Ok(()); };
         for ((out, now), before) in self.scratch.iter_mut().zip(wram).zip(&self.previous) {
             *out = now ^ before;
         }
         self.previous.copy_from_slice(wram);
-        self.encoder.write_all(&self.scratch)?;
+        encoder.write_all(&self.scratch)?;
         Ok(())
     }
 
     fn finish(self) -> Result<(), Box<dyn Error>> {
-        self.encoder.finish()?.flush()?;
+        if let Some(encoder) = self.encoder { encoder.finish()?.flush()?; }
         Ok(())
     }
 }
@@ -202,7 +210,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     fs::create_dir_all(&out_dir)?;
-    let mut records = BufWriter::new(fs::File::create(out_dir.join("iterations.jsonl"))?);
+    let mut records = BufWriter::new(fs::File::create(if env::var_os("ZELDA3_LEDGER_PROFILE_ONLY").is_some() {
+        PathBuf::from("/dev/null")
+    } else { out_dir.join("iterations.jsonl") })?);
     let mut pre_nmi = XorStream::create(out_dir.join("wram-pre-nmi.xor.zst"))?;
     let mut post_nmi = XorStream::create(out_dir.join("wram-post-nmi.xor.zst"))?;
     let progress_every = env::var("ZELDA3_SOURCE_PROGRESS_EVERY")
@@ -243,27 +253,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     // `ZELDA3_LEDGER_THREAD_TRACE=<lo>-<hi>` prints every accepted NMI and IRQ
     // in those hosts with the beam line and the interrupted PC: which of the
     // main loop and the polygon thread each interrupt preempted.
-    // `ZELDA3_LEDGER_PROFILE=<lo>-<hi>[,...]` (iterations) attributes the main
-    // thread's own instruction cycles to the subroutine running them (call
-    // frames from JSR/JSL, left when the stack rises above them), outside
-    // interrupt handlers and the polygon thread's stack, and prints
-    // `ledger-profile iteration=<k> routine=<pc> master=<cycles>` at the end:
-    // the measurement a cycle-ledger annotation is checked against.
+    // CPU-only instruction coverage. Inclusive rows retain every live JSR/JSL
+    // caller; exclusive rows belong to the innermost call target. Tail jumps
+    // keep the caller's identity (they do not push a return address).
     let profile_iterations: Vec<(u64, u64)> = env::var("ZELDA3_LEDGER_PROFILE")
-        .map(|value| {
-            value
-                .split(',')
-                .filter_map(|range| {
-                    let (lo, hi) = range.split_once('-')?;
-                    Some((lo.parse::<u64>().ok()?, hi.parse::<u64>().ok()?))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+        .ok().map(|value| value.split(',').map(|range| {
+            let (lo, hi) = range.split_once('-').unwrap_or((range, range));
+            let (lo, hi) = (lo.parse::<u64>()?, hi.parse::<u64>()?);
+            if lo > hi { return Err("reversed profile window".into()); }
+            Ok::<_, Box<dyn Error>>((lo, hi))
+        }).collect::<Result<_, _>>()).transpose()?.unwrap_or_default();
+    let mut profile_output = (!profile_iterations.is_empty()).then(|| {
+        let mut writer = BufWriter::new(fs::File::create(out_dir.join("routine-profile.csv"))?);
+        writeln!(writer, "iteration,routine,calls,inclusive,exclusive")?;
+        Ok::<_, std::io::Error>(writer)
+    }).transpose()?;
     let mut profile_stack: Vec<(u32, u16)> = Vec::new();
     let mut profile_depth = 0usize;
     let mut profile_main_active = false;
-    let mut profile: std::collections::BTreeMap<(u64, u32), u64> = Default::default();
+    let mut profile: std::collections::BTreeMap<(u64, u32), [u64; 3]> = Default::default();
+    let mut profile_complete = std::collections::BTreeSet::new();
+    let mut previous_sp = 0u16;
     // `ZELDA3_LEDGER_NMI_PROFILE=<lo>-<hi>` (hosts) does the same for the
     // NMI handler, from its acceptance to its RTI, with each frame's wall
     // time beside its bus cycles (DMA runs inside the storing instruction):
@@ -427,54 +437,60 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // opening handler still open at the next NMI closes there.
                 if !profile_iterations.is_empty() {
                     let cpu = &exec.machine().snes().cpu;
-                    let main_stack = cpu.sp >> 8 == 0x01;
+                    // Receipts are post-instruction AND post-interrupt entry.
+                    // Use the preceding SP for ownership and undo interrupt
+                    // entry when identifying the just-executed call target.
+                    let main_stack = previous_sp >> 8 == 0x01;
                     let iteration = current.as_ref().map(|iteration| iteration.index);
+                    let selected = iteration.filter(|index| profile_iterations.iter()
+                        .any(|&(lo, hi)| (lo..=hi).contains(index)));
                     if step.origin_pc == 0x00_8038 {
-                        // Main's iteration always starts outside every
-                        // handler: a handler left by a stack swap or a reset
-                        // (no RTI) must not keep the depth raised.
                         profile_main_active = true;
                         profile_depth = 0;
+                        profile_stack.clear();
+                        if let Some(index) = selected { profile.entry((index, 0x008034)).or_default()[0] += 1; }
                     }
                     if profile_depth == 0 && main_stack && profile_main_active {
-                        if let Some(iteration) = iteration
-                            .filter(|index| profile_iterations.iter().any(|&(lo, hi)| (lo..=hi).contains(index)))
-                        {
-                            // The instruction's own bus cycles, as the cycle
-                            // ledger prices them: WRAM refresh and HDMA stalls
-                            // drained between transactions are the timeline's,
-                            // and an accepted interrupt's entry is not this
-                            // instruction's.
+                        if let Some(index) = selected {
                             let end = match step.accepted_interrupt {
                                 Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. })
                                 | Some(SourceCpuAcceptedInterrupt::Irq { started_at, .. }) => started_at,
                                 None => step.ended_at,
                             };
-                            let cycles: u64 = step
-                                .transactions
-                                .iter()
+                            // Bus/internal CPU transactions only: interrupt
+                            // entry, DMA/HDMA and refresh are not instruction prices.
+                            let cycles: u64 = step.transactions.iter()
                                 .filter(|transaction| transaction.started_at < end)
-                                .map(|transaction| u64::from(transaction.duration_master_cycles))
-                                .sum();
-                            let routine = profile_stack.last().map_or(0x00_8038, |frame| frame.0);
-                            *profile.entry((iteration, routine)).or_default() += cycles;
+                                .map(|transaction| u64::from(transaction.duration_master_cycles)).sum();
+                            let routine = profile_stack.last().map_or(0x008034, |frame| frame.0);
+                            profile.entry((index, routine)).or_default()[2] += cycles;
+                            profile.entry((index, 0x008034)).or_default()[1] += cycles;
+                            for (routine, _) in &profile_stack {
+                                profile.entry((index, *routine)).or_default()[1] += cycles;
+                            }
                         }
-                    }
-                    if step.origin_pc == 0x00_805d {
-                        profile_main_active = false;
-                    }
-                    if step.accepted_interrupt.is_some() {
-                        profile_depth += 1;
-                    } else if step.opcode == RTI {
-                        profile_depth = profile_depth.saturating_sub(1);
-                    } else if main_stack {
+                        let (next_pc, next_sp) = match step.accepted_interrupt {
+                            Some(SourceCpuAcceptedInterrupt::Nmi { interrupted_pc, .. })
+                            | Some(SourceCpuAcceptedInterrupt::Irq { interrupted_pc, .. }) =>
+                                (interrupted_pc, cpu.sp.wrapping_add(4)), // native-mode PBR/PC/P
+                            None => ((u32::from(cpu.k) << 16) | u32::from(cpu.pc), cpu.sp),
+                        };
                         if matches!(step.opcode, 0x20 | 0xfc | 0x22) {
-                            profile_stack.push(((u32::from(cpu.k) << 16) | u32::from(cpu.pc), cpu.sp));
+                            let target = next_pc & 0x7fffff;
+                            profile_stack.push((target, next_sp));
+                            if let Some(index) = selected { profile.entry((index, target)).or_default()[0] += 1; }
                         }
-                        while profile_stack.last().is_some_and(|frame| cpu.sp > frame.1) {
+                        while profile_stack.last().is_some_and(|frame| next_sp > frame.1) {
                             profile_stack.pop();
                         }
                     }
+                    if step.origin_pc == 0x00_805d {
+                        if let Some(index) = selected { profile_complete.insert(index); }
+                        profile_main_active = false;
+                    }
+                    if step.opcode == RTI { profile_depth = profile_depth.saturating_sub(1); }
+                    if step.accepted_interrupt.is_some() { profile_depth += 1; }
+                    previous_sp = cpu.sp;
                 }
                 if step_trace_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&(host as u64))) {
                     let raster = exec.raster_position();
@@ -768,8 +784,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     for ((host, routine), (master, wall)) in &nmi_profile {
         eprintln!("ledger-nmi-profile host={host} routine={routine:06x} master={master} wall={wall}");
     }
-    for ((iteration, routine), master) in &profile {
-        eprintln!("ledger-profile iteration={iteration} routine={routine:06x} master={master}");
+    if let Some(writer) = profile_output.as_mut() {
+        for ((iteration, routine), [calls, inclusive, exclusive]) in &profile {
+            if !profile_complete.contains(iteration) { continue; }
+            writeln!(writer, "{iteration},{routine:06x},{calls},{inclusive},{exclusive}")?;
+        }
+        let totals: std::collections::BTreeMap<u64, u64> = profile.iter()
+            .filter(|((index, address), _)| *address == 0x008034 && profile_complete.contains(index))
+            .map(|((index, _), row)| (*index, row[1])).collect();
+        for (index, total) in totals { writeln!(writer, "{index},total,1,{total},{total}")?; }
+        writer.flush()?;
     }
     println!("logical ledger wrote {emitted} complete iterations over {host_calls} host calls");
     Ok(())
