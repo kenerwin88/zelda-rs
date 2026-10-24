@@ -19,7 +19,7 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "9653f53e5467f37db0b01ef5141c914d5ecc060d9a493a435742856c2b13a121",
+    "binary_sha256": "fba9b7c9c68a8e4c203415af6bf3fe6fc1c707cc984a8aabb4ba0e22c939e18d",
     "cached_av_receipt": {
       "candidate_ledger_sha256": "3d52711c51a4f01031bd336aa582d4b6a316c71199710d3354ef015fcca1440c",
       "frames": 1581079,
@@ -27,13 +27,13 @@
         "video",
         "audio"
       ],
-      "manifest_sha256": "d93c46285f3dde2774ce080607e29bc9430331c4f1408f5acd14cc22dac31de0",
+      "manifest_sha256": "2bf668999a51a5482ed8eef67ee4d03c97362b356b25d7f8823b2e073047718e",
       "oracle_cache_key": "ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18",
       "oracle_cache_manifest_sha256": "4c7f88fbf327a4b3af7d3f8614d82ebb2318f11b607798d5dddb4a97b7fe2715",
-      "receipt_path": "receipts/run-ed0121e1b093-20261022-151800.manifest.json",
-      "run": "/Users/missingno/Documents/zelda3-rs/target/parity-cached-av/run-ed0121e1b093-20261022-151800"
+      "receipt_path": "receipts/run-ed0121e1b093-20261023-191947.manifest.json",
+      "run": "/Users/missingno/Documents/zelda3-rs/target/parity-cached-av/run-ed0121e1b093-20261023-191947"
     },
-    "commit": "57669143cfdf3388a716943e120a5c4c55a4edb3",
+    "commit": "480d0494587840a04c2cd11862da314b676668dd",
     "kind": "cached_av_pass",
     "last_exact_audio_frame": 1581078,
     "last_exact_engine_state_frame": 1581078,
