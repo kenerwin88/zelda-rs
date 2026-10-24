@@ -303,10 +303,18 @@ impl ZeldaState {
         dsto = dsto.wrapping_add(2);
         let fill = self.tile_word(src, 0);
         self.dungeon_room_load_mut().set_draw_width_indicator(18);
+        if self.lag_free {
+            self.dungeon_room_load_mut().set_draw_width_indicator_word(18);
+        }
         for x in 0..18u16 {
             for y in 0..6u16 {
                 self.room_write_bg2(dsto + x + y * 64, fill);
             }
+        }
+        if self.lag_free {
+            // $09:ACE7 stores the word loop count; $09:AD1D decrements
+            // it to zero. The native for-loop must publish its final count.
+            self.dungeon_room_load_mut().set_draw_width_indicator_word(0);
         }
         self.room_draw_exploding_wall_column(src + 2, dsto + 18);
     }

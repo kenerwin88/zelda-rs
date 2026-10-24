@@ -426,6 +426,9 @@ impl ZeldaState {
         if self.lag_free_native_poly_thread() && !self.lag_free_lag_phases_run {
             self.lag_free_poly_thread_lag_phases();
         }
+        if self.lag_free_intro_schedule.is_some() {
+            self.lag_free_intro_poly_after_main();
+        }
         let ledger_before = crate::cycle_ledger::master();
         self.silent_ledger_calls_at_nmi_acceptance = crate::cycle_ledger::silent_calls();
         self.nmi_dma_accounting = Some(NmiDmaAccounting::default());

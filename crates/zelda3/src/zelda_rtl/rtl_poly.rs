@@ -107,6 +107,69 @@ const POLY_THREAD_LAG_NMI_MASTER_CYCLES: u64 = 3_284;
 const POLY_THREAD_LAG_NMI_UPLOAD_MASTER_CYCLES: u64 = 20_622;
 
 impl ZeldaState {
+    /// Fixed logical work quanta for the one cold boot intro. No bus price or
+    /// raster position participates in this scheduler.
+    pub(super) fn lag_free_intro_poly_before_main(&mut self) {
+        let Some(iteration) = self.lag_free_intro_schedule else { return };
+        let Some((expected, (before, _))) = super::intro_poly_schedule::work(iteration) else {
+            self.lag_free_intro_schedule = None;
+            return;
+        };
+        let actual = (self.game_state.frame.main_module, self.game_state.frame.submodule);
+        if actual != expected {
+            // A skip leaves the fixed boot sequence; ordinary lagless rules
+            // own the outgoing scene from this point onward.
+            self.lag_free_intro_schedule = None;
+            self.lag_free_poly_thread = None;
+            return;
+        }
+        self.lag_free_intro_poly_work(before);
+    }
+
+    pub(super) fn lag_free_intro_poly_after_main(&mut self) {
+        if self.lag_free_intro_after_ran { return; }
+        self.lag_free_intro_after_ran = true;
+        let Some(iteration) = self.lag_free_intro_schedule else { return };
+        if let Some((expected, _)) = super::intro_poly_schedule::work(iteration + 1) {
+            let actual = (self.game_state.frame.main_module, self.game_state.frame.submodule);
+            if actual != expected {
+                self.lag_free_intro_schedule = None;
+                self.lag_free_poly_thread = None;
+                return;
+            }
+        }
+        let (_, (_, after)) = super::intro_poly_schedule::work(iteration).unwrap();
+        self.lag_free_intro_poly_work(after);
+    }
+
+    pub(super) fn finish_lag_free_intro_iteration(&mut self) {
+        if let Some(iteration) = self.lag_free_intro_schedule.as_mut() {
+            *iteration += 1;
+            if super::intro_poly_schedule::work(*iteration).is_none() {
+                self.lag_free_intro_schedule = None;
+                self.lag_free_poly_thread = None;
+            }
+        }
+    }
+
+    fn lag_free_intro_poly_work(&mut self, units: u16) {
+        if units == 0 || !self.game_state.display.nmi_thread_active { return; }
+        let mut thread = self.lag_free_poly_thread.take().unwrap_or_default();
+        // The worker needs a bus cursor for instruction semantics. Elapsed
+        // cycles and bus events select neither work nor publication here.
+        let mut clock = snes::CpuMasterTimeline::new(0, snes::CpuBusWorkload::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
+        clock.begin_synchronous_timeline().expect("intro owns its native work cursor");
+        let complete = units == super::intro_poly_schedule::COMPLETE;
+        crate::cycle_ledger::muted(|| {
+            for _ in 0..if complete { 30_000 } else { usize::from(units) } {
+                if complete && self.ram[0x1f00] == 0 && thread.context.pc == 0xf81d { break; }
+                self.step_native_poly_worker_with_vblank(&mut thread.worker, &mut thread.context, &mut clock, |_, _| {});
+            }
+        });
+        assert!(!complete || (self.ram[0x1f00] == 0 && thread.context.pc == 0xf81d), "intro render must finish its native publication");
+        self.lag_free_poly_thread = Some(thread);
+    }
+
     /// Lag-free: this frame's main-loop cost, ROM-equivalent: the cycle
     /// ledger from the frame's start to its NMI's acceptance (the NMI's own
     /// charges are not main's) plus the glyph renderer's modelled cost.
@@ -571,6 +634,9 @@ impl ZeldaState {
     }
 
     pub(super) fn zelda_run_poly_loop(&mut self) {
+        if self.lag_free_intro_schedule.is_some() {
+            return;
+        }
         if self.lag_free_native_poly_thread() {
             self.lag_free_poly_thread_leading_phase();
             return;

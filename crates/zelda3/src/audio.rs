@@ -887,6 +887,14 @@ impl ZeldaState {
     /// offset of this read. The timing receipt never supplies the port value:
     /// Zelda's deterministic SPC program remains its sole owner.
     pub(crate) fn zelda_read_apui00_for_song_end_poll(&mut self) -> u8 {
+        let value = self.read_apui00_for_song_end_poll();
+        if let Some(reads) = self.song_end_poll_observations.as_mut() {
+            reads.push(value);
+        }
+        value
+    }
+
+    fn read_apui00_for_song_end_poll(&mut self) -> u8 {
         if let Some((reads, extra)) = self.apui00_poll_replay.as_mut() {
             // Consecutive polls of an unchanged port read the same value; the
             // last observed value holds until the iteration ends.

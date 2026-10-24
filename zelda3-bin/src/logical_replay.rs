@@ -11,7 +11,7 @@
 //!        [--offset K] [--report N] [--ignore lo-hi,...] [--histogram PATH]
 //!        [--seed-every N] [--video CACHE_DIR [--video-host-offset D] [--video-misses]]
 //!        [--apu-trace lo-hi] [--start K] [--dump-wram K:DIR] [--live-apu-reads]
-//!        [--poly-uploads]
+//!        [--poly-uploads] [--single-seed] [--outcome-trace PATH]
 //!
 //! The cartridge's `$2140` reads (song-end polls) are replayed per iteration
 //! like the RNG: their values depend on elapsed SPC time, which lag changes.
@@ -52,7 +52,7 @@ use renderer::RawScanlineFrame;
 use std::{
     collections::VecDeque,
     fs,
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader, BufWriter, Read},
     path::{Path, PathBuf},
     process,
 };
@@ -437,6 +437,9 @@ struct Segment {
     /// Replayed `$2140` reads the engine's polls left unused / polls past them.
     apu_reads_unconsumed: u64,
     apu_reads_extra: u64,
+    /// High bytes of the iris beam-wait's 16-bit LDA $213F. The following
+    /// LDA $213D overwrites A; these are not gameplay song-end observations.
+    apu_reads_incidental: u64,
     /// Iteration whose frame panicked; the rest of the segment is skipped.
     panicked: Option<u64>,
     /// ROM main module when the segment's first iteration completed.
@@ -446,8 +449,13 @@ struct Segment {
     /// Polygon-thread iterations whose WRAM differed: the thread paces Main
     /// (sprites wait on its steps), so these are timing-defined.
     poly_diverged: u64,
+    poly_rng_unconsumed: u64,
+    poly_rng_extra: u64,
     /// Iterations with ROM lag NMIs whose WRAM differed.
     lag_diverged: u64,
+    song_diverged: u64,
+    song_rng_unconsumed: u64,
+    song_rng_extra: u64,
     /// The engine carried over from the previous segment instead of seeding.
     continued: bool,
     /// Latest iteration with a WRAM, RNG, APU command or video content miss.
@@ -483,6 +491,7 @@ struct AudioTally {
     /// Unmatched commands (either side) while the polygon thread runs: its
     /// sound effects follow the NMI-clocked thread, so they are timing-defined.
     unmatched_poly: u64,
+    unmatched_song: u64,
     /// ROM music/ambient re-sends while the engine's port holds the value.
     rom_rearmed: u64,
     /// Iterations whose port writes are a song-bank upload, not commands.
@@ -506,11 +515,17 @@ impl Segment {
             rng_extra: 0,
             apu_reads_unconsumed: 0,
             apu_reads_extra: 0,
+            apu_reads_incidental: 0,
             panicked: None,
             start_module: None,
             poly_iterations: 0,
             poly_diverged: 0,
+            poly_rng_unconsumed: 0,
+            poly_rng_extra: 0,
             lag_diverged: 0,
+            song_diverged: 0,
+            song_rng_unconsumed: 0,
+            song_rng_extra: 0,
             continued: false,
             last_problem: None,
             deferred_work_frames: 0,
@@ -556,22 +571,25 @@ impl Segment {
             String::new()
         };
         let audio = format!(
-            " apu_commands engine={} engine_unmatched={} rom={} rom_unmatched={} unmatched_lag={} unmatched_poly={} rearmed={} uploads={}",
+            " apu_commands engine={} engine_unmatched={} rom={} rom_unmatched={} unmatched_lag={} unmatched_poly={} unmatched_song={} rearmed={} uploads={}",
             self.audio.engine_commands,
             self.audio.engine_unmatched,
             self.audio.rom_commands,
             self.audio.rom_unmatched,
             self.audio.rom_unmatched_lag,
             self.audio.unmatched_poly,
+            self.audio.unmatched_song,
             self.audio.rom_rearmed,
             self.audio.rom_upload_iterations
         );
+        println!("logical-segment-song start={} wram_diverged={} rng_unconsumed={} rng_extra={}",
+            self.start, self.song_diverged, self.song_rng_unconsumed, self.song_rng_extra);
         let panicked = self
             .panicked
             .map(|iteration| format!(" panicked={iteration}"))
             .unwrap_or_default();
         println!(
-            "logical-segment start={} iterations={} {wram}{video}{audio} rng unconsumed={} extra={}{panicked} start_module={:02x} apu_reads unconsumed={} extra={} seeded={} deferred_work={} wram_lag={}",
+            "logical-segment start={} iterations={} {wram}{video}{audio} rng unconsumed={} extra={}{panicked} start_module={:02x} apu_reads unconsumed={} extra={} incidental={} seeded={} deferred_work={} wram_lag={}",
             self.start,
             self.iterations,
             self.rng_unconsumed,
@@ -579,14 +597,16 @@ impl Segment {
             self.start_module.unwrap_or(0xff),
             self.apu_reads_unconsumed,
             self.apu_reads_extra,
+            self.apu_reads_incidental,
             !self.continued,
             self.deferred_work_frames,
             self.lag_diverged
         );
         if self.poly_iterations != 0 {
             println!(
-                "logical-segment-poly start={} iterations={} wram_diverged={}",
-                self.start, self.poly_iterations, self.poly_diverged
+                "logical-segment-poly start={} iterations={} wram_diverged={} rng_unconsumed={} rng_extra={}",
+                self.start, self.poly_iterations, self.poly_diverged,
+                self.poly_rng_unconsumed, self.poly_rng_extra
             );
         }
     }
@@ -1122,6 +1142,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut apu_read_replay = true;
     let mut native_rng = false;
     let mut eager_seed = false;
+    // Receipt probes must retain their own SPC and polygon owners until the
+    // sequence finishes, including across the ledger's resync boundaries.
+    let mut single_seed = false;
+    let mut outcome_trace: Option<BufWriter<fs::File>> = None;
+    let mut classification_trace: Option<BufWriter<fs::File>> = None;
     let mut poly_uploads: Option<PolyUploads> = None;
     let mut dump_wram: Option<(u64, PathBuf)> = None;
     let mut index = 0;
@@ -1134,6 +1159,17 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         };
         match args[index].as_str() {
             "--native-rng" => { native_rng = true; index += 1; continue; }
+            "--single-seed" => {
+                single_seed = true;
+                index += 1;
+                continue;
+            }
+            "--outcome-trace" => {
+                outcome_trace = Some(BufWriter::new(fs::File::create(value(index)).expect("create outcome trace")));
+            }
+            "--classification-trace" => {
+                classification_trace = Some(BufWriter::new(fs::File::create(value(index)).expect("create classification trace")));
+            }
             "--frames" => frames = value(index).parse().expect("--frames"),
             "--image" => image_kind = value(index),
             "--offset" => offset = value(index).parse().expect("--offset"),
@@ -1232,6 +1268,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     });
     let mut game = load_romless_play_state();
     game.set_lag_free(true);
+    game.take_song_end_poll_observations();
     apply_sram_to_game_or_exit(&mut game, Path::new(sram_path), &sram);
 
     let _compare_lock = video_cache.is_some().then(|| acquire_snes9x_compare_lock_mode(true));
@@ -1244,6 +1281,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     // matched since: the lag's effect still carried in WRAM.
     let mut lag_carried: std::collections::BTreeSet<usize> = Default::default();
     let mut previous_poly_active = false;
+    let mut song_drift: Option<u64> = None;
+    let mut previous_gameplay_poll = false;
     let mut watch_master = 0u64;
     let zero_input: Option<(u64, u64)> = zelda3::debug_env::var("ZELDA3_LOGICAL_ZERO_INPUT").ok().and_then(|range| {
         let (lo, hi) = range.split_once('-')?;
@@ -1297,9 +1336,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         if let (Some(every), Some(iteration)) = (seed_every, iteration) {
             let at_resync = resync.contains(&iteration.index) && iteration.index != start_at;
-            if (iteration.index % every == 0 && iteration.index != 0)
+            if (!single_seed && ((iteration.index % every == 0 && iteration.index != 0)
+                || at_resync))
                 || (iteration.index == start_at && start_at != 0)
-                || at_resync
             {
                 let path = ledger.join("seeds").join(format!("iter-{}.bin", iteration.index));
                 if let Some(video) = video.as_mut() {
@@ -1325,6 +1364,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     // carries across the seed.
                     game = load_romless_play_state();
                     game.set_lag_free(true);
+                    game.take_song_end_poll_observations();
+                    song_drift = None;
+                    previous_gameplay_poll = false;
                     seed_game(&mut game, &seed, iteration.open_host as u32);
                     if let Ok(dma) = fs::read(path.with_extension("dma.json")) {
                         game.dma = serde_json::from_slice(&dma).unwrap_or_else(|error| {
@@ -1370,8 +1412,20 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             game.replace_rom_random_frame(rng_samples(iteration, frame as u32), frame as u32)
         };
         if segment.iterations != 0 || segment.continued {
-            segment.rng_unconsumed += unconsumed as u64;
-            segment.rng_extra += u64::from(extra);
+            if song_drift.is_some() {
+                segment.song_rng_unconsumed += unconsumed as u64;
+                segment.song_rng_extra += u64::from(extra);
+            } else if previous_poly_active {
+                // The crystal sprite's random effects follow its worker's
+                // completion, including when a foreign seed restarts that
+                // worker. Keep shifted RNG demand separate from ordinary
+                // gameplay draws, just like polygon WRAM and commands.
+                segment.poly_rng_unconsumed += unconsumed as u64;
+                segment.poly_rng_extra += u64::from(extra);
+            } else {
+                segment.rng_unconsumed += unconsumed as u64;
+                segment.rng_extra += u64::from(extra);
+            }
             if unconsumed != 0 || extra != 0 {
                 segment.problem_at(iteration_index.max(1) as u64 - 1);
             }
@@ -1407,8 +1461,27 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 .unwrap_or_default();
             let (unconsumed, extra) = game.replace_apui00_poll_frame(reads);
             if segment.iterations != 0 || segment.continued {
-                segment.apu_reads_unconsumed += unconsumed as u64;
+                let previous = &iterations[(iteration_index as usize).saturating_sub(1)];
+                // $00:F3A6 reads $213F in 16-bit mode while waiting for
+                // V >= 192; its high byte aliases APUI00. $00:F3A9 replaces
+                // the result with the beam counter. Only accept an unused
+                // transition when no native gameplay poll ran and the
+                // ledger is in that iris caller with lag and port-0 reads.
+                let incidental = !previous_gameplay_poll && previous.lag_nmis != 0
+                    && matches!((images.image[0x10], images.image[0x11]), (0x10, 1) | (7, 0x0f))
+                    && previous.apu_reads.iter().all(|(port, _)| *port == 0);
+                if incidental {
+                    segment.apu_reads_incidental += unconsumed as u64;
+                } else {
+                    segment.apu_reads_unconsumed += unconsumed as u64;
+                }
                 segment.apu_reads_extra += u64::from(extra);
+                if unconsumed != 0 {
+                    println!("logical-apu-read-{} iteration={} count={} lag_nmis={} module={:02x}/{:02x} raw_reads={}",
+                        if incidental { "incidental" } else { "unused" },
+                        iteration_index - 1, unconsumed, previous.lag_nmis,
+                        images.image[0x10], images.image[0x11], previous.apu_reads.len());
+                }
             }
         }
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1430,6 +1503,19 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 break;
             }
             continue;
+        }
+        let observed_polls = game.take_song_end_poll_observations();
+        previous_gameplay_poll = !observed_polls.is_empty();
+        if !apu_read_replay && let Some(iteration) = iteration {
+            let expected: Vec<bool> = iteration.apu_reads.iter()
+                .filter(|(port, _)| *port == 0).map(|(_, value)| *value != 0).collect();
+            if song_drift.is_none() && !expected.is_empty()
+                && observed_polls.iter().any(|value| (*value != 0) != expected[0])
+            {
+                song_drift = Some(iteration.index);
+                println!("logical-song-poll iteration={} engine={observed_polls:?} rom={:?}",
+                    iteration.index, iteration.apu_reads);
+            }
         }
         if let Some(work) = game.pending_game_work_debug() {
             segment.deferred_work_frames += 1;
@@ -1486,6 +1572,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 segment.audio.unmatched_poly += 1;
             } else if !found && lag_carrying {
                 segment.audio.rom_unmatched_lag += 1;
+            } else if !found && song_drift.is_some() {
+                segment.audio.unmatched_song += 1;
+                segment.problem_at(iteration.index);
             } else if !found {
                 segment.audio.engine_unmatched += 1;
                 segment.problem_at(iteration.index);
@@ -1538,6 +1627,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     segment.audio.unmatched_poly += 1;
                     continue;
                 }
+                if song_drift.is_some() {
+                    segment.audio.unmatched_song += 1;
+                    segment.problem_at(iteration.index);
+                    continue;
+                }
                 segment.audio.rom_unmatched += 1;
                 segment.problem_at(iteration.index);
                 if audio_reported < report {
@@ -1552,6 +1646,28 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         if !images.advance() {
             break;
+        }
+        // Export the immutable comparison image once, rather than rebuilding
+        // all 128 KB for each byte of a divergent receipt.
+        let engine_image = game.wram_image();
+        if let Some(trace) = outcome_trace.as_mut() {
+            use std::io::Write;
+            let outcome = |ram: &[u8]| serde_json::json!({
+                "module": [ram[0x10], ram[0x11], ram[0xb0]],
+                "nmi_latch": ram[0x12],
+                "room": u16::from_le_bytes([ram[0xa0], ram[0xa1]]),
+                "link_y": u16::from_le_bytes([ram[0x20], ram[0x21]]),
+                "link_x": u16::from_le_bytes([ram[0x22], ram[0x23]]),
+                "ancilla": &ram[0xc4a..0xc54],
+                "music": [ram[0x130], ram[0x133]],
+                "save": ram[0xf000..0xf500].iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            });
+            serde_json::to_writer(&mut *trace, &serde_json::json!({
+                "iteration": iteration.index,
+                "engine": outcome(&engine_image),
+                "rom": outcome(&images.image),
+            })).expect("write outcome trace");
+            writeln!(trace).expect("write outcome trace newline");
         }
         if let Some((watch, lo, hi)) = logical_watch.as_ref()
             && (*lo..=*hi).contains(&iteration.index)
@@ -1572,20 +1688,16 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     silent - std::mem::replace(&mut watch_silent, silent)
                 },
                 bytes(&images.image),
-                bytes(&game.wram_image())
+                bytes(&engine_image)
             );
         }
         if let Some((target, dir)) = dump_wram.as_ref().filter(|(target, _)| *target == iteration.index) {
             fs::create_dir_all(dir).expect("create --dump-wram directory");
-            fs::write(dir.join(format!("engine-{target}.bin")), &game.wram_image()[..WRAM_LEN]).expect("write engine WRAM");
+            fs::write(dir.join(format!("engine-{target}.bin")), &engine_image[..WRAM_LEN]).expect("write engine WRAM");
             fs::write(dir.join(format!("rom-{target}.bin")), &images.image).expect("write ROM WRAM");
             let vram: Vec<u8> = game.vram().iter().flat_map(|word| word.to_le_bytes()).collect();
             fs::write(dir.join(format!("engine-{target}.vram")), vram).expect("write engine VRAM");
         }
-        // Exclusive native owners make this an owned export. Reuse one image
-        // throughout the read-only comparison, rather than rebuilding 128 KB
-        // for every differing byte in the histogram and lag classification.
-        let engine_wram = game.wram_image();
         for (written, &byte) in written.iter_mut().zip(&images.image) {
             *written |= byte != POWER_ON_FILL;
         }
@@ -1605,9 +1717,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         // The intro and attract modules (after a save-and-quit too) run on
         // the NMI clock as well.
         let poly_active = images.image[NMI_THREAD_ACTIVE] != 0
-            || engine_wram[NMI_THREAD_ACTIVE] != 0
+            || engine_image[NMI_THREAD_ACTIVE] != 0
             || timing_defined(&images.image)
-            || timing_defined(&engine_wram)
+            || timing_defined(&engine_image)
             || resync.contains(&(iteration.index + 1));
         if poly_active {
             segment.poly_iterations += 1;
@@ -1620,6 +1732,18 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
         }
         previous_poly_active = poly_active;
+        // The deterministic boot intro is an exact iteration gate. Compare
+        // the worker's live storage as well, retaining only its CPU stack as
+        // representation. This exposes partial-thread progress that the
+        // general polygon classification would otherwise hide.
+        let exact_intro = iteration.index < 2000;
+        if exact_intro {
+            for range in [0x1f00..0x1f0a, 0x1f0c..0x1f0e, 0x1f3f..0x1ffe] {
+                for address in range {
+                    compared_now[address] = written[address];
+                }
+            }
+        }
         if let Some(video) = video.as_mut() {
             video.poly_active.insert(index, poly_active);
         }
@@ -1628,13 +1752,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 Some(companion) if image_kind != "pre" => &companion.image,
                 _ => &images.image,
             };
-            poly_uploads.observe(iteration.index, poly_active, rom_pre_nmi, &engine_wram);
+            poly_uploads.observe(iteration.index, poly_active, rom_pre_nmi, &engine_image);
         }
-        hide_undrawn_extended_oam(&engine_wram, &images.image, &mut compared_now);
-        let ranges = diff_ranges(&engine_wram, &images.image, &compared_now);
+        hide_undrawn_extended_oam(&engine_image, &images.image, &mut compared_now);
+        let ranges = diff_ranges(&engine_image, &images.image, &compared_now);
         for &(lo, hi) in &ranges {
             for address in lo..=hi {
-                if engine_wram[address] != images.image[address] && compared_now[address] {
+                if engine_image[address] != images.image[address] && compared_now[address] {
                     let slot = &mut histogram[address];
                     if slot.0 == 0 {
                         slot.1 = iteration.index;
@@ -1646,7 +1770,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let differing: Vec<usize> = ranges
             .iter()
             .flat_map(|&(lo, hi)| lo..=hi)
-            .filter(|&address| compared_now[address] && engine_wram[address] != images.image[address])
+            .filter(|&address| compared_now[address] && engine_image[address] != images.image[address])
             .collect();
         lag_carried.retain(|address| differing.binary_search(address).is_ok());
         if iteration.lag_nmis != 0 {
@@ -1654,11 +1778,58 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         segment.start_module.get_or_insert(images.image[0x10]);
         segment.iterations += 1;
+        // HUD refill increments $0CFD only if sound port 1 is idle, otherwise
+        // clears it ($0D:DC02..DC15). A lag NMI can consume the queued sound
+        // before that branch. Accept only this audited address; the existence
+        // of a lag NMI cannot justify arbitrary gameplay differences.
+        // A long Mode-7 upload can leave the ledger's opening handler
+        // unclosed until the next NMI (logical_frame_ledger's stale_opening
+        // path). Its post image then includes the following map/flute step.
+        // The pre image agrees on step 2; the next post image reconverges.
+        // Accept only the observed control signature and the owned upload
+        // buffer, never arbitrary bytes in an overrun iteration.
+        let map_overrun = iteration.lag_nmis != 0 && iteration.nmi_return_line == Some(225)
+            && images.image[0x10] == 0x0e && engine_image[0x10] == 0x0e
+            && images.image[0x11] == engine_image[0x11]
+            && matches!(images.image[0x11], 7 | 10)
+            && images.image[0x200] == 3 && engine_image[0x200] == 2
+            && images.image[0x12] == 0 && engine_image[0x12] == 1
+            && images.image[0x17] == if images.image[0x11] == 7 { 21 } else { 11 }
+            && engine_image[0x17] == 0
+            && images.image[0x1a] == engine_image[0x1a].wrapping_add(1)
+            && [0xc00d, 0xc013].iter().all(|&a| images.image[a] == engine_image[a].wrapping_sub(1))
+            && differing.iter().all(|&a| matches!(a, 0x12 | 0x17 | 0x1a | 0x200 | 0xc00d | 0xc013)
+                || (images.image[0x11] == 7 && (0x1000..=0x10ff).contains(&a))
+                || (images.image[0x11] == 10 && (0x11000..=0x113ff).contains(&a)));
+        let lag_difference = !exact_intro && (map_overrun
+            || (differing.iter().all(|&address| address == 0x0cfd)
+                && (iteration.lag_nmis != 0
+                    || differing.iter().all(|address| lag_carried.contains(address)))));
+        let category = if ranges.is_empty() { "clean" }
+            else if exact_intro { "unexplained-intro" }
+            else if poly_active { "polygon" }
+            else if lag_difference { "lag" }
+            else if song_drift.is_some() { "song-end-poll" }
+            else { "unexplained" };
+        if let Some(trace) = classification_trace.as_mut() && category != "clean" {
+            use std::io::Write;
+            serde_json::to_writer(&mut *trace, &serde_json::json!({
+                "iteration": iteration.index, "category": category,
+                "module": [images.image[0x10], images.image[0x11], images.image[0xb0]],
+                "nmi_latch": images.image[0x12],
+                "lag_reason": if map_overrun { "post-NMI overrun" } else { "rupee sound queue" },
+                "room": u16::from_le_bytes([images.image[0xa0], images.image[0xa1]]),
+                "lag_nmis": iteration.lag_nmis, "song_cause": song_drift,
+                "bytes": differing.iter().map(|&a| (a, engine_image[a], images.image[a])).collect::<Vec<_>>(),
+            })).expect("write classification trace");
+            writeln!(trace).expect("write classification trace newline");
+        }
         if ranges.is_empty() {
             clean += 1;
+            song_drift = None;
             continue;
         }
-        if poly_active {
+        if poly_active && !exact_intro {
             segment.problem_at(iteration.index);
             segment.poly_diverged += 1;
             continue;
@@ -1667,8 +1838,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         // that the lag-free frame runs at its own boundary. A difference that
         // persists shows up again on the next lag-free iteration, and a
         // counter the lag moved stays apart until it reconverges.
-        if iteration.lag_nmis != 0 || differing.iter().all(|address| lag_carried.contains(address)) {
+        if lag_difference {
             segment.lag_diverged += 1;
+            continue;
+        }
+        if song_drift.is_some() {
+            segment.problem_at(iteration.index);
+            segment.song_diverged += 1;
             continue;
         }
         segment.problem_at(iteration.index);
@@ -1691,7 +1867,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     let end = hi.min(lo + 7);
                     format!(
                         "{lo:05x}-{hi:05x} rust={} rom={}",
-                        hex(&engine_wram[lo..=end]),
+                        hex(&engine_image[lo..=end]),
                         hex(&images.image[lo..=end])
                     )
                 })

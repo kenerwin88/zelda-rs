@@ -10544,6 +10544,10 @@ pub struct ZeldaState {
     /// `lag_free_run_poly_thread_phase`).
     #[serde(skip)]
     pub(crate) lag_free_poly_thread: Option<rtl_poly::LagFreePolyThread>,
+    #[serde(skip)]
+    pub(crate) lag_free_intro_schedule: Option<usize>,
+    #[serde(skip)]
+    pub(crate) lag_free_intro_after_ran: bool,
     /// Lag-free: the last NMI uploaded a finished polygon bitmap.
     #[serde(skip)]
     pub(crate) lag_free_nmi_uploaded_poly: bool,
@@ -10573,6 +10577,9 @@ pub struct ZeldaState {
     /// cartridge's observation separates logic parity from audio timing.
     #[serde(skip)]
     pub(crate) apui00_poll_replay: Option<(std::collections::VecDeque<u8>, u32)>,
+    /// Optional logical-census observations; never part of a machine save.
+    #[serde(skip)]
+    pub(crate) song_end_poll_observations: Option<Vec<u8>>,
     /// Runtime-only exact original timing machine and lifecycle provenance.
     /// Positional ZeldaState/bincode checkpoints remain byte-identical; bound
     /// exact persistence belongs to a separately versioned timing sidecar.
@@ -13664,6 +13671,8 @@ impl ZeldaState {
             lag_free_vwf_master: 0,
             lag_free_last_main_master: 0,
             lag_free_poly_thread: None,
+            lag_free_intro_schedule: None,
+            lag_free_intro_after_ran: false,
             lag_free_nmi_uploaded_poly: false,
             lag_free_thread_activation_master: None,
             lag_free_go_master: None,
@@ -13671,6 +13680,7 @@ impl ZeldaState {
             reset_fill_pending: false,
             boot_memory_initialized: false,
             apui00_poll_replay: None,
+            song_end_poll_observations: None,
             original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,
             original_timing_host_dispatch_active: false,
@@ -13973,6 +13983,7 @@ impl ZeldaState {
     }
 
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
+        self.lag_free_intro_schedule = self.lag_free.then_some(0);
         self.native_cpu_math = crate::cycle_models::native_cpu_math::NativeCpuMath::snes9x_reset();
         self.native_startup_cpu = None;
         self.native_closing_entry_display_ppu = None;
@@ -14186,6 +14197,11 @@ impl ZeldaState {
     /// Run each frame as one complete main-loop iteration (see `lag_free`).
     pub fn set_lag_free(&mut self, enabled: bool) {
         self.lag_free = enabled;
+        if enabled && self.frame_ctr_dbg == 0 && !self.boot_memory_initialized {
+            self.lag_free_intro_schedule = Some(0);
+        } else if !enabled {
+            self.lag_free_intro_schedule = None;
+        }
     }
 
     pub fn lag_free(&self) -> bool {
@@ -14208,6 +14224,12 @@ impl ZeldaState {
     pub fn replace_apui00_poll_frame(&mut self, reads: Vec<u8>) -> (usize, u32) {
         let previous = self.apui00_poll_replay.replace((reads.into(), 0));
         previous.map_or((0, 0), |(left, extra)| (left.len().saturating_sub(1), extra))
+    }
+
+    /// Drain actual gameplay song-end reads and enable observation next frame.
+    /// This does not supply a port value or advance the audio clock.
+    pub fn take_song_end_poll_observations(&mut self) -> Vec<u8> {
+        self.song_end_poll_observations.replace(Vec::new()).unwrap_or_default()
     }
 
     pub fn set_rom_startup_timing(&mut self, enabled: bool) {
@@ -14878,6 +14900,7 @@ impl ZeldaState {
                 self.sram.len()
             ));
         }
+        self.lag_free_intro_schedule = None;
         self.import_wram_image(wram);
         self.sram[..sram.len()].copy_from_slice(sram);
         self.ppu.vram = vram
@@ -15218,6 +15241,13 @@ impl ZeldaState {
             self.select_song_bank_asset(0);
             self.complete_startup_memory_cpu();
         } else {
+            if self.lag_free {
+                // Match reset's power-on storage before Startup_InitializeMemory
+                // clears its owned ranges. In particular the intro's first
+                // seven 1-KiB clears leave the animation/DMA countdowns at
+                // $C00D/$C013 on the power-on fill until their block is cleared.
+                self.import_wram_image(&vec![0x55; self.ram.len()]);
+            }
             self.sound_load_intro_song_bank();
             self.startup_initialize_memory();
         }
@@ -15250,7 +15280,9 @@ impl ZeldaState {
     }
 
     fn finish_rom_bootstrap_initialization(&mut self) {
-        self.set_animated_tile_data_source_address(0xa680);
+        if !self.lag_free {
+            self.set_animated_tile_data_source_address(0xa680);
+        }
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
@@ -17192,6 +17224,7 @@ mod rtl_original_timing;
 mod rtl_overworld;
 mod rtl_palette;
 mod rtl_poly;
+mod intro_poly_schedule;
 mod rtl_publication;
 mod rtl_save;
 mod rtl_scroll;

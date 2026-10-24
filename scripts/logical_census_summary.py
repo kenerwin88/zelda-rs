@@ -4,13 +4,13 @@
 Usage: scripts/logical_census_summary.py <replay output>
 See docs/parity/lagless-logical-parity.md.
 """
-import collections, pathlib, re, sys
+import argparse, collections, pathlib, re, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ram_ref
 
-# Intro and attract modes run the polygon thread / attract scenes on the NMI
-# clock; they are timing-defined and reported apart.
-TIMING_DEFINED_MODULES = {'00', '14'}
+# The boot intro is part of the exact iteration gate. Later attract scenes
+# remain separately reported; all segments still contribute gate failures.
+TIMING_DEFINED_MODULES = {'14'}
 
 
 def parse_segment(line):
@@ -22,7 +22,7 @@ def parse_segment(line):
             group = token + '.'
             continue
         key, value = token.split('=', 1)
-        if key in fields or (group and key in ('unmatched', 'extra', 'unconsumed', 'engine', 'rom')):
+        if key in fields or (group and key in ('unmatched', 'extra', 'unconsumed', 'incidental', 'engine', 'rom')):
             key = group + key
         fields[key] = value
     return fields
@@ -33,19 +33,47 @@ def num(fields, key):
     return int(value.split('/')[0]) if value else 0
 
 
-segments = [parse_segment(line) for line in open(sys.argv[1]) if line.startswith('logical-segment ')]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('log', type=pathlib.Path)
+parser.add_argument('--gate', action='store_true', help='fail on unexplained state, RNG, commands or panics')
+parser.add_argument('--expect-iterations', type=int, help='require this many iterations, including intro/attract')
+args = parser.parse_args()
+lines = args.log.read_text().splitlines()
+segments = [parse_segment(line) for line in lines if line.startswith('logical-segment ')]
+song = {int(row['start']): row for row in
+        (parse_segment(line) for line in lines if line.startswith('logical-segment-song '))}
 poly = {int(m.group(1)): (int(m.group(2)), int(m.group(3) or 0)) for m in
         (re.match(r'logical-segment-poly start=(\d+) iterations=(\d+)(?: wram_diverged=(\d+))?', line)
-         for line in open(sys.argv[1])) if m}
+         for line in lines) if m}
+poly_fields = {int(row['start']): row for row in
+               (parse_segment(line) for line in lines if line.startswith('logical-segment-poly '))}
 tot = collections.Counter()
 by_first = collections.Counter()
 examples = {}
 worst = []
+next_start = 0
+contiguous = True
 for seg in segments:
     iterations = num(seg, 'iterations')
     if iterations == 0:
         continue
     start = int(seg['start'])
+    contiguous &= start == next_start
+    next_start = start + iterations
+    # Reporting the intro apart must not hide a new ordinary divergence,
+    # panic, RNG miss or command mismatch anywhere in that segment.
+    tot['all_iterations'] += iterations
+    tot['gate_failures'] += num(seg, 'wram_diverged') + ('panicked' in seg)
+    for key in ('rng.unconsumed', 'rng.extra', 'apu_reads.unconsumed', 'apu_reads.extra',
+                'engine_unmatched', 'rom_unmatched'):
+        tot['gate_failures'] += num(seg, key)
+    if start < 2000:
+        # The producer must not hide boot state differences in timing lanes.
+        tot['gate_failures'] += poly.get(start, (0, 0))[1] + num(seg, 'wram_lag')
+        tot['gate_failures'] += num(song.get(start, {}), 'wram_diverged')
+        for key in ('rng_unconsumed', 'rng_extra'):
+            tot['gate_failures'] += num(song.get(start, {}), key)
+            tot['gate_failures'] += num(poly_fields.get(start, {}), key)
     if seg.get('start_module') in TIMING_DEFINED_MODULES:
         tot['timing_defined_segments'] += 1
         tot['timing_defined_iterations'] += iterations
@@ -54,11 +82,16 @@ for seg in segments:
     tot['iterations'] += iterations
     tot['poly_iterations'] += poly.get(start, (0, 0))[0]
     tot['poly_wram_diverged'] += poly.get(start, (0, 0))[1]
+    tot['poly_rng_unconsumed'] += num(poly_fields.get(start, {}), 'rng_unconsumed')
+    tot['poly_rng_extra'] += num(poly_fields.get(start, {}), 'rng_extra')
     if 'panicked' in seg:
         tot['panicked_segments'] += 1
     wram_clean = 'wram' in seg and seg['wram'] == 'clean'
     tot['wram_clean_segments'] += wram_clean
     tot['wram_lag'] += num(seg, 'wram_lag')
+    for key in ('wram_diverged', 'rng_unconsumed', 'rng_extra'):
+        tot['song_' + key] += num(song.get(start, {}), key)
+    tot['wram_unexplained'] += num(seg, 'wram_diverged')
     video = seg.get('video', '0/0').split('/')
     matched, compared = int(video[0]), int(video[1])
     content = num(seg, 'content')
@@ -67,14 +100,16 @@ for seg in segments:
     tot['video_match'] += matched
     tot['video_compared'] += compared
     tot['video_content'] += content
-    for key in ('engine', 'engine_unmatched', 'rom', 'rom_unmatched', 'unmatched_lag', 'unmatched_poly', 'rearmed'):
+    for key in ('engine', 'engine_unmatched', 'rom', 'rom_unmatched', 'unmatched_lag', 'unmatched_poly', 'unmatched_song', 'rearmed'):
         tot['apu_' + key] += num(seg, key) + num(seg, 'apu_commands.' + key)
     tot['rng_unconsumed'] += num(seg, 'rng.unconsumed')
     tot['rng_extra'] += num(seg, 'rng.extra')
     tot['apu_reads_unconsumed'] += num(seg, 'apu_reads.unconsumed')
     tot['apu_reads_extra'] += num(seg, 'apu_reads.extra')
+    tot['apu_reads_incidental'] += num(seg, 'apu_reads.incidental')
     clean = (wram_clean and content == 0 and num(seg, 'early') + num(seg, 'late') <= 2
              and num(seg, 'engine_unmatched') + num(seg, 'rom_unmatched') == 0
+             and num(seg, 'apu_reads.unconsumed') + num(seg, 'apu_reads.extra') == 0
              and num(seg, 'rng.extra') == 0 and num(seg, 'rng.unconsumed') == 0)
     tot['fully_clean_segments'] += clean
     if not wram_clean and 'address' in seg:
@@ -86,18 +121,23 @@ for seg in segments:
     worst.append((content, start, matched, compared, seg.get('module')))
 
 vc = tot['video_compared'] or 1
-print(f"timing-defined (intro/attract) segments: {tot['timing_defined_segments']} "
+print(f"timing-defined attract segments: {tot['timing_defined_segments']} "
       f"({tot['timing_defined_iterations']} iterations), reported apart")
 print(f"segments {tot['segments']}  iterations {tot['iterations']}  fully clean {tot['fully_clean_segments']}  "
       f"wram-clean {tot['wram_clean_segments']}  panicked {tot['panicked_segments']}  "
       f"polygon-thread iterations {tot['poly_iterations']} (wram differed {tot['poly_wram_diverged']})  "
       f"lag-caused wram differences (iterations) {tot['wram_lag']}")
+print(f"song-end-poll wram differences (iterations) {tot['song_wram_diverged']}  "
+      f"rng unconsumed {tot['song_rng_unconsumed']} extra {tot['song_rng_extra']}  "
+      f"commands {tot['apu_unmatched_song']}  unexplained wram iterations {tot['wram_unexplained']}")
+print(f"polygon RNG alignment: unconsumed {tot['poly_rng_unconsumed']} extra {tot['poly_rng_extra']}")
 print(f"video {tot['video_match']}/{tot['video_compared']} ({100 * tot['video_match'] / vc:.2f}%)  "
       f"early {tot['video_early']}  late {tot['video_late']}  during-lag {tot['video_content_lag']}  "
       f"polygon-thread {tot['video_content_poly']}  torn {tot['video_content_tear']}  content {tot['video_content']} "
       f"({100 * tot['video_content'] / vc:.2f}%)")
 print(f"rng unconsumed {tot['rng_unconsumed']}  extra {tot['rng_extra']}  |  "
-      f"apu reads unconsumed {tot['apu_reads_unconsumed']}  extra {tot['apu_reads_extra']}")
+      f"apu reads unconsumed {tot['apu_reads_unconsumed']}  extra {tot['apu_reads_extra']}  "
+      f"incidental iris reads {tot['apu_reads_incidental']}")
 print(f"apu commands engine {tot['apu_engine']} (unmatched {tot['apu_engine_unmatched']})  "
       f"rom {tot['apu_rom']} (unmatched {tot['apu_rom_unmatched']})  "
       f"lag-only {tot['apu_unmatched_lag']}  polygon-thread {tot['apu_unmatched_poly']}  "
@@ -108,3 +148,11 @@ for (module, name), count in by_first.most_common(40):
 print('most video content misses:')
 for content, start, matched, compared, module in sorted(worst, reverse=True)[:20]:
     print(f'  segment {start} content={content} match={matched}/{compared} wram_first_module={module}')
+
+if args.gate:
+    failures = tot['gate_failures']
+    complete = any(line.startswith('logical replay:') for line in lines) and bool(segments) and contiguous
+    if args.expect_iterations is not None:
+        complete &= tot['all_iterations'] == args.expect_iterations
+    print(f"census gate: {'PASS' if complete and failures == 0 else 'FAIL'} (unexplained={failures}, complete={complete})")
+    sys.exit(0 if complete and failures == 0 else 1)
