@@ -2165,6 +2165,7 @@ impl ForwardedMainLoopInterruption {
         self.interruption
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) const fn boundary(self) -> OriginalTimingBoundary {
         self.boundary
     }
@@ -2588,6 +2589,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn forwarded_main_loop_interruption_has_one_transient_owner() {
         let mut receipts = OriginalTimingHostReceipts::new(7, 0, Vec::new());
         receipts

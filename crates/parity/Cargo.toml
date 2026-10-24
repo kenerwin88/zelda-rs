@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["rom-timing"]
+rom-timing = ["dep:memmap2", "dep:zstd"]
+
 [lib]
 name = "parity"
 path = "src/lib.rs"
@@ -12,10 +16,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "zparity"
 path = "src/main.rs"
+required-features = ["rom-timing"]
 
 [dependencies]
-memmap2 = "0.9"
-zstd = "0.13"
+memmap2 = { version = "0.9", optional = true }
+zstd = { version = "0.13", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = { version = "0.10", features = ["asm"] }

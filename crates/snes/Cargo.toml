@@ -6,7 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-default = ["parity-debug"]
+# Exact cartridge scheduling and external timing-oracle tooling.
+rom-timing = []
+default = ["parity-debug", "rom-timing"]
 parity-debug = ["zelda3-debug-env/parity-debug"]
 
 [dependencies]

@@ -34,6 +34,7 @@ impl PlayerMagicState {
     pub(super) fn add_refill(&mut self, value: u8) {
         self.refill = self.refill.wrapping_add(value);
     }
+    #[cfg(feature = "rom-timing")]
     pub(super) fn decrement_refill(&mut self) {
         self.refill = self.refill.wrapping_sub(1);
     }
@@ -97,6 +98,7 @@ impl<'a> NativePlayerMagicBridgeMut<'a> {
     pub(crate) fn set_magic_power(&mut self, value: u8) {
         self.magic.amount = value;
     }
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn increment_magic_power(&mut self) {
         self.magic.amount = self.magic.amount.wrapping_add(1);
     }

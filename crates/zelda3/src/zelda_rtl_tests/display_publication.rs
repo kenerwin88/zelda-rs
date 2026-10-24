@@ -1962,6 +1962,7 @@ fn first_interrupted_landing_field_retires_the_pre_spotlight_scanout() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn held_landing_publication_keeps_obj_memory_from_the_interrupt() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -1995,6 +1996,7 @@ fn held_landing_publication_keeps_obj_memory_from_the_interrupt() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_overworld_preparation_retains_scroll_for_one_field() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -3298,6 +3300,7 @@ fn uncle_sword_item_return_stages_the_prepared_oam_for_the_next_boundary() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_sprite_main_stages_the_exact_partial_oam_shadow_dma() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -3327,6 +3330,7 @@ fn interrupted_sprite_main_stages_the_exact_partial_oam_shadow_dma() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_sprite_main_with_latched_nmi_retains_resident_oam() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

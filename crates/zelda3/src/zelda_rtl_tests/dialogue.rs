@@ -1,5 +1,8 @@
 use super::*;
-use crate::dialogue_ir::{DialogueIrKind, TEXT_COMMAND_START_US};
+use crate::dialogue_ir::DialogueIrKind;
+#[cfg(feature = "rom-timing")]
+use crate::dialogue_ir::TEXT_COMMAND_START_US;
+#[cfg(feature = "rom-timing")]
 use crate::JoypadPublication;
 
 #[test]
@@ -71,6 +74,7 @@ fn dialogue_snapshot_exposes_only_nmi_published_vwf_metadata() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
     let mut state = ZeldaState::new();
     // The two-frame scroll lag belongs to ROM timing; ROM-less play drains
@@ -100,6 +104,7 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dialogue_return_only_boundary_publishes_nmi_scroll_scanout() {
     let mut state = ZeldaState::new();
     state.initialized = true;
@@ -162,6 +167,7 @@ fn dialogue_return_only_boundary_publishes_nmi_scroll_scanout() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dialogue_return_only_receipt_returns_through_the_source_common_suffix() {
     let mut state = ZeldaState::new();
     state.initialized = true;
@@ -218,6 +224,7 @@ fn dialogue_return_only_receipt_returns_through_the_source_common_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     let mut state = ZeldaState::new();
     state.initialized = true;
@@ -253,6 +260,7 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     assert_eq!(state.zelda_debug_apu_write_ports()[3], 12);
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_dialogue_vwf_return_state(
     native_read_position: u16,
     source_read_position: u16,
@@ -299,6 +307,7 @@ fn live_dialogue_vwf_return_state(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_dialogue_vwf_return_consumes_its_exact_source_endpoint() {
     let mut state = live_dialogue_vwf_return_state(86, 86);
     let frame_counter = state.game_state.frame.frame_counter;
@@ -316,6 +325,7 @@ fn live_dialogue_vwf_return_consumes_its_exact_source_endpoint() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_dialogue_vwf_return_rejects_a_source_cursor_mismatch_before_mutation() {
     let mut state = live_dialogue_vwf_return_state(86, 87);
     let receipts_before = state.original_timing_semantic_receipts.clone();
@@ -333,6 +343,7 @@ fn live_dialogue_vwf_return_rejects_a_source_cursor_mismatch_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dialogue_vwf_return_rejects_an_unowned_nmi_lifecycle_at_host_close() {
     let mut state = ZeldaState::new();
     state.initialized = true;
@@ -406,6 +417,7 @@ fn dialogue_vwf_return_rejects_an_unowned_nmi_lifecycle_at_host_close() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn snes9x_dialogue_scroll_holds_the_coupled_register_generation() {
     let mut state = ZeldaState::new();
     state.initialized = true;

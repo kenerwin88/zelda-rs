@@ -1,8 +1,8 @@
 // The facade retains read-only access and the existing mutation boundary.
 // Forwarding carries no storage, import, or publication side effects.
 macro_rules! forward_player_component {
-    ($field:ident; $($vis:vis fn $name:ident($($args:tt)*) $(-> $ret:ty)?;)+) => {
-        $(forward_player_component!(@method $field; $vis fn $name($($args)*) $(-> $ret)?);)+
+    ($field:ident; $($(#[$meta:meta])* $vis:vis fn $name:ident($($args:tt)*) $(-> $ret:ty)?;)+) => {
+        $($(#[$meta])* forward_player_component!(@method $field; $vis fn $name($($args)*) $(-> $ret)?);)+
     };
     (@method $field:ident; $vis:vis fn $name:ident(&self $(, $arg:ident: $ty:ty)* $(,)?) $(-> $ret:ty)?) => {
         $vis fn $name(&self, $($arg: $ty),*) $(-> $ret)? { self.$field.$name($($arg),*) }
@@ -377,6 +377,7 @@ impl FollowerLinkState {
         pub(crate) fn shield_dma_graphics_index(&self) -> u8;
         pub(crate) fn link_dma_left_sprite_bank_word(&self) -> u16;
         pub(crate) fn link_dma_right_sprite_bank_word(&self) -> u16;
+        #[cfg(feature = "rom-timing")]
         pub(crate) fn link_dma_staging_group(&self) -> u8;
         pub(crate) fn palette_bits_of_oam(&self) -> u8;
         pub(crate) fn palette_bits_of_oam_word(&self) -> u16;

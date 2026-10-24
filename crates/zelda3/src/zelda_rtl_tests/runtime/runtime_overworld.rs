@@ -583,6 +583,7 @@ fn live_mirror_warp_reload_retains_and_restores_source_scan_locals() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn overworld_reload_tail_waits_for_its_nested_module09_sprite_main_return() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -934,6 +935,7 @@ fn item_tile_behavior_routes_overworld_attr_to_tile_execute() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn world_map_fade_completion_runs_the_first_mode7_tick_immediately() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -998,6 +1000,7 @@ fn world_map_exit_tilesets_resume_after_the_measured_nmi_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn module09_world_map_bodies_use_the_original_rom_cpu_schedule() {
     // Production captures these plans by executing the original ROM from its
     // $00:8034 main wait. Cold Snes9x proves $09/$20 crosses six body NMIs and
@@ -1065,6 +1068,7 @@ fn module09_world_map_bodies_use_the_original_rom_cpu_schedule() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn c_module09_overlay_return_has_no_self_healing_counter_transient() {
     // C Module09_Overworld keeps its four scroll locals live across
     // Sprite_Main. The ROM trace for run 6168 enters Sprite_ExecuteSingle with
@@ -1235,6 +1239,7 @@ fn pre_overworld_overlay_cpu_schedule_counts_source_caller_crossings() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pre_overworld_screen_build_cpu_schedule_counts_source_caller_crossings() {
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
@@ -1335,6 +1340,7 @@ fn pre_overworld_unmeasured_load_retains_legacy_estimates() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn measured_screen_build_preserves_its_last_held_nmi() {
     // Snes9x enters Module08_02 on comparison 41059, crosses 16 held
     // NMIs, and returns on 41075. Prepaying one of those measured crossings
@@ -1615,6 +1621,7 @@ fn completed_overworld_reload_uses_its_measured_return_phase() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn overworld_mosaic_sprite_graphics_defers_its_source_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

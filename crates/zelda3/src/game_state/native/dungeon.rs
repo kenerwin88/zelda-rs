@@ -3880,6 +3880,7 @@ impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
     /// The graphics decompressor aliases the shared C8/CA words with its
     /// stream pointer and CB count. Publish only the instruction's bytes and
     /// adopt the overlapping typed words without re-stamping their other halves.
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn write_decompression_scratch(&mut self,address:usize,value:u16,width:u8) {
         assert!((0xc8..=0xcd).contains(&address));
         assert!(matches!(width,1|2)&&address+usize::from(width)<=0xce);

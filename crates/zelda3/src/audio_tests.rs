@@ -599,6 +599,7 @@ fn gameplay_sound_latch_becomes_a_typed_nmi_command() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn rom_startup_audio_stays_silent_until_the_boot_chime_keyon() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

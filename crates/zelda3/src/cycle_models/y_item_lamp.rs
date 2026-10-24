@@ -14,6 +14,7 @@ pub(crate) enum LampChild {
     LampFlame,
 }
 impl LampChild {
+    #[cfg(feature = "rom-timing")]
     fn return_pc(self) -> u16 {
         match self {
             Self::MagicPayment => 0xa261,
@@ -47,6 +48,7 @@ impl YItemLamp {
     pub(crate) fn child(&self) -> Option<LampChild> {
         self.child
     }
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
         let child = self.child.take().expect("lamp child return");
         assert_eq!((cpu.bank, cpu.pc), (7, child.return_pc()));

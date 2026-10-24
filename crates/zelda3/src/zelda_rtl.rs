@@ -107,7 +107,7 @@ use crate::timing_receipts::{
     CreditsEndSequence32ProgressReceipt, CreditsSceneLoadProgressReceipt,
     DungeonResetSpritesProgressReceipt, FileSelectGraphicsLowWramClearProgress,
     ItemReceiptGraphicsCaller, ItemReceiptGraphicsProgressReceipt, NmiUpdateGate,
-    OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
+    OriginalTimingBoundary, OriginalTimingHostReceipts,
     OriginalTimingSemanticReceipt, SaveMenuInitializationProgress, SourceCallProgress,
     SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt, SpriteResetAllProgress,
     SpriteResetAllProgressReceipt, TriforceRoomCase2PaletteProgressReceipt,
@@ -545,6 +545,7 @@ const fn dungeon_exit_spotlight_entry_return_obj_scanout() -> ObjScanoutGenerati
     }
 }
 
+#[cfg(feature = "rom-timing")]
 const fn dungeon_subtile_palette_filter_return_obj_scanout() -> ObjScanoutGenerations {
     // The resumed Module07 suffix authors a new OAM shadow after the resident
     // table was already DMAed, but its prepared Link sources are consumed by
@@ -4321,6 +4322,7 @@ fn dungeon_room_load_cpu_schedule(
 static RECENT_HOST_RECEIPT_VECTORS: std::sync::Mutex<Option<std::collections::VecDeque<String>>> =
     std::sync::Mutex::new(None);
 
+#[cfg(feature = "rom-timing")]
 fn record_recent_host_receipt_vector(line: String) {
     if let Ok(mut ring) = RECENT_HOST_RECEIPT_VECTORS.lock() {
         let ring = ring.get_or_insert_with(std::collections::VecDeque::new);
@@ -6173,6 +6175,7 @@ const fn valid_dynamic_spawn_progress(progress: crate::SpriteDynamicSpawnProgres
     }
 }
 
+#[cfg(feature = "rom-timing")]
 const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruption) -> bool {
     match interruption {
         crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
@@ -6395,6 +6398,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
     }
 }
 
+#[cfg(feature = "rom-timing")]
 const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool {
     match progress {
         crate::SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => slot < 16 && segment < 4,
@@ -9249,6 +9253,7 @@ mod messaging;
 #[path = "misc.rs"]
 mod misc;
 #[cfg(test)]
+#[cfg(any(test, feature = "rom-timing"))]
 pub(crate) use misc::native_item_receipt_table_byte;
 pub(crate) use misc::link_dma_data_byte;
 #[path = "nmi.rs"]
@@ -9494,6 +9499,7 @@ const ABOUT_TO_JUMP_OFF_LEDGE: usize = 0x47a;
 const RESTART_CHECK_FLAG: usize = 0x04aa;
 const HUD_FLOOR_CHANGED_TIMER: usize = 0x04a0;
 // NES_Ver2 WN* window/iris work RAM: X center, Y buffer, radius, and wipe state.
+#[cfg(feature = "rom-timing")]
 const SPOTLIGHT_WINDOW_RADIUS: usize = 0x67c;
 const DRAG_PLAYER_X: usize = 0x0b7c;
 const DRAG_PLAYER_Y: usize = 0x0b7e;
@@ -12805,6 +12811,7 @@ impl ZeldaState {
         self.display_core_mut().clear_mosaic_direction();
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_travel_bird_dma_sources(upper, lower);
@@ -12815,6 +12822,7 @@ impl ZeldaState {
             .reset_bg_tile_animation_countdown(value);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
         self.display_core_mut()
             .decrement_bg_tile_animation_countdown()
@@ -13466,6 +13474,7 @@ impl ZeldaState {
         }
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn clear_messaging_render_buffer_range(&mut self, byte_count: usize) {
         self.messaging_render_buffer_mut().clear_range(byte_count);
     }
@@ -14202,6 +14211,8 @@ impl ZeldaState {
     }
 
     pub fn set_rom_startup_timing(&mut self, enabled: bool) {
+        assert!(!enabled || cfg!(feature = "rom-timing"),
+            "cartridge scheduling requires the rom-timing Cargo feature");
         if enabled && self.rom_startup_timing {
             return;
         }
@@ -14798,6 +14809,7 @@ impl ZeldaState {
     /// behavior. It is development evidence, never parity authority — the
     /// seeded APU, PPU register mirror and presentation provenance are not
     /// the oracle's exact state.
+    #[cfg(feature = "rom-timing")]
     pub fn seed_from_snes9x_oracle_memory(
         &mut self,
         wram: &[u8],
@@ -16759,6 +16771,7 @@ impl ZeldaState {
         );
     }
 
+    #[cfg(feature = "rom-timing")]
     fn zelda_run_game_loop_body(
         &mut self,
         authoritative_main_loop_progress: Option<crate::MainLoopProgress>,
@@ -17195,16 +17208,18 @@ pub use rtl_types_original_timing::*;
 mod rtl_types_spotlight;
 pub(crate) use rtl_types_spotlight::*;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rom-timing"))]
 mod original_timing_receipt_validation_tests {
     use super::*;
 
+    #[cfg(feature = "rom-timing")]
     fn install_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_rom_startup_timing(true);
         state
     }
 
+    #[cfg(feature = "rom-timing")]
     fn assert_install_rejected_without_mutation(
         semantic: Vec<OriginalTimingSemanticReceipt>,
         expected: OriginalTimingReceiptInstallError,
@@ -17231,6 +17246,7 @@ mod original_timing_receipt_validation_tests {
         );
     }
 
+    #[cfg(feature = "rom-timing")]
     fn assert_install_accepted(receipt: OriginalTimingSemanticReceipt) {
         let mut state = install_state();
         assert_eq!(
@@ -17244,6 +17260,7 @@ mod original_timing_receipt_validation_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn sprite_main_interruption_install_validates_every_source_bounded_field() {
         use crate::MainLoopInterruption as I;
 
@@ -17334,6 +17351,7 @@ mod original_timing_receipt_validation_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn extended_oam_interruption_install_requires_its_nmi_and_source_caller() {
         let interruption = OriginalTimingSemanticReceipt::MainLoopInterrupted(
             crate::MainLoopInterruption::SpritePreparationExtendedOamPacking {
@@ -17447,6 +17465,7 @@ mod original_timing_receipt_validation_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn sprite_main_progress_install_validates_every_source_bounded_field() {
         use crate::SpriteMainProgress as P;
 
@@ -17535,6 +17554,7 @@ mod original_timing_receipt_validation_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn duplicate_sprite_main_progress_and_excess_returns_fail_without_installing() {
         assert_install_rejected_without_mutation(
             vec![
@@ -17558,6 +17578,7 @@ mod original_timing_receipt_validation_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn forwarded_main_loop_interruption_has_one_transient_owner() {
         let mut state = install_state();
         state.original_timing_owner = OriginalTimingOwnerState::Live;
@@ -17600,6 +17621,7 @@ mod original_timing_receipt_validation_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn unclaimed_forwarded_interruption_expires_with_its_host_receipt() {
         let mut state = install_state();
         state.original_timing_owner = OriginalTimingOwnerState::Live;
@@ -17624,6 +17646,7 @@ mod original_timing_receipt_validation_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn timing_invalidation_clears_mode7_shadow_diagnostic() {
         fn diagnostic() -> crate::OriginalTimingMode7TransformShadowResult {
             crate::OriginalTimingMode7TransformShadowResult {
@@ -17672,3 +17695,6 @@ mod nmi_tests;
 #[cfg(test)]
 #[path = "chr_source_tests.rs"]
 mod chr_source_tests;
+
+#[cfg(feature = "rom-timing")]
+use crate::OriginalTimingReceiptInstallError;

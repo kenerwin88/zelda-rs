@@ -262,22 +262,25 @@ impl ZeldaState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rom-timing"))]
 mod tests {
     use super::*;
     use crate::cycle_models::{
         nmi_stack::NativeNmiContext, spotlight_caller_return::{ClosingSpotlight, SpotlightCallerReturn},
     };
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn closing_runtime_and_main_wait_handoffs_preserve_source_boundaries() {
         spotlight_runtime_and_main_wait_handoffs(false);
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn opening_runtime_and_main_wait_handoffs_preserve_source_boundaries() {
         spotlight_runtime_and_main_wait_handoffs(true);
     }
 
+    #[cfg(feature = "rom-timing")]
     fn spotlight_runtime_and_main_wait_handoffs(opening:bool) {
         let module=if opening {16} else {15};
         let module_pc=if opening {0x9ad7} else {0x9982};
@@ -444,6 +447,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn production_spotlight_caller_bus_matches_source_without_runtime_rom() {
         let rom = std::fs::read(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),

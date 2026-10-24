@@ -55,6 +55,7 @@ impl DungeonLanding {
     }
 
     /// The child, including its RTL, must run on the inherited CPU and clock.
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
         let child = self.child.take().expect("landing child must be pending");
         if let Some(sprites) = self.sprites.as_mut() {

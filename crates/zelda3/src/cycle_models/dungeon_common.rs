@@ -208,6 +208,7 @@ impl DungeonCommon {
         self.complete
     }
     /// The selected native child must retire its own return on the live stack.
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
         let child = self
             .child

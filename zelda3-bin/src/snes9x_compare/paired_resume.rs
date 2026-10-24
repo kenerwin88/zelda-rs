@@ -201,7 +201,7 @@ pub(crate) fn paired_resume_artifacts(path: &Path) -> Result<PairedResumeArtifac
                     artifact_path.display()
                 ));
             }
-            let actual_sha256 = parity::evidence::sha256_file(&artifact_path)
+            let actual_sha256 = parity::hash::sha256_file(&artifact_path)
                 .map_err(|error| format!("failed to hash {}: {error}", artifact_path.display()))?;
             if actual_sha256 != artifact.sha256 {
                 return Err(format!(
@@ -283,7 +283,7 @@ pub(crate) fn validate_paired_resume_provenance(
 
     let verify_required =
         |label: &str, selected: &Path, expected: &PairedResumeProvenance| -> Result<(), String> {
-            let actual = parity::evidence::sha256_file(selected).map_err(|error| {
+            let actual = parity::hash::sha256_file(selected).map_err(|error| {
                 format!(
                     "failed to hash selected {label} {}: {error}",
                     selected.display()
@@ -396,7 +396,7 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
                 oracle_relative.display()
             )
         })?;
-    let actual_oracle_sha256 = parity::evidence::sha256_file(oracle_source)
+    let actual_oracle_sha256 = parity::hash::sha256_file(oracle_source)
         .map_err(|error| format!("failed to hash {}: {error}", oracle_source.display()))?;
     if actual_oracle_sha256 != expected_oracle_sha256 {
         return Err(format!(
@@ -417,7 +417,7 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
             "cached semantic trace checkpoint is absent from the artifact inventory".to_string()
         })?;
     let semantic_trace_sha256 =
-        parity::evidence::sha256_file(semantic_trace_source).map_err(|error| {
+        parity::hash::sha256_file(semantic_trace_source).map_err(|error| {
             format!(
                 "failed to hash {}: {error}",
                 semantic_trace_source.display()
@@ -547,19 +547,19 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
             "rust_only": oracle_hashes.is_none(),
             "rust_state": {
                 "artifact": "rust.z3state",
-                "sha256": parity::evidence::sha256_bytes(&rust_bytes),
+                "sha256": parity::hash::sha256_bytes(&rust_bytes),
             },
             "native_exact_cpu_checkpoint": native_exact_cpu_bytes.as_ref().map(|bytes| {
                 serde_json::json!({
                     "artifact": "native-exact-cpu.z3timing",
-                    "sha256": parity::evidence::sha256_bytes(bytes),
+                    "sha256": parity::hash::sha256_bytes(bytes),
                 })
             }),
             "oracle_state": oracle_state,
             "original_timing_resume_checkpoint": original_timing_resume_bytes.as_ref().map(|bytes| {
                 serde_json::json!({
                     "artifact": "original-timing.resume.json",
-                    "sha256": parity::evidence::sha256_bytes(bytes),
+                    "sha256": parity::hash::sha256_bytes(bytes),
                 })
             }),
             "semantic_trace_checkpoint": semantic_trace_checkpoint,
@@ -567,7 +567,7 @@ pub(crate) fn write_cached_av_paired_resume_from_sources(
                 "kind": "matched-rust-only-cached-snes9x-av-replay",
                 "cache": cache,
                 "cache_key": cache_manifest.get("cache_key"),
-                "cache_manifest_sha256": parity::evidence::sha256_bytes(cache_manifest_bytes),
+                "cache_manifest_sha256": parity::hash::sha256_bytes(cache_manifest_bytes),
             },
             "core": {"sha256": core_sha256},
             "rom": {"path": rom, "sha256": rom_sha256},
@@ -654,7 +654,7 @@ pub(crate) fn cached_oracle_checkpoint_sources(
             .filter(|value| *value == expected_name)
             .ok_or_else(|| format!("oracle checkpoint has unsafe {key} artifact"))?;
         let path = checkpoint_dir.join(artifact);
-        let actual = parity::evidence::sha256_file(&path)
+        let actual = parity::hash::sha256_file(&path)
             .map_err(|error| format!("hash {}: {error}", path.display()))?;
         let expected = record
             .get("sha256")
@@ -914,19 +914,19 @@ pub(crate) fn write_paired_resume_capture(
             "renderer_warmup_required": true,
             "rust_state": {
                 "artifact": "rust.z3state",
-                "sha256": parity::evidence::sha256_bytes(&rust_bytes),
+                "sha256": parity::hash::sha256_bytes(&rust_bytes),
             },
             "oracle_state": {
                 "artifact": "oracle.state",
-                "sha256": parity::evidence::sha256_bytes(&oracle_bytes),
+                "sha256": parity::hash::sha256_bytes(&oracle_bytes),
             },
             "original_timing_resume_checkpoint": {
                 "artifact": "original-timing.resume.json",
-                "sha256": parity::evidence::sha256_bytes(&original_timing_resume_bytes),
+                "sha256": parity::hash::sha256_bytes(&original_timing_resume_bytes),
             },
             "semantic_trace_checkpoint": {
                 "artifact": "semantic-trace.checkpoint.json",
-                "sha256": parity::evidence::sha256_bytes(&semantic_trace_bytes),
+                "sha256": parity::hash::sha256_bytes(&semantic_trace_bytes),
             },
             "core": {"path": core_path, "sha256": core_sha256},
             "rom": {"path": rom_path, "sha256": rom_sha256},
@@ -934,7 +934,7 @@ pub(crate) fn write_paired_resume_capture(
             "rom_random_script": rom_random_script,
             "initial_sram": {
                 "artifact": "initial.srm",
-                "sha256": parity::evidence::sha256_bytes(initial_sram),
+                "sha256": parity::hash::sha256_bytes(initial_sram),
             },
         });
         fs::write(

@@ -622,6 +622,7 @@ fn tile_main_handler_shallow_water_sets_ripple_and_slosh_sound() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn progressed_disable_then_reenable_refuses_a_cold_timing_restart() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -817,6 +818,7 @@ fn happiness_pond_payment_precedes_graphics_and_is_not_replayed() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn module09_item_graphics_boundary_executes_the_vendor_prefix_before_suspending() {
     let mut state = ZeldaState::new();
     let slot = 12usize;

@@ -4,6 +4,7 @@
 use super::*;
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn suspended_item_graphics_keep_the_active_ppu_scroll_generation() {
     // Original Big Key pickup host 20257: WritePpuRegisters has installed
     // BG1/BG2 X=236,Y=4112; Module07's software camera copies are already
@@ -73,6 +74,7 @@ fn suspended_item_graphics_keep_the_active_ppu_scroll_generation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn emu_runframe_callback_consumes_one_external_oracle_receipt() {
     let mut state = ZeldaState::new();
     state.set_rom(&exact_timing_test_rom(0x18));
@@ -102,6 +104,7 @@ fn emu_runframe_callback_consumes_one_external_oracle_receipt() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pinned_snes9x_receipts_are_typed_input_bound_and_consumed_once() {
     let mut disabled = ZeldaState::new();
     assert_eq!(
@@ -343,6 +346,7 @@ fn live_map_quadrant_receipt_prevents_early_native_submodule_publication() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -670,6 +674,7 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_main_loop_preparation_receipt_suspends_the_completed_dungeon_caller() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -729,6 +734,7 @@ fn live_main_loop_preparation_receipt_suspends_the_completed_dungeon_caller() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_link_oam_receipt_suspends_the_completed_dungeon_caller() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -766,6 +772,7 @@ fn live_link_oam_receipt_suspends_the_completed_dungeon_caller() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_big_key_publication_enters_the_existing_source_call_continuation() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -839,6 +846,7 @@ fn big_key_partial_slot_receipt_is_a_sprite_main_module_phase() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_link_oam_receipt_suspends_landing_before_shared_sprite_preparation() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -967,6 +975,7 @@ fn live_module09_caller_phase_comes_from_the_typed_interruption_receipt() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pinned_snes9x_receipt_input_mismatch_fails_closed_without_exposing_semantics() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1074,6 +1083,7 @@ fn bottled_item_receipt_fills_first_open_bottle() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn direct_host_calls_without_oracle_receipts_never_seed_a_cpu_emulator() {
     let mut state = ZeldaState::new();
     state.set_rom(&exact_timing_test_rom(0x4c));
@@ -1246,6 +1256,7 @@ fn live_module07_sprite_receipt_stops_before_the_unreturned_slot() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn big_key_drop_publishes_entry_dma_then_holds_it_across_waiting_slices() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1302,6 +1313,7 @@ fn big_key_drop_publishes_entry_dma_then_holds_it_across_waiting_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn big_key_entry_after_leading_nmi_attaches_scroll_to_the_current_field() {
     // Original 20201 shows X=$a4; the following carried handler publishes
     // X=$a2. Entry scroll must not leak into that following capture.
@@ -1328,6 +1340,7 @@ fn big_key_entry_after_leading_nmi_attaches_scroll_to_the_current_field() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn c_big_key_decompression_retains_leading_nmi_scroll_until_its_nmi_returns() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1624,6 +1637,7 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4586_terminal_ground_item_receipt_completes_one_handler_sprite_return_and_suffix() {
     const ANIMATED_DESTINATION: usize = 0x3b00;
 
@@ -1694,6 +1708,7 @@ fn run4586_terminal_ground_item_receipt_completes_one_handler_sprite_return_and_
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_ground_item_return_leaves_its_uploads_for_the_next_open_nmi() {
     // Hosts 4586 and 14076: Held handler, Sprite_Main return, continued
     // caller and common suffix; no second handler after that suffix.
@@ -1727,6 +1742,7 @@ fn native_ground_item_return_leaves_its_uploads_for_the_next_open_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_ground_item_receipt_owner_is_not_tied_to_route_gfx14() {
     let mut state = live_terminal_ground_item_receipt_state_with_gfx(0x06);
 
@@ -1743,6 +1759,7 @@ fn terminal_ground_item_receipt_owner_is_not_tied_to_route_gfx14() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_ground_item_receipt_gfx22_keeps_enemy_drop_sound_ownership_disjoint() {
     let mut state = live_terminal_ground_item_receipt_state_with_gfx(0x22);
     let continuation = match state.game_execution_scheduler.current_work() {
@@ -1762,7 +1779,9 @@ fn terminal_ground_item_receipt_gfx22_keeps_enemy_drop_sound_ownership_disjoint(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_ground_item_receipt_preflight_is_failure_atomic() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(label: &str, mut state: ZeldaState) {
         state.original_timing_host_dispatch_active = true;
         state.original_timing_owner = OriginalTimingOwnerState::Live;
@@ -1922,6 +1941,7 @@ fn terminal_ground_item_receipt_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn bottle_vendor_suffix_waits_for_the_live_source_call_return_receipt() {
     let mut state = ZeldaState::new();
     let slot = 12usize;
@@ -2046,6 +2066,7 @@ fn bottle_vendor_suffix_waits_for_the_live_source_call_return_receipt() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn direct_sprite_item_pickup_consumes_the_returned_source_graphics_receipt_once() {
     let mut state = ZeldaState::new();
     let slot = 3u8;
@@ -2082,6 +2103,7 @@ fn direct_sprite_item_pickup_consumes_the_returned_source_graphics_receipt_once(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn sick_kid_suffix_waits_for_the_live_source_call_return_receipt() {
     let mut state = ZeldaState::new();
     let slot = 0usize;
@@ -2162,6 +2184,7 @@ fn sick_kid_suffix_waits_for_the_live_source_call_return_receipt() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_dungeon_exit_projection_receipt_suspends_the_entry_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2222,6 +2245,7 @@ fn live_dungeon_exit_projection_receipt_suspends_the_entry_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_recurring_close_projection_receipt_suspends_link_movement() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2264,6 +2288,7 @@ fn live_recurring_close_projection_receipt_suspends_link_movement() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_module10_lower_write_receipt_defers_the_goal_transition_to_the_next_host() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2488,6 +2513,7 @@ fn pre_overworld_live_stage_receipt_is_consumed_once_without_oracle_provenance()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fresh_sprite_main_same_slot_item_receipt_supersedes_its_outer_prefix() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -2830,6 +2856,7 @@ fn overworld_graphics_timing_uses_measured_work_receipts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn later_source_sprite_main_receipt_supersedes_palette_return_timing_shadow() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2863,6 +2890,7 @@ fn later_source_sprite_main_receipt_supersedes_palette_return_timing_shadow() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_iteration_receipt_supersedes_poly_only_legacy_dispatch_guess() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

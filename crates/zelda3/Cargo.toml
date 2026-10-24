@@ -7,11 +7,13 @@ license.workspace = true
 autobins = false
 
 [features]
+# Exact cartridge scheduling and external timing-oracle tooling.
+rom-timing = ["snes/rom-timing"]
 # Debug/trace environment switches (ZELDA3_DEBUG_*, ZELDA3_TRACE_*,
 # ZELDA3_REPLAY_*, ZELDA3_ASSERT_*, ZELDA3_WW_*, ...). On by default so the
 # parity profile and tests keep every tool; release packaging builds with
 # `--no-default-features` and compiles them out.
-default = ["parity-debug"]
+default = ["parity-debug", "rom-timing"]
 parity-debug = ["zelda3-debug-env/parity-debug", "snes/parity-debug"]
 # Offline editor snapshots only; absent from ordinary game builds.
 map-preview = []

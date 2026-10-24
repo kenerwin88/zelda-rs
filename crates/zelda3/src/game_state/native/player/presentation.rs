@@ -130,6 +130,7 @@ impl PlayerPresentationState {
         self.link_dma_right_sprite_bank
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn link_dma_staging_group(&self) -> u8 {
         self.link_dma_staging_index >> 3
     }

@@ -207,8 +207,8 @@ pub(crate) fn vram_domain_receipt(
     Some(VramDomainReceipt {
         rust_words: rust_words.len(),
         oracle_words: oracle_words.len(),
-        rust_sha256: parity::evidence::sha256_bytes(&rust_bytes),
-        oracle_sha256: parity::evidence::sha256_bytes(oracle_bytes),
+        rust_sha256: parity::hash::sha256_bytes(&rust_bytes),
+        oracle_sha256: parity::hash::sha256_bytes(oracle_bytes),
         mismatched_words,
         first_mismatch_word,
         first_rust_word: first_mismatch_word.and_then(|index| rust_words.get(index).copied()),

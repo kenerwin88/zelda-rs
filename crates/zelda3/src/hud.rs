@@ -2494,6 +2494,7 @@ pub(super) const fn pv(a: [u16; 8]) -> u16 {
         | (((a[7] >> 1) & 1) << 8)
 }
 
+#[cfg(feature = "rom-timing")]
 fn hud_int_to_decimal(number: u32) -> [u8; 4] {
     hud_int_to_decimal_after_cycles(number, 0)
 }
@@ -2949,6 +2950,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn hud_hearts_entry_resume_preserves_refill_updates_without_repeating_them() {
         let mut baseline = ZeldaState::new();
         baseline.write_wram_byte(0xf36c, 24); // capacity

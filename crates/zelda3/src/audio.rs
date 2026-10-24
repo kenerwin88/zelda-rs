@@ -1308,6 +1308,7 @@ impl ZeldaState {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(super) fn native_apu_port_owner_for_test(&self) -> snes::apu::ApuHostPortTiming {
         self.audio.modern.driver_clock.as_ref().expect("fixture requires native SPC timing")
             .cpu_port_owner_for_test()

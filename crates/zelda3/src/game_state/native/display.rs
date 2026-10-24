@@ -3823,6 +3823,7 @@ impl DisplayState {
         self.bg_tile_animation_countdown = value;
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
         self.bg_tile_animation_countdown = self.bg_tile_animation_countdown.wrapping_sub(1);
         self.bg_tile_animation_countdown
@@ -5445,6 +5446,7 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.debug_assert_bg_tile_animation_countdown_matches_ram();
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
         let next = self.display.decrement_bg_tile_animation_countdown();
         write_le_u16(self.ram, BG_TILE_ANIMATION_COUNTDOWN, next);

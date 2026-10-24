@@ -11,6 +11,7 @@ use crate::developer_room_commands::{
     current_developer_location_from_ram, load_developer_destination,
 };
 use crate::input_script::InputScript;
+#[cfg(feature = "rom-timing")]
 use crate::live_input_recording::LiveInputRecording;
 use crate::{
     apply_sram_to_game_or_exit, captured_panic_from, developer_destinations,
@@ -113,6 +114,9 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
         }
         i += 1;
     }
+    if !cfg!(feature = "rom-timing") && (rom_timing || rom_path.is_some()) {
+        return Err("frontend cartridge play requires the rom-timing Cargo feature".into());
+    }
     Ok(FrontendSmokeOptions {
         frames,
         frame_pacing,
@@ -176,6 +180,7 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
             game.state_recorder = state_recorder;
         }
     }
+    #[cfg(feature = "rom-timing")]
     let mut input_recording = LiveInputRecording::start_from_env(&game).unwrap_or_else(|error| {
         eprintln!("failed to start frontend-smoke input recording: {error}");
         process::exit(1);
@@ -211,6 +216,7 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         } else {
             options.input_script.input_for_frame(completed)
         };
+        #[cfg(feature = "rom-timing")]
         if let Some(recording) = input_recording.as_mut() {
             recording
                 .record(completed, live_input)
@@ -245,6 +251,7 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
     if !options.frame_pacing {
         renderer.wait_idle();
     }
+    #[cfg(feature = "rom-timing")]
     if let Some(recording) = input_recording.take() {
         recording.finish().unwrap_or_else(|error| {
             eprintln!("failed to finish frontend-smoke input recording: {error}");
@@ -273,6 +280,7 @@ pub(crate) fn run_play() {
 /// This is the Snes9x parity oracle's timing, not the shipped game. With a
 /// ROM the cycle-exact timing plans execute it; without one the game runs on
 /// their unmeasured schedules.
+#[cfg(feature = "rom-timing")]
 pub(crate) fn run_rom_timing_play(rom_path: Option<&str>) {
     run_play_with_state(match rom_path {
         Some(rom_path) => load_play_state(rom_path),
@@ -301,10 +309,12 @@ fn run_play_with_state(mut game: ZeldaState) {
     let audio_channels = renderer.audio_channels();
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut host_frame = 0u32;
+    #[cfg(feature = "rom-timing")]
     let mut input_recording = LiveInputRecording::start_from_env(&game).unwrap_or_else(|error| {
         eprintln!("failed to start live input recording: {error}");
         process::exit(1);
     });
+    #[cfg(feature = "rom-timing")]
     if input_recording.is_some() {
         eprintln!("recording each game-frame controller poll for Snes9x replay");
     }
@@ -358,6 +368,7 @@ fn run_play_with_state(mut game: ZeldaState) {
                             eprintln!("host menu controls panel selected: {panel:?}");
                         }
                         HostMenuAction::WarpToVerifiedDestination(id) => {
+                            #[cfg(feature = "rom-timing")]
                             if input_recording.is_some() {
                                 eprintln!(
                                     "cannot use developer warp `{id}` while recording a Snes9x-replayable input route; record the route from normal boot"
@@ -415,6 +426,7 @@ fn run_play_with_state(mut game: ZeldaState) {
             game_started = true;
         }
         let run_what = select_run_what(&game.wram_image());
+        #[cfg(feature = "rom-timing")]
         if let Some(recording) = input_recording.as_mut() {
             recording
                 .record(host_frame, live_input)
@@ -494,6 +506,7 @@ fn run_play_with_state(mut game: ZeldaState) {
     if audio_dropped_samples != 0 {
         eprintln!("live audio timeline dropped {audio_dropped_samples} interleaved samples");
     }
+    #[cfg(feature = "rom-timing")]
     if let Some(recording) = input_recording.take() {
         match recording.finish() {
             Ok(dir) => eprintln!("captured deterministic input session: {}", dir.display()),

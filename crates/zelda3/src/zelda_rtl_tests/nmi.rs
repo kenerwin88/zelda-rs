@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn link_dma_reads_live_wram_in_both_source_banks() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

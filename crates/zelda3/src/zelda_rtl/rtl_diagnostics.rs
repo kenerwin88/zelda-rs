@@ -505,6 +505,7 @@ impl ZeldaState {
         // Own exactly one source S9xMainLoop interval across either dispatch
         // branch; a callback which calls the public internal entry sees this
         // active guard and cannot advance it again.
+        #[cfg(feature = "rom-timing")]
         self.advance_native_exact_cpu_host();
         self.arm_native_exact_cpu_leading_spiral_sprite_nmi();
         let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input_state);

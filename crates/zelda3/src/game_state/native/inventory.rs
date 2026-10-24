@@ -886,10 +886,12 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
         self.resources.magic.set_refill(value);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn clear_magic_filler(&mut self) {
         self.resources.magic.set_refill(0);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn decrement_magic_filler(&mut self) {
         self.resources.magic.decrement_refill();
     }

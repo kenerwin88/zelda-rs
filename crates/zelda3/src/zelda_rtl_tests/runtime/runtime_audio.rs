@@ -19,6 +19,7 @@ fn asset_pack_resolves_spc_driver_timing_program_by_name() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_audio_presentation_runs_native_shadow_then_publishes_exactly_once() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -58,6 +59,7 @@ fn live_audio_presentation_runs_native_shadow_then_publishes_exactly_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_audio_presentation_shape_mismatch_fails_closed() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -82,6 +84,7 @@ fn live_audio_presentation_shape_mismatch_fails_closed() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn checkpoint_resume_restores_live_timing_without_rephasing_audio() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -107,6 +110,7 @@ fn checkpoint_resume_restores_live_timing_without_rephasing_audio() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dark_world_selected_load_waits_past_the_compatibility_audio_boundary() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.game_execution_scheduler.reset();

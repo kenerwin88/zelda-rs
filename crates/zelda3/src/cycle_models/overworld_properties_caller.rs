@@ -132,6 +132,7 @@ impl OverworldPropertiesCaller {
             .as_ref()
             .and_then(PreOverworldProperties::child)
     }
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn external_child(&self) -> Option<PropertiesChild> {
         if self.child.is_none() {
             self.active_child()
@@ -139,6 +140,7 @@ impl OverworldPropertiesCaller {
             None
         }
     }
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn return_from_external_child(&mut self, cpu: &NativeNmiContext) {
         assert!(
             self.external_child().is_some(),

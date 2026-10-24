@@ -108,19 +108,19 @@ fn write_paired_resume_test_generation(
         "frame": manifest_frame,
         "rust_state": {
             "artifact": "rust.z3state",
-            "sha256": parity::evidence::sha256_bytes(&rust_state),
+            "sha256": parity::hash::sha256_bytes(&rust_state),
         },
         "oracle_state": {
             "artifact": "oracle.state",
-            "sha256": parity::evidence::sha256_bytes(oracle_state),
+            "sha256": parity::hash::sha256_bytes(oracle_state),
         },
         "original_timing_resume_checkpoint": {
             "artifact": "original-timing.resume.json",
-            "sha256": parity::evidence::sha256_bytes(original_timing),
+            "sha256": parity::hash::sha256_bytes(original_timing),
         },
         "semantic_trace_checkpoint": {
             "artifact": "semantic-trace.checkpoint.json",
-            "sha256": parity::evidence::sha256_bytes(semantic_trace),
+            "sha256": parity::hash::sha256_bytes(semantic_trace),
         },
         "core": {"sha256": "core-sha"},
         "rom": {"sha256": "rom-sha"},
@@ -128,7 +128,7 @@ fn write_paired_resume_test_generation(
         "rom_random_script": null,
         "initial_sram": {
             "artifact": "initial.srm",
-            "sha256": parity::evidence::sha256_bytes(initial_sram),
+            "sha256": parity::hash::sha256_bytes(initial_sram),
         },
     });
     fs::write(
@@ -162,7 +162,7 @@ fn matched_cached_av_replay_writes_a_quiescent_paired_frontier() {
     )
     .unwrap();
     let initial_sram = b"canonical startup SRAM";
-    let initial_sram_sha256 = parity::evidence::sha256_bytes(initial_sram);
+    let initial_sram_sha256 = parity::hash::sha256_bytes(initial_sram);
     fs::write(cache.join("initial.srm"), initial_sram).unwrap();
     let manifest = serde_json::json!({
         "cache_key": "fixture-key",
@@ -175,8 +175,8 @@ fn matched_cached_av_replay_writes_a_quiescent_paired_frontier() {
             },
         },
         "artifact_sha256": {
-            "oracle_final.state": parity::evidence::sha256_bytes(oracle),
-            "semantic-trace-final.checkpoint.json": parity::evidence::sha256_bytes(semantic_trace),
+            "oracle_final.state": parity::hash::sha256_bytes(oracle),
+            "semantic-trace-final.checkpoint.json": parity::hash::sha256_bytes(semantic_trace),
         },
     });
     let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
@@ -228,7 +228,7 @@ fn matched_cached_av_replay_writes_a_quiescent_paired_frontier() {
     assert!(paired_manifest["rust_state"]["sha256"].is_string());
     assert_eq!(
         paired_manifest["oracle_state"]["sha256"],
-        parity::evidence::sha256_bytes(oracle)
+        parity::hash::sha256_bytes(oracle)
     );
     assert_eq!(paired_manifest["source"]["cache_key"], "fixture-key");
     assert_eq!(paired_manifest["core"]["sha256"], "core-sha");
@@ -268,11 +268,11 @@ fn cached_oracle_checkpoint_is_bound_to_nested_artifacts_and_route_sources() {
         "frame": 2500,
         "oracle_state": {
             "artifact": "oracle.state",
-            "sha256": parity::evidence::sha256_bytes(oracle),
+            "sha256": parity::hash::sha256_bytes(oracle),
         },
         "semantic_trace_checkpoint": {
             "artifact": "semantic-trace.checkpoint.json",
-            "sha256": parity::evidence::sha256_bytes(semantic),
+            "sha256": parity::hash::sha256_bytes(semantic),
         },
         "provenance": {
             "core_sha256": "core",
@@ -298,8 +298,8 @@ fn cached_oracle_checkpoint_is_bound_to_nested_artifacts_and_route_sources() {
             },
         },
         "artifact_sha256": {
-            "oracle-checkpoints/frame-00002500/oracle.state": parity::evidence::sha256_bytes(oracle),
-            "oracle-checkpoints/frame-00002500/semantic-trace.checkpoint.json": parity::evidence::sha256_bytes(semantic),
+            "oracle-checkpoints/frame-00002500/oracle.state": parity::hash::sha256_bytes(oracle),
+            "oracle-checkpoints/frame-00002500/semantic-trace.checkpoint.json": parity::hash::sha256_bytes(semantic),
         },
     });
 
@@ -469,7 +469,7 @@ pub(crate) fn expand_delta_sequence(sequence: &serde_json::Value) -> Vec<Vec<i64
         .collect::<Vec<_>>();
     assert_eq!(
         sequence["expanded_sha256"],
-        parity::evidence::sha256_bytes(&expanded_bytes)
+        parity::hash::sha256_bytes(&expanded_bytes)
     );
     rows
 }
@@ -604,7 +604,7 @@ fn first_nmi_return_core_trace_requires_direct_entry_return_and_paired_hdma() {
     assert_eq!(trace.return_event["cycles"], 94);
     assert_eq!(
         trace.raw_sha256,
-        parity::evidence::sha256_file(&path).unwrap()
+        parity::hash::sha256_file(&path).unwrap()
     );
     fs::remove_file(&path).unwrap();
 }
@@ -951,7 +951,7 @@ fn pinned_snes9x_cold_apu_bootstrap_fixture_reaches_final_ipl_handoff() {
         .join("../external/snes9x-libretro/patches/zelda3-trace.patch");
     assert_eq!(
         provenance["source"]["trace_patch_sha256"],
-        parity::evidence::sha256_file(&trace_patch).unwrap()
+        parity::hash::sha256_file(&trace_patch).unwrap()
     );
     assert_eq!(provenance["cpu_to_smp_ratio"]["numerator"], 15_664);
     assert_eq!(provenance["cpu_to_smp_ratio"]["denominator"], 328_125);
@@ -1192,13 +1192,13 @@ fn pinned_snes9x_post_handoff_fixture_reaches_first_nmi_apui_sync() {
         .join("../external/snes9x-libretro/patches/zelda3-trace.patch");
     assert_eq!(
         provenance["source"]["trace_patch_sha256"],
-        parity::evidence::sha256_file(&trace_patch).unwrap()
+        parity::hash::sha256_file(&trace_patch).unwrap()
     );
     let prefix_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl");
     assert_eq!(
         provenance["prefix_fixture"]["sha256"],
-        parity::evidence::sha256_file(&prefix_fixture).unwrap()
+        parity::hash::sha256_file(&prefix_fixture).unwrap()
     );
 
     let events = &records[1];
@@ -1329,7 +1329,7 @@ fn pinned_snes9x_post_handoff_fixture_reaches_first_nmi_apui_sync() {
     }
     assert_eq!(
         boundaries["expanded_sha256"],
-        parity::evidence::sha256_bytes(&digest_bytes)
+        parity::hash::sha256_bytes(&digest_bytes)
     );
     assert_eq!(
         boundaries["before_sync"]["instruction"]["absolute_cycle"],
@@ -1400,7 +1400,7 @@ fn pinned_snes9x_first_nmi_dma_setup_fixture_stops_before_dma() {
         .join("../external/snes9x-libretro/fixtures/zelda3-cold-apu-first-nmi.jsonl");
     assert_eq!(
         provenance["prefix_fixture"]["sha256"],
-        parity::evidence::sha256_file(&prefix_fixture).unwrap()
+        parity::hash::sha256_file(&prefix_fixture).unwrap()
     );
     let initial_sram = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../routes/full_run/comparisons/continuous-audio/initial.srm");
@@ -1408,7 +1408,7 @@ fn pinned_snes9x_first_nmi_dma_setup_fixture_stops_before_dma() {
         provenance["initial_sram"],
         serde_json::json!({
             "source": "routes/full_run/comparisons/continuous-audio/initial.srm",
-            "sha256": parity::evidence::sha256_file(&initial_sram).unwrap(),
+            "sha256": parity::hash::sha256_file(&initial_sram).unwrap(),
             "bytes": 8_192,
             "valid_slot_marker": {"offset": 0x03e5, "bytes": [0xaa, 0x55]},
         })
@@ -1584,14 +1584,14 @@ fn pinned_snes9x_first_nmi_dma_fixture_is_fully_reconstructable() {
         .join("../external/snes9x-libretro/patches/zelda3-dma-ledger.patch");
     assert_eq!(
         provenance["dma_ledger_patch"]["sha256"],
-        parity::evidence::sha256_file(&patch).unwrap()
+        parity::hash::sha256_file(&patch).unwrap()
     );
     assert_eq!(provenance["dma_ledger_patch"]["core_route_selector"], false);
     let prefix = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma-setup.jsonl");
     assert_eq!(
         provenance["prefix_fixture"]["sha256"],
-        parity::evidence::sha256_file(&prefix).unwrap()
+        parity::hash::sha256_file(&prefix).unwrap()
     );
 
     let capture = &records[1];
@@ -1666,11 +1666,11 @@ fn pinned_snes9x_first_nmi_dma_fixture_is_fully_reconstructable() {
     assert_eq!(after.len(), 0x10000);
     assert_eq!(
         capture["vram"]["before_sha256"],
-        parity::evidence::sha256_bytes(&before)
+        parity::hash::sha256_bytes(&before)
     );
     assert_eq!(
         capture["vram"]["after_sha256"],
-        parity::evidence::sha256_bytes(&after)
+        parity::hash::sha256_bytes(&after)
     );
     assert_ne!(before, after);
 }
@@ -2435,7 +2435,7 @@ fn paired_resume_provenance_binds_every_selected_causal_source() {
         ("rom_random_script", rng.as_path()),
     ] {
         manifest[key] = serde_json::json!({
-            "sha256": parity::evidence::sha256_file(path).unwrap(),
+            "sha256": parity::hash::sha256_file(path).unwrap(),
         });
     }
     fs::write(
@@ -2749,13 +2749,13 @@ fn vram_receipt_reports_first_word_and_compact_ranges() {
         Some(VramDomainReceipt {
             rust_words: 5,
             oracle_words: 5,
-            rust_sha256: parity::evidence::sha256_bytes(
+            rust_sha256: parity::hash::sha256_bytes(
                 &rust
                     .iter()
                     .flat_map(|word| word.to_le_bytes())
                     .collect::<Vec<_>>(),
             ),
-            oracle_sha256: parity::evidence::sha256_bytes(&oracle),
+            oracle_sha256: parity::hash::sha256_bytes(&oracle),
             mismatched_words: 3,
             first_mismatch_word: Some(1),
             first_rust_word: Some(0x2222),
@@ -2793,7 +2793,7 @@ fn canonical_audio_hash_is_little_endian_interleaved_i16() {
     assert_eq!(digest["channels"], 2);
     assert_eq!(
         digest["sha256"],
-        parity::evidence::sha256_bytes(&[0x34, 0x12, 0xfe, 0xff])
+        parity::hash::sha256_bytes(&[0x34, 0x12, 0xfe, 0xff])
     );
 }
 

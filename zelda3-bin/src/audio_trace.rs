@@ -1,5 +1,8 @@
-use zelda3::game_output::{checksum_samples, AudioSampleStats};
+use zelda3::game_output::checksum_samples;
+#[cfg(feature = "rom-timing")]
+use zelda3::game_output::AudioSampleStats;
 
+#[cfg(feature = "rom-timing")]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct AudioFrameStats {
     pub(crate) samples_per_channel: usize,
@@ -8,6 +11,7 @@ pub(crate) struct AudioFrameStats {
     pub(crate) mean_abs: u32,
 }
 
+#[cfg(feature = "rom-timing")]
 impl AudioFrameStats {
     pub(crate) fn from_interleaved_stereo(samples: &[i16]) -> Self {
         let stats = AudioSampleStats::from_interleaved(samples, 2);
@@ -20,10 +24,12 @@ impl AudioFrameStats {
     }
 }
 
+#[cfg(feature = "rom-timing")]
 pub(crate) fn first_peak_frame(stats: &[AudioFrameStats], threshold: i16) -> Option<usize> {
     stats.iter().position(|stats| stats.peak >= threshold)
 }
 
+#[cfg(feature = "rom-timing")]
 pub(crate) fn max_peak_frame(stats: &[AudioFrameStats]) -> Option<(usize, i16)> {
     stats
         .iter()
@@ -32,6 +38,7 @@ pub(crate) fn max_peak_frame(stats: &[AudioFrameStats]) -> Option<(usize, i16)> 
         .map(|(i, stats)| (i, stats.peak))
 }
 
+#[cfg(feature = "rom-timing")]
 pub(crate) fn print_audio_window(
     label: &str,
     stats: &[AudioFrameStats],

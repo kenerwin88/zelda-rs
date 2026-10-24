@@ -44,6 +44,7 @@ pub(crate) mod sprite_single;
 pub(crate) mod startup_memory;
 pub(crate) mod startup;
 pub(crate) mod startup_bus;
+#[cfg(feature = "rom-timing")]
 pub(crate) mod text_buffer;
 pub(crate) mod text_decode;
 pub(crate) mod text_initialize;
@@ -226,7 +227,11 @@ pub(crate) mod overworld_overlays_caller;
 pub(crate) mod overworld_caller;
 pub(crate) mod overworld_exit_chain;
 pub(crate) mod overworld_module;
+#[cfg(feature = "rom-timing")]
 pub(crate) mod overworld_player;
+#[cfg(feature = "rom-timing")]
 pub(crate) mod link_main;
+#[cfg(feature = "rom-timing")]
 pub(crate) mod link_normal_prefix;
+#[cfg(feature = "rom-timing")]
 pub(crate) mod link_transform_guard;

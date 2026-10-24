@@ -3,6 +3,7 @@
 use super::{native_work::{Work, WorkBus}, nmi_stack::NativeNmiContext};
 use snes::CpuMasterTimeline;
 
+#[cfg(any(test, feature = "rom-timing"))]
 pub(crate) use super::native_cpu_math::NativeCpuMath as PolyDivider;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

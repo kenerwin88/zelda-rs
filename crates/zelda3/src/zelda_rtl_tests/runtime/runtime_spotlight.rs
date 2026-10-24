@@ -4,6 +4,7 @@
 use super::*;
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_closing_entry_stages_pre_nmi_hardware_without_rewinding_live_ppu() {
     for had_prior_staged_image in [false, true] {
     let mut state = ZeldaState::new();
@@ -50,6 +51,7 @@ fn native_closing_entry_stages_pre_nmi_hardware_without_rewinding_live_ppu() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_spotlight_entry_keeps_oam_from_before_the_held_nmi() {
     // Original run 11444 is interrupted at $F38F, V=225/C=16 with $12=1.
     // $805D returns at V=29/C=370 in the following field; only the NMI
@@ -105,6 +107,7 @@ fn interrupted_spotlight_entry_keeps_oam_from_before_the_held_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn unfinished_spotlight_rows_do_not_replace_the_published_hardware_table() {
     // Original runs 4784-4786 display the completed radius-126 table while
     // the next radius-119 table is being built. $F383/$F392 only author the
@@ -159,6 +162,7 @@ fn unfinished_spotlight_rows_do_not_replace_the_published_hardware_table() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn retained_spotlight_snapshot_consumes_the_current_field_hdma_receipt() {
     // Original run 37590 retains the earlier OAM/VRAM generation, but its
     // channel-7 reads still belong to that field: the circle begins at row
@@ -456,6 +460,7 @@ fn live_spotlight_entry_return_waits_for_its_native_owner_then_completes_once() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4782_fresh_spotlight_claim_is_wire_ordered_after_its_held_acceptance() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -539,6 +544,7 @@ fn run4782_fresh_spotlight_claim_is_wire_ordered_after_its_held_acceptance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4784_terminal_spotlight_caller_completes_held_handler_and_ordinary_suffix_once() {
     let mut state = run4784_terminal_spotlight_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -579,6 +585,7 @@ fn run4784_terminal_spotlight_caller_completes_held_handler_and_ordinary_suffix_
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4787_terminal_recurring_spotlight_projects_once_then_completes_ordinary_suffix() {
     let mut state = run4787_terminal_recurring_spotlight_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -627,6 +634,7 @@ fn run4787_terminal_recurring_spotlight_projects_once_then_completes_ordinary_su
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_spotlight_projection_is_derived_for_every_closing_phase() {
     let cases = [
         (
@@ -709,7 +717,9 @@ fn terminal_spotlight_projection_is_derived_for_every_closing_phase() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_spotlight_caller_preflight_is_failure_atomic() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(label: &str, mut state: ZeldaState) {
         state.original_timing_host_dispatch_active = true;
         state.original_timing_owner = OriginalTimingOwnerState::Live;
@@ -956,6 +966,7 @@ fn terminal_spotlight_caller_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_fresh_dungeon_exit_spotlight_iteration_stops_at_the_source_nmi_checkpoint() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1030,6 +1041,7 @@ fn live_fresh_dungeon_exit_spotlight_iteration_stops_at_the_source_nmi_checkpoin
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_fresh_dungeon_exit_spotlight_iteration_stops_before_iteration_initialization() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1125,6 +1137,7 @@ fn live_spotlight_entry_return_is_already_owned_by_advanced_native_caller() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn carried_terminal_spotlight_build_can_capture_one_trailing_open() {
     let mut state = run4789_terminal_spotlight_build_state();
     state
@@ -1210,6 +1223,7 @@ fn spotlight_recheckpoint_accepts_the_next_iteration_after_cursor_decrement() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
     fn replace_work(
         state: &mut ZeldaState,
@@ -1226,6 +1240,7 @@ fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
             .schedule_work(transform(work), slices);
     }
 
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(label: &str, mut state: ZeldaState) {
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let scheduler_before = state.game_execution_scheduler;
@@ -1695,6 +1710,7 @@ fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spotlight_link_oam_publishes_later_table_stores_before_its_accepting_nmi() {
     let mut state = run4786_spotlight_build_link_oam_state();
     state.original_timing_owner = OriginalTimingOwnerState::Live;
@@ -1753,6 +1769,7 @@ fn spotlight_link_oam_publishes_later_table_stores_before_its_accepting_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn recurring_spotlight_build_binds_an_entry_recheckpoint_before_handler_completion() {
     for advances_upper_cursor in [false, true] {
         let mut state = run4786_spotlight_build_link_oam_state();
@@ -1828,6 +1845,7 @@ fn recurring_spotlight_build_binds_an_entry_recheckpoint_before_handler_completi
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4786_spotlight_build_link_oam_preflight_is_failure_atomic() {
     fn replace_iteration(state: &mut ZeldaState, iteration: SpotlightIteration) {
         let Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
@@ -1849,6 +1867,7 @@ fn run4786_spotlight_build_link_oam_preflight_is_failure_atomic() {
         );
     }
 
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(label: &str, mut state: ZeldaState) {
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let scheduler_before = state.game_execution_scheduler;
@@ -2051,6 +2070,7 @@ fn run4786_spotlight_build_link_oam_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spotlight_link_oam_does_not_complete_a_non_build_caller() {
     let mut state = run4786_spotlight_build_link_oam_state();
     let continuation = GameWorkContinuation::FinishSpotlightIteration {
@@ -2123,6 +2143,7 @@ fn live_spotlight_entry_return_outside_module15_fails_closed() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_spotlight_progress_suspends_module0f_before_submodule_advance() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2172,6 +2193,7 @@ fn live_spotlight_progress_suspends_module0f_before_submodule_advance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fresh_spotlight_entry_return_coexists_with_its_link_velocity_checkpoint() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2214,6 +2236,7 @@ fn fresh_spotlight_entry_return_coexists_with_its_link_velocity_checkpoint() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dungeon_spotlight_caller_returns_once_and_carries_host2294_open_nmi() {
     let mut state = live_dungeon_spotlight_caller_before_terminal_return(1);
     state
@@ -2279,6 +2302,7 @@ fn terminal_dungeon_spotlight_caller_returns_once_and_carries_host2294_open_nmi(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dungeon_spotlight_caller_host2296_stops_at_wait_without_a_trailing_nmi() {
     let mut state = live_dungeon_spotlight_caller_before_terminal_return(1);
     state.set_frame_counter(126);
@@ -2304,6 +2328,7 @@ fn terminal_dungeon_spotlight_caller_host2296_stops_at_wait_without_a_trailing_n
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dungeon_spotlight_caller_completes_host2299_carried_held_nmi_in_host2300() {
     let mut state = live_dungeon_spotlight_caller_before_terminal_return(1);
     state.set_frame_counter(128);
@@ -2349,6 +2374,7 @@ fn terminal_dungeon_spotlight_caller_completes_host2299_carried_held_nmi_in_host
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run2318_terminal_dungeon_spotlight_resumes_outer_sprite_main_before_suffix() {
     let mut state = live_dungeon_spotlight_caller_before_terminal_return(1);
     state.set_submodule(0x0f);
@@ -2393,6 +2419,7 @@ fn run2318_terminal_dungeon_spotlight_resumes_outer_sprite_main_before_suffix() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dungeon_spotlight_caller_without_trailing_nmi_allows_retained_scanout() {
     let mut state = live_dungeon_spotlight_caller_before_terminal_return(1);
     state.dungeon_landing_goal_display_handoff =
@@ -2424,6 +2451,7 @@ fn terminal_dungeon_spotlight_caller_without_trailing_nmi_allows_retained_scanou
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
     fn assert_rejected_without_mutation(mut state: ZeldaState) {
         let work_before = state.game_execution_scheduler.current_work();
@@ -2509,6 +2537,7 @@ fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
         );
     }
 
+    #[cfg(feature = "rom-timing")]
     fn assert_install_rejected_without_mutation(
         mut state: ZeldaState,
         receipts: OriginalTimingHostReceipts,
@@ -2816,7 +2845,9 @@ fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_rom_startup_timing(true);
@@ -2897,7 +2928,9 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state(direction: u8) -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_rom_startup_timing(true);
@@ -3045,7 +3078,9 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_spotlight_entry_return_stops_at_its_exact_link_subpixel_boundary() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_rom_startup_timing(true);
@@ -3127,7 +3162,9 @@ fn live_spotlight_entry_return_stops_at_its_exact_link_subpixel_boundary() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_spotlight_coordinate_low_boundary_preserves_pending_high_byte_carry() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_rom_startup_timing(true);
@@ -3200,7 +3237,9 @@ fn live_spotlight_coordinate_low_boundary_preserves_pending_high_byte_carry() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_spotlight_post_coordinate_boundary_resumes_only_later_axes() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_rom_startup_timing(true);
@@ -3273,6 +3312,7 @@ fn live_spotlight_post_coordinate_boundary_resumes_only_later_axes() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fresh_overworld_iris_goal_retains_its_partial_reset() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3311,6 +3351,7 @@ fn fresh_overworld_iris_goal_retains_its_partial_reset() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn completed_spotlight_entry_does_not_schedule_a_second_return() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3337,6 +3378,7 @@ fn completed_spotlight_entry_does_not_schedule_a_second_return() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn measured_close_entry_suffix_retires_without_a_geometry_wait() {
     // Snes9x comparison 40978: the 239-row entry resumes its table build,
     // reaches $00:85FC at V37/C162, then returns at $00:8036 with counter
@@ -3366,6 +3408,7 @@ fn measured_close_entry_suffix_retires_without_a_geometry_wait() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn measured_close_entry_phase_survives_short_geometry_resume() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3387,6 +3430,7 @@ fn measured_close_entry_phase_survives_short_geometry_resume() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_close_entry_retains_its_second_interrupt_inside_link_movement() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4055,6 +4099,7 @@ fn suspended_landing_spotlight_retains_sprite_preparation_until_caller_return() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn authoritative_recurring_spotlight_return_finishes_the_existing_c_caller_once() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4126,6 +4171,7 @@ fn authoritative_recurring_spotlight_return_finishes_the_existing_c_caller_once(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn authoritative_recurring_spotlight_link_oam_receipt_retains_only_caller_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4203,6 +4249,7 @@ fn authoritative_recurring_spotlight_link_oam_receipt_retains_only_caller_suffix
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn authoritative_recurring_spotlight_link_oam_then_return_finishes_caller_once() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4295,6 +4342,7 @@ fn authoritative_recurring_spotlight_link_oam_then_return_finishes_caller_once()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn authoritative_spotlight_return_then_new_iteration_runs_both_in_source_order() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4350,6 +4398,7 @@ fn authoritative_spotlight_return_then_new_iteration_runs_both_in_source_order()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn authoritative_spotlight_return_then_interrupted_iteration_runs_fresh_main_once() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4420,6 +4469,7 @@ fn authoritative_spotlight_return_then_interrupted_iteration_runs_fresh_main_onc
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn authoritative_recurring_spotlight_preserves_leading_and_trailing_nmi_order() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4621,6 +4671,7 @@ fn authoritative_recurring_spotlight_preserves_leading_and_trailing_nmi_order() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_recurring_overworld_spotlight_preserves_a_same_host_fresh_iteration() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4731,6 +4782,7 @@ fn live_recurring_overworld_spotlight_preserves_a_same_host_fresh_iteration() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_overworld_spotlight_link_oam_receipt_owns_the_atomic_leaf_once() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4790,6 +4842,7 @@ fn live_overworld_spotlight_link_oam_receipt_owns_the_atomic_leaf_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_recurring_overworld_spotlight_continuation_completes_a_non_goal_build() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4845,6 +4898,7 @@ fn live_recurring_overworld_spotlight_continuation_completes_a_non_goal_build() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_overworld_spotlight_goal_receipt_matches_native_c_endpoint() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4967,6 +5021,7 @@ fn landing_copy_stores_race_their_own_hdma_rows() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

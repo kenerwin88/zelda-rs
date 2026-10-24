@@ -209,6 +209,7 @@ fn cucco_caller_rejects_publishing_suffix_before_draw_return() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn cucco_native_budget_suspends_sprite_main_and_preserves_module09_return() {
     use super::super::game_execution_scheduler::{CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
     use crate::cycle_models::main_wait::MainLoopCallerPhase;

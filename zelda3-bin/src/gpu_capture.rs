@@ -45,6 +45,7 @@ const MAIN_MODULE_INDEX: usize = 0x10;
 #[derive(Clone)]
 pub struct LiveGpuFrameCapture {
     comparison_frame: Option<u32>,
+    #[cfg(feature = "rom-timing")]
     host_frame: u32,
     hardware_startup_transient: Option<renderer::gpu_frame::HardwareStartupTransient>,
     ppu: snes::ppu::PpuState,
@@ -120,10 +121,13 @@ pub(crate) struct NativeWindowOracleRenderer {
     frontend: NativeFrontend,
     resources: renderer::ModernAssetFrameResources,
     live_stats: renderer::ModernAssetLiveStats,
+    #[cfg(feature = "rom-timing")]
     capture_nanos: u128,
     render_nanos: u128,
     readback_submit_nanos: u128,
+    #[cfg(feature = "rom-timing")]
     readback_nanos: u128,
+    #[cfg(feature = "rom-timing")]
     video_hash_nanos: u128,
 }
 
@@ -139,6 +143,7 @@ pub(crate) struct QueuedGpuVideoDigest {
 /// target without presenting. Measured on the f391181 window: presentation is
 /// not the bottleneck (the immediate readback wait is ~12 ms/frame either
 /// way), so this stays an operator convenience for headless runs.
+#[cfg(feature = "rom-timing")]
 fn compare_presents_window() -> bool {
     std::env::var_os("ZELDA3_COMPARE_OFFSCREEN").is_none_or(|value| value == "0")
 }
@@ -440,6 +445,7 @@ impl LiveGpuFrameCapture {
         let cgram_provenance = game.cgram_provenance_snapshot();
         Self {
             comparison_frame,
+            #[cfg(feature = "rom-timing")]
             host_frame: game.frame_ctr_dbg,
             hardware_startup_transient: snes9x_boot_material(
                 game.frame_ctr_dbg,
@@ -480,6 +486,7 @@ impl LiveGpuFrameCapture {
         &self.raw_scanlines
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn comparison_frame(&self) -> Option<u32> {
         self.comparison_frame
     }
@@ -563,6 +570,7 @@ impl LiveGpuFrameCapture {
         capture
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn host_frame(&self) -> u32 {
         self.host_frame
     }
@@ -883,14 +891,18 @@ impl NativeWindowOracleRenderer {
             frontend,
             resources,
             live_stats: renderer::ModernAssetLiveStats::from_env(),
+            #[cfg(feature = "rom-timing")]
             capture_nanos: 0,
             render_nanos: 0,
             readback_submit_nanos: 0,
+            #[cfg(feature = "rom-timing")]
             readback_nanos: 0,
+            #[cfg(feature = "rom-timing")]
             video_hash_nanos: 0,
         })
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn timing_millis(&self) -> (u128, u128, u128, u128, u128, u128, u128, u128, u128) {
         let (source_extract, compositor_submit, history_submit, surface_present) =
             self.frontend.modern_source_gpu_timing_millis();
@@ -1005,24 +1017,26 @@ impl NativeWindowOracleRenderer {
     }
 
     /// Account capture time spent on another thread in this renderer's timing.
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn add_capture_nanos(&mut self, nanos: u128) {
         self.capture_nanos += nanos;
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn finish_game_video_digest(
         &mut self,
         queued: QueuedGpuVideoDigest,
-    ) -> Result<parity::av::VideoDigest, String> {
+    ) -> Result<parity::digest::VideoDigest, String> {
         let timing_enabled = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
         let readback_started = Instant::now();
         let (digest, video_hash_nanos, debug_rgba) =
             self.frontend
                 .finish_modern_gpu_target_readback(queued.ticket, |readback| {
                     let hash_started = Instant::now();
-                    let mut digest = parity::evidence::Sha256Digest::new();
+                    let mut digest = parity::hash::Sha256Digest::new();
                     digest.update_rgb_from_rgba(readback.rows());
                     (
-                        parity::av::VideoDigest {
+                        parity::digest::VideoDigest {
                             width: readback.width(),
                             height: readback.height(),
                             sha256: digest.finish(),
@@ -1050,12 +1064,12 @@ impl NativeWindowOracleRenderer {
     pub(crate) fn finish_game_video_digest_with_rgba(
         &mut self,
         queued: QueuedGpuVideoDigest,
-    ) -> Result<(parity::av::VideoDigest, Vec<u8>), String> {
+    ) -> Result<(parity::digest::VideoDigest, Vec<u8>), String> {
         let (digest, rgba) = self.frontend.finish_modern_gpu_target_readback(queued.ticket, |readback| {
-            let mut digest = parity::evidence::Sha256Digest::new();
+            let mut digest = parity::hash::Sha256Digest::new();
             digest.update_rgb_from_rgba(readback.rows());
             (
-                parity::av::VideoDigest {
+                parity::digest::VideoDigest {
                     width: readback.width(),
                     height: readback.height(),
                     sha256: digest.finish(),
@@ -1070,6 +1084,7 @@ impl NativeWindowOracleRenderer {
         Ok((digest, rgba))
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn render_game_rgba_with_capture(
         &mut self,
         game: &mut ZeldaState,
@@ -1206,6 +1221,7 @@ impl NativeWindowOracleRenderer {
         Ok((GpuRgbaReadbackFrame::from_rgba(frame), capture))
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn trace_game_pixel(
         &self,
         game: &mut ZeldaState,
@@ -2454,6 +2470,7 @@ mod tests {
         }
         let capture = LiveGpuFrameCapture {
             comparison_frame: None,
+            #[cfg(feature = "rom-timing")]
             host_frame: 0,
             hardware_startup_transient: None,
             ppu,
@@ -2527,6 +2544,7 @@ mod tests {
         }
         let capture = LiveGpuFrameCapture {
             comparison_frame: None,
+            #[cfg(feature = "rom-timing")]
             host_frame: 0,
             hardware_startup_transient: None,
             ppu,
@@ -2581,6 +2599,7 @@ mod tests {
         encode_2bpp_tile(&mut ppu.vram, 0x1000, 999, &indices);
         let capture = LiveGpuFrameCapture {
             comparison_frame: None,
+            #[cfg(feature = "rom-timing")]
             host_frame: 0,
             hardware_startup_transient: None,
             ppu,
@@ -2687,6 +2706,7 @@ mod tests {
     fn test_bg3_capture(ppu: snes::ppu::PpuState) -> LiveGpuFrameCapture {
         LiveGpuFrameCapture {
             comparison_frame: None,
+            #[cfg(feature = "rom-timing")]
             host_frame: 0,
             hardware_startup_transient: None,
             ppu,
@@ -2827,6 +2847,7 @@ mod tests {
         cgram[1] = 0x7fff;
         let capture = LiveGpuFrameCapture {
             comparison_frame: None,
+            #[cfg(feature = "rom-timing")]
             host_frame: 0,
             hardware_startup_transient: None,
             ppu,

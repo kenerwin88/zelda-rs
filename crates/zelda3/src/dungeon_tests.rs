@@ -851,6 +851,7 @@ fn torch_timer_prefix_cost_and_timer_writes_match_rom() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn quadrant_copy_after_trailing_nmi_returns_without_running_another_handler() {
     for words in [0, 900, 1024] {
         let mut state = ZeldaState::new();

@@ -265,6 +265,7 @@ fn live_dialogue_close_uses_the_native_saved_module_transition() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_dialogue_resume_receipt_suppresses_only_an_already_completed_native_prefix() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -309,6 +310,7 @@ fn live_dialogue_resume_receipt_suppresses_only_an_already_completed_native_pref
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn continued_dialogue_endpoints_preserve_one_common_suffix_until_terminal_return() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -386,6 +388,7 @@ fn continued_dialogue_endpoints_preserve_one_common_suffix_until_terminal_return
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn carried_dialogue_handler_completes_before_terminal_caller_and_suffix_without_recapture() {
     let mut state = live_dialogue_terminal_return_state(0x37);
     state
@@ -454,6 +457,7 @@ fn carried_dialogue_handler_completes_before_terminal_caller_and_suffix_without_
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dialogue_return_accepts_all_four_source_nmi_ownership_cells() {
     for publication_pending_at_entry in [false, true] {
         for trailing_open_acceptance in [false, true] {
@@ -519,6 +523,7 @@ fn terminal_dialogue_return_accepts_all_four_source_nmi_ownership_cells() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn poly_thread_dialogue_after_current_waits_for_the_wire_terminal_return() {
     let mut state = live_dialogue_terminal_return_state(0x37);
     let endpoint_before = state.game_state.messaging.runtime.dialogue_msg_read_pos();
@@ -562,6 +567,7 @@ fn poly_thread_dialogue_after_current_waits_for_the_wire_terminal_return() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn idle_dialogue_iteration_after_terminal_initializer_uses_ordinary_main_loop_owner() {
     let mut state = live_dialogue_terminal_return_state(0x37);
     state.set_frame_counter(143);
@@ -611,6 +617,7 @@ fn idle_dialogue_iteration_after_terminal_initializer_uses_ordinary_main_loop_ow
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run3818_terminal_dialogue_endpoint_resumes_before_the_one_common_suffix() {
     let endpoint = 25;
     let mut state = live_idle_terminal_dialogue_endpoint_state(endpoint);
@@ -726,6 +733,7 @@ fn run3818_terminal_dialogue_endpoint_resumes_before_the_one_common_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4652_terminal_dialogue_endpoint_carries_only_the_post_suffix_open_nmi() {
     // The preserved raw host pins this lifecycle but not the receipt payload;
     // use one valid resident endpoint to exercise the generic typed claim.
@@ -801,6 +809,7 @@ fn run4652_terminal_dialogue_endpoint_carries_only_the_post_suffix_open_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run3822_endpoint_then_run3823_dless_terminal_retires_vwf_before_run3824_sprite_main() {
     let endpoint = 25;
     let mut state = live_idle_terminal_dialogue_endpoint_state(endpoint);
@@ -916,6 +925,7 @@ fn run3822_endpoint_then_run3823_dless_terminal_retires_vwf_before_run3824_sprit
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn source_dialogue_endpoint_folds_multiple_translated_vwf_slices_without_publishing_callers() {
     let endpoint = 19;
     let mut state = live_idle_terminal_dialogue_endpoint_state(endpoint);
@@ -984,6 +994,7 @@ fn source_dialogue_endpoint_folds_multiple_translated_vwf_slices_without_publish
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn idle_terminal_continued_return_without_dialogue_keeps_the_generic_owner() {
     let mut state = live_idle_terminal_dialogue_endpoint_state(25);
     state
@@ -1025,6 +1036,7 @@ fn idle_terminal_continued_return_without_dialogue_keeps_the_generic_owner() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn carried_terminal_return_without_a_suspended_vwf_keeps_the_empty_cpu_closure() {
     let mut state = live_idle_terminal_suspended_vwf_state();
     state.dialogue_fast_forward_hold_active = false;
@@ -1054,7 +1066,9 @@ fn carried_terminal_return_without_a_suspended_vwf_keeps_the_empty_cpu_closure()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dless_suspended_vwf_terminal_preflight_is_failure_atomic() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(mut state: ZeldaState) {
         let scheduler_before = state.game_execution_scheduler;
         let ram_before = state.wram_image().into_owned();
@@ -1300,6 +1314,7 @@ fn dless_suspended_vwf_terminal_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dless_suspended_vwf_terminal_folds_multiple_inner_timing_slices() {
     let mut state = live_idle_terminal_suspended_vwf_state();
     let mut decoded = vec![0; 29];
@@ -1329,6 +1344,7 @@ fn dless_suspended_vwf_terminal_folds_multiple_inner_timing_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dialogue_endpoint_retires_stale_translated_hold_bookkeeping() {
     let mut state = live_idle_terminal_dialogue_endpoint_state(25);
     state.dialogue_fast_forward_hold_active = true;
@@ -1346,7 +1362,9 @@ fn terminal_dialogue_endpoint_retires_stale_translated_hold_bookkeeping() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_idle_dialogue_endpoint_preflight_is_failure_atomic() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected_after_install(
         mut state: ZeldaState,
         semantic: Vec<OriginalTimingSemanticReceipt>,
@@ -1420,6 +1438,7 @@ fn terminal_idle_dialogue_endpoint_preflight_is_failure_atomic() {
         assert_eq!(state.audio_nmi_processed_before_main, audio_before);
     }
 
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(state: ZeldaState, semantic: Vec<OriginalTimingSemanticReceipt>) {
         assert_rejected_after_install(state, semantic, |_| {});
     }
@@ -1658,6 +1677,7 @@ fn terminal_idle_dialogue_endpoint_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn idle_main_loop_plan_preserves_explicit_dialogue_domain_claims() {
     let mut endpoint = live_idle_dialogue_main_loop_state();
     endpoint.messaging_state_mut().set_text_render_state(3);
@@ -1716,6 +1736,7 @@ fn idle_main_loop_plan_preserves_explicit_dialogue_domain_claims() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dialogue_return_preflight_rejects_malformed_ownership_without_consumption() {
     fn assert_rejected_without_ownership_mutation(mut state: ZeldaState) {
         let receipts_before = state.original_timing_semantic_receipts.clone();
@@ -2018,6 +2039,7 @@ fn terminal_dialogue_return_preflight_rejects_malformed_ownership_without_consum
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn room_61_all_rescue_follower_trigger_zones_open_the_message() {
     for (x, y, event_bit) in [
         (0x025b, 0x0cf8, 1),
@@ -2124,6 +2146,7 @@ fn rescue_follower_message_obj_selector_handles_rollover_and_rejects_neighbors()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn rescue_follower_message_rollover_stages_live_link_graphics_only() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);
@@ -2149,6 +2172,7 @@ fn rescue_follower_message_rollover_stages_live_link_graphics_only() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dialogue_scroll_checkpoint_projection_preserves_stable_phases_and_normalizes_transients() {
     fn round_trip(state: &ZeldaState) -> ZeldaState {
         bincode::deserialize(
@@ -2238,6 +2262,7 @@ fn dialogue_scroll_checkpoint_projection_preserves_stable_phases_and_normalizes_
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn restored_staged_dialogue_completion_consumes_the_next_ordinary_open_nmi() {
     let mut state = ZeldaState::new();
     state.begin_dialogue_scroll(
@@ -2359,6 +2384,7 @@ fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_scroll_return_preserves_the_original_post_return_nmi_wait() {
     // Pinned Snes9x 1.63, cold full_run inputs: run 2506 enters $0E:CFE2
     // at V=32/C=270 and returns at V=228 on run 2508 (2+2+1 copies).
@@ -2448,6 +2474,7 @@ fn dialogue_scroll_completion_uses_live_main_loop_receipt_over_entry_estimate() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn early_dialogue_completion_requires_and_consumes_the_same_host_text_dma_evidence() {
     let mut state = early_dialogue_completion_state(2);
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -2460,6 +2487,7 @@ fn early_dialogue_completion_requires_and_consumes_the_same_host_text_dma_eviden
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn early_dialogue_completion_rejects_missing_text_dma_before_acceptance_capture() {
     let mut state = early_dialogue_completion_state(1);
     let phase_before = state.dialogue_scroll_phase();
@@ -2712,6 +2740,7 @@ fn vwf_endpoint_preflights_the_following_source_scroll_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_return_only_dialogue_uses_all_four_source_owned_nmi_grammars() {
     for publication_pending_at_entry in [false, true] {
         for trailing_open_acceptance in [false, true] {
@@ -2779,6 +2808,7 @@ fn live_return_only_dialogue_uses_all_four_source_owned_nmi_grammars() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_return_only_dialogue_rejects_a_competing_scheduler_owner_before_mutation() {
     let mut state = return_only_dialogue_state_before_run2508();
     state
@@ -2853,7 +2883,9 @@ fn live_return_only_dialogue_rejects_a_competing_scheduler_owner_before_mutation
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_return_only_dialogue_rejects_generic_and_pre_main_scheduler_owners() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(mut state: ZeldaState) {
         state.game_execution_scheduler.begin_host_frame();
         state
@@ -2888,7 +2920,9 @@ fn live_return_only_dialogue_rejects_generic_and_pre_main_scheduler_owners() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_return_only_dialogue_rejects_extra_or_reordered_receipts_before_mutation() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(semantic: Vec<OriginalTimingSemanticReceipt>) {
         let mut state = return_only_dialogue_state_before_run2508();
         state
@@ -2947,6 +2981,7 @@ fn live_return_only_dialogue_rejects_extra_or_reordered_receipts_before_mutation
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn carried_open_dialogue_handler_publishes_staged_text_before_the_adjacent_scroll() {
     let mut state = return_only_dialogue_state_before_run2508();
     state
@@ -3040,6 +3075,7 @@ fn carried_open_dialogue_handler_publishes_staged_text_before_the_adjacent_scrol
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn staged_dialogue_carry_rejects_held_or_wrong_subroutine_before_mutation() {
     fn assert_rejected_without_mutation(mut state: ZeldaState) {
         let phase_before = state.dialogue_scroll_phase();
@@ -3106,6 +3142,7 @@ fn staged_dialogue_carry_rejects_held_or_wrong_subroutine_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn staged_dialogue_carry_requires_a_receptive_snapshot_before_mutation() {
     let mut state = staged_dialogue_carry_state(NmiUpdateGate::Open);
     state
@@ -3192,6 +3229,7 @@ fn dialogue_text_dma_evidence_cannot_cross_snapshot_epochs_or_text_generations()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn same_host_dialogue_acceptance_uses_capture_promotion_only_once() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3247,6 +3285,7 @@ fn same_host_dialogue_acceptance_uses_capture_promotion_only_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn carried_open_dialogue_completion_promotes_once_without_recapturing() {
     let mut state = staged_dialogue_carry_state(NmiUpdateGate::Open);
     let acceptance_publication = state

@@ -87,6 +87,7 @@ impl ZeldaState {
         self.set_selected_save_slot_x2(u16::from(cursor) * 2 + 2);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn clear_selected_save_slot(&mut self) {
         self.set_selected_save_slot_x2(0);
     }

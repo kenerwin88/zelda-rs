@@ -151,6 +151,7 @@ impl ZeldaState {
 
     /// Bounded bridge for the first model setup. A scheduler that can cross
     /// interrupts must retain PolyShape itself between instruction steps.
+    #[cfg(feature = "rom-timing")]
     pub(super) fn run_native_poly_shape(&mut self,
         context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline) {
@@ -175,6 +176,7 @@ impl ZeldaState {
         }) { crate::cycle_ledger::charge(cycles); }
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(super) fn run_native_poly_rotation(&mut self,
         context: &mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock: &mut snes::CpuMasterTimeline) {
@@ -203,6 +205,7 @@ impl ZeldaState {
         }) {crate::cycle_ledger::charge(cycles);}
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(super) fn run_native_poly_vertices(&mut self,
         context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock:&mut snes::CpuMasterTimeline)->crate::cycle_models::poly_vertices::PolyDivider {
@@ -230,6 +233,7 @@ impl ZeldaState {
         divider
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(super) fn run_native_poly_faces_to_raster(&mut self,
         context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock:&mut snes::CpuMasterTimeline)->crate::cycle_models::poly_faces::PolyFaces {

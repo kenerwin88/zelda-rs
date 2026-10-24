@@ -85,6 +85,7 @@ fn paired_resume_rejects_live_poly_worker_even_with_idle_main_caller() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_intro_initialization_retires_its_suspended_main_caller_once() {
     use crate::cycle_models::main_wait::MainLoopCallerPhase;
     let mut state = ZeldaState::new();
@@ -106,6 +107,7 @@ fn native_intro_initialization_retires_its_suspended_main_caller_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_intro_module_keeps_its_main_suffix_until_the_continuation_returns() {
     use crate::cycle_models::main_wait::MainLoopCallerPhase;
     for step in 0..11 {
@@ -219,6 +221,7 @@ fn native_main_wait_preserves_rom_nmi_phase_across_raster_boundaries() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn vwf_caller_return_respects_which_nmi_handler_is_still_owned() {
     use rtl_native_exact_cpu::{
         NativeExactCpuHostTrace, NativeExactCpuMainWaitReturn, NativeExactCpuNmiCompletion,
@@ -353,6 +356,7 @@ fn emu_callback_setup_syncs_whole_state_and_regions() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn original_timing_resume_sidecar_preserves_cross_host_semantics_without_changing_zeldastate_bytes()
 {
     let mut state = ZeldaState::new();
@@ -402,6 +406,7 @@ fn original_timing_resume_sidecar_preserves_cross_host_semantics_without_changin
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn original_timing_resume_sidecar_rejects_unbound_continuation_before_mutation() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -540,6 +545,7 @@ fn cached_restore_publishes_stores_between_host_return_and_acceptance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4788_checkpoint_then_run4789_terminal_build_completes_cpu_and_suffix_once() {
     let mut state = run4789_terminal_spotlight_build_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -587,6 +593,7 @@ fn run4788_checkpoint_then_run4789_terminal_build_completes_cpu_and_suffix_once(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4790_checkpoint_then_run4791_terminal_build_carries_its_trailing_open_once() {
     let mut state = run4791_terminal_spotlight_build_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -662,6 +669,7 @@ fn run4790_checkpoint_then_run4791_terminal_build_carries_its_trailing_open_once
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4794_projection_interrupt_then_run4795_flagged_terminal_build_completes_cpu_and_suffix_once()
 {
     let mut state = run4795_flagged_terminal_spotlight_build_state();
@@ -701,6 +709,7 @@ fn run4794_projection_interrupt_then_run4795_flagged_terminal_build_completes_cp
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4797_flagged_terminal_build_carries_its_trailing_open_once() {
     let mut state = run4797_flagged_trailing_open_spotlight_build_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -738,6 +747,7 @@ fn run4797_flagged_terminal_build_carries_its_trailing_open_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4799_terminal_build_consumes_its_projection_recheckpoint_once() {
     let mut state = run4799_recheckpointed_terminal_spotlight_build_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -767,6 +777,7 @@ fn run4799_terminal_build_consumes_its_projection_recheckpoint_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4805_carried_suffix_only_terminal_completes_held_handler_and_suffix_once() {
     let mut state = run4805_carried_suffix_only_spotlight_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -789,6 +800,7 @@ fn run4805_carried_suffix_only_terminal_completes_held_handler_and_suffix_once()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4807_suffix_only_terminal_carries_its_trailing_open_once() {
     let mut state = run4807_trailing_open_suffix_only_spotlight_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -815,6 +827,7 @@ fn run4807_suffix_only_terminal_carries_its_trailing_open_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4819_final_suffix_only_terminal_returns_without_module_qualified_token() {
     let mut state = run4819_tokenless_final_spotlight_state();
     let epoch_before = state.display_snapshot_epoch;
@@ -848,7 +861,9 @@ fn run4819_final_suffix_only_terminal_returns_without_module_qualified_token() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4799_and_run4819_terminal_preflight_is_failure_atomic() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(label: &str, mut state: ZeldaState) {
         let receipts_before = state.original_timing_semantic_receipts.clone();
         let scheduler_before = state.game_execution_scheduler;
@@ -962,6 +977,7 @@ fn run4799_and_run4819_terminal_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn main_loop_common_suffix_completion_installation_is_failure_atomic() {
     let mut missing_progress = ZeldaState::new();
     missing_progress.set_rom_startup_timing(true);
@@ -1128,6 +1144,7 @@ fn main_loop_common_suffix_completion_installation_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_throwable_scenery_state_clear_applies_the_partial_slot_prefix() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1175,6 +1192,7 @@ fn live_throwable_scenery_state_clear_applies_the_partial_slot_prefix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_timer_decrement_boundary_finishes_priority_and_dispatch_without_replaying_countdowns() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1226,6 +1244,7 @@ fn live_timer_decrement_boundary_finishes_priority_and_dispatch_without_replayin
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_hit_timer_checkpoint_leaves_aux4_for_the_resumed_call() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1283,7 +1302,9 @@ fn live_hit_timer_checkpoint_leaves_aux4_for_the_resumed_call() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn active_cucco_x_checkpoint_resumes_without_replaying_movement() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -1345,7 +1366,9 @@ fn active_cucco_x_checkpoint_resumes_without_replaying_movement() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn active_cucco_y_subpixel_checkpoint_resumes_without_replaying_movement() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -1408,7 +1431,9 @@ fn active_cucco_y_subpixel_checkpoint_resumes_without_replaying_movement() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn master_sword_light_beam_move_xy_checkpoints_resume_without_replaying_stores() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -1475,7 +1500,9 @@ fn master_sword_light_beam_move_xy_checkpoints_resume_without_replaying_stores()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn master_sword_replacement_spawn_resumes_after_the_exact_helper_prefix() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -1535,6 +1562,7 @@ fn master_sword_replacement_spawn_resumes_after_the_exact_helper_prefix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_auxiliary_graphics_does_not_publish_on_a_bare_continued_host() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1577,6 +1605,7 @@ fn live_auxiliary_graphics_does_not_publish_on_a_bare_continued_host() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn host_close_captures_and_carries_one_exact_terminal_acceptance() {
     for gate in [NmiUpdateGate::Open, NmiUpdateGate::LatchHeld] {
         let mut state = ZeldaState::new();
@@ -1620,6 +1649,7 @@ fn host_close_captures_and_carries_one_exact_terminal_acceptance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn host_close_accepts_an_explicitly_consumed_pending_acceptance() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1653,6 +1683,7 @@ fn host_close_accepts_an_explicitly_consumed_pending_acceptance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn host_close_rejects_every_other_semantic_shape_before_mutation() {
     let joypad = OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
         high: 1,
@@ -1774,6 +1805,7 @@ fn host_close_rejects_every_other_semantic_shape_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn host_close_rejects_invalid_pending_and_gate_state_before_mutation() {
     #[derive(Clone, Copy, Debug)]
     enum InvalidState {
@@ -1912,6 +1944,7 @@ fn host_close_rejects_invalid_pending_and_gate_state_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn repeated_idle_continued_host_retains_the_one_source_common_suffix() {
     let mut state = live_idle_dialogue_main_loop_state();
     state.capture_display_snapshot();
@@ -1996,6 +2029,7 @@ fn repeated_idle_continued_host_retains_the_one_source_common_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fresh_uninterrupted_iteration_retires_one_pre_main_timing_shadow() {
     let mut state = live_idle_dialogue_main_loop_state();
     state.capture_display_snapshot();
@@ -2038,6 +2072,7 @@ fn fresh_uninterrupted_iteration_retires_one_pre_main_timing_shadow() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn suspended_fresh_idle_iteration_can_carry_one_trailing_held_acceptance() {
     let mut state = live_idle_dialogue_main_loop_state();
     state.latch_nmi_update();
@@ -2073,7 +2108,9 @@ fn suspended_fresh_idle_iteration_can_carry_one_trailing_held_acceptance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn idle_main_loop_plan_rejects_malformed_authority_before_mutation() {
+    #[cfg(feature = "rom-timing")]
     fn assert_rejected(mut state: ZeldaState, semantic: Vec<OriginalTimingSemanticReceipt>) {
         state.original_timing_owner = OriginalTimingOwnerState::Live;
         state.original_timing_host_dispatch_active = true;
@@ -2645,6 +2682,7 @@ fn idle_main_loop_plan_rejects_malformed_authority_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn callback_calling_public_internal_does_not_double_advance_live_timing() {
     let mut state = ZeldaState::new();
     state.set_rom(&exact_timing_test_rom(0x18));
@@ -2790,6 +2828,7 @@ fn state_recorder_replays_patch_bytes_and_can_stop() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn state_recorder_replays_snapshot_boundary_commands() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2965,7 +3004,9 @@ fn flag67_with_directions_derives_direction_from_actual_velocity() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn link_velocity_coordinate_boundary_resumes_to_the_atomic_c_result() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(0x0f);
@@ -3389,6 +3430,7 @@ fn original_timing_owner_is_absent_from_serde_and_bincode_bytes() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn restored_frame_zero_cannot_be_reenabled_as_a_fresh_cold_start() {
     let encoded = bincode::serialize(&ZeldaState::new()).expect("serialize frame-zero checkpoint");
     let mut restored: ZeldaState =
@@ -3487,6 +3529,7 @@ fn paired_resume_rejects_every_runtime_only_cpu_schedule() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn paired_checkpoint_rejects_unserialized_vwf_instruction_operands() {
     let mut state = ZeldaState::new();
     state.dialogue_vwf_drawing = Some(crate::cycle_models::vwf_drawing::Drawing::new(0, 1, 0, [0; 16]));
@@ -3502,6 +3545,7 @@ fn paired_checkpoint_rejects_unserialized_vwf_instruction_operands() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn paired_checkpoint_rejects_the_idle_callers_unserialized_wait_phase() {
     let mut state = ZeldaState::new();
     state.native_main_wait_cpu_phase = Some(NativeMainWaitCpuPhase {
@@ -3528,6 +3572,7 @@ fn paired_checkpoint_rejects_the_idle_callers_unserialized_wait_phase() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn paired_checkpoint_rejects_staged_scroll_for_both_timing_owners() {
     for after_return in [false, true] {
         let mut state = ZeldaState::new();
@@ -3982,6 +4027,7 @@ fn scheduled_caller_progress_is_owned_by_its_interruption_timeline_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn module10_opening_goal_completes_before_its_caller_returns() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4055,6 +4101,7 @@ fn live_main_loop_progress_is_consumed_once_without_counter_or_pc_provenance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn rom_timed_main_loop_observes_current_host_frame_input() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4073,6 +4120,7 @@ fn rom_timed_main_loop_observes_current_host_frame_input() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn name_player_terminal_caller_uses_the_same_source_return_order() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4127,6 +4175,7 @@ fn name_player_terminal_caller_uses_the_same_source_return_order() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_pre_main_caller_without_a_return_timeline_fails_before_caller_completion() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4427,6 +4476,7 @@ fn cached_guard_retains_the_swap_and_pose_until_shadow_and_restore_return() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_landing_fades_suspend_their_caller_return_before_state_fifteen_main() {
     for room in [0x21, 0x22, 0x41, 0x60] {
         let mut state = ZeldaState::new();
@@ -4482,6 +4532,7 @@ fn interrupted_landing_fades_suspend_their_caller_return_before_state_fifteen_ma
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn completed_landing_fade_without_cpu_interruption_returns_atomically() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -4515,6 +4566,7 @@ fn completed_landing_fade_without_cpu_interruption_returns_atomically() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn landing_fade_no_request_suspends_only_the_state_fifteen_caller_return() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

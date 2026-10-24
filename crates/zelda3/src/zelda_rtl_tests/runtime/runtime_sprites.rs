@@ -75,6 +75,7 @@ fn credits_prep_resets_sprite_properties_before_scene_setup() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run4786_link_oam_completes_the_build_before_run4787_finishes_its_suffix() {
     let mut state = run4786_spotlight_build_link_oam_state();
     let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
@@ -220,6 +221,7 @@ fn live_cached_sprite_progress_is_taken_once_without_cpu_provenance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_sprite_main_call_stack_holds_then_advances_only_the_observed_slot_delta() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -468,7 +470,9 @@ fn wallmaster_descending_clear_retains_the_unwritten_prefix_and_resumes_exactly(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn sprite_main_slot_boundary_refinement_and_resume_equal_atomic_c_order() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         for slot in 0..4 {
@@ -531,7 +535,9 @@ fn sprite_main_coarse_progress_cannot_rewind_a_finer_current_slot_checkpoint() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_module09_link_oam_boundary_resumes_to_the_atomic_c_endpoint() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -597,7 +603,9 @@ fn live_module09_link_oam_boundary_resumes_to_the_atomic_c_endpoint() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn cucco_animation_publication_then_lift_tail_matches_atomic_sprite_endpoint() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -653,7 +661,9 @@ fn cucco_animation_publication_then_lift_tail_matches_atomic_sprite_endpoint() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn state10_cucco_subtype_checkpoint_resumes_to_the_atomic_sprite_endpoint() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -710,7 +720,9 @@ fn state10_cucco_subtype_checkpoint_resumes_to_the_atomic_sprite_endpoint() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fleeing_cucco_movement_checkpoint_resumes_to_the_atomic_sprite_endpoint() {
+    #[cfg(feature = "rom-timing")]
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_main_module(9);
@@ -763,6 +775,7 @@ fn fleeing_cucco_movement_checkpoint_resumes_to_the_atomic_sprite_endpoint() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fresh_module09_iteration_claims_the_authoritative_link_oam_timeline() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -815,6 +828,7 @@ fn fresh_module09_iteration_claims_the_authoritative_link_oam_timeline() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn run2319_idle_plan_claims_sprite_main_return_before_trailing_held() {
     let mut state = live_idle_dialogue_main_loop_state();
     state.set_main_module(7);
@@ -951,6 +965,7 @@ fn sprite_main_early_return_does_not_consume_the_slot_zero_claim() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn sprite_main_claim_scope_is_runtime_only_and_blocks_host_installation() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1038,6 +1053,7 @@ fn cancel_dash_clears_running_state_and_dash_ancilla() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn disabling_rom_timing_clears_the_transient_sprite_main_return_scope() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1746,6 +1762,7 @@ fn lanmola_sprite_main_boundary_commits_source_prefix_once_and_saves_draw_locals
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn state_13_nmi_after_sprite_main_resumes_only_the_common_suffix() {
     for phase in [
         ModuleCpuPhase::InterruptedAfterSpriteMain,
@@ -1786,6 +1803,7 @@ fn state_13_nmi_after_sprite_main_resumes_only_the_common_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn scheduled_caller_then_fresh_sprite_preparation_uses_the_completed_leading_oam_dma() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1870,6 +1888,7 @@ fn scheduled_caller_then_fresh_sprite_preparation_uses_the_completed_leading_oam
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn state_12_nmi_inside_sprite_preparation_resumes_only_that_caller() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1902,6 +1921,7 @@ fn state_12_nmi_inside_sprite_preparation_resumes_only_that_caller() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn module09_host_return_progress_stops_before_a_newly_spawned_lower_sprite_slot() {
     let mut state = ZeldaState::new();
     let slot = 2usize;
@@ -1950,6 +1970,7 @@ fn module09_host_return_progress_stops_before_a_newly_spawned_lower_sprite_slot(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_return_rejects_an_extended_oam_suffix_before_install_or_caller_mutation() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1998,6 +2019,7 @@ fn file_select_return_rejects_an_extended_oam_suffix_before_install_or_caller_mu
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn faded_filter_uses_the_interior_sprite_boundary_as_the_single_nmi_owner() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -2070,6 +2092,7 @@ fn sprite_main_interruption_does_not_promote_an_unreturned_slot() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn faded_filter_preserves_nmi_prepare_sprites_caller_phase() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2107,6 +2130,7 @@ fn faded_filter_preserves_nmi_prepare_sprites_caller_phase() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn landing_nmi_inside_link_oam_resumes_only_the_common_suffix() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -2158,6 +2182,7 @@ fn landing_nmi_inside_link_oam_resumes_only_the_common_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn landing_nmi_inside_sprite_main_resumes_at_the_cpu_slot_boundary() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -2232,6 +2257,7 @@ fn cached_sprite_copy_boundary_supersedes_the_coarse_sprite_slot_boundary() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn completed_cached_sprite_caller_carries_the_following_source_nmi_at_main_wait() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2297,6 +2323,7 @@ fn completed_cached_sprite_caller_carries_the_following_source_nmi_at_main_wait(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn sprite_conversion_cached_return_retires_before_the_next_quadrant_nmi() {
     // Original hosts 12135-12137: cached slot 8 is interrupted after 24
     // copied fields; the resumed caller clears $12 at counter $D5, then
@@ -2486,6 +2513,7 @@ fn spiral_follower_return_preserves_pending_nmi_and_resumes_prefix_once() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn parked_dungeon_sprite_return_keeps_the_next_quadrant_behind_its_nmi() {
     // Original host 24937 finishes the held Sprite_Main caller at state 4;
     // host 24938 owns the Open NMI and the next quadrant's CPU slice.
@@ -2526,6 +2554,7 @@ fn parked_dungeon_sprite_return_keeps_the_next_quadrant_behind_its_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_sprite_preparation_return_leaves_uploads_for_the_following_nmi() {
     // Original host 23203 completes the held NMI and shared suffix at
     // counter $FB, substep 5. $12 clears but $17/$710 remain set until
@@ -2575,6 +2604,7 @@ fn dungeon_sprite_preparation_return_leaves_uploads_for_the_following_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn quadrant_link_oam_return_keeps_queued_uploads_until_the_next_open_nmi() {
     for step in [5, 11, 12, 13] {
       for cached in [false, true] {
@@ -2635,6 +2665,7 @@ fn quadrant_link_oam_return_keeps_queued_uploads_until_the_next_open_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn scroll_return_precedes_a_suspended_extended_oam_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2758,6 +2789,7 @@ fn host_boundary_link_oam_composition_keeps_unrelated_live_sprites() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn continued_iteration_can_advance_its_existing_suffix_to_an_oam_pack_cursor() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3013,6 +3045,7 @@ fn source_mid_group_sprite_packing_preserves_committed_bytes_and_remaining_cost(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dialogue_packing_return_preserves_countdown_and_latch_until_resume() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

@@ -255,6 +255,7 @@ impl DungeonPushBlocks {
     pub(crate) fn child(&self) -> Option<PushBlockChild> {
         self.child
     }
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
         let camera = self
             .camera

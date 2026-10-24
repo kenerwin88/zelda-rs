@@ -361,8 +361,8 @@ fn checkpoint(
         profile,
         tick,
         phase: (tick & 31) as u8,
-        state_sha256: parity::evidence::sha256_bytes(state),
-        ram_sha256: parity::evidence::sha256_bytes(ram),
+        state_sha256: parity::hash::sha256_bytes(state),
+        ram_sha256: parity::hash::sha256_bytes(ram),
     });
     append_state_xor(
         &mut rows.checkpoint_state_xor,
@@ -514,8 +514,8 @@ fn capture(core: &LedgerCore, cases: &[LedgerCase]) -> Result<Rows, String> {
         let start_state = read_state(core)?;
         let start_ram = read_ram(core)?;
         let expected = &rows.checkpoints[start_ref];
-        if parity::evidence::sha256_bytes(&start_state) != expected.state_sha256
-            || parity::evidence::sha256_bytes(&start_ram) != expected.ram_sha256
+        if parity::hash::sha256_bytes(&start_state) != expected.state_sha256
+            || parity::hash::sha256_bytes(&start_ram) != expected.ram_sha256
         {
             return Err(format!(
                 "case {} does not reproduce checkpoint {start_ref}",
@@ -595,7 +595,7 @@ fn verify_core_receipt(core_path: &Path, receipt: &Value) -> Result<Vec<Value>, 
             "DSP ledger core receipt is not the pinned traced Snes9x 1.63 source".to_string(),
         );
     }
-    let actual_core_sha256 = parity::evidence::sha256_file(core_path)
+    let actual_core_sha256 = parity::hash::sha256_file(core_path)
         .map_err(|error| format!("{}: {error}", core_path.display()))?;
     if receipt["core_sha256"] != actual_core_sha256 {
         return Err("DSP ledger dylib bytes do not match the adjacent build receipt".to_string());
@@ -611,7 +611,7 @@ fn verify_core_receipt(core_path: &Path, receipt: &Value) -> Result<Vec<Value>, 
 
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let lock_path = repo_root.join("external/snes9x-libretro/oracle-lock.json");
-    let lock_sha256 = parity::evidence::sha256_file(&lock_path)
+    let lock_sha256 = parity::hash::sha256_file(&lock_path)
         .map_err(|error| format!("{}: {error}", lock_path.display()))?;
     if receipt["oracle_lock_sha256"] != lock_sha256 {
         return Err("DSP ledger core was built against a different source lock".to_string());
@@ -644,7 +644,7 @@ fn verify_core_receipt(core_path: &Path, receipt: &Value) -> Result<Vec<Value>, 
             .join(expected_name);
         let bytes = fs::read(&current_path)
             .map_err(|error| format!("{}: {error}", current_path.display()))?;
-        let hash = parity::evidence::sha256_bytes(&bytes);
+        let hash = parity::hash::sha256_bytes(&bytes);
         if patch_hashes[index] != hash {
             return Err(format!("trace receipt patch {expected_name} hash is stale"));
         }
@@ -654,7 +654,7 @@ fn verify_core_receipt(core_path: &Path, receipt: &Value) -> Result<Vec<Value>, 
         aggregate.push(0);
         verified.push(json!({"path": current_path, "sha256": hash}));
     }
-    if receipt["patch_sha256"] != parity::evidence::sha256_bytes(&aggregate) {
+    if receipt["patch_sha256"] != parity::hash::sha256_bytes(&aggregate) {
         return Err("trace receipt aggregate patch digest mismatch".to_string());
     }
     Ok(verified)
@@ -694,7 +694,7 @@ fn write_fixture(core_path: &Path, output: &Path) -> Result<(), String> {
         ));
     }
     let ram_seed_sha256 = (0..=1u8)
-        .map(|profile| parity::evidence::sha256_bytes(&seeded_ram(profile)))
+        .map(|profile| parity::hash::sha256_bytes(&seeded_ram(profile)))
         .collect::<Vec<_>>();
     let provenance = json!({
         "kind": "provenance",
@@ -895,7 +895,7 @@ mod tests {
             .collect::<Vec<_>>();
         let patch_sha256s = patch_bytes
             .iter()
-            .map(|bytes| parity::evidence::sha256_bytes(bytes))
+            .map(|bytes| parity::hash::sha256_bytes(bytes))
             .collect::<Vec<_>>();
         let mut aggregate = Vec::new();
         for (name, bytes) in PINNED_PATCH_NAMES.iter().zip(&patch_bytes) {
@@ -911,16 +911,16 @@ mod tests {
             "source_tag": "1.63",
             "source_revision": PINNED_SOURCE_REVISION,
             "core": fs::canonicalize(&core).unwrap(),
-            "core_sha256": parity::evidence::sha256_file(&core).unwrap(),
-            "oracle_lock_sha256": parity::evidence::sha256_file(&lock).unwrap(),
+            "core_sha256": parity::hash::sha256_file(&core).unwrap(),
+            "oracle_lock_sha256": parity::hash::sha256_file(&lock).unwrap(),
             "patches": patch_paths,
             "patch_sha256s": patch_sha256s,
-            "patch_sha256": parity::evidence::sha256_bytes(&aggregate),
+            "patch_sha256": parity::hash::sha256_bytes(&aggregate),
         });
         assert_eq!(verify_core_receipt(&core, &receipt).unwrap().len(), 4);
         receipt["core_sha256"] = Value::from("stale");
         assert!(verify_core_receipt(&core, &receipt).is_err());
-        receipt["core_sha256"] = Value::from(parity::evidence::sha256_file(&core).unwrap());
+        receipt["core_sha256"] = Value::from(parity::hash::sha256_file(&core).unwrap());
         receipt["patch_sha256s"][3] = Value::from("stale");
         assert!(verify_core_receipt(&core, &receipt).is_err());
         fs::remove_file(core).unwrap();
@@ -996,7 +996,7 @@ mod tests {
             if byte_index + 1 == EXPECTED_STATE_SIZE {
                 assert_eq!(
                     checkpoints[checkpoint_id]["state_sha256"],
-                    parity::evidence::sha256_bytes(&current)
+                    parity::hash::sha256_bytes(&current)
                 );
                 checkpoint_states.push(current.clone());
             }
@@ -1018,7 +1018,7 @@ mod tests {
                 let checkpoint_id = profile * 257 + tick;
                 assert_eq!(
                     checkpoints[checkpoint_id]["ram_sha256"],
-                    parity::evidence::sha256_bytes(&ram)
+                    parity::hash::sha256_bytes(&ram)
                 );
                 checkpoint_rams.push(ram.clone());
                 if tick < 256 {
@@ -1109,7 +1109,7 @@ mod tests {
             }
             if case_id < 512 {
                 assert_eq!(
-                    parity::evidence::sha256_bytes(&post_ram),
+                    parity::hash::sha256_bytes(&post_ram),
                     checkpoints[row[2] as usize + 1]["ram_sha256"]
                 );
             }

@@ -45,9 +45,9 @@ use crate::{
     apply_sram_to_game_or_exit,
     gpu_capture::{LiveGpuFrameCapture, NativeWindowOracleRenderer, QueuedGpuVideoDigest},
     load_romless_play_state,
-    snes9x_compare::acquire_snes9x_compare_lock_mode,
+    oracle_lock::acquire_snes9x_compare_lock_mode,
 };
-use parity::av::VideoDigest;
+use parity::digest::VideoDigest;
 use renderer::RawScanlineFrame;
 use std::{
     collections::VecDeque,
@@ -644,7 +644,7 @@ fn torn_composite_matches(top: &[u8], bottom: &[u8], width: u32, expected: &Vide
         return false;
     }
     let rows = top.len() / row;
-    let mut prefix = parity::evidence::Sha256Digest::new();
+    let mut prefix = parity::hash::Sha256Digest::new();
     for split in 1..rows {
         prefix.update_rgb_from_rgba([&top[(split - 1) * row..split * row]]);
         if top[(split - 1) * row..split * row] == bottom[(split - 1) * row..split * row] {
@@ -671,7 +671,7 @@ fn torn_three_way_matches(top: &[u8], middle: &[u8], bottom: &[u8], width: u32, 
     fn line(image: &[u8], row: usize, y: usize) -> &[u8] {
         &image[y * row..(y + 1) * row]
     }
-    let mut prefix = parity::evidence::Sha256Digest::new();
+    let mut prefix = parity::hash::Sha256Digest::new();
     for a in 0..=rows {
         if a > 0 {
             prefix.update_rgb_from_rgba([line(top, row, a - 1)]);
@@ -882,7 +882,7 @@ impl VideoCheck {
                 // (forced blank as a fade-out completes): the whole picture
                 // already shows the next iteration's.
                 || next.is_some_and(|next| {
-                    let mut digest = parity::evidence::Sha256Digest::new();
+                    let mut digest = parity::hash::Sha256Digest::new();
                     digest.update_rgb_from_rgba(next.chunks(held.actual.width as usize * 4));
                     digest.finish() == expected.sha256
                 })

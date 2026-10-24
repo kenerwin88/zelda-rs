@@ -62,6 +62,7 @@ impl ClosingSpotlight {
         self.initialization.as_ref().and_then(|work| work.child).or(self.child).or(self.caller.child)
     }
     pub(crate) fn complete(&self) -> bool { self.caller.complete() }
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
         if let Some(child) = self.child.take() {
             assert_eq!(child, 0x0299ca);
@@ -364,7 +365,7 @@ impl OpeningSpotlight {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rom-timing"))]
 mod tests {
     use super::*;
     use crate::cycle_models::{intro_clear::Access, native_work::compare_instruction_with_devices};

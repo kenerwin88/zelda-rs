@@ -38,6 +38,7 @@ pub(super) struct NativeInitialScrollCursor {
 
 impl NativeInitialScrollCursor {
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(super) fn checkpoint_test_cursor() -> Self {
         Self { horizontal: true, stripes: 7, completed_steps: 1 }
     }
@@ -5898,6 +5899,7 @@ impl ZeldaState {
         }
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(super) fn OverworldCopyMap16ToBuffer(
         &mut self,
         source_page: OverworldMap16SourcePage,

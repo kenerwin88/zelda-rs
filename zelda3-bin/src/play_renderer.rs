@@ -2,8 +2,10 @@ use std::env;
 use std::process;
 
 use platform::{
-    Frontend, HostMenuInput, HostMenuState, NativeFrontend, NativeFrontendOptions, RecorderControl,
+    Frontend, HostMenuInput, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
+#[cfg(feature = "rom-timing")]
+use platform::RecorderControl;
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
@@ -25,6 +27,7 @@ pub(crate) struct ConfiguredPlayRenderer {
     backend: Box<dyn PlayRendererBackend>,
     frontend: NativeFrontend,
     frame: Vec<u8>,
+    #[cfg(feature = "rom-timing")]
     raw_pixels: Vec<u32>,
     render_flags: PpuRenderFlags,
 }
@@ -38,10 +41,12 @@ impl ConfiguredPlayRenderer {
         self.frontend.quit_requested()
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_window_title(&self, title: &str) {
         self.frontend.set_window_title(title);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn request_window_attention(&self) {
         self.frontend.request_window_attention();
     }
@@ -58,6 +63,7 @@ impl ConfiguredPlayRenderer {
         self.frontend.drain_host_menu_inputs()
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn drain_recorder_controls(&mut self) -> Vec<RecorderControl> {
         self.frontend.drain_recorder_controls()
     }
@@ -91,6 +97,7 @@ impl ConfiguredPlayRenderer {
             .present_frame(game, &mut self.frontend, &mut self.frame, self.render_flags);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn present_rgba_frame(&mut self, rgba: &[u8], width: u32, height: u32) {
         let pixel_count = width as usize * height as usize;
         self.raw_pixels.resize(pixel_count, 0);
@@ -149,6 +156,7 @@ pub(crate) fn configured_from_env(
         backend,
         frontend,
         frame: vec![0u8; width as usize * height as usize * 4],
+        #[cfg(feature = "rom-timing")]
         raw_pixels: vec![0u32; width as usize * height as usize],
         render_flags: PpuRenderFlags::empty(),
     })

@@ -858,6 +858,7 @@ impl AbsoluteDspEventClock {
     pub(crate) fn cpu_port_access_pending(&self) -> bool { self.cpu_ports.is_some() }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn cpu_port_owner_for_test(&self) -> ApuHostPortTiming {
         self.cpu_ports.as_ref().expect("fixture requires a retained APUI owner").clone()
     }

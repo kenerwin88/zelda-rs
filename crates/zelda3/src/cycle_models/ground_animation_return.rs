@@ -32,6 +32,7 @@ pub(crate) struct GroundAnimationReturn {
 }
 impl GroundAnimationReturn {
     pub(crate) fn with_live_inactive_slot_bodies(mut self, enabled:bool)->Self {self.live_inactive_slot_bodies=enabled;self}
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn with_inactive_slot_bodies(mut self, mask:u16)->Self {self.inactive_slot_bodies=mask;self}
     pub(crate) fn with_camera_skip(skip_camera: bool) -> Self {Self {skip_camera,..Default::default()}}
     pub(crate) fn with_native_push_handler(mut self, enabled: bool) -> Self {self.native_push_handler=enabled;self}

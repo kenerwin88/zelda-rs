@@ -46,6 +46,7 @@ impl Default for PolyWorker {
 }
 impl PolyWorker {
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn from_pending_faces(faces: PolyFaces) -> Self {
         assert!(faces.raster_pending());
         Self {

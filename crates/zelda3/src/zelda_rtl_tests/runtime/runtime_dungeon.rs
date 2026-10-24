@@ -280,6 +280,7 @@ fn triforce_poly_step0_falls_through_once_like_c() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fat_stair_background_conversion_retains_its_caller_step() {
     // ROM host402680 stops at $00:DF92 inside PrepTransAuxGfx; the shared
     // Module07/$06 step3 caller has not reached its subsubmodule increment.
@@ -301,6 +302,7 @@ fn fat_stair_background_conversion_retains_its_caller_step() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn death_restart_keeps_room_module_and_counters_until_sprite_reset_returns() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -416,6 +418,7 @@ fn death_restart_keeps_room_module_and_counters_until_sprite_reset_returns() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fresh_dungeon_iteration_forwards_link_oam_timeline_to_the_caller_owner() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -472,6 +475,7 @@ fn fresh_dungeon_iteration_forwards_link_oam_timeline_to_the_caller_owner() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn fresh_stair_link_oam_progress_requires_its_source_caller() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -516,6 +520,7 @@ fn fresh_stair_link_oam_progress_requires_its_source_caller() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn exhausted_room_load_estimate_waits_for_a_source_caller_return() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -841,6 +846,7 @@ fn push_block_attempt_checks_both_target_tiles() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_dungeon_map_drawing_consumes_its_measured_interruptions() {
     for room in [0x41, 0x72] {
         for nmi_slices in [0, 1, 2] {
@@ -875,6 +881,7 @@ fn native_dungeon_map_drawing_consumes_its_measured_interruptions() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_map_room_drawing_without_a_source_return_remains_suspended_for_every_room() {
     for room in [0x41, 0x72] {
         let mut state = ZeldaState::new();
@@ -956,6 +963,7 @@ fn dungeon_map_floor_selection_uses_word_increments_across_byte_wrap() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_map_room_drawing_consumes_same_host_iteration_return_without_room_selector() {
     for room in [0x41, 0x72] {
         let mut expected = ZeldaState::new();
@@ -984,6 +992,7 @@ fn dungeon_map_room_drawing_consumes_same_host_iteration_return_without_room_sel
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_map_room_drawing_carries_the_following_source_nmi_acceptance() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1364,6 +1373,7 @@ fn dungeon_supertile_transition_resumes_at_rom_call_boundaries() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_initializer_schedule_does_not_depend_on_room_or_staircase_identity() {
     for (room, staircase) in [(0x42, 0x34), (0x42, 0x30), (0x41, 0x34)] {
         let mut state = spiral_cpu_test_state(3, injected_dungeon_cpu_schedule(2, 0));
@@ -1382,6 +1392,7 @@ fn spiral_initializer_schedule_does_not_depend_on_room_or_staircase_identity() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_room_initialization_crosses_nineteen_nmi_slices() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1414,6 +1425,7 @@ fn straight_interroom_room_initialization_crosses_nineteen_nmi_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_bg_character_conversion_crosses_four_nmi_slices() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1442,6 +1454,7 @@ fn straight_interroom_bg_character_conversion_crosses_four_nmi_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_sprite_graphics_cross_four_nmi_slices() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1470,6 +1483,7 @@ fn straight_interroom_sprite_graphics_cross_four_nmi_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_bg_conversion_return_leaves_uploads_for_the_next_open_nmi() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1500,6 +1514,7 @@ fn straight_bg_conversion_return_leaves_uploads_for_the_next_open_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn quadrant_upload_return_leaves_uploads_for_the_next_open_nmi() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1530,6 +1545,7 @@ fn quadrant_upload_return_leaves_uploads_for_the_next_open_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn quadrant_preparation_interruption_retains_and_retires_the_whole_suffix() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1569,6 +1585,7 @@ fn quadrant_preparation_interruption_retains_and_retires_the_whole_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn quadrant_preparation_body_interruption_keeps_the_completed_caller_before_nmi() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1628,6 +1645,7 @@ fn quadrant_preparation_body_interruption_keeps_the_completed_caller_before_nmi(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
     for room in [0x51, 0x22] {
         for progress in [
@@ -1691,6 +1709,7 @@ fn native_straight_reset_preserves_the_measured_prefix_until_resume() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_sprite_reset_uses_the_live_semantic_progress_token() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1739,6 +1758,7 @@ fn straight_interroom_sprite_reset_uses_the_live_semantic_progress_token() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_reset_refines_its_semantic_prefix_at_the_accepting_nmi() {
     let pickup = DungeonResetSpritesCpuProgress::Disable(
         DungeonSpriteDisableCpuProgress::AncillaPickupFlagCleared,
@@ -2620,6 +2640,7 @@ fn dungeon_room_load_and_sprite_conversion_route_contracts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn room_load_sprite_main_preserves_every_measured_nmi_slice() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2841,6 +2862,7 @@ fn overworld_link_shadow_checkpoint_restores_the_temporary_stair_y() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn room_72_quadrant_builder_completes_inside_rom_timed_dispatcher_iteration() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2856,6 +2878,7 @@ fn room_72_quadrant_builder_completes_inside_rom_timed_dispatcher_iteration() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn filtered_state_10_quadrant_work_is_not_room_specific() {
     for room in [0x21, 0x22, 0x41] {
         let mut state = ZeldaState::new();
@@ -2881,6 +2904,7 @@ fn filtered_state_10_quadrant_work_is_not_room_specific() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn filtered_state_11_quadrant_work_is_not_room_specific() {
     assert!(matches!(
         dungeon_supertile_state_11_cpu_advance(189_976),
@@ -2926,6 +2950,7 @@ fn filtered_state_11_quadrant_work_is_not_room_specific() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn state_13_caller_return_accepts_post_call_state_14_in_any_room() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2951,6 +2976,7 @@ fn spiral_return_main_loop_reentry_advances_frame_and_clears_oam() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn room_1_staircase_30_spiral_bg_character_graphics_cross_three_nmi_slices() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2984,6 +3010,7 @@ fn room_1_staircase_30_spiral_bg_character_graphics_cross_three_nmi_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_room_initialization_uses_cpu_derived_submodule_slices() {
     let mut state = spiral_cpu_test_state(3, injected_dungeon_cpu_schedule(2, 0));
     assert!(state.begin_dungeon_supertile_transition_work(
@@ -3000,6 +3027,7 @@ fn spiral_room_initialization_uses_cpu_derived_submodule_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_sprite_graphics_uses_cpu_derived_submodule_slices() {
     let mut state = spiral_cpu_test_state(6, injected_dungeon_cpu_schedule(4, 0));
     assert!(state.begin_dungeon_supertile_transition_work(
@@ -3018,6 +3046,7 @@ fn spiral_sprite_graphics_uses_cpu_derived_submodule_slices() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn zero_slice_spiral_background_schedule_does_not_suspend() {
     let mut state = spiral_cpu_test_state(7, injected_dungeon_cpu_schedule(0, 0));
     assert!(!state.begin_dungeon_supertile_transition_work(
@@ -3028,6 +3057,7 @@ fn zero_slice_spiral_background_schedule_does_not_suspend() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_sprite_schedule_does_not_depend_on_room_identity() {
     for room in [0x70, 0x71, 0x80] {
         let mut state = spiral_cpu_test_state(6, injected_dungeon_cpu_schedule(2, 0));
@@ -3047,6 +3077,7 @@ fn spiral_sprite_schedule_does_not_depend_on_room_identity() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_cpu_schedule_keeps_caller_nmis_separate_from_submodule_nmis() {
     let schedule = injected_dungeon_cpu_schedule(1, 4);
     let mut state = spiral_cpu_test_state(3, schedule);
@@ -3061,6 +3092,7 @@ fn spiral_cpu_schedule_keeps_caller_nmis_separate_from_submodule_nmis() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_room_initializer_completes_from_consumed_sprite_main_return_authority() {
     let schedule = injected_dungeon_cpu_schedule(4, 0);
     let mut state = spiral_cpu_test_state(3, schedule);
@@ -3104,6 +3136,7 @@ fn spiral_room_initializer_completes_from_consumed_sprite_main_return_authority(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_background_return_retires_its_already_consumed_suffix_authority() {
     let mut state = spiral_cpu_test_state(4, injected_dungeon_cpu_schedule(3, 0));
     state.initialized = true;
@@ -3141,6 +3174,7 @@ fn spiral_background_return_retires_its_already_consumed_suffix_authority() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_quadrant_hold_uses_the_dma_latched_resident_oam_without_copying_it() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -3169,6 +3203,7 @@ fn dungeon_quadrant_hold_uses_the_dma_latched_resident_oam_without_copying_it() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_fresh_dungeon_iteration_retires_only_the_pre_main_nmi_timing_shadow() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -3232,6 +3267,7 @@ fn live_fresh_dungeon_iteration_retires_only_the_pre_main_nmi_timing_shadow() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn measured_pre_dungeon_loads_preserve_the_final_interrupt_slice() {
     // Count acceptance events, not host calls: pinned source loads starting
     // at 11480 and 39666 contain 58 and 57 held NMIs respectively. The last
@@ -3366,6 +3402,7 @@ fn deferred_pre_dungeon_return_cannot_survive_authority_loss() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pre_dungeon_publishes_entrance_before_scheduled_room_construction() {
     let mut expected = ZeldaState::new();
     expected.assets = Some(probe_entrance_asset_pack(0, 0x0061));
@@ -3442,6 +3479,7 @@ fn maiden_warp_room_rom_work_resumes_after_its_room_build_nmis() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn deferred_landing_goal_retains_animation_and_both_link_oam_callers() {
     for blink in [4, 5, 22, 23] {
         let mut eager = ZeldaState::new();
@@ -3480,6 +3518,7 @@ fn deferred_landing_goal_retains_animation_and_both_link_oam_callers() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_landing_goal_authors_final_circle_before_resetting_the_live_table() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3541,6 +3580,7 @@ fn dungeon_landing_goal_authors_final_circle_before_resetting_the_live_table() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3617,6 +3657,7 @@ fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_dungeon_exit_table_build_defers_the_radius_write_until_return() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3680,6 +3721,7 @@ fn interrupted_dungeon_exit_table_build_defers_the_radius_write_until_return() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn interrupted_dungeon_exit_build_runs_the_unfinished_c_main_loop_sprite_prep() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3737,6 +3779,7 @@ fn room_01_spiral_state_8_marks_the_pending_hud_dma_live() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn resumed_spiral_state_7_keeps_its_sound_queued_until_the_next_nmi() {
     // Source host 23932: Open NMI, handler completion, fresh main, suffix.
     // The floor-change blip ($24) is authored after that audio sample.
@@ -3798,6 +3841,7 @@ fn dungeon_entrance_publishes_the_animated_bg_written_by_its_leading_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn throne_room_story_resumes_one_nmi_slice_sooner_than_the_first_story() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3812,6 +3856,7 @@ fn throne_room_story_resumes_one_nmi_slice_sooner_than_the_first_story() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pre_dungeon_audio_boundary_completes_then_carries_held_nmis_across_presentation() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.set_ambient_sound_effect(3);
@@ -3919,6 +3964,7 @@ fn pre_dungeon_audio_boundary_completes_then_carries_held_nmis_across_presentati
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn selected_game_load_freezes_a_mosaic_selected_dungeon_before_the_prefix_clears_it() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.game_execution_scheduler.reset();
@@ -4033,6 +4079,7 @@ fn selected_game_load_freezes_a_mosaic_selected_dungeon_before_the_prefix_clears
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pre_dungeon_audio_boundary_rejects_malformed_nmi_order_before_mutation() {
     for semantic in [
         vec![
@@ -4129,6 +4176,7 @@ fn pre_dungeon_audio_boundary_rejects_malformed_nmi_order_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_dark_world_overworld_load_returns_without_pre_dungeon_audio() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.game_execution_scheduler.reset();
@@ -4174,6 +4222,7 @@ fn terminal_dark_world_overworld_load_returns_without_pre_dungeon_audio() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pre_dungeon_audio_boundary_requires_held_native_latch_before_mutation() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.set_ambient_sound_effect(3);
@@ -4251,6 +4300,7 @@ fn pre_dungeon_audio_boundary_requires_held_native_latch_before_mutation() {
 
 #[test]
 #[ignore = "requires the local pinned Zelda ROM used by the retained source trace"]
+#[cfg(feature = "rom-timing")]
 fn selected_game_load_host2293_consumes_the_leading_open_nmi_before_dungeon_main() {
     let mut state = live_selected_game_load_state_before_terminal_hosts();
     state.set_frame_counter(124);
@@ -4337,6 +4387,7 @@ fn selected_game_load_host2293_consumes_the_leading_open_nmi_before_dungeon_main
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn startup_dispatcher_runs_pre_dungeon_audio_at_the_measured_boundary() {
     let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -4381,6 +4432,7 @@ fn startup_dispatcher_runs_pre_dungeon_audio_at_the_measured_boundary() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_faded_filter_second_pass_resumes_without_a_new_main_iteration() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -4445,6 +4497,7 @@ fn dungeon_faded_filter_second_pass_resumes_without_a_new_main_iteration() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn resumed_dungeon_fade_runs_the_next_iteration_after_a_leading_nmi() {
     for (room, entry_countdown) in [(0x21, 0), (0x21, 2), (0x21, 16), (0x21, 24), (0x22, 0)] {
         let mut state = ZeldaState::new();
@@ -4494,6 +4547,7 @@ fn resumed_dungeon_fade_runs_the_next_iteration_after_a_leading_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nmi_inside_sprite_preparation_resumes_without_replaying_dungeon_main() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -4532,6 +4586,7 @@ fn nmi_inside_sprite_preparation_resumes_without_replaying_dungeon_main() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn completed_dungeon_fade_waits_for_leading_nmi_before_state_three() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -4833,6 +4888,7 @@ fn only_interrupted_dungeon_fade_selects_the_host_boundary_oam_shadow() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_stair_double_palette_pass_resumes_without_a_new_main_iteration() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -4882,6 +4938,7 @@ fn spiral_stair_double_palette_pass_resumes_without_a_new_main_iteration() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_stair_grayscale_pass_resumes_on_its_second_palette_walk() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -4932,6 +4989,7 @@ fn spiral_stair_second_palette_return_defers_only_animated_bg_operands() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_grayscale_pass_uses_the_shared_second_palette_return() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -4977,6 +5035,7 @@ fn spiral_stair_grayscale_return_releases_core_dma_after_retaining_its_scanout()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn spiral_palette_callers_finish_held_nmi_before_authoring_the_next_palette() {
     // Original host 23945 completes a held handler, runs the second palette
     // walk and suffix, and only accepts the following Open NMI at return.
@@ -5106,6 +5165,7 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_straight_quadrant_returns_wait_for_the_next_open_nmi() {
     for step in 5..=8 {
         let mut state = ZeldaState::new();
@@ -5138,6 +5198,7 @@ fn native_straight_quadrant_returns_wait_for_the_next_open_nmi() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn suspended_spiral_palette_filter_holds_core_nmi_updates() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -5150,6 +5211,7 @@ fn suspended_spiral_palette_filter_holds_core_nmi_updates() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn completed_spiral_palette_caller_carries_the_following_source_nmi_at_early_return() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -5431,6 +5493,7 @@ fn supertile_scroll_keeps_the_pre_main_link_generation_from_palette_entry_throug
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_legacy_fadeout_schedule_is_receipt_scoped() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -5498,6 +5561,7 @@ fn straight_interroom_legacy_fadeout_schedule_is_receipt_scoped() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_straight_fadeout_uses_the_measured_caller_phase() {
     for room in [0x51, 0x22] {
         for phase in [ModuleCpuPhase::CompleteBeforeNmi, ModuleCpuPhase::InterruptedInNmiPrepareSprites] {
@@ -5527,6 +5591,7 @@ fn native_straight_fadeout_uses_the_measured_caller_phase() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn straight_interroom_return_carries_the_following_source_nmi_acceptance() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -5578,6 +5643,7 @@ fn straight_interroom_return_carries_the_following_source_nmi_acceptance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn parked_dungeon_sprite_main_terminal_return_retires_the_pending_suffix_once() {
     // Route host 717302: a resumed live Module 7 Sprite_Main returns inside a
     // typed terminal main-loop return whose wire is [SpriteMainReturned,

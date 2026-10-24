@@ -178,6 +178,7 @@ impl NativePpuState {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn assert_matches_source(&mut self, clock: &CpuMasterTimeline, source: &snes::CpuSynchronousMachine) {
         assert_eq!(clock, source.timeline());
         self.synchronize(clock);

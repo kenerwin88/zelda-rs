@@ -11,7 +11,9 @@ name = "zelda3"
 path = "src/main.rs"
 
 [features]
-default = ["parity-debug"]
+# Exact cartridge scheduling and external timing-oracle tooling.
+rom-timing = ["zelda3/rom-timing", "snes/rom-timing", "parity/rom-timing"]
+default = ["parity-debug", "rom-timing"]
 # Forwarded through all runtime crates; packaging disables these diagnostics.
 parity-debug = ["zelda3/parity-debug", "snes/parity-debug", "renderer/parity-debug", "platform/parity-debug"]
 
@@ -28,7 +30,7 @@ zelda3-compat = { path = "../crates/zelda3-compat" }
 platform = { path = "../crates/platform", default-features = false }
 renderer = { path = "../crates/renderer", default-features = false }
 assets = { path = "../crates/assets" }
-parity = { path = "../crates/parity" }
+parity = { path = "../crates/parity", default-features = false }
 zelda3-dialogue = { path = "../crates/zelda3-dialogue" }
 zelda3-palette = { path = "../crates/zelda3-palette" }
 zelda3-chr = { path = "../crates/zelda3-chr" }

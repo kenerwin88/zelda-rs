@@ -1224,27 +1224,7 @@ pub(crate) struct ApuBootstrapCheckpoint {
     pub(crate) apu: snes::apu::ApuState,
 }
 
-pub(crate) fn load_play_crash_checkpoint(
-    path: &Path,
-) -> Result<PlayCrashCheckpoint, Box<dyn Error>> {
-    let bytes = fs::read(path)?;
-    if bytes.len() < PLAY_CRASH_CHECKPOINT_MAGIC.len() {
-        return Err("not a zelda3-rs playable crash checkpoint".into());
-    }
-    // bincode 1 encodes the leading `[u8; 8]` field as eight raw bytes with no
-    // length prefix, so the layout version is readable before the full decode.
-    let magic = &bytes[..PLAY_CRASH_CHECKPOINT_MAGIC.len()];
-    if magic != PLAY_CRASH_CHECKPOINT_MAGIC {
-        return Err(format!(
-            "checkpoint layout {:?} does not match this binary's {:?}; re-create it with the current binary",
-            String::from_utf8_lossy(magic),
-            String::from_utf8_lossy(PLAY_CRASH_CHECKPOINT_MAGIC)
-        )
-        .into());
-    }
-    let checkpoint: PlayCrashCheckpoint = bincode::deserialize(&bytes)?;
-    Ok(checkpoint)
-}
+
 
 pub(crate) fn load_apu_bootstrap_checkpoint(
     path: &Path,

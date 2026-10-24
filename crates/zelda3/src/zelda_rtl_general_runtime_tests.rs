@@ -11,16 +11,18 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_17, DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2,
     DMA_SOURCE_ADDR_20, DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4,
     DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6, DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9,
-    DUNG_BG1, DUNG_BG2, HDMAEN_COPY, INIDISP_COPY, MOSAIC_TARGET_LEVEL, PALETTE_FILTER_COUNTDOWN,
-    SUBSUBMODULE, TM_COPY, TS_COPY,
+    DUNG_BG1, DUNG_BG2, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{FLAG_IS_ANCILLA_TO_PICK_UP, SPRITE_LIMIT_INSTANCE};
-use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
+#[cfg(feature = "rom-timing")]
+use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT,
+    HDMAEN_COPY, INIDISP_COPY, MOSAIC_TARGET_LEVEL, PALETTE_FILTER_COUNTDOWN, SUBSUBMODULE};
 use crate::game_state::CachedSpriteCacheField;
 use crate::game_state::FrameState;
 use crate::{JoypadPublication, NmiUpdateGate};
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_cold_display_preserves_hardware_before_memory_initialization() {
     let Some(path) = std::env::var_os("ZELDA3_ASSETS") else { return };
     let mut state = ZeldaState::new();
@@ -45,6 +47,7 @@ fn native_cold_display_preserves_hardware_before_memory_initialization() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_startup_host_continuation_enters_its_module_once_after_rti() {
     let Some(path) = std::env::var_os("ZELDA3_ASSETS") else { return };
     let mut state = ZeldaState::new();
@@ -338,6 +341,7 @@ fn native_startup_host_continuation_enters_its_module_once_after_rti() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_next_intro_nmi_matches_full_cold_source_owner() {
     let Some(path) = std::env::var_os("ZELDA3_ASSETS") else { return };
     let Ok(rom) = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")) else { return };
@@ -382,6 +386,7 @@ fn native_next_intro_nmi_matches_full_cold_source_owner() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_repeated_intro_clears_match_full_cold_source_hosts() {
     let Some(path) = std::env::var_os("ZELDA3_ASSETS") else { return };
     let Ok(rom) = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")) else { return };
@@ -417,6 +422,7 @@ fn native_repeated_intro_clears_match_full_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_startup_retains_derived_clock_and_memory_ownership() {
     let Some(path) = std::env::var_os("ZELDA3_ASSETS") else { return };
     let assets = std::fs::read(path).unwrap();
@@ -479,17 +485,20 @@ fn test_sync_all(state: &mut ZeldaState) {
     state.ram[0x42] = state.ram[0x42].wrapping_add(1);
 }
 
+#[cfg(feature = "rom-timing")]
 fn test_run_frame_callback(state: &mut ZeldaState, input: u16, run_what: i32) {
     state.ram[0x43] = state.ram[0x43].wrapping_add(1);
     state.ram[0x44] = input as u8;
     state.ram[0x45] = run_what as u8;
 }
 
+#[cfg(feature = "rom-timing")]
 fn test_run_frame_callback_calls_internal(state: &mut ZeldaState, input: u16, _: i32) {
     state.ram[0x43] = state.ram[0x43].wrapping_add(1);
     state.run_frame_internal(input, 0);
 }
 
+#[cfg(feature = "rom-timing")]
 fn test_run_frame_callback_observes_snes9x_semantic_receipts(
     state: &mut ZeldaState,
     input: u16,
@@ -527,6 +536,7 @@ fn test_run_frame_callback_observes_snes9x_semantic_receipts(
     state.ram[0x43] = state.ram[0x43].wrapping_add(1);
 }
 
+#[cfg(feature = "rom-timing")]
 fn exact_timing_test_rom(opcode: u8) -> Vec<u8> {
     let mut rom = vec![opcode; 0x8000];
     rom[0x7ffc] = 0x00;
@@ -661,6 +671,7 @@ fn probe_overworld_asset_pack(screen: usize) -> AssetPack {
     AssetPack::from_data_ranges(data, ranges)
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4782_spotlight_progress_receipt() -> OriginalTimingSemanticReceipt {
     OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
         crate::SpotlightTableBuildProgressReceipt {
@@ -675,6 +686,7 @@ fn run4782_spotlight_progress_receipt() -> OriginalTimingSemanticReceipt {
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4782_spotlight_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
@@ -692,6 +704,7 @@ fn run4782_spotlight_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     ]
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4784_terminal_spotlight_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
@@ -704,6 +717,7 @@ fn run4784_terminal_spotlight_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     ]
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4784_terminal_spotlight_state() -> ZeldaState {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -730,6 +744,7 @@ fn run4784_terminal_spotlight_state() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn terminal_recurring_spotlight_state(iteration: SpotlightIteration) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -772,12 +787,14 @@ fn terminal_recurring_spotlight_state(iteration: SpotlightIteration) -> ZeldaSta
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4787_terminal_recurring_spotlight_state() -> ZeldaState {
     terminal_recurring_spotlight_state(SpotlightIteration::closing(
         SpotlightIterationPhase::WholeTable,
     ))
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4786_spotlight_build_link_oam_state() -> ZeldaState {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -831,6 +848,7 @@ fn run4786_spotlight_build_link_oam_state() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4788_spotlight_progress_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
@@ -858,6 +876,7 @@ fn run4788_spotlight_progress_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     ]
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4789_terminal_build_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiHandlerCompleted,
@@ -869,6 +888,7 @@ fn run4789_terminal_build_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     ]
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4790_spotlight_progress_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
@@ -895,6 +915,7 @@ fn run4790_spotlight_progress_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     ]
 }
 
+#[cfg(feature = "rom-timing")]
 fn run4791_terminal_build_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
@@ -910,6 +931,7 @@ fn run4791_terminal_build_semantic() -> Vec<OriginalTimingSemanticReceipt> {
 
 /// Execute run4788's exact fresh-iteration checkpoint and install run4789's
 /// carried-Held terminal return without consuming it.
+#[cfg(feature = "rom-timing")]
 fn run4789_terminal_spotlight_build_state() -> ZeldaState {
     let mut state = run4787_terminal_recurring_spotlight_state();
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -1002,6 +1024,7 @@ fn run4789_terminal_spotlight_build_state() -> ZeldaState {
 
 /// Execute run4789's terminal Build, then run4790's exact HostReturn table
 /// checkpoint and install run4791's same-host Held/trailing-Open return.
+#[cfg(feature = "rom-timing")]
 fn run4791_terminal_spotlight_build_state() -> ZeldaState {
     let mut state = run4789_terminal_spotlight_build_state();
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -1090,6 +1113,7 @@ fn run4791_terminal_spotlight_build_state() -> ZeldaState {
 /// an optional leading Open acceptance, the shared handler/joypad/iteration
 /// prefix, then the host-specific tail (a table checkpoint, a LinkOam
 /// interruption, or nothing when the module body finished inside the host).
+#[cfg(feature = "rom-timing")]
 fn run48xx_spotlight_close_fresh_semantic(
     leading_open_acceptance: bool,
     tail: &[OriginalTimingSemanticReceipt],
@@ -1115,6 +1139,7 @@ fn run48xx_spotlight_close_fresh_semantic(
     semantic
 }
 
+#[cfg(feature = "rom-timing")]
 fn run48xx_spotlight_projection_claim(
     copied_words: u16,
     boundary: OriginalTimingBoundary,
@@ -1134,6 +1159,7 @@ fn run48xx_spotlight_projection_claim(
 /// run4793..run4817 window: a carried or same-host Held handler, the shared
 /// continued-return/suffix pair, an optional trailing Open acceptance, and
 /// the wire-last caller-return token.
+#[cfg(feature = "rom-timing")]
 fn run48xx_spotlight_terminal_semantic(
     same_host_held: bool,
     trailing_open: bool,
@@ -1162,6 +1188,7 @@ fn run48xx_spotlight_terminal_semantic(
 
 /// run4799: the leading vblank re-checkpoints the saved ProjectionCopy at its
 /// acceptance boundary, then the resumed copy completes and returns.
+#[cfg(feature = "rom-timing")]
 fn run4799_recheckpointed_terminal_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
@@ -1179,6 +1206,7 @@ fn run4799_recheckpointed_terminal_semantic() -> Vec<OriginalTimingSemanticRecei
 /// run4819: the final suffix-only continuation returns after its module body
 /// already advanced the frame out of Module0F, so the adapter proves the
 /// return without the module-qualified caller-return token.
+#[cfg(feature = "rom-timing")]
 fn run4819_tokenless_final_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     vec![
         OriginalTimingSemanticReceipt::NmiHandlerCompleted,
@@ -1190,6 +1218,7 @@ fn run4819_tokenless_final_semantic() -> Vec<OriginalTimingSemanticReceipt> {
     ]
 }
 
+#[cfg(feature = "rom-timing")]
 fn install_run48xx_host(
     state: &mut ZeldaState,
     host_call: u64,
@@ -1210,6 +1239,7 @@ fn install_run48xx_host(
         .unwrap();
 }
 
+#[cfg(feature = "rom-timing")]
 fn assert_run48xx_scheduled_flagged_projection_build(
     state: &ZeldaState,
     copied_words: u16,
@@ -1257,6 +1287,7 @@ fn assert_run48xx_scheduled_flagged_projection_build(
 /// its module body from the same retained pair. Re-pin them where the
 /// synthesized lineage would otherwise let the module body drift the iris
 /// vertical center away from the trace.
+#[cfg(feature = "rom-timing")]
 fn pin_live_spotlight_follower(state: &mut ZeldaState) {
     state.follower_link_state_mut().set_y(8692);
     state.set_bg2_v_copy2(8466);
@@ -1268,6 +1299,7 @@ fn pin_live_spotlight_follower(state: &mut ZeldaState) {
 /// live trace (the shared follower/scroll pair keeps the iris vertical
 /// center at 238 for every remaining close iteration), with the previous
 /// terminal's completed common suffix and released latch.
+#[cfg(feature = "rom-timing")]
 fn spotlight_close_projection_window_state(radius: u16, frame_counter: u8) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1288,6 +1320,7 @@ fn spotlight_close_projection_window_state(radius: u16, frame_counter: u8) -> Ze
 /// Enter the ProjectionCopy window at run4794 and prove its
 /// mid-ProjectionCopy interrupt schedules the sprite-preparation estimate,
 /// then install run4795's carried-Held terminal return without consuming it.
+#[cfg(feature = "rom-timing")]
 fn run4795_flagged_terminal_spotlight_build_state() -> ZeldaState {
     let mut state = spotlight_close_projection_window_state(91, 180);
 
@@ -1330,6 +1363,7 @@ fn run4795_flagged_terminal_spotlight_build_state() -> ZeldaState {
 /// Execute run4795's flagged terminal Build, then run4796's second
 /// mid-ProjectionCopy interrupt, and install run4797's flagged terminal with
 /// its trailing Open acceptance.
+#[cfg(feature = "rom-timing")]
 fn run4797_flagged_trailing_open_spotlight_build_state() -> ZeldaState {
     let mut state = run4795_flagged_terminal_spotlight_build_state();
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -1362,6 +1396,7 @@ fn run4797_flagged_trailing_open_spotlight_build_state() -> ZeldaState {
 /// Execute run4797, then run4798's HostReturn ProjectionCopy checkpoint (the
 /// host budget expires inside the memcpy with no vblank), and install
 /// run4799's re-checkpointed terminal return.
+#[cfg(feature = "rom-timing")]
 fn run4799_recheckpointed_terminal_spotlight_build_state() -> ZeldaState {
     let mut state = run4797_flagged_trailing_open_spotlight_build_state();
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -1399,6 +1434,7 @@ fn run4799_recheckpointed_terminal_spotlight_build_state() -> ZeldaState {
 /// Execute run4799..run4804 (the final table upload and the first LinkOam
 /// interruptions of the tail phase), and install run4805's carried-Held
 /// suffix-only terminal return.
+#[cfg(feature = "rom-timing")]
 fn run4805_carried_suffix_only_spotlight_state() -> ZeldaState {
     let mut state = run4799_recheckpointed_terminal_spotlight_build_state();
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -1492,6 +1528,7 @@ fn run4805_carried_suffix_only_spotlight_state() -> ZeldaState {
 
 /// Execute run4805, then run4806's budget-expiry LinkOam interruption, and
 /// install run4807's same-host suffix-only terminal with its trailing Open.
+#[cfg(feature = "rom-timing")]
 fn run4807_trailing_open_suffix_only_spotlight_state() -> ZeldaState {
     let mut state = run4805_carried_suffix_only_spotlight_state();
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -1530,6 +1567,7 @@ fn run4807_trailing_open_suffix_only_spotlight_state() -> ZeldaState {
 /// Execute run4807..run4818 (the remaining LinkOam tail iterations, whose
 /// final module body advances the frame out of Module0F), and install
 /// run4819's tokenless final suffix-only return.
+#[cfg(feature = "rom-timing")]
 fn run4819_tokenless_final_spotlight_state() -> ZeldaState {
     let mut state = run4807_trailing_open_suffix_only_spotlight_state();
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -1623,6 +1661,7 @@ fn run4819_tokenless_final_spotlight_state() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_dungeon_spotlight_caller_before_terminal_return(remaining_slices: u8) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1648,6 +1687,7 @@ fn live_dungeon_spotlight_caller_before_terminal_return(remaining_slices: u8) ->
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn dungeon_spotlight_terminal_return_receipts(host_call: u64) -> OriginalTimingHostReceipts {
     OriginalTimingHostReceipts::new(
         host_call,
@@ -1665,6 +1705,7 @@ fn dungeon_spotlight_terminal_return_receipts(host_call: u64) -> OriginalTimingH
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn dungeon_spotlight_terminal_return_without_trailing_nmi_receipts(
     host_call: u64,
 ) -> OriginalTimingHostReceipts {
@@ -1683,6 +1724,7 @@ fn dungeon_spotlight_terminal_return_without_trailing_nmi_receipts(
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn dungeon_spotlight_carried_terminal_return_receipts(
     host_call: u64,
 ) -> OriginalTimingHostReceipts {
@@ -1700,6 +1742,7 @@ fn dungeon_spotlight_carried_terminal_return_receipts(
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn carry_dungeon_spotlight_nmi_from_acceptance_host(
     state: &mut ZeldaState,
     host_call: u64,
@@ -1731,6 +1774,7 @@ fn carry_dungeon_spotlight_nmi_from_acceptance_host(
     assert!(state.original_timing_semantic_receipts.is_none());
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_dialogue_terminal_return_state(endpoint: u16) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1776,10 +1820,12 @@ fn live_dialogue_terminal_return_state(endpoint: u16) -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn dialogue_terminal_return_receipts(host: u64) -> OriginalTimingHostReceipts {
     dialogue_terminal_return_receipts_for_nmi_cell(host, true, false)
 }
 
+#[cfg(feature = "rom-timing")]
 fn dialogue_terminal_return_receipts_for_nmi_cell(
     host: u64,
     publication_pending_at_entry: bool,
@@ -1811,6 +1857,7 @@ fn dialogue_terminal_return_receipts_for_nmi_cell(
     OriginalTimingHostReceipts::new(host, 0, semantic)
 }
 
+#[cfg(feature = "rom-timing")]
 fn ordinary_dialogue_iteration_receipts(host: u64) -> OriginalTimingHostReceipts {
     OriginalTimingHostReceipts::new(
         host,
@@ -1834,6 +1881,7 @@ fn ordinary_dialogue_iteration_receipts(host: u64) -> OriginalTimingHostReceipts
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_idle_dialogue_main_loop_state() -> ZeldaState {
     let mut state = live_dialogue_terminal_return_state(0x37);
     state.game_execution_scheduler = GameExecutionScheduler::default();
@@ -1850,6 +1898,7 @@ fn live_idle_dialogue_main_loop_state() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_idle_terminal_dialogue_endpoint_state(endpoint: u16) -> ZeldaState {
     let mut state = live_idle_dialogue_main_loop_state();
     state.messaging_state_mut().set_text_render_state(3);
@@ -1863,6 +1912,7 @@ fn live_idle_terminal_dialogue_endpoint_state(endpoint: u16) -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn idle_terminal_dialogue_endpoint_receipts(
     host: u64,
     endpoint: u16,
@@ -1886,6 +1936,7 @@ fn idle_terminal_dialogue_endpoint_receipts(
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn idle_terminal_dialogue_endpoint_with_trailing_open_receipts(
     host: u64,
     endpoint: u16,
@@ -1910,6 +1961,7 @@ fn idle_terminal_dialogue_endpoint_with_trailing_open_receipts(
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn idle_terminal_suspended_vwf_receipts(host: u64) -> OriginalTimingHostReceipts {
     OriginalTimingHostReceipts::new(
         host,
@@ -1924,6 +1976,7 @@ fn idle_terminal_suspended_vwf_receipts(host: u64) -> OriginalTimingHostReceipts
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_idle_terminal_suspended_vwf_state() -> ZeldaState {
     let mut state = live_idle_terminal_dialogue_endpoint_state(25);
     state.messaging_text_mut().load_decoded_dialogue(&[0; 27]);
@@ -1938,6 +1991,7 @@ fn live_idle_terminal_suspended_vwf_state() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn intro_memory_darken_suspended_state(
     pending_at_entry: bool,
     trailing_acceptance: bool,
@@ -1984,6 +2038,7 @@ fn intro_memory_darken_suspended_state(
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn injected_dungeon_cpu_schedule(
     submodule_nmis: u8,
     caller_nmis: u8,
@@ -2001,6 +2056,7 @@ fn injected_dungeon_cpu_schedule(
     }
 }
 
+#[cfg(feature = "rom-timing")]
 fn spiral_cpu_test_state(subsubmodule: u8, schedule: DungeonSubmoduleCpuSchedule) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -2011,6 +2067,7 @@ fn spiral_cpu_test_state(subsubmodule: u8, schedule: DungeonSubmoduleCpuSchedule
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_terminal_ground_item_receipt_state_with_gfx(gfx: u8) -> ZeldaState {
     const ANIMATED_SOURCE: usize = 0xa680;
     const ANIMATED_DESTINATION: usize = 0x3b00;
@@ -2069,10 +2126,12 @@ fn live_terminal_ground_item_receipt_state_with_gfx(gfx: u8) -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_terminal_ground_item_receipt_state() -> ZeldaState {
     live_terminal_ground_item_receipt_state_with_gfx(0x14)
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_file_select_graphics_state_before_slice(completed_waiting_slices: u8) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2097,6 +2156,7 @@ fn live_file_select_graphics_state_before_slice(completed_waiting_slices: u8) ->
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn install_zero_file_select_test_assets(state: &mut ZeldaState) {
     // Sheets below 103 are stored raw by the Rust asset pack. The remaining
     // file-select sheets use two LC-LZ2 fill commands for exactly 0x600 zero
@@ -2123,6 +2183,7 @@ fn install_zero_file_select_test_assets(state: &mut ZeldaState) {
     state.assets = Some(AssetPack::from_data_ranges(asset_data, asset_ranges));
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_file_select_waiting_state(
     pending_at_entry: bool,
     trailing_acceptance: bool,
@@ -2159,6 +2220,7 @@ fn live_file_select_waiting_state(
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_selected_game_load_state_before_terminal_hosts() -> ZeldaState {
     let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -2207,6 +2269,7 @@ fn live_selected_game_load_state_before_terminal_hosts() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn live_selected_game_load_state_before_pre_dungeon_audio() -> ZeldaState {
     let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -2238,6 +2301,7 @@ fn live_selected_game_load_state_before_pre_dungeon_audio() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn mark_selected_game_load_sprite_disable_all_completed(state: &mut ZeldaState) {
     assert_eq!(
         state
@@ -2250,6 +2314,7 @@ fn mark_selected_game_load_sprite_disable_all_completed(state: &mut ZeldaState) 
     );
 }
 
+#[cfg(feature = "rom-timing")]
 fn early_dialogue_completion_state(pending_subroutine: u8) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2339,6 +2404,7 @@ fn publish_staged_dialogue_text_dma(state: &mut ZeldaState) {
     );
 }
 
+#[cfg(feature = "rom-timing")]
 fn return_only_dialogue_state_before_run2508() -> ZeldaState {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2390,6 +2456,7 @@ fn return_only_dialogue_state_before_run2508() -> ZeldaState {
     state
 }
 
+#[cfg(feature = "rom-timing")]
 fn run2508_dialogue_receipts() -> OriginalTimingHostReceipts {
     OriginalTimingHostReceipts::new(
         2508,
@@ -2405,6 +2472,7 @@ fn run2508_dialogue_receipts() -> OriginalTimingHostReceipts {
     )
 }
 
+#[cfg(feature = "rom-timing")]
 fn run2509_dialogue_receipts() -> OriginalTimingHostReceipts {
     OriginalTimingHostReceipts::new(
         2509,
@@ -2431,6 +2499,7 @@ fn run2509_dialogue_receipts() -> OriginalTimingHostReceipts {
     }])
 }
 
+#[cfg(feature = "rom-timing")]
 fn staged_dialogue_carry_state(gate: NmiUpdateGate) -> ZeldaState {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2499,22 +2568,31 @@ mod runtime_dungeon_roles;
 mod runtime_entity_tiles;
 #[path = "zelda_rtl_tests/runtime/runtime_entrance_backup.rs"]
 mod runtime_entrance_backup;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_overworld_dungeon_exit.rs"]
 mod runtime_native_overworld_dungeon_exit;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_properties_graphics.rs"]
 mod runtime_native_properties_graphics;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_screen_palettes.rs"]
 mod runtime_native_screen_palettes;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_area_palettes.rs"]
 mod runtime_native_area_palettes;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_sprite_reload.rs"]
 mod runtime_native_sprite_reload;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_properties_player.rs"]
 mod runtime_native_properties_player;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_properties_caller.rs"]
 mod runtime_native_properties_caller;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_map32_definition.rs"]
 mod runtime_native_map32_definition;
+#[cfg(feature = "rom-timing")]
 #[path = "zelda_rtl_tests/runtime/runtime_native_mirror_portal.rs"]
 mod runtime_native_mirror_portal;
 #[path = "zelda_rtl_tests/runtime/runtime_boss_prize_countdown.rs"]
@@ -2584,6 +2662,7 @@ mod runtime_world_transient_owners;
     }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_intro_through_poly_worker_irq_matches_full_cold_source_hosts() {
     let Some(path)=std::env::var_os("ZELDA3_ASSETS") else {return};
     let Ok(rom)=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")) else {return};
@@ -2804,26 +2883,31 @@ fn native_idle_poly_irq_matches_hardware_acceptance_and_main_restore() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_intro_animation_matches_independent_cold_source_hosts() {
     compare_native_intro_animation_cold_hosts(false,5);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn public_frame_dispatch_matches_independent_cold_intro_animation_hosts() {
     compare_native_intro_animation_cold_hosts(true,5);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn title_fade_and_sword_match_independent_cold_source_hosts() {
     compare_native_intro_animation_cold_hosts(true,7);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn background_fade_matches_independent_cold_source_hosts() {
     compare_native_intro_animation_cold_hosts(true,8);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn title_start_exits_match_independent_cold_source_hosts() {
     for submodule in [7,8] {
         compare_native_intro_input_cold_hosts(true,(1,0),Some(submodule));
@@ -2831,11 +2915,13 @@ fn title_start_exits_match_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn title_wait_timeout_matches_independent_cold_source_hosts() {
     compare_native_intro_input_cold_hosts(true,(20,0),None);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_initialization_matches_independent_cold_source_hosts() {
     for submodule in [7,8] {
         compare_native_intro_input_cold_hosts(true,(1,1),Some(submodule));
@@ -2843,6 +2929,7 @@ fn file_select_initialization_matches_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_erase_and_palettes_match_independent_cold_source_hosts() {
     for submodule in [7,8] {
         compare_native_intro_input_cold_hosts(true,(1,2),Some(submodule));
@@ -2850,6 +2937,7 @@ fn file_select_erase_and_palettes_match_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_stripes_match_independent_cold_source_hosts() {
     for submodule in [7,8] {
         compare_native_intro_input_cold_hosts(true,(1,5),Some(submodule));
@@ -2857,6 +2945,7 @@ fn file_select_stripes_match_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_active_menu_matches_independent_cold_source_hosts() {
     for submodule in [7,8] {
         compare_native_intro_input_cold_hosts_after(true,(1,5),Some(submodule),16);
@@ -2864,6 +2953,7 @@ fn file_select_active_menu_matches_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_valid_saves_and_confirmation_match_independent_cold_source_hosts() {
     compare_native_file_menu_cold_hosts(true,(1,5),Some(7),16,true,&[]);
     for slot in 0..3 {
@@ -2875,6 +2965,7 @@ fn file_select_valid_saves_and_confirmation_match_independent_cold_source_hosts(
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_menu_choices_match_independent_cold_source_hosts() {
     compare_native_file_menu_cold_hosts(true,(4,0),Some(7),0,false,&[0,0,8]);
     compare_native_file_menu_cold_hosts(true,(2,0),Some(7),0,true,&[0,0,0x10,0,0x10,0,8]);
@@ -2883,6 +2974,7 @@ fn file_select_menu_choices_match_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn kill_file_setup_retains_clock_through_shared_erase_and_stripes() {
     for stop in [(3,1),(3,2),(3,3)] {
         compare_native_file_menu_cold_hosts(true,stop,Some(7),0,true,&[0,0,0x10,0,8]);
@@ -2890,11 +2982,13 @@ fn kill_file_setup_retains_clock_through_shared_erase_and_stripes() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn kill_file_selection_retains_clock_through_live_slot_drawing() {
     compare_native_file_menu_cold_hosts(true,(3,3),Some(7),16,true,&[0,0,0x10,0,8]);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn kill_file_confirmation_and_cancel_match_independent_cold_source_hosts() {
     let menu=[0,0,0x10,0,8];
     for slot in 0..3 {
@@ -2910,11 +3004,13 @@ fn kill_file_confirmation_and_cancel_match_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn name_file_initialization_matches_independent_cold_source_hosts() {
     compare_native_file_menu_cold_hosts(true,(4,1),Some(7),0,false,&[0,0,8]);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn load_file_entry_matches_independent_cold_source_hosts() {
     // LoadFile returns to the dungeon's entrance-fade state, after publishing
     // its destination at $02:8383/$02:8387. Module 5 is its entry, not its return.
@@ -2922,11 +3018,13 @@ fn load_file_entry_matches_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_landing_matches_independent_cold_source_hosts() {
     compare_native_file_menu_cold_hosts(true,(7,15),Some(7),3,true,&[0,0,8]);
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn dungeon_landing_into_dialogue_matches_independent_cold_source_hosts() {
     compare_native_file_menu_cold_hosts(true,(14,2),Some(7),0,true,&[0,0,8]);
 }
@@ -2987,6 +3085,7 @@ fn load_file_player_publications_match_source_after_each_instruction() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn name_file_keyboard_setup_matches_independent_cold_source_hosts() {
     for title in [7,8] {for slot in 0..3 {
         let mut input=vec![0,0];
@@ -2997,6 +3096,7 @@ fn name_file_keyboard_setup_matches_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn name_file_active_matches_independent_cold_source_hosts() {
     for title in [7,8] {
         let mut input=vec![0;4];
@@ -3013,6 +3113,7 @@ fn name_file_active_matches_independent_cold_source_hosts() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn name_file_confirmation_matches_independent_cold_source_hosts() {
     for slot in 0..3 {
         let mut menu=vec![0,0];
@@ -3032,26 +3133,32 @@ fn file_select_retained_data_tables_match_source_bytes() {
     }
 }
 
+#[cfg(feature = "rom-timing")]
 fn compare_native_intro_animation_cold_hosts(public_dispatch: bool,stop_submodule:u8) {
     compare_native_intro_input_cold_hosts(public_dispatch,(0,stop_submodule),None);
 }
 
+#[cfg(feature = "rom-timing")]
 fn compare_native_intro_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>) {
     compare_native_intro_input_cold_hosts_after(public_dispatch,stop,press_start_in,0);
 }
 
+#[cfg(feature = "rom-timing")]
 fn compare_native_intro_input_cold_hosts_after(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,active_hosts:usize) {
     compare_native_file_menu_cold_hosts(public_dispatch,stop,press_start_in,active_hosts,false,&[]);
 }
 
+#[cfg(feature = "rom-timing")]
 fn compare_native_file_menu_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,active_hosts:usize,valid_saves:bool,menu_inputs:&[u16]) {
     compare_native_name_input_cold_hosts(public_dispatch,stop,press_start_in,active_hosts,valid_saves,menu_inputs,&[]);
 }
 
+#[cfg(feature = "rom-timing")]
 fn compare_native_name_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,active_hosts:usize,valid_saves:bool,menu_inputs:&[u16],name_inputs:&[u16]) {
     compare_native_menu_input_cold_hosts(public_dispatch,stop,press_start_in,active_hosts,valid_saves,menu_inputs,name_inputs,&[],None);
 }
 
+#[cfg(feature = "rom-timing")]
 fn compare_native_menu_input_cold_hosts(public_dispatch: bool,stop:(u8,u8),press_start_in:Option<u8>,mut active_hosts:usize,valid_saves:bool,menu_inputs:&[u16],name_inputs:&[u16],kill_inputs:&[u16],deleted_slot:Option<usize>) {
     let stop_submodule=if stop.0==0 {stop.1}else{9};
     let load_file_destination = matches!(stop.0, 7 | 14);

@@ -1,7 +1,15 @@
+#[cfg(feature = "rom-timing")]
 pub mod av;
+pub mod digest;
+pub mod hash;
+#[cfg(feature = "rom-timing")]
 pub mod cold_evidence;
 pub mod coverage;
+#[cfg(feature = "rom-timing")]
 pub mod evidence;
+#[cfg(feature = "rom-timing")]
 pub mod receipts;
+#[cfg(feature = "rom-timing")]
 pub mod runner;
+#[cfg(feature = "rom-timing")]
 pub mod trace_format;

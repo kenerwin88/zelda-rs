@@ -2,6 +2,7 @@
 //! comparison, replay validation, session receipts, and failure artifacts.
 
 use crate::*;
+use crate::oracle_lock::acquire_snes9x_compare_lock_mode;
 
 use std::collections::VecDeque;
 use std::env;
@@ -535,8 +536,8 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         eprintln!("failed to write initial Snes9x state: {error}");
         process::exit(1);
     });
-    let core_sha256 = parity::evidence::sha256_file(Path::new(core_path)).unwrap();
-    let rom_sha256 = parity::evidence::sha256_file(Path::new(rom_path)).unwrap();
+    let core_sha256 = parity::hash::sha256_file(Path::new(core_path)).unwrap();
+    let rom_sha256 = parity::hash::sha256_file(Path::new(rom_path)).unwrap();
     let manifest = serde_json::json!({
         "schema": 1,
         "status": "oracle_capture_running",
@@ -551,7 +552,7 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         "rom_random_replay": {
             "mode": "source_trace_verified_replay_script",
             "artifact": "rom-random.txt",
-            "sha256": parity::evidence::sha256_bytes(&rng_bytes),
+            "sha256": parity::hash::sha256_bytes(&rng_bytes),
         },
         "timing": {
             "fps": oracle.av_info.timing.fps,
@@ -565,12 +566,12 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         "comparison_lanes": {"video": true, "audio": true},
         "resume_oracle_state": resume_oracle_state.as_ref().map(|path| serde_json::json!({
             "path": path,
-            "sha256": parity::evidence::sha256_file(path).unwrap(),
+            "sha256": parity::hash::sha256_file(path).unwrap(),
             "frame": start_frame,
         })),
         "resume_semantic_trace_checkpoint": resume_semantic_trace_checkpoint.as_ref().map(|path| serde_json::json!({
             "path": path,
-            "sha256": parity::evidence::sha256_file(path).unwrap(),
+            "sha256": parity::hash::sha256_file(path).unwrap(),
             "frame": start_frame,
         })),
         "av_hash_ledger": {
@@ -1028,7 +1029,7 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             eprintln!("{} cache identity has no ROM hash", manifest_path.display());
             process::exit(2);
         });
-    let actual_rom_sha256 = parity::evidence::sha256_file(rom).unwrap_or_else(|error| {
+    let actual_rom_sha256 = parity::hash::sha256_file(rom).unwrap_or_else(|error| {
         eprintln!("failed to hash ROM {}: {error}", rom.display());
         process::exit(2);
     });
@@ -1945,10 +1946,10 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         "kind": "zelda3-rust-only-cached-snes9x-av-replay",
         "binary_sha256": std::env::current_exe()
             .ok()
-            .and_then(|path| parity::evidence::sha256_file(&path).ok()),
+            .and_then(|path| parity::hash::sha256_file(&path).ok()),
         "oracle_cache": cache,
         "oracle_cache_key": manifest.get("cache_key"),
-        "oracle_cache_manifest_sha256": parity::evidence::sha256_bytes(&manifest_bytes),
+        "oracle_cache_manifest_sha256": parity::hash::sha256_bytes(&manifest_bytes),
         "rom": {"path": rom, "sha256": actual_rom_sha256},
         "start_frame": start_frame,
         "compare_from_frame": compare_from_frame,
@@ -5370,8 +5371,8 @@ pub(crate) fn run_compare_libretro_oracle(
                             ),
                             "vram": {
                                 "bytes": 0x10000,
-                                "before_sha256": parity::evidence::sha256_bytes(&before_vram),
-                                "after_sha256": parity::evidence::sha256_bytes(&after_vram),
+                                "before_sha256": parity::hash::sha256_bytes(&before_vram),
+                                "after_sha256": parity::hash::sha256_bytes(&after_vram),
                                 "before_sequence": compact_byte_snapshot(&before_vram),
                                 "after_sequence": compact_byte_snapshot(&after_vram),
                             },
@@ -5566,8 +5567,8 @@ pub(crate) fn run_compare_libretro_oracle(
                             });
                         dma_snapshots.push(serde_json::json!({
                             "outer": outer,
-                            "before_sha256": parity::evidence::sha256_bytes(&before),
-                            "after_sha256": parity::evidence::sha256_bytes(&after),
+                            "before_sha256": parity::hash::sha256_bytes(&before),
+                            "after_sha256": parity::hash::sha256_bytes(&after),
                             "before_sequence": compact_byte_snapshot(&before),
                             "after_sequence": compact_byte_snapshot(&after),
                         }));
@@ -6632,31 +6633,6 @@ pub(crate) fn acquire_snes9x_compare_lock() -> fs::File {
 /// exclusive lock. (An earlier design gave renderless runs a shared flock; that
 /// made a 1-2 h cold A/V gate refuse every renderless fix-loop probe and vice
 /// versa for no safety gain.)
-pub(crate) fn acquire_snes9x_compare_lock_mode(exclusive: bool) -> fs::File {
-    use std::os::unix::io::AsRawFd;
-    let path = Path::new("/tmp/zelda3-snes9x-compare.lock");
-    let file = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .open(path)
-        .unwrap_or_else(|error| {
-            eprintln!("failed to open {}: {error}", path.display());
-            process::exit(2);
-        });
-    if !exclusive {
-        return file;
-    }
-    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if rc != 0 {
-        eprintln!(
-            "another rendering Snes9x comparison is already running (lock: {}); GPU comparisons must run serially (renderless runs take no lock)",
-            path.display()
-        );
-        process::exit(2);
-    }
-    file
-}
-
 /// Failure artifacts accumulate ~5-10MB per diverging run; keep only the most
 /// recent runs instead of growing target/parity-failures without bound.
 pub(crate) const PARITY_FAILURE_DIRS_KEPT: usize = 20;

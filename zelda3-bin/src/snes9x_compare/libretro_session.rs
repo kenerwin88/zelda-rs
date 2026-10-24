@@ -36,7 +36,7 @@ pub(crate) fn cold_evidence_run_nonce(
     process_id: u32,
 ) -> String {
     let session_dir = fs::canonicalize(session_dir).unwrap_or_else(|_| session_dir.to_path_buf());
-    parity::evidence::sha256_bytes(
+    parity::hash::sha256_bytes(
         format!(
             "zelda3-cold-run-v1\0{unix_time_ns}\0{process_id}\0{}\0{invocation_id}",
             session_dir.to_string_lossy()
@@ -1197,7 +1197,7 @@ pub(crate) fn finalize_libretro_session(
         } else {
             "captured_history"
         },
-        "sha256": parity::evidence::sha256_bytes(&input_artifact),
+        "sha256": parity::hash::sha256_bytes(&input_artifact),
     });
     fs::write(manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap_or_else(
         |error| {

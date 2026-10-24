@@ -11,6 +11,7 @@ mod audio_trace;
 mod developer_destinations;
 mod developer_modern_map;
 mod developer_room_commands;
+#[cfg(feature = "rom-timing")]
 mod dsp_phase_ledger;
 mod frame_dump_commands;
 mod gpu_capture;
@@ -20,65 +21,101 @@ mod index_dump_commands;
 mod index_source_keys;
 mod indexed_tile_sheet;
 mod input_script;
+#[cfg(feature = "rom-timing")]
 mod libretro_core;
+#[cfg(feature = "rom-timing")]
 mod libretro_timeline;
+#[cfg(feature = "rom-timing")]
 mod live_input_recording;
 mod logical_replay;
+mod oracle_lock;
 mod overworld_dump_commands;
 mod play_commands;
 mod play_renderer;
 mod render_diagnostics;
+#[cfg(feature = "rom-timing")]
 mod replay_diagnostics;
+#[cfg(feature = "rom-timing")]
 mod replay_save_config;
 mod route_coverage_commands;
 mod sheet_dump_commands;
+#[cfg(feature = "rom-timing")]
 mod smp_opcode_ledger;
+#[cfg(feature = "rom-timing")]
 mod snes9x_apu_tools;
+#[cfg(feature = "rom-timing")]
 mod snes9x_compare;
+#[cfg(feature = "rom-timing")]
 mod snes9x_frame_dump;
+#[cfg(feature = "rom-timing")]
 mod snes9x_presented_bg_scroll;
+#[cfg(feature = "rom-timing")]
 mod snes9x_presented_bg_tilemaps;
+#[cfg(feature = "rom-timing")]
 mod snes9x_presented_dialogue_text;
+#[cfg(feature = "rom-timing")]
 mod snes9x_presented_mode7;
+#[cfg(feature = "rom-timing")]
 mod snes9x_presented_window_mask;
+#[cfg(feature = "rom-timing")]
 mod snes9x_record_commands;
+#[cfg(feature = "rom-timing")]
 mod snes9x_route_recorder;
+#[cfg(feature = "rom-timing")]
 mod snes9x_segment_matrix;
+#[cfg(feature = "rom-timing")]
 mod snes9x_semantic_receipts;
 mod state_ledger;
+#[cfg(feature = "rom-timing")]
 use libretro_core::*;
+#[cfg(feature = "rom-timing")]
 use snes9x_apu_tools::*;
+#[cfg(feature = "rom-timing")]
 use snes9x_compare::*;
+#[cfg(feature = "rom-timing")]
 use snes9x_record_commands::*;
+
+#[cfg(not(feature = "rom-timing"))]
+use zelda3::debug_env;
 
 use std::backtrace::Backtrace;
 use std::env;
+#[cfg(feature = "rom-timing")]
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::io::Write;
+#[cfg(feature = "rom-timing")]
 use std::os::raw::{c_char, c_uint, c_void};
 use std::panic::{self, AssertUnwindSafe, PanicHookInfo};
 use std::path::{Path, PathBuf};
 use std::process;
+#[cfg(feature = "rom-timing")]
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use asset_palette_commands::run_dump_reference_palette;
 use asset_source_dump_commands::run_dump_assets_by_source;
+#[cfg(feature = "rom-timing")]
 use audio_trace::replay_checksum_samples;
 use developer_room_commands::{run_dump_developer_destination, run_dump_developer_tileset};
 use frame_dump_commands::{
     run_dump_frame, run_dump_overworld_screen, run_dump_replay_checkpoint_ppu,
     run_scan_replay_checkpoints, run_smoke_asset_gpu,
 };
-use gpu_capture::{render_live_game_gpu_frame_rgba, ModernAssetGpuReadbackRenderer};
+#[cfg(feature = "rom-timing")]
+use gpu_capture::render_live_game_gpu_frame_rgba;
+use gpu_capture::ModernAssetGpuReadbackRenderer;
 use hd_authoring_commands::{run_dump_hd_capture, run_slice_hd_cells};
+#[cfg(feature = "rom-timing")]
 use image_output::write_rgba_frame_png;
 use index_dump_commands::{run_dump_dungeon_index_tiles, run_dump_sprite_index_tiles};
 use overworld_dump_commands::{run_dump_unique_overworld_cells, run_dump_unique_overworld_tiles};
-use play_commands::{run_frontend_smoke, run_play, run_rom_timing_play};
+use play_commands::{run_frontend_smoke, run_play};
+#[cfg(feature = "rom-timing")]
+use play_commands::run_rom_timing_play;
 use render_diagnostics::format_render_ppu_summary;
+#[cfg(feature = "rom-timing")]
 use replay_diagnostics::{
     replay_checksum_bytes, replay_checksum_ram_range, replay_save_ancilla_dump,
     replay_save_door_dump, replay_save_dungeon_attr_dump, replay_save_dungmap_dump,
@@ -88,10 +125,13 @@ use replay_diagnostics::{
     replay_save_room_mask, replay_save_room_mask_dump, replay_save_sprite_dump,
     replay_sram_checksum_ok,
 };
+#[cfg(feature = "rom-timing")]
 use replay_save_config::{parse_replay_save_args_or_exit, ReplaySaveConfig};
-use route_coverage_commands::{
-    route_coverage_frame_from_game, run_coverage_probe, write_route_coverage_log_or_exit,
-};
+use route_coverage_commands::run_coverage_probe;
+#[cfg(any(test, feature = "rom-timing"))]
+use route_coverage_commands::route_coverage_frame_from_game;
+#[cfg(feature = "rom-timing")]
+use route_coverage_commands::write_route_coverage_log_or_exit;
 use serde::{Deserialize, Serialize};
 use sheet_dump_commands::{run_dump_dungeon_sheet_png, run_dump_sprite_sheet_png};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, Snes};
@@ -120,7 +160,9 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// older checkpoints can contain native fields saved before deferred adoption.
 /// 24 (2026-10-23): save-progress records/runtime bytes are authoritative too.
 const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC26";
+#[cfg(feature = "rom-timing")]
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
+#[cfg(feature = "rom-timing")]
 const ACTION_TILE_Y: [i16; 4] = [6, 24, 12, 12];
 pub(crate) const TRACE_MAIN_MODULE_INDEX: usize = 0x10;
 pub(crate) const TRACE_SUBMODULE_INDEX: usize = 0x11;
@@ -141,14 +183,33 @@ const EMBEDDED_ASSETS: &[u8] = include_bytes!(env!("ZELDA3_EMBEDDED_ASSETS"));
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    #[cfg(not(feature = "rom-timing"))]
+    if crate::debug_env::var_os!("ZELDA3_RECORD_INPUT_SESSION").is_some() {
+        eprintln!("live input recording requires the rom-timing Cargo feature");
+        process::exit(2);
+    }
+    #[cfg(not(feature = "rom-timing"))]
+    if args.iter().any(|arg| {
+        (arg.starts_with("--") && arg.contains("snes9x"))
+            || matches!(arg.as_str(), "--rom-timing" | "--trace-startup-audio"
+                | "--trace-song-bank" | "--trace-rom-apu-upload" | "--trace-spc-driver-startup"
+                | "--capture-rom-apu-bootstrap" | "--compare-bootstrap-apu-startup"
+                | "--replay-save" | "--smoke-render")
+    }) {
+        eprintln!("this command requires the rom-timing Cargo feature");
+        process::exit(2);
+    }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--generate-snes9x-smp-opcode-ledger") {
         smp_opcode_ledger::run_generate_command(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--generate-snes9x-dsp-phase-ledger") {
         dsp_phase_ledger::run_generate_command(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if dispatch_rom_first_oracle_flags(&args) {
         return;
     }
@@ -172,6 +233,7 @@ fn main() {
         run_frontend_smoke(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--smoke-render") {
         run_smoke_render(&args[2..]);
         return;
@@ -180,82 +242,102 @@ fn main() {
         run_smoke_asset_gpu(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--trace-startup-audio") {
         run_trace_startup_audio(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--trace-snes9x-audio") {
         run_trace_snes9x_audio(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--compare-snes9x-startup-audio") {
         run_compare_snes9x_startup_audio(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--compare-snes9x-oracle") {
         run_compare_snes9x_oracle(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--replay-cached-snes9x-av") {
         run_replay_cached_snes9x_av(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--capture-snes9x-av") {
         run_capture_snes9x_av(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--validate-snes9x-replay") {
         run_validate_snes9x_replay(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--run-snes9x-script") {
         run_snes9x_script(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--record-snes9x-route") {
         run_record_snes9x_route(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--build-snes9x-segment-matrix") {
         run_build_snes9x_segment_matrix(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--dump-snes9x-frame") {
         run_dump_snes9x_frame(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--trace-snes9x-memory") {
         run_trace_snes9x_memory(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--trace-song-bank") {
         run_trace_song_bank(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--trace-rom-apu-upload") {
         run_trace_rom_apu_upload(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--trace-snes9x-spc-window") {
         run_trace_snes9x_spc_window(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--dump-snes9x-apu-ram") {
         run_dump_snes9x_apu_ram(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--trace-spc-driver-startup") {
         run_trace_spc_driver_startup(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--capture-rom-apu-bootstrap") {
         run_capture_rom_apu_bootstrap(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--compare-bootstrap-apu-startup") {
         run_compare_bootstrap_apu_startup(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--snes9x-dump-frames") {
         snes9x_frame_dump::run_snes9x_dump_frames(&args[2..]);
         return;
@@ -336,6 +418,7 @@ fn main() {
         run_replay_crash(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--replay-save") {
         run_replay_save(&args[2..]);
         return;
@@ -348,6 +431,7 @@ fn main() {
         run_coverage_probe(&args[2..]);
         return;
     }
+    #[cfg(feature = "rom-timing")]
     if args.get(1).map(String::as_str) == Some("--rom-timing") {
         run_rom_timing_play(args.get(2).map(String::as_str));
         return;
@@ -454,6 +538,7 @@ fn parse_u16_auto(value: &str) -> Option<u16> {
         .unwrap_or_else(|| value.parse::<u16>().ok())
 }
 
+#[cfg(feature = "rom-timing")]
 fn dispatch_rom_first_oracle_flags(args: &[String]) -> bool {
     let Some(rom_path) = args.get(1) else {
         return false;
@@ -682,6 +767,7 @@ fn run_sram_smoke() {
     println!("sram smoke completed");
 }
 
+#[cfg(feature = "rom-timing")]
 fn print_asset_gpu_smoke_progress(
     label: &str,
     frames: u32,
@@ -753,6 +839,7 @@ fn write_asset_gpu_missing_report_or_exit(
     });
 }
 
+#[cfg(feature = "rom-timing")]
 fn write_asset_gpu_checkpoint_or_exit(game: &ZeldaState, frames: u32, dir: &Path) {
     if let Err(e) = fs::create_dir_all(dir) {
         eprintln!(
@@ -776,6 +863,7 @@ fn write_asset_gpu_checkpoint_or_exit(game: &ZeldaState, frames: u32, dir: &Path
     });
 }
 
+#[cfg(feature = "rom-timing")]
 fn run_replay_save(args: &[String]) {
     let ReplaySaveConfig {
         rom_path,
@@ -1336,6 +1424,7 @@ fn read_trailer_blob<R: std::io::Read>(file: &mut R) -> std::io::Result<Vec<u8>>
     Ok(buf)
 }
 
+#[cfg(feature = "rom-timing")]
 fn write_trailer_blob<W: std::io::Write>(file: &mut W, blob: &[u8]) -> std::io::Result<()> {
     file.write_all(&(blob.len() as u64).to_le_bytes())?;
     file.write_all(blob)?;
@@ -1396,6 +1485,7 @@ pub(crate) fn load_replay_save_checkpoint(
     Ok(())
 }
 
+#[cfg(feature = "rom-timing")]
 fn save_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::Result<()> {
     use std::io::Write;
     // Capture snapshots BEFORE state_recorder_save mutates them: the C-style music
@@ -1438,6 +1528,7 @@ fn save_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::R
     Ok(())
 }
 
+#[cfg(feature = "rom-timing")]
 fn write_checkpoint(game: &mut ZeldaState, frames: u32, path: &Path) {
     if let Err(e) = save_replay_save_checkpoint(game, path) {
         eprintln!(
@@ -1453,6 +1544,7 @@ fn write_checkpoint(game: &mut ZeldaState, frames: u32, path: &Path) {
     );
 }
 
+#[cfg(feature = "rom-timing")]
 pub(crate) fn print_replay_save_panic_report(
     game: &ZeldaState,
     frames: u32,
@@ -1808,8 +1900,13 @@ pub(crate) fn load_play_or_checkpoint(
 ) -> (ZeldaState, u32) {
     if let Some(path) = load_state {
         if let Ok(checkpoint) = load_play_crash_checkpoint(path) {
-            let mut game = checkpoint.game;
-            game.restore_live_rom_timing_after_checkpoint();
+            let game = checkpoint.game;
+            #[cfg(feature = "rom-timing")]
+            let game = {
+                let mut game = game;
+                game.restore_live_rom_timing_after_checkpoint();
+                game
+            };
             return (game, checkpoint.host_frame);
         }
         // Fall back to the replay-save state_recorder checkpoint format
@@ -1819,6 +1916,7 @@ pub(crate) fn load_play_or_checkpoint(
         let mut game = load_play_state(rom_path);
         match load_replay_save_checkpoint(&mut game, path) {
             Ok(()) => {
+                #[cfg(feature = "rom-timing")]
                 game.restore_live_rom_timing_after_checkpoint();
                 let frame = game.state_recorder.replay_frame_counter;
                 return (game, frame);
@@ -1938,6 +2036,7 @@ fn run_replay_crash(args: &[String]) {
     );
 }
 
+#[cfg(feature = "rom-timing")]
 fn run_smoke_render(args: &[String]) {
     let rom_path = match args.first() {
         Some(p) => p,
@@ -2040,6 +2139,7 @@ fn run_smoke_render(args: &[String]) {
     );
 }
 
+#[cfg(feature = "rom-timing")]
 fn load_modern_asset_gpu_readback_or_exit(context: &str) -> ModernAssetGpuReadbackRenderer {
     match ModernAssetGpuReadbackRenderer::load_from_env() {
         Ok(renderer) => renderer,
@@ -2074,6 +2174,7 @@ pub(crate) fn apply_sram_to_game_or_exit(game: &mut ZeldaState, path: &Path, sra
     game.sram.copy_from_slice(&sram[..expected]);
 }
 
+#[cfg(feature = "rom-timing")]
 extern "C" fn libretro_environment(cmd: c_uint, data: *mut c_void) -> bool {
     const RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: c_uint = 10;
     const RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: c_uint = 9;
@@ -2110,6 +2211,7 @@ extern "C" fn libretro_environment(cmd: c_uint, data: *mut c_void) -> bool {
     }
 }
 
+#[cfg(feature = "rom-timing")]
 extern "C" fn libretro_get_variable(data: *mut c_void) -> bool {
     if data.is_null() {
         return false;
@@ -2131,6 +2233,7 @@ extern "C" fn libretro_get_variable(data: *mut c_void) -> bool {
     true
 }
 
+#[cfg(feature = "rom-timing")]
 extern "C" fn libretro_video_refresh(
     data: *const c_void,
     width: c_uint,
@@ -2155,6 +2258,7 @@ extern "C" fn libretro_video_refresh(
     }
 }
 
+#[cfg(feature = "rom-timing")]
 extern "C" fn libretro_audio_sample(left: i16, right: i16) {
     if !LIBRETRO_CAPTURE_ENABLED.load(Ordering::Relaxed) {
         return;
@@ -2167,6 +2271,7 @@ extern "C" fn libretro_audio_sample(left: i16, right: i16) {
     }
 }
 
+#[cfg(feature = "rom-timing")]
 extern "C" fn libretro_audio_sample_batch(data: *const i16, frames: usize) -> usize {
     if !LIBRETRO_CAPTURE_ENABLED.load(Ordering::Relaxed) {
         return frames;
@@ -2182,8 +2287,10 @@ extern "C" fn libretro_audio_sample_batch(data: *const i16, frames: usize) -> us
     frames
 }
 
+#[cfg(feature = "rom-timing")]
 extern "C" fn libretro_input_poll() {}
 
+#[cfg(feature = "rom-timing")]
 extern "C" fn libretro_input_state(
     _port: c_uint,
     device: c_uint,
@@ -2200,6 +2307,7 @@ extern "C" fn libretro_input_state(
         .unwrap_or(0)
 }
 
+#[cfg(feature = "rom-timing")]
 fn summarize_audio_samples(samples: &[i16]) -> String {
     let nonzero = samples.iter().filter(|&&sample| sample != 0).count();
     let peak = samples
@@ -2661,12 +2769,14 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     h
 }
 
+#[cfg(feature = "rom-timing")]
 fn format_optional_u8(value: Option<u8>) -> String {
     value
         .map(|value| format!("{value:02x}"))
         .unwrap_or_else(|| "none".to_string())
 }
 
+#[cfg(feature = "rom-timing")]
 fn format_optional_u64(value: Option<u64>) -> String {
     value
         .map(|value| format!("{value:016x}"))
@@ -2777,6 +2887,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn mistyped_rom_first_oracle_flag_cannot_fall_through_to_play_mode() {
         let args = vec![
             "zelda3".to_string(),
@@ -2846,7 +2957,7 @@ mod tests {
             std::thread::current().name().unwrap_or("test")
         ));
         fs::write(&path, b"oracle-v1").unwrap();
-        let expected = parity::runner::sha256_file(&path).unwrap();
+        let expected = parity::hash::sha256_file(&path).unwrap();
         assert!(expected_sha256_matches(&path, "core", Some(&expected)).is_ok());
 
         fs::write(&path, b"oracle-v2").unwrap();
@@ -2856,6 +2967,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn libretro_frame_window_requires_at_least_one_replayed_frame() {
         assert!(validate_libretro_frame_window(0, 0).is_err());
         assert!(validate_libretro_frame_window(10, 10).is_err());
@@ -2864,6 +2976,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn snes9x_oracle_requires_version_1_63() {
         assert!(validate_required_libretro_core(
             Some(("Snes9x", "1.63")),
@@ -2881,6 +2994,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn libretro_null_video_callback_repeats_the_previous_frame() {
         let capture = LIBRETRO_CAPTURE.get_or_init(|| Mutex::new(LibretroCapture::default()));
         *capture.lock().unwrap() = LibretroCapture::default();
@@ -2900,6 +3014,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn snes9x_rgb565_green_is_normalized_to_snes_five_bit_color() {
         let raw = (27u16 << 11) | (55u16 << 5) | 27u16;
         let frame = LibretroFrame {
@@ -2915,6 +3030,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn libretro_engine_receipt_exposes_intro_and_audio_timing_state() {
         let mut ram = vec![0; 0x20000];
         ram[0x10] = 0x01;
@@ -3003,6 +3119,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn snes9x_dsp_trace_music_state_comes_from_oracle_wram() {
         let mut ram = vec![0; 0x20000];
         ram[0x012c] = 0x11;
@@ -3058,4 +3175,26 @@ mod tests {
 
         assert_eq!(frame.sprite_types, vec![0x00]);
     }
+}
+
+pub(crate) fn load_play_crash_checkpoint(
+    path: &Path,
+) -> Result<PlayCrashCheckpoint, Box<dyn std::error::Error>> {
+    let bytes = fs::read(path)?;
+    if bytes.len() < PLAY_CRASH_CHECKPOINT_MAGIC.len() {
+        return Err("not a zelda3-rs playable crash checkpoint".into());
+    }
+    // bincode 1 encodes the leading `[u8; 8]` field as eight raw bytes with no
+    // length prefix, so the layout version is readable before the full decode.
+    let magic = &bytes[..PLAY_CRASH_CHECKPOINT_MAGIC.len()];
+    if magic != PLAY_CRASH_CHECKPOINT_MAGIC {
+        return Err(format!(
+            "checkpoint layout {:?} does not match this binary's {:?}; re-create it with the current binary",
+            String::from_utf8_lossy(magic),
+            String::from_utf8_lossy(PLAY_CRASH_CHECKPOINT_MAGIC)
+        )
+        .into());
+    }
+    let checkpoint: PlayCrashCheckpoint = bincode::deserialize(&bytes)?;
+    Ok(checkpoint)
 }

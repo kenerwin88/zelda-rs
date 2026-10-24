@@ -1,4 +1,4 @@
-use crate::evidence::sha256_file;
+use crate::hash::sha256_file;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::File;
@@ -8,19 +8,7 @@ use std::path::Path;
 const REPORT_SCHEMA: u32 = 1;
 const LEDGER_SCHEMA: u32 = 1;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct VideoDigest {
-    pub width: u32,
-    pub height: u32,
-    pub sha256: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct AudioDigest {
-    pub sample_frames: u64,
-    pub channels: u32,
-    pub sha256: String,
-}
+pub use crate::digest::{VideoDigest, AudioDigest};
 
 #[derive(Debug, Deserialize)]
 struct CandidateVideo {

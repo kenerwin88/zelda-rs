@@ -925,6 +925,7 @@ impl DialogueScrollMachineMut<'_> {
         debug_assert_eq!(self.phase(), DialogueScrollPhase::CompletedScroll);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn restore_transient_after_checkpoint(
         &mut self,
         completed_scanout: DialogueTextScanout,

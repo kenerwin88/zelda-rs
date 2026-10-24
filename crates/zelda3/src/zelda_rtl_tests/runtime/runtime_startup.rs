@@ -121,6 +121,7 @@ fn save_quit_intro_memory_return_does_not_repeat_initialization() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn pinned_snes9x_reset_progress_is_unique_and_unclaimed_facts_fail_host_close() {
     let progress = sprite::DungeonResetSpritesCpuProgress::Cache {
         slot: 15,
@@ -391,6 +392,7 @@ fn pinned_snes9x_reset_progress_is_unique_and_unclaimed_facts_fail_host_close() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_intro_initialization_return_carries_its_trailing_open_nmi_across_presentation() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -481,6 +483,7 @@ fn terminal_intro_initialization_return_carries_its_trailing_open_nmi_across_pre
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_intro_initialization_carries_runs_159_and_160_into_terminal_run_161() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -602,6 +605,7 @@ fn nonterminal_intro_initialization_carries_runs_159_and_160_into_terminal_run_1
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_intro_acceptance_captures_reset_obj_addresses_before_retiring_flag() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -659,6 +663,7 @@ fn nonterminal_intro_acceptance_captures_reset_obj_addresses_before_retiring_fla
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_intro_host_without_nmi_preserves_reset_obj_transient() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -692,6 +697,7 @@ fn nonterminal_intro_host_without_nmi_preserves_reset_obj_transient() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_intro_initialization_requires_complete_typed_authority_before_mutation() {
     for missing in ["progress", "invalid-nmi-phases"] {
         let mut state = ZeldaState::new();
@@ -764,6 +770,7 @@ fn nonterminal_intro_initialization_requires_complete_typed_authority_before_mut
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_intro_initialization_return_rejects_incompatible_suffixes_before_mutation() {
     for incompatible in ["extended-oam", "interrupted"] {
         let mut state = ZeldaState::new();
@@ -834,6 +841,7 @@ fn terminal_intro_initialization_return_rejects_incompatible_suffixes_before_mut
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_intro_initialization_return_rejects_active_scheduler_before_mutation() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -894,6 +902,7 @@ fn terminal_intro_initialization_return_rejects_active_scheduler_before_mutation
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn paired_resume_rejects_nonterminal_intro_initialization_counter() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -909,6 +918,7 @@ fn paired_resume_rejects_nonterminal_intro_initialization_counter() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn paired_resume_rejects_suspended_intro_memory_darken_caller() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -923,6 +933,7 @@ fn paired_resume_rejects_suspended_intro_memory_darken_caller() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn native_save_menu_keeps_its_suffix_behind_text_initialization() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -946,6 +957,7 @@ fn native_save_menu_keeps_its_suffix_behind_text_initialization() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
     let mut held = ZeldaState::new();
     held.restore_live_rom_timing_after_checkpoint();
@@ -1016,6 +1028,7 @@ fn save_and_load_func_append_and_copy_bytes() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn snes_state_save_load_roundtrips_runtime_regions() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1078,6 +1091,7 @@ fn snes_state_save_load_roundtrips_runtime_regions() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn read_from_file_and_state_recorder_save_load_match_c_layout() {
     let mut cursor = std::io::Cursor::new(vec![1, 2, 3, 4]);
     let mut bytes = [0; 4];
@@ -1370,6 +1384,7 @@ fn first_frame_runs_startup_writes() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn rom_startup_preroll_matches_live_console_timing() {
     let mut state = ZeldaState::new();
 
@@ -1383,6 +1398,7 @@ fn rom_startup_preroll_matches_live_console_timing() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn public_frame_wrapper_consumes_unseedable_cold_start_on_reset_delay_frame() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1404,6 +1420,7 @@ fn public_frame_wrapper_consumes_unseedable_cold_start_on_reset_delay_frame() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn direct_run_frame_internal_consumes_unseedable_cold_start_on_reset_delay_frame() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1424,6 +1441,7 @@ fn direct_run_frame_internal_consumes_unseedable_cold_start_on_reset_delay_frame
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn reset_is_the_only_progressed_state_path_back_to_pending_cold_start() {
     let mut disabled = ZeldaState::new();
     disabled.set_rom_startup_timing(true);
@@ -1455,6 +1473,7 @@ fn reset_is_the_only_progressed_state_path_back_to_pending_cold_start() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn rom_startup_holds_only_the_interrupted_intro_initialization_frame() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1471,6 +1490,7 @@ fn rom_startup_holds_only_the_interrupted_intro_initialization_frame() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn first_rom_frame_publishes_intro_audio_on_the_following_nmi() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1502,6 +1522,7 @@ fn legacy_intro_memory_initialization_fallback_keeps_configured_delay() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_intro_brightness_zero_arms_typed_memory_caller_without_finishing_it() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1519,6 +1540,7 @@ fn live_intro_brightness_zero_arms_typed_memory_caller_without_finishing_it() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn intro_memory_darken_nonterminal_plan_owns_all_four_source_nmi_shapes() {
     for (case, pending_at_entry, trailing_acceptance) in [
         ("carry-complete", true, false),
@@ -1587,6 +1609,7 @@ fn intro_memory_darken_nonterminal_plan_owns_all_four_source_nmi_shapes() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn intro_memory_darken_nonterminal_plan_rejects_malformed_authority_before_mutation() {
     for malformed in [
         "extra-joypad",
@@ -1663,6 +1686,7 @@ fn intro_memory_darken_nonterminal_plan_rejects_malformed_authority_before_mutat
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn intro_memory_darken_runtime_preflight_rejects_extra_fact_before_host_setup() {
     let mut state = intro_memory_darken_suspended_state(true, false, 181);
     state
@@ -1725,6 +1749,7 @@ fn intro_memory_darken_runtime_preflight_rejects_extra_fact_before_host_setup() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_intro_memory_darken_return_seeds_two_then_suffix_decrements_once() {
     let mut state = intro_memory_darken_suspended_state(true, false, 221);
     let sprite_packs = (0..9)
@@ -1804,6 +1829,7 @@ fn rom_intro_poly_thread_initializer_resumes_across_host_frames() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn intro_poly_suspended_caller_follows_exact_hosts_222_through_225() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2014,6 +2040,7 @@ fn intro_poly_suspended_caller_follows_exact_hosts_222_through_225() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn intro_bg_fade_common_suffix_precedes_poly_nmi_and_next_host_completes_it_once() {
     let mut state = ZeldaState::new();
     state.initialized = true;
@@ -2110,6 +2137,7 @@ fn intro_bg_fade_common_suffix_precedes_poly_nmi_and_next_host_completes_it_once
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn intro_poly_phase_arms_and_retires_one_common_suffix_owner() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2143,6 +2171,7 @@ fn intro_poly_phase_arms_and_retires_one_common_suffix_owner() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_intro_poly_entry_rejects_wrong_policy_or_vector_before_mutation() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2274,6 +2303,7 @@ fn live_intro_poly_entry_rejects_wrong_policy_or_vector_before_mutation() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_terminal_intro_poly_rejects_legacy_return_fact_before_mutation() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2346,6 +2376,7 @@ fn intro_poly_initialization_resumes_for_cold_start_and_attract_restart() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn attract_first_story_render_wait_is_armed_by_fade_completion() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -2418,6 +2449,7 @@ fn file_select_graphics_source_authority_ignores_the_legacy_slice_count() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_file_select_waiting_uses_all_four_source_continuation_shapes() {
     for (case, pending_at_entry, trailing_acceptance) in [
         ("carry-complete", true, false),
@@ -2490,6 +2522,7 @@ fn live_file_select_waiting_uses_all_four_source_continuation_shapes() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_file_select_waiting_publishes_only_the_committed_low_wram_clear_prefix() {
     let mut state = live_file_select_waiting_state(false, false, 0, 968);
     state.ram[0x0d00..0x1000].fill(0x5a);
@@ -2522,6 +2555,7 @@ fn live_file_select_waiting_publishes_only_the_committed_low_wram_clear_prefix()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_low_wram_clear_precedes_its_trailing_held_acceptance() {
     // Cold pinned-ROM host1019: [Held, Handler, ClearReturned, Held, Continued].
     let mut state = live_file_select_waiting_state(false, true, 0, 1019);
@@ -2543,6 +2577,7 @@ fn file_select_low_wram_clear_precedes_its_trailing_held_acceptance() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_file_select_waiting_rejects_bad_gate_snapshot_or_phase_before_mutation() {
     for malformed in ["wrong-gate", "closed-carry", "resume-module"] {
         let mut state = live_file_select_waiting_state(
@@ -2631,6 +2666,7 @@ fn live_file_select_waiting_rejects_bad_gate_snapshot_or_phase_before_mutation()
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_selected_game_load_completes_host2291_held_nmi_before_host2292_return() {
     let mut state = live_selected_game_load_state_before_terminal_hosts();
 
@@ -2737,6 +2773,7 @@ fn terminal_selected_game_load_completes_host2291_held_nmi_before_host2292_retur
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_selected_game_load_completes_a_carried_held_handler_without_recapture() {
     let mut state = live_selected_game_load_state_before_terminal_hosts();
     state.ppu.vram[0x1234] = 0x2222;
@@ -2773,6 +2810,7 @@ fn nonterminal_selected_game_load_completes_a_carried_held_handler_without_recap
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_selected_game_load_completes_run2215_carried_open_then_accepts_held() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.game_execution_scheduler = GameExecutionScheduler::default();
@@ -2839,6 +2877,7 @@ fn nonterminal_selected_game_load_completes_run2215_carried_open_then_accepts_he
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_selected_game_load_rejects_misplaced_open_handler_joypad_before_mutation() {
     let joypad = JoypadPublication {
         high: 0x80,
@@ -2941,6 +2980,7 @@ fn nonterminal_selected_game_load_rejects_misplaced_open_handler_joypad_before_m
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_selected_game_load_accepts_and_completes_a_held_handler_in_sequence() {
     let mut state = live_selected_game_load_state_before_terminal_hosts();
     state.original_timing_nmi_publication_pending = false;
@@ -2982,6 +3022,7 @@ fn nonterminal_selected_game_load_accepts_and_completes_a_held_handler_in_sequen
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn nonterminal_selected_game_load_rejects_unowned_or_open_nmi_slices_before_advancing() {
     let malformed = [
         vec![OriginalTimingSemanticReceipt::MainLoopProgress(
@@ -3087,6 +3128,7 @@ fn nonterminal_selected_game_load_rejects_unowned_or_open_nmi_slices_before_adva
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_selected_game_load_preflight_is_failure_atomic() {
     for malformed in [
         vec![OriginalTimingSemanticReceipt::MainLoopProgress(
@@ -3152,6 +3194,7 @@ fn terminal_selected_game_load_preflight_is_failure_atomic() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_selected_game_load_requires_receptive_held_carry_in_before_advancing() {
     let mut state = live_selected_game_load_state_before_terminal_hosts();
     mark_selected_game_load_sprite_disable_all_completed(&mut state);
@@ -3205,6 +3248,7 @@ fn terminal_selected_game_load_requires_receptive_held_carry_in_before_advancing
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_selected_game_load_rejects_a_nonheld_carry_in_before_advancing() {
     let mut state = live_selected_game_load_state_before_terminal_hosts();
     mark_selected_game_load_sprite_disable_all_completed(&mut state);
@@ -3261,6 +3305,7 @@ fn terminal_selected_game_load_rejects_a_nonheld_carry_in_before_advancing() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_file_select_graphics_return_captures_the_trailing_open_nmi_for_the_next_host() {
     let mut state =
         live_file_select_graphics_state_before_slice(FILE_SELECT_GRAPHICS_NMI_SLICES - 1);
@@ -3352,6 +3397,7 @@ fn terminal_file_select_graphics_return_captures_the_trailing_open_nmi_for_the_n
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_nonterminal_file_select_graphics_retains_loading_at_legacy_count_one() {
     let mut state =
         live_file_select_graphics_state_before_slice(FILE_SELECT_GRAPHICS_NMI_SLICES - 1);
@@ -3386,6 +3432,7 @@ fn live_nonterminal_file_select_graphics_retains_loading_at_legacy_count_one() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn live_terminal_file_select_graphics_ignores_the_legacy_remaining_count() {
     let mut state =
         live_file_select_graphics_state_before_slice(FILE_SELECT_GRAPHICS_NMI_SLICES - 2);
@@ -3430,6 +3477,7 @@ fn live_terminal_file_select_graphics_ignores_the_legacy_remaining_count() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_file_select_graphics_prevalidates_nmi_phases_before_advancing() {
     let mut state =
         live_file_select_graphics_state_before_slice(FILE_SELECT_GRAPHICS_NMI_SLICES - 1);
@@ -3477,6 +3525,7 @@ fn terminal_file_select_graphics_prevalidates_nmi_phases_before_advancing() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn terminal_file_select_graphics_requires_receptive_carry_in_before_advancing() {
     let mut state =
         live_file_select_graphics_state_before_slice(FILE_SELECT_GRAPHICS_NMI_SLICES - 1);
@@ -3530,6 +3579,7 @@ fn terminal_file_select_graphics_requires_receptive_carry_in_before_advancing() 
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_checkerboard_finishes_through_the_pre_main_dispatcher() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3556,6 +3606,7 @@ fn file_select_checkerboard_finishes_through_the_pre_main_dispatcher() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn file_select_terminal_caller_runs_held_nmi_before_suffix_and_carries_open_nmi() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3779,6 +3830,7 @@ fn legacy_poly_stack_marker_cannot_own_a_frame_after_worker_shutdown() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn carry_in_held_nmi_completion_preserves_the_already_returned_poly_scanout() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3921,6 +3973,7 @@ fn rom_intro_background_fade_preserves_cooperative_poly_cadence() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn bare_live_call_stack_progress_cannot_expire_from_poly_only_idle_dispatch() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3985,6 +4038,7 @@ fn bare_live_call_stack_progress_cannot_expire_from_poly_only_idle_dispatch() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn title_poly_thread_teardown_defers_the_next_main_loop_tick() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4001,6 +4055,7 @@ fn title_poly_thread_teardown_defers_the_next_main_loop_tick() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn title_poly_teardown_runs_main_independently_of_atomic_stack_phase() {
     for stack in [0x1f31,0x01f2] {
         let mut state=ZeldaState::new();
@@ -4025,6 +4080,7 @@ fn title_poly_teardown_runs_main_independently_of_atomic_stack_phase() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn rom_intro_waits_for_poly_thread_completion_before_advancing_again() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4045,6 +4101,7 @@ fn rom_intro_waits_for_poly_thread_completion_before_advancing_again() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn main_loop_does_not_complete_poly_work_that_was_not_scheduled() {
     let mut state = ZeldaState::new();
     state.initialized = true;
@@ -4114,6 +4171,7 @@ fn poly_worker_budget_tracks_geometry_cost_instead_of_route_frames() {
 }
 
 #[test]
+#[cfg(feature = "rom-timing")]
 fn poly_worker_cost_model_handles_sparse_wide_faces() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);

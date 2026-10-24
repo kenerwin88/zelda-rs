@@ -192,6 +192,7 @@ impl ZeldaState {
     /// it is intentionally omitted from `ZeldaState`'s serialized payload.
     /// Calling `set_rom_startup_timing(true)` here would also reapply the SPC
     /// bootstrap phase and corrupt the checkpoint's exact audio position.
+    #[cfg(feature = "rom-timing")]
     pub fn restore_live_rom_timing_after_checkpoint(&mut self) {
         let completed_scanout = self.dialogue_text_scanout_from_render_buffer();
         self.dialogue_scroll_machine_mut()

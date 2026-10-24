@@ -328,7 +328,7 @@ pub(crate) fn compact_delta_integer_sequence_with_zstd<const N: usize>(
         },
         fields: fields.into_iter().collect(),
         record_count: rows.len(),
-        expanded_sha256: parity::evidence::sha256_bytes(&expanded),
+        expanded_sha256: parity::hash::sha256_bytes(&expanded),
         data_base64: base64_bytes(&encoded),
     }
 }
@@ -816,7 +816,7 @@ pub(crate) fn read_snes9x_retro_run_trace(
         return_event,
         hdma_events,
         video_events,
-        raw_sha256: parity::evidence::sha256_bytes(&bytes),
+        raw_sha256: parity::hash::sha256_bytes(&bytes),
     }))
 }
 
@@ -1361,7 +1361,7 @@ pub(crate) fn framed_smp_instruction_digest(instructions: &[FramedSmpInstruction
             bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
-    parity::evidence::sha256_bytes(&bytes)
+    parity::hash::sha256_bytes(&bytes)
 }
 
 pub(crate) fn compact_framed_smp_instructions(
@@ -1611,14 +1611,14 @@ pub(crate) fn snes9x_smp_trace_provenance(
         "core": {
             "library_name": oracle.library_name,
             "library_version": oracle.library_version,
-            "sha256": parity::evidence::sha256_file(Path::new(core_path))?,
+            "sha256": parity::hash::sha256_file(Path::new(core_path))?,
         },
         "rom": {
-            "sha256": parity::evidence::sha256_file(Path::new(rom_path))?,
+            "sha256": parity::hash::sha256_file(Path::new(rom_path))?,
         },
         "source": {
             "revision": source_revision,
-            "trace_patch_sha256": parity::evidence::sha256_file(&trace_patch)?,
+            "trace_patch_sha256": parity::hash::sha256_file(&trace_patch)?,
         },
         "cpu_to_smp_ratio": {
             "numerator": 15_664,
@@ -1643,7 +1643,7 @@ pub(crate) fn write_snes9x_smp_first_nmi_header<W: Write>(
             "prefix_fixture".to_string(),
             serde_json::json!({
                 "path": "external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl",
-                "sha256": parity::evidence::sha256_file(&prefix_fixture)?,
+                "sha256": parity::hash::sha256_file(&prefix_fixture)?,
                 "terminal_event": "final_$fffb/1f_to_$0800_ipl_handoff",
             }),
         );
@@ -1693,7 +1693,7 @@ pub(crate) fn write_snes9x_first_nmi_dma_setup_header<W: Write>(
         "prefix_fixture".to_string(),
         serde_json::json!({
             "path": "external/snes9x-libretro/fixtures/zelda3-cold-apu-first-nmi.jsonl",
-            "sha256": parity::evidence::sha256_file(&prefix_fixture)?,
+            "sha256": parity::hash::sha256_file(&prefix_fixture)?,
             "terminal_event": "completed_$0080e1_lda_$2140_semantic_and_kind2_timing",
         }),
     );
@@ -1705,7 +1705,7 @@ pub(crate) fn write_snes9x_first_nmi_dma_setup_header<W: Write>(
             "source_revision": core_receipt["source_revision"],
             "patch_sha256": core_receipt["patch_sha256"],
             "patch_sha256s": core_receipt["patch_sha256s"],
-            "sha256": parity::evidence::sha256_file(&core_receipt_path)?,
+            "sha256": parity::hash::sha256_file(&core_receipt_path)?,
         }),
     );
     provenance.insert(
@@ -1731,7 +1731,7 @@ pub(crate) fn write_snes9x_first_nmi_dma_header<W: Write>(
     let core_receipt: serde_json::Value = serde_json::from_slice(&fs::read(&core_receipt_path)?)?;
     let patch_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../external/snes9x-libretro/patches/zelda3-dma-ledger.patch");
-    let patch_sha256 = parity::evidence::sha256_file(&patch_path)?;
+    let patch_sha256 = parity::hash::sha256_file(&patch_path)?;
     let patch_sha256s = core_receipt["patch_sha256s"]
         .as_array()
         .ok_or("first-NMI DMA core receipt has no patch_sha256s")?;
@@ -1754,7 +1754,7 @@ pub(crate) fn write_snes9x_first_nmi_dma_header<W: Write>(
         "prefix_fixture".to_string(),
         serde_json::json!({
             "path": "external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma-setup.jsonl",
-            "sha256": parity::evidence::sha256_file(&prefix_fixture)?,
+            "sha256": parity::hash::sha256_file(&prefix_fixture)?,
             "terminal_event": "excluded_$008a35_raw_fetch_V226_H714_to_H722",
         }),
     );
@@ -1766,7 +1766,7 @@ pub(crate) fn write_snes9x_first_nmi_dma_header<W: Write>(
             "source_revision": core_receipt["source_revision"],
             "patch_sha256": core_receipt["patch_sha256"],
             "patch_sha256s": core_receipt["patch_sha256s"],
-            "sha256": parity::evidence::sha256_file(&core_receipt_path)?,
+            "sha256": parity::hash::sha256_file(&core_receipt_path)?,
         }),
     );
     provenance.insert(
@@ -1802,7 +1802,7 @@ pub(crate) fn write_snes9x_first_nmi_return_header<W: Write>(
     let core_receipt: serde_json::Value = serde_json::from_slice(&fs::read(&core_receipt_path)?)?;
     let dma_patch_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../external/snes9x-libretro/patches/zelda3-dma-ledger.patch");
-    let dma_patch_sha256 = parity::evidence::sha256_file(&dma_patch_path)?;
+    let dma_patch_sha256 = parity::hash::sha256_file(&dma_patch_path)?;
     let patch_sha256s = core_receipt["patch_sha256s"]
         .as_array()
         .ok_or("first-NMI return core receipt has no patch_sha256s")?;
@@ -1826,7 +1826,7 @@ pub(crate) fn write_snes9x_first_nmi_return_header<W: Write>(
         "prefix_fixture".to_string(),
         serde_json::json!({
             "path": "external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma.jsonl",
-            "sha256": parity::evidence::sha256_file(&prefix_fixture)?,
+            "sha256": parity::hash::sha256_file(&prefix_fixture)?,
             "terminal_event": "completed_$008a35_sta_$420b_07_and_observed_$008a38_raw_fetch",
         }),
     );
@@ -1838,7 +1838,7 @@ pub(crate) fn write_snes9x_first_nmi_return_header<W: Write>(
             "source_revision": core_receipt["source_revision"],
             "patch_sha256": core_receipt["patch_sha256"],
             "patch_sha256s": core_receipt["patch_sha256s"],
-            "sha256": parity::evidence::sha256_file(&core_receipt_path)?,
+            "sha256": parity::hash::sha256_file(&core_receipt_path)?,
         }),
     );
     provenance.insert(
@@ -1890,7 +1890,7 @@ pub(crate) fn first_nmi_dma_setup_initial_sram_provenance(
         )
         .into());
     }
-    let sha256 = parity::evidence::sha256_bytes(initial_sram);
+    let sha256 = parity::hash::sha256_bytes(initial_sram);
     if sha256 != FIRST_NMI_DMA_SETUP_INITIAL_SRAM_SHA256 {
         return Err(format!(
             "first-NMI DMA-setup initial SRAM SHA-256 is {sha256}, expected {FIRST_NMI_DMA_SETUP_INITIAL_SRAM_SHA256}"

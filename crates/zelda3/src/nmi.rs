@@ -926,6 +926,7 @@ impl ZeldaState {
         self.dma=dma;
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(super) fn run_native_poly_buffer_clear(&mut self,
         context:&mut crate::cycle_models::nmi_stack::NativeNmiContext,
         clock:&mut snes::CpuMasterTimeline) {

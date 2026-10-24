@@ -225,6 +225,7 @@ impl Startup {
         startup
     }
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn from_main_caller_for_test(context: super::nmi_stack::NativeNmiContext, clock: &CpuMasterTimeline) -> Self {
         assert_eq!((context.bank, context.pc, context.sp), (0, 0x8038, 0x1ff));
         let mut startup = Self::after_upload(clock);
@@ -290,6 +291,7 @@ impl Startup {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn retained_context(&self)->Option<super::nmi_stack::NativeNmiContext> {self.selected_worker.map(|w|w.context).or(self.context)}
 
     pub(crate) fn entered_module_context(&self) -> Option<super::nmi_stack::NativeNmiContext> {
@@ -507,6 +509,7 @@ impl Startup {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn intro_clear_context(&self) -> Option<super::nmi_stack::NativeNmiContext> {
         if self.intro_clear_pending() { self.context } else { None }
     }
@@ -849,6 +852,7 @@ impl Startup {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn waiting_context(&self) -> Option<super::nmi_stack::NativeNmiContext> {
         if matches!(self.phase, Phase::Wait(_)) { self.context } else { None }
     }

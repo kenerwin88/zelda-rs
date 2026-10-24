@@ -3,6 +3,7 @@ use std::fs;
 use std::io::BufWriter;
 use std::path::Path;
 
+#[cfg(feature = "rom-timing")]
 pub(crate) fn write_argb_frame_png(
     path: &Path,
     frame: &[u8],
@@ -143,6 +144,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn writes_argb_frame_as_rgba_png() {
         let path = temp_png("argb");
         let argb = vec![10, 20, 30, 255, 40, 50, 60, 255];

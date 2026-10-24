@@ -620,6 +620,7 @@ impl SuspendedVwfCompletionTransition {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(super) const fn slice_count(self) -> u32 {
         self.slice_count
     }
@@ -631,6 +632,7 @@ impl SuspendedVwfEndpointTransition {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(super) const fn slice_count(self) -> u32 {
         self.slice_count
     }
@@ -1026,6 +1028,7 @@ mod fast_forward_cycle_tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn suspended_initialization_keeps_render_text_return_with_its_callee() {
         use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
         use crate::zelda_rtl::{GameWorkContinuation, ZeldaState};
@@ -8565,6 +8568,7 @@ impl ZeldaState {
     /// The HDMA initialisation at the top of the field: 18 cycles of
     /// overhead, 8 per enabled channel (its first line-counter byte) and 16
     /// more for an indirect channel's address.
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn native_hdma_init_stall_master_cycles(&self) -> u16 {
         let mut stall = 0u16;
         for (index, channel) in self.dma.channel.iter().enumerate() {
@@ -9610,6 +9614,7 @@ impl ZeldaState {
     }
 
     /// ROM: `RenderText_SetDefaultWindowPosition`
+    #[cfg(feature = "rom-timing")]
     pub(super) fn render_text_set_default_window_position(&mut self) {
         // $0E:D280-$0E:D29B: straight line, `LDA $D391,X` with a 16-bit index.
         crate::cycle_ledger::charge_routine(0x0e_d280, 364);

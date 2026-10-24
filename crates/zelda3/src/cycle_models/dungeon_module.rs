@@ -71,6 +71,7 @@ impl DungeonModule {
         self.phase = Phase::Common(Default::default());
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn return_from_child(&mut self, cpu: &NativeNmiContext) {
         assert!(self.child().is_some(), "no dungeon child owns the CPU");
         match &mut self.phase {

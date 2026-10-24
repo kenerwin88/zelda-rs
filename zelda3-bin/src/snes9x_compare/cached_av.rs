@@ -34,7 +34,7 @@ pub(crate) fn cached_ledger_input(value: &str) -> Result<u16, String> {
 }
 
 pub(crate) fn canonical_audio_digest(samples: &[i16]) -> serde_json::Value {
-    let mut digest = parity::evidence::Sha256Digest::new();
+    let mut digest = parity::hash::Sha256Digest::new();
     digest.update_i16_le(samples);
     serde_json::json!({
         "sample_frames": samples.len() / 2,
@@ -58,7 +58,7 @@ pub(crate) fn canonical_rust_video_digest(
             rgba.len()
         ));
     }
-    let mut digest = parity::evidence::Sha256Digest::new();
+    let mut digest = parity::hash::Sha256Digest::new();
     digest.update_rgb_from_rgba(std::iter::once(rgba));
     Ok(serde_json::json!({
         "width": width,
@@ -90,7 +90,7 @@ pub(crate) fn canonical_oracle_video_digest(
             frame.video.len()
         ));
     }
-    let mut digest = parity::evidence::Sha256Digest::new();
+    let mut digest = parity::hash::Sha256Digest::new();
     for y in 0..frame.video_height as usize {
         for x in 0..frame.video_width as usize {
             let offset = y * frame.video_pitch + x * stride;

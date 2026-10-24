@@ -61,6 +61,7 @@ impl PreOverworldProperties {
         self.call.map(|call| call.child)
     }
     #[cfg(test)]
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn at_instruction_for_test(pc: u16) -> Self {
         Self { pc, ..Self::new(0x83c6, 0x1fc) }
     }

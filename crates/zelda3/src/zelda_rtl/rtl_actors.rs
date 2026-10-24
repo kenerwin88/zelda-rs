@@ -55,51 +55,61 @@ impl ZeldaState {
         self.display_core_mut().set_sprite_dma_body_pointer(value);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
         self.display_core_mut()
             .set_link_body_dma_sources(top, bottom);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
         self.display_core_mut()
             .set_link_head_dma_sources(top, bottom);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
         self.display_core_mut()
             .set_link_hand_dma_sources(left, right);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_link_sword_dma_sources(upper, lower);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_link_shield_dma_sources(upper, lower);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_link_aux_dma_sources(upper, lower);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_link_push_dma_sources(upper, lower);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_link_animated_tile_dma_sources(upper, lower);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_link_head_pointer_dma_sources(upper, lower);
     }
 
+    #[cfg(feature = "rom-timing")]
     pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
         self.display_core_mut()
             .set_link_body_pointer_dma_sources(upper, lower);
