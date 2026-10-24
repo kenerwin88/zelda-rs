@@ -541,6 +541,7 @@ impl ZeldaState {
     /// Return the pending native HUD locals to the enclosing module caller;
     /// that caller, rather than HUD, owns interrupt and display scheduling.
     pub(super) fn hud_refill_logic_until_interruption(&mut self) -> Option<HudUpdateResume> {
+        self.native_checkpoint_sound_queue();
         // Cycle ledger: Hud_RefillLogic_Far ($0D:DB75), the JSL target every
         // caller uses; it branches into Hud_RefillLogic ($0D:DB92), which is
         // never called on its own. Entered m8 x8; data bank $0D.

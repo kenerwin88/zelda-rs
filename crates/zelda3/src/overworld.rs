@@ -671,6 +671,8 @@ impl ZeldaState {
     /// The synchronous writes `Module09_LoadAuxGFX` performs before its long
     /// decompression.
     fn module09_load_aux_gfx_prefix(&mut self) {
+        // $02:AB88..ABAC: four event-bit read/mask/write triples.
+        if self.lag_free { crate::cycle_ledger::charge(384); }
         self.clear_overworld_event_bits(0x3b, 0x20);
         self.clear_overworld_event_bits(0x7b, 0x20);
 
@@ -681,6 +683,8 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module09_load_aux_gfx(&mut self) {
+        // $02:ABB0..ABC5: two JSLs, request stores, submodule INC, RTS.
+        if self.lag_free { crate::cycle_ledger::charge(298); }
         self.LoadTransAuxGFX();
         self.PrepTransAuxGfx();
         self.set_core_update_disable_flag(9);
@@ -5589,74 +5593,98 @@ impl ZeldaState {
         }
     }
 
-    fn decompress_bank02_into(dst: &mut [u8], src: &[u8]) -> usize {
+    fn decompress_bank02_into(dst: &mut [u8], src: &[u8], source: Option<u32>) -> usize {
+        // $02:FEBB..FF6D. Preview decodes pass None: only live lagless
+        // work charges. Keep the exact CPU's existing ledger unchanged.
+        let charge = |n| { if source.is_some() { crate::cycle_ledger::charge(n); } };
+        fn octet(src: &[u8], pos: &mut usize, source: Option<u32>) -> u8 {
+            let value = src[*pos];
+            if let Some(base) = source {
+                // $02:FF5F..FF6D: pointer advance, including LoROM bank wrap.
+                let wraps = ((base & 0xffff) + *pos as u32 + 1) & 0x7fff == 0;
+                crate::cycle_ledger::charge(if wraps { 246 } else { 190 });
+            }
+            *pos += 1;
+            value
+        }
+        charge(46); // $02:FEBB..FEBF: REP, LDY.
         let mut written = 0usize;
         let mut src_pos = 0usize;
         loop {
-            let mut cmd = src[src_pos];
-            src_pos += 1;
+            let mut cmd = octet(src, &mut src_pos, source);
+            charge(78); // $02:FEC0..FEC5, including JSR, excluding octet body.
             if cmd == 0xff {
+                charge(64); // $02:FEC7..FEC9.
                 return written;
             }
+            charge(6 + 72); // $02:FEC5 taken, FECA..FED0.
             let mut len;
             if cmd & 0xe0 != 0xe0 {
+                charge(114); // $02:FED2..FEDA.
                 len = (cmd & 0x1f) as usize + 1;
                 cmd &= 0xe0;
             } else {
-                let len_lo = src[src_pos];
-                src_pos += 1;
+                charge(6 + 232); // $02:FED0 taken, FEDC..FEEC.
+                let len_lo = octet(src, &mut src_pos, source);
                 len = len_lo as usize + (((cmd & 3) as usize) << 8) + 1;
                 cmd = (cmd << 3) & 0xe0;
             }
 
+            charge(112); // $02:FEEE..FEF4.
             if cmd == 0 {
+                charge(6 + 22); // $02:FEF4 taken, FF19 BRA.
                 while len != 0 {
-                    let value = src[src_pos];
-                    src_pos += 1;
+                    charge(202 + if len > 1 { 6 } else { 0 }); // $02:FF0C..FF17.
+                    let value = octet(src, &mut src_pos, source);
                     dst[written] = value;
                     written += 1;
                     len -= 1;
                 }
             } else if cmd & 0x80 != 0 {
-                let hi = src[src_pos] as usize;
-                let lo = src[src_pos + 1] as usize;
-                src_pos += 2;
+                charge(22 + 126 + 24); // $02:FEF6 taken, FF42..FF49, FF5C.
+                let hi = octet(src, &mut src_pos, source) as usize;
+                let lo = octet(src, &mut src_pos, source) as usize;
                 let mut offs = (hi << 8) | lo;
                 while len != 0 {
+                    charge(332 + if len > 1 { 6 } else { 0 }); // $02:FF4A..FF5A.
                     dst[written] = dst[offs];
                     written += 1;
                     offs += 1;
                     len -= 1;
                 }
             } else if cmd & 0x40 == 0 {
-                let value = src[src_pos];
-                src_pos += 1;
+                charge(16 + 36 + 78 + 22); // $02:FEF6..FEF9, FF1B..FF1E, FF26.
+                let value = octet(src, &mut src_pos, source);
                 while len != 0 {
+                    charge(92 + if len > 1 { 6 } else { 0 }); // $02:FF20..FF24.
                     dst[written] = value;
                     written += 1;
                     len -= 1;
                 }
             } else if cmd & 0x20 == 0 {
-                let lo = src[src_pos];
-                let hi = src[src_pos + 1];
-                src_pos += 2;
+                charge(16 + 30 + 36 + 144 + 24); // $02:FEF6..FEFC, FF28..FF2F, FF3F.
+                let lo = octet(src, &mut src_pos, source);
+                let hi = octet(src, &mut src_pos, source);
                 while len != 0 {
+                    charge(112 + if len == 1 { 6 } else { 0 }); // $02:FF31..FF36.
                     dst[written] = lo;
                     written += 1;
                     len -= 1;
                     if len == 0 {
                         break;
                     }
+                    charge(112 + if len > 1 { 6 } else { 0 }); // $02:FF38..FF3D.
                     dst[written] = hi;
                     written += 1;
                     len -= 1;
                 }
             } else {
-                let mut value = src[src_pos];
-                src_pos += 1;
+                charge(16 + 30 + 30 + 78 + 22); // $02:FEF6..FF01, FF0A.
+                let mut value = octet(src, &mut src_pos, source);
                 while len != 0 {
                     dst[written] = value;
                     written += 1;
+                    charge(106 + if len > 1 { 6 } else { 0 }); // $02:FF03..FF08.
                     value = value.wrapping_add(1);
                     len -= 1;
                 }
@@ -5665,15 +5693,15 @@ impl ZeldaState {
     }
 
     /// ROM: `Decompress_bank02`
-    pub(super) fn decompress_bank02(&mut self, dst: usize, src: &[u8]) -> i32 {
-        Self::decompress_bank02_into(&mut self.ram[dst..], src) as i32
+    pub(super) fn decompress_bank02(&mut self, dst: usize, src: &[u8], source: u32) -> i32 {
+        Self::decompress_bank02_into(&mut self.ram[dst..], src, self.lag_free.then_some(source)) as i32
     }
 
     fn predecode_overworld_quadrant_bytes(&self, screen: i32) -> (Vec<u8>, Vec<u8>) {
         let mut scratch = self.ram[OVERWORLD_DECOMP_BUFFER..OVERWORLD_DECOMP_BUFFER + 256].to_vec();
-        assert_eq!(Self::decompress_bank02_into(&mut scratch, &self.GetOverworldHibytes(screen)), 256);
+        assert_eq!(Self::decompress_bank02_into(&mut scratch, &self.GetOverworldHibytes(screen), None), 256);
         let high = scratch.clone();
-        assert_eq!(Self::decompress_bank02_into(&mut scratch, &self.GetOverworldLobytes(screen)), 256);
+        assert_eq!(Self::decompress_bank02_into(&mut scratch, &self.GetOverworldLobytes(screen), None), 256);
         (high, scratch)
     }
 
@@ -5703,9 +5731,14 @@ impl ZeldaState {
             if within == 0 {
                 self.begin_overworld_quadrant_decode(cursor.screen + [0, 1, 8, 9][quadrant]);
             }
+            if store == 0 { self.charge_overworld_quadrant_tile(tile); }
             let input = self.overworld_map16_decode().source_word(tile * 2).wrapping_mul(2);
             if store == 0 {
                 self.prepare_overworld_map32_definition(input);
+            }
+            if self.lag_free {
+                // $02:F7AD..F7CA split at each destination store.
+                crate::cycle_ledger::charge([176, 102, 130, 172][store]);
             }
             let cache = [MAP16_DECODE_0_OVERWORLD, MAP16_DECODE_2_OVERWORLD,
                 MAP16_DECODE_1_OVERWORLD, MAP16_DECODE_3_OVERWORLD][store];
@@ -5732,11 +5765,18 @@ impl ZeldaState {
             eprintln!("native_quadrant_decode_begin frame={} screen={screen}", self.frame_ctr_dbg);
         }
         let hibytes = self.GetOverworldHibytes(screen);
-        self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &hibytes);
+        // $02:F595..F60E: setup/calls; interlace $F638..F678 and
+        // $F679..F68F -> F650..F678: 64 four-byte passes each.
+        if self.lag_free { crate::cycle_ledger::charge(1812); }
+        self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &hibytes,
+            crate::cycle_models::overworld_map_streams::HIGH[screen as usize]);
+        if self.lag_free { crate::cycle_ledger::charge(282 + 64 * 552 + 63 * 6 + 92); }
         self.copy_overworld_map16_scratch_to_source_words_high(256);
 
         let lobytes = self.GetOverworldLobytes(screen);
-        self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &lobytes);
+        self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &lobytes,
+            crate::cycle_models::overworld_map_streams::LOW[screen as usize]);
+        if self.lag_free { crate::cycle_ledger::charge(294 + 64 * 552 + 63 * 6 + 92); }
         self.copy_overworld_map16_scratch_to_source_words_low(256);
 
         self.set_overworld_map16_decode_last(0xffff);
@@ -5760,8 +5800,20 @@ impl ZeldaState {
             {
                 eprintln!("native_quadrant_tile frame={} tile={tile} input={input:04x}", self.frame_ctr_dbg);
             }
+            self.charge_overworld_quadrant_tile(tile);
             let tile_dst = dst + (tile / 16) * 256 + (tile % 16) * 4;
             self.overworld_parse_map32_definition(tile_dst, input);
+        }
+    }
+
+    fn charge_overworld_quadrant_tile(&self, tile: usize) {
+        if !self.lag_free { return; }
+        // $02:F610..F637: row prefix, per-tile body/call, taken inner
+        // branches, row suffix/taken outer branch, final PLB/RTS.
+        crate::cycle_ledger::charge(390 + if tile % 16 != 15 { 6 } else { 0 });
+        if tile % 16 == 0 { crate::cycle_ledger::charge(56); }
+        if tile % 16 == 15 {
+            crate::cycle_ledger::charge(142 + if tile != 255 { 6 } else { 70 });
         }
     }
 
@@ -5772,13 +5824,19 @@ impl ZeldaState {
     /// ROM: `Overworld_ParseMap32Definition`
     pub(super) fn overworld_parse_map32_definition(&mut self, dst: usize, input: u16) {
         self.prepare_overworld_map32_definition(input);
+        // $02:F7AD..F7CA: index, four loads/stores, destination advance, RTS.
+        if self.lag_free { crate::cycle_ledger::charge(580); }
         let idx = (input & 7) as usize;
         self.write_decoded_overworld_map32_to_bg2_tilemap(dst, idx);
     }
 
     fn prepare_overworld_map32_definition(&mut self, input: u16) {
+        // $02:F691..F69A: compare the shared definition cache.
+        if self.lag_free { crate::cycle_ledger::charge(110); }
         let a = input & !7;
         if a != self.overworld_map16_decode().decode_last() {
+            // $02:F698 taken, F69D..F7AB: expand four six-byte definitions.
+            if self.lag_free { crate::cycle_ledger::charge(6 + 3166); }
             self.set_overworld_map16_decode_last(a);
             self.set_overworld_map16_decode_tmp(a >> 1);
             let x = (a >> 1) as usize + (a >> 2) as usize;
@@ -5802,6 +5860,8 @@ impl ZeldaState {
             self.fill_map16_decode_block(MAP16_DECODE_1_OVERWORLD, &map1, x);
             self.fill_map16_decode_block(MAP16_DECODE_2_OVERWORLD, &map2, x);
             self.fill_map16_decode_block(MAP16_DECODE_3_OVERWORLD, &map3, x);
+        } else if self.lag_free {
+            crate::cycle_ledger::charge(24); // $02:F69A JMP.
         }
 
     }
@@ -5870,6 +5930,8 @@ impl ZeldaState {
     pub(super) fn begin_overworld_map8_cursor(
         &mut self, source_page: OverworldMap16SourcePage, upload_base: u16,
     ) -> NativeOverworldMap8Cursor {
+        // $02:FD46..FD57: Map16ToMap8 prologue.
+        if self.lag_free { crate::cycle_ledger::charge(254); }
         let map16_src = self.overworld_map16_src_off().wrapping_add(0x1000);
         self.set_overworld_map16_src_off(map16_src);
         NativeOverworldMap8Cursor { source_page, upload_base, completed_steps: 0 }
@@ -5885,9 +5947,17 @@ impl ZeldaState {
             let step = cursor.completed_steps % OVERWORLD_MAP8_ROW_STEPS;
             match step {
                 162 => {
+                    // $02:FD5C..FD62 or FD6F..FD75: row source advance.
+                    if self.lag_free { crate::cycle_ledger::charge(102); }
                     self.set_overworld_map16_src_off(self.overworld_map16_src_off().wrapping_sub(0x80));
                 }
                 163 => {
+                    // $02:FD64..FD6A / FD77..FD86: Y advance and outer loop.
+                    if self.lag_free {
+                        crate::cycle_ledger::charge(102 + if row % 2 == 1 {
+                            70 + if row == 31 { 92 } else { 6 }
+                        } else { 0 });
+                    }
                     self.set_overworld_map16_y_unit(self.overworld_map16_y_unit().wrapping_sub(1) & 0x1f);
                 }
                 _ => self.write_overworld_map8_row_step(
@@ -5917,6 +5987,28 @@ impl ZeldaState {
         &mut self, source_page: OverworldMap16SourcePage, upload_base: u16,
         output: usize, header: usize, step: u16, map8: &[u8],
     ) {
+        if self.lag_free {
+            // $02:FD59/FD6C call + FD87..FDC2: 16 paired stripe copies.
+            if step == 0 { crate::cycle_ledger::charge(46 + 224); }
+            if step < 32 {
+                crate::cycle_ledger::charge(if step % 2 == 0 { 262 } else {
+                    332 + if step == 31 { 0 } else { 6 }
+                });
+            } else if step == 32 {
+                // $02:FDC4..FDF6: destination setup and first prep call.
+                crate::cycle_ledger::charge(104 + if self.overworld_map16_y_unit() < 16 { 6 } else { 112 } + 438);
+            }
+            if step == 32 || step == 97 {
+                // $02:FDF7..FE0C: header + 16-tile loop setup.
+                crate::cycle_ledger::charge(324);
+            } else if step >= 33 {
+                let operation = (step - 33) % 65;
+                // $02:FE0E..FE3D split at stores. Final branch per 4 words.
+                crate::cycle_ledger::charge([288, 94, 122, 192][usize::from(operation % 4)]
+                    + if operation % 4 == 3 && operation != 63 { 6 } else { 0 });
+                if operation == 63 { crate::cycle_ledger::charge(126); } // $FE3F..FE46.
+            }
+        }
         if step < 32 {
             let yr = (self.overworld_map16_src_off().wrapping_sub(0x410)
                 .wrapping_add(step * 2) & 0x1fff) as usize;
@@ -5957,6 +6049,8 @@ impl ZeldaState {
 
     /// ROM: `Module09_LoadNewMapAndGFX`
     pub(super) fn module09_load_new_map_and_gfx(&mut self) {
+        // $02:ABC6..ABD9: stores and child calls, excluding child bodies.
+        if self.lag_free { crate::cycle_ledger::charge(306); }
         self.set_overworld_peg_puzzle_progress(0);
         if self.rom_startup_timing() {
             let (quadrant_nmis, tail_nmis) = self.native_overworld_map_graphics_nmi_slices.take()

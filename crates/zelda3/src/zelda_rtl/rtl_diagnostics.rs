@@ -350,6 +350,7 @@ impl ZeldaState {
             self.lag_free_lag_phases_run = false;
             self.lag_free_intro_after_ran = false;
         }
+        self.native_begin_main_cost();
         self.replay_trace_ram_watch("frame-entry");
         let mut state_recorder = std::mem::take(&mut self.state_recorder);
         let is_replay = state_recorder.replay_mode;

@@ -1,16 +1,130 @@
-//! Coarse work budgets for lagless presentation. No receipt or cycle ledger
-//! participates in these decisions. A unit is half a raster line of work.
+//! Lagless cost accounting. Runtime decisions use native work and hardware
+//! field/interrupt ownership only; source lag counts remain census data.
 use super::*;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativePacing {
-    iris_work: u32,
     pending: u32,
     pub(super) song_upload: bool,
     masked_callback: bool,
+    accounting: bool,
+    entry_handler: u64,
+    closing_handler: Option<u64>,
+    closing_poly_upload: bool,
+    record_closing_handler: bool,
+    wait_wall: [u64; 3],
+    predictions: [u32; 3],
+    early_sound: Option<[u8; 2]>,
+    late_sound: Option<[u8; 2]>,
+
 }
 
 impl ZeldaState {
+    pub(super) fn native_begin_main_cost(&mut self) {
+        self.native_pacing.accounting = self.lag_free;
+        // Presentation holds follow the native closing NMI, although their
+        // source interruptions precede it. They must not replace the handler
+        // through which the next main iteration actually enters.
+        self.native_pacing.entry_handler = self.native_previous_closing_handler();
+        if self.native_pacing.closing_handler.is_some() {
+            self.lag_free_nmi_uploaded_poly = self.native_pacing.closing_poly_upload;
+        }
+        self.native_pacing.wait_wall = [0; 3];
+        self.native_pacing.predictions = [0; 3];
+        self.native_pacing.early_sound = None;
+        self.native_pacing.late_sound = None;
+    }
+
+    pub(super) fn native_record_closing_handler(&mut self) {
+        if self.native_pacing.record_closing_handler {
+            self.native_pacing.closing_handler = self.last_nmi_handler_master_cycles().map(u64::from);
+            self.native_pacing.closing_poly_upload = self.lag_free_nmi_uploaded_poly;
+            self.native_pacing.record_closing_handler = false;
+        }
+    }
+
+    pub(super) fn native_previous_closing_handler(&self) -> u64 {
+        self.native_pacing.closing_handler
+            .unwrap_or_else(|| u64::from(self.last_nmi_handler_master_cycles().unwrap_or(0)))
+    }
+
+    pub fn native_cost_entry_handler(&self) -> u64 {
+        self.native_pacing.entry_handler
+    }
+
+    fn native_cost_elapsed(&self, main: u64) -> [u64; 3] {
+        const FIELD: u64 = 1364 * 262;
+        let handler = self.native_pacing.entry_handler.min(FIELD - 1);
+        let worker = self.native_pacing_worker_share(handler).min(FIELD - handler - 1);
+        let budget = FIELD - handler - worker;
+        let refreshed = main + main.div_ceil(1324) * 40;
+        [handler + main * FIELD / (FIELD - worker),
+            main * FIELD / budget, refreshed * FIELD / budget]
+    }
+
+    /// Generic raster barrier: a V-counter loop exits at or after line L.
+    /// Charge elapsed waiting separately from instruction work, since CPU
+    /// work excludes NMI/worker ownership and refresh while wall time does not.
+    pub(super) fn native_wait_until_line(&mut self, line: u16, loop_master: u64) {
+        if !self.native_pacing.accounting { return; }
+        const FIELD: u64 = 1364 * 262;
+        const NMI: u64 = 225 * 1364;
+        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+            + self.lag_free_vwf_master;
+        let elapsed = self.native_cost_elapsed(main);
+        for (i, work) in elapsed.into_iter().enumerate() {
+            let raster = (NMI + work + self.native_pacing.wait_wall[i]) % FIELD;
+            let target = u64::from(line) * 1364;
+            if raster < target {
+                self.native_pacing.wait_wall[i] += (target - raster).div_ceil(loop_master) * loop_master;
+            }
+        }
+    }
+
+    /// Retain the queue consumed by an elapsed NMI before a later native
+    /// consumer inspects it. Delivery is published on the first callback;
+    /// commands queued by the remaining main suffix reach the final one.
+    pub(super) fn native_checkpoint_sound_queue(&mut self) {
+        if !self.native_pacing.accounting || self.native_pacing.song_upload
+            || self.native_pacing.early_sound.is_some() { return; }
+        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+            + self.lag_free_vwf_master;
+        if self.native_cost_elapsed(main)[2] + self.native_pacing.wait_wall[2] < 1364 * 262 {
+            return;
+        }
+        let sounds = [self.game_state.system_signals.sound_effect_1(),
+            self.game_state.system_signals.sound_effect_2()];
+        self.native_pacing.early_sound = Some(sounds);
+        // $00:811E..812D transfers and clears these queues at every NMI.
+        self.set_sound_effect_1(0);
+        self.set_sound_effect_2(0);
+    }
+
+    pub fn native_cost_predictions(&self) -> [u32; 3] {
+        self.native_pacing.predictions
+    }
+
+    pub(super) fn native_finish_main_cost(&mut self) {
+        if !self.native_pacing.accounting { return; }
+        self.native_pacing.accounting = false;
+        self.native_pacing.record_closing_handler = true;
+        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+            + self.lag_free_vwf_master;
+        let elapsed = self.native_cost_elapsed(main);
+        self.native_pacing.predictions = std::array::from_fn(|i|
+            ((elapsed[i] + self.native_pacing.wait_wall[i]) / (1364 * 262)) as u32);
+        // P2 is selected by the complete route census. Keep the existing
+        // coarse iris envelope until the raster-barrier comparison passes.
+        self.native_pacing.pending = self.native_pacing.pending.max(self.native_pacing.predictions[2]);
+        if let Some(sounds) = self.native_pacing.early_sound.take() {
+            self.native_pacing.late_sound = Some([
+                self.game_state.system_signals.sound_effect_1(),
+                self.game_state.system_signals.sound_effect_2()]);
+            self.set_sound_effect_1(sounds[0]);
+            self.set_sound_effect_2(sounds[1]);
+        }
+    }
+
     pub fn native_presentation_pending(&self) -> bool {
         self.native_held_frames_pending() != 0 || self.lag_free && self.native_pacing.song_upload
     }
@@ -63,6 +177,12 @@ impl ZeldaState {
     /// repeat. Existing polygon lag phases already ran at the closing NMI.
     pub(super) fn run_native_held_frame(&mut self, input: u16) {
         self.native_pacing.pending -= 1;
+        if self.native_pacing.pending == 0 {
+            if let Some(sounds) = self.native_pacing.late_sound.take() {
+                self.set_sound_effect_1(sounds[0]);
+                self.set_sound_effect_2(sounds[1]);
+            }
+        }
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.capture_display_snapshot();
         self.interrupt_nmi(input, None, false);
@@ -70,38 +190,86 @@ impl ZeldaState {
         self.poison_owned_wram();
     }
 
-    pub(super) fn native_iris_row_work(&mut self, circle: bool) {
-        if self.lag_free && self.lag_free_intro_schedule.is_none() {
-            // $00:F361..F3A0 tests and stores a pair of rows. The divide,
-            // lookup, multiply and clamps in $F4CC..F53D add two work units.
-            self.native_pacing.iris_work += 1 + 2 * u32::from(circle);
-        }
-    }
 
-    pub(super) fn native_iris_projection_work(&mut self) {
-        let work = std::mem::take(&mut self.native_pacing.iris_work);
-        if !self.lag_free || work == 0 { return; }
-        // Main enters after the preceding NMI and its caller prefix. Use a
-        // coarse entry at line 250, not an instruction/raster CPU model.
-        // $F3A3..F3B2 waits for V >= 192 before $F3B7..F3C3 copies 224
-        // words. Reserve 28 lines for that programmed copy and eight for
-        // the radius/control/caller suffix. These are throughput estimates,
-        // independent of scene, room, crystal, iteration and ledger counts.
-        const FIELD: u32 = 262 * 2;
-        let mut end = 250 * 2 + work;
-        let line = end % FIELD;
-        if line < 192 * 2 { end += 192 * 2 - line; }
-        end += 28 * 2 + 8 * 2;
-        let next_nmi = FIELD + 225 * 2;
-        if end >= next_nmi {
-            self.native_pacing.pending += 1 + (end - next_nmi) / FIELD;
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn raster_barrier_counts_fields_once_across_held_callbacks() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.lag_free_intro_schedule = None;
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.lag_free_vwf_master = 0;
+        game.native_begin_main_cost();
+        game.native_pacing.entry_handler = 0;
+        // Cross V0, wait to V192, then cross the next NMI at V225.
+        crate::cycle_ledger::charge(60_000);
+        game.native_wait_until_line(192, 178);
+        crate::cycle_ledger::charge(50_000);
+        game.native_finish_main_cost();
+        assert_eq!(game.native_cost_predictions(), [1, 1, 1]);
+        assert_eq!(game.native_held_frames_pending(), 1);
+        game.native_finish_main_cost();
+        assert_eq!(game.native_held_frames_pending(), 1);
+        game.set_lag_free(false);
+        assert_eq!(game.native_held_frames_pending(), 0);
+    }
+
+    #[test]
+    fn elapsed_sound_queue_is_delivered_before_the_hud_suffix_queue() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.lag_free_intro_schedule = None;
+        game.lag_free_lag_phases_run = true;
+        game.latch_nmi_update();
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.lag_free_vwf_master = 0;
+        game.native_begin_main_cost();
+        game.native_pacing.entry_handler = 0;
+        game.set_sound_effect_1(0x60);
+        crate::cycle_ledger::charge(2 * 1364 * 262);
+        game.native_checkpoint_sound_queue();
+        assert_eq!(game.game_state.system_signals.sound_effect_1(), 0);
+        game.set_sound_effect_1(0x29);
+        game.native_finish_main_cost();
+        game.interrupt_nmi(0, None, false);
+        game.zelda_push_apu_state();
+        assert_eq!(game.zelda_last_pushed_apu_ports().1[2], 0x60);
+        game.run_native_held_frame(0);
+        game.run_native_held_frame(0);
+        assert_eq!(game.zelda_last_pushed_apu_ports().1[2], 0x29);
+        assert_eq!(game.native_held_frames_pending(), 0);
+        assert_eq!(game.game_state.system_signals.sound_effect_1(), 0);
+    }
+
+    #[test]
+    fn presentation_holds_preserve_the_next_mains_closing_handler_cost() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.lag_free_intro_schedule = None;
+        game.lag_free_lag_phases_run = true;
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.lag_free_vwf_master = 0;
+        game.native_begin_main_cost();
+        game.native_pacing.entry_handler = 0;
+        crate::cycle_ledger::charge(1364 * 262);
+        game.native_finish_main_cost();
+        game.interrupt_nmi(0, None, false);
+        let closing = game.last_nmi_handler_master_cycles().unwrap();
+        game.lag_free_nmi_uploaded_poly = true;
+        game.native_pacing.record_closing_handler = true;
+        game.native_record_closing_handler();
+        game.run_native_held_frame(0);
+        game.native_begin_main_cost();
+        assert_eq!(game.native_cost_entry_handler(), u64::from(closing));
+        assert!(game.lag_free_nmi_uploaded_poly);
+        game.set_lag_free(false);
+        assert!(game.native_pacing.closing_handler.is_none());
+    }
 
     #[test]
     fn masked_upload_preserves_nmi_commands_and_resumes_closing_nmi_once() {
@@ -150,20 +318,4 @@ mod tests {
         assert_eq!(game.game_state.system_signals.sound_effect_1(), 0);
     }
 
-    #[test]
-    fn work_not_scene_selects_holds_and_default_never_holds() {
-        let mut game = ZeldaState::default();
-        game.native_iris_row_work(true);
-        game.native_iris_projection_work();
-        assert_eq!(game.native_held_frames_pending(), 0);
-        game.set_lag_free(true);
-        game.lag_free_intro_schedule = None;
-        for _ in 0..189 { game.native_iris_row_work(false); }
-        game.native_iris_projection_work();
-        assert_eq!(game.native_held_frames_pending(), 1);
-        game.native_pacing.pending = 0;
-        for _ in 0..1000 { game.native_iris_row_work(true); }
-        game.native_iris_projection_work();
-        assert!(game.native_held_frames_pending() > 1);
-    }
 }

@@ -220,6 +220,16 @@ impl ZeldaState {
         wall.saturating_sub(lines * self.poly_thread_line_stall_master_cycles())
     }
 
+    /// V-IRQ worker owns the CPU after NMI returns until its programmed
+    /// deadline; the IRQ handler returns it to main. No worker instructions
+    /// are added to main's cost counter.
+    pub(super) fn native_pacing_worker_share(&self, handler: u64) -> u64 {
+        if !self.lag_free_native_poly_thread() { return 0; }
+        let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
+        let (nmi, deadline) = self.poly_thread_phase_window(field);
+        (deadline - nmi).saturating_sub(handler) + POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES
+    }
+
     /// Bus stalls per visible line: the WRAM refresh and the enabled HDMA
     /// channels' transfers.
     fn poly_thread_line_stall_master_cycles(&self) -> u64 {
@@ -335,7 +345,9 @@ impl ZeldaState {
         let (nmi_at, _) = self.poly_thread_phase_window(field);
         // The phase window's NMI point follows the hardware entry, which the
         // handler's cost includes.
-        let work = u64::from(self.last_nmi_handler_master_cycles.unwrap_or(0))
+        // Presentation-only held NMIs follow the native closing callback;
+        // the source worker resumes through the ordinary closing handler.
+        let work = self.native_previous_closing_handler()
                 .saturating_sub(crate::zelda_rtl::nmi::NATIVE_NMI_ENTRY_MASTER_CYCLES)
             + match uploaded {
                 Some(true) => POLY_THREAD_NMI_UPDATE_IRQ_GFX_UPLOAD_MASTER_CYCLES,

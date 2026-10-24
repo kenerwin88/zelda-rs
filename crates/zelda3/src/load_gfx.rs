@@ -5930,10 +5930,6 @@ impl ZeldaState {
                 continue;
             }
             let mut r8 = 0x00ff;
-            if price {
-                self.native_iris_row_work(build.pending_circle_input.is_some()
-                    || build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper());
-            }
             if let Some(t) = build.pending_circle_input.take() {
                 // Resume at $F375: JSR IrisSpotlight_CalculateCircleValue
                 // (the callee charges itself).
@@ -6029,6 +6025,8 @@ impl ZeldaState {
             // (`SPOTLIGHT_VCOUNTER_WAIT_FINAL_PASS_MASTER_CYCLES`): the
             // remaining 178 per extra pass is the raster-dependent residual a
             // timing owner has to supply.
+            // $00:F3A3..F3B2: omitted taken passes wait for V >= 192.
+            self.native_wait_until_line(192, 178);
             crate::cycle_ledger::charge(SPOTLIGHT_VCOUNTER_WAIT_FINAL_PASS_MASTER_CYCLES);
             // $F3B4: LDX #$0000.
             crate::cycle_ledger::charge(24);
@@ -6052,7 +6050,6 @@ impl ZeldaState {
             copied_words,
             224 - copied_words,
         );
-        self.native_iris_projection_work();
     }
 
     /// Resume the C routine immediately after its table copy.

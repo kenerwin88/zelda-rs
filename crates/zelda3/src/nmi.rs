@@ -290,6 +290,7 @@ impl ZeldaState {
         oam_dma_source: Option<&[u8]>,
         defer_bg_vram_upload: bool,
     ) {
+        self.native_finish_main_cost();
         if self.native_mask_song_upload_nmi() { return; }
         self.interrupt_nmi_with_animated_bg_operands(
             input,
@@ -297,6 +298,7 @@ impl ZeldaState {
             defer_bg_vram_upload,
             None,
         );
+        self.native_record_closing_handler();
     }
 
     /// Consume the pending NMI before a fresh main iteration even when its
