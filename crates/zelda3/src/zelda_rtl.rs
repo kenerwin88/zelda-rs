@@ -14918,6 +14918,11 @@ impl ZeldaState {
         self.set_rom_startup_timing(false);
         self.frame_ctr_dbg = host_frame;
         self.state_recorder.replay_frame_counter = host_frame;
+        // WRAM seeds carry the resident bank selector, but no SPC RAM. The
+        // fresh driver's overworld bank cannot play dungeon receipt songs.
+        let bank = usize::from(wram[crate::game_state::constants::RESIDENT_SONG_BANK_KIND] != 0);
+        let bank_stream = self.asset_raw(bank).ok_or("foreign seed needs its resident song bank")?.to_vec();
+        self.load_song_bank(&bank_stream);
         // The spotlight HDMA dynamic table lives in WRAM ($1B00 scratch is a
         // C save-time projection which a foreign WRAM image never holds), so
         // the native table is rebuilt from WRAM below; no saveload copy.

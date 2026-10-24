@@ -12,6 +12,8 @@
 //!        [--seed-every N] [--video CACHE_DIR [--video-host-offset D] [--video-misses]]
 //!        [--apu-trace lo-hi] [--start K] [--dump-wram K:DIR] [--live-apu-reads]
 //!        [--poly-uploads] [--single-seed] [--outcome-trace PATH]
+//!        [--windows LO-HI,...] (inclusive uninterrupted seeded probes)
+//!        [--audio-pcm PATH] (little-endian interleaved stereo, 534 pairs per iteration)
 //!
 //! The cartridge's `$2140` reads (song-end polls) are replayed per iteration
 //! like the RNG: their values depend on elapsed SPC time, which lag changes.
@@ -1145,7 +1147,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     // Receipt probes must retain their own SPC and polygon owners until the
     // sequence finishes, including across the ledger's resync boundaries.
     let mut single_seed = false;
+    // Disjoint uninterrupted probes share one read-only pass over the image stream.
+    let mut windows: Vec<(u64, u64)> = Vec::new();
     let mut outcome_trace: Option<BufWriter<fs::File>> = None;
+    let mut audio_pcm: Option<BufWriter<fs::File>> = None;
     let mut classification_trace: Option<BufWriter<fs::File>> = None;
     let mut poly_uploads: Option<PolyUploads> = None;
     let mut dump_wram: Option<(u64, PathBuf)> = None;
@@ -1158,6 +1163,15 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             })
         };
         match args[index].as_str() {
+            "--windows" => {
+                windows = value(index).split(',').map(|range| {
+                    let (lo, hi) = range.split_once('-').expect("--windows LO-HI,...");
+                    let (lo, hi) = (lo.parse().expect("window start"), hi.parse().expect("window end"));
+                    assert!(lo <= hi, "window must be ordered");
+                    (lo, hi)
+                }).collect();
+                single_seed = true;
+            }
             "--native-rng" => { native_rng = true; index += 1; continue; }
             "--single-seed" => {
                 single_seed = true;
@@ -1166,6 +1180,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
             "--outcome-trace" => {
                 outcome_trace = Some(BufWriter::new(fs::File::create(value(index)).expect("create outcome trace")));
+            }
+            "--audio-pcm" => {
+                audio_pcm = Some(BufWriter::new(fs::File::create(value(index)).expect("create PCM trace")));
             }
             "--classification-trace" => {
                 classification_trace = Some(BufWriter::new(fs::File::create(value(index)).expect("create classification trace")));
@@ -1227,6 +1244,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         eprintln!("usage: zelda3 --logical-replay LEDGER_DIR SRAM [--frames N] [--image pre|post] [--offset K] [--report N] [--ignore lo-hi,...] [--histogram PATH] [--seed-every N] [--video CACHE_DIR [--video-host-offset D] [--video-misses]]");
         process::exit(2);
     };
+    if !windows.is_empty() {
+        assert!(seed_every.is_some(), "--windows requires --seed-every for seed files");
+        assert!(windows.windows(2).all(|pair| pair[0].1 < pair[1].0),
+            "--windows must be ordered and disjoint");
+        frames = frames.min(windows.last().unwrap().1.saturating_add(1));
+    }
     let ledger = PathBuf::from(ledger);
     let records = fs::File::open(ledger.join("iterations.jsonl")).unwrap_or_else(|error| {
         eprintln!("failed to open ledger: {error}");
@@ -1328,7 +1351,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         if iteration.is_some_and(|iteration| iteration.index >= frames) {
             break;
         }
-        if iteration.is_some_and(|iteration| iteration.index < start_at) {
+        if iteration.is_some_and(|iteration| iteration.index < start_at
+            || (!windows.is_empty() && !windows.iter().any(|&(lo, hi)| (lo..=hi).contains(&iteration.index)))) {
             if !images.advance() {
                 break;
             }
@@ -1339,6 +1363,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             if (!single_seed && ((iteration.index % every == 0 && iteration.index != 0)
                 || at_resync))
                 || (iteration.index == start_at && start_at != 0)
+                || windows.iter().any(|&(lo, _)| iteration.index == lo)
             {
                 let path = ledger.join("seeds").join(format!("iter-{}.bin", iteration.index));
                 if let Some(video) = video.as_mut() {
@@ -1347,7 +1372,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 // Seeds contain drift; a seed into the middle of some
                 // sequences cannot rebuild every runtime owner. Unless asked
                 // to seed every boundary, an engine still in step continues.
-                let continues = !eager_seed
+                let continues = windows.is_empty() && !eager_seed
                     && iteration.index != start_at
                     && !segment.diverged_from_rom(iteration.index)
                     && !(at_resync && timing_defined(&game.wram_image()));
@@ -1505,6 +1530,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             continue;
         }
         let observed_polls = game.take_song_end_poll_observations();
+        if let Some(output) = audio_pcm.as_mut() {
+            use std::io::Write;
+            for sample in &audio_buffer {
+                output.write_all(&sample.to_le_bytes()).expect("write PCM trace");
+            }
+        }
         previous_gameplay_poll = !observed_polls.is_empty();
         if !apu_read_replay && let Some(iteration) = iteration {
             let expected: Vec<bool> = iteration.apu_reads.iter()
@@ -1660,10 +1691,29 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 "link_x": u16::from_le_bytes([ram[0x22], ram[0x23]]),
                 "ancilla": &ram[0xc4a..0xc54],
                 "music": [ram[0x130], ram[0x133]],
+                "resident_bank": ram[0x136],
+                "thread": ram[0x12a],
+                "poly": [ram[0x1f00], ram[0x1f01], ram[0x1f02], ram[0x1f0c]],
+                "sprite_type": &ram[0xe20..0xe30],
+                "sprite_state": &ram[0xdd0..0xde0],
+                "sprite_ai": &ram[0xd80..0xd90],
+                "dialogue": &ram[0x1cd0..0x1cf2],
+                "rupee_delay": ram[0xcfd],
+                "rupees": &ram[0xf360..0xf364],
+                "sound": &ram[0x12c..0x130],
                 "save": ram[0xf000..0xf500].iter().map(|b| format!("{b:02x}")).collect::<String>(),
             });
             serde_json::to_writer(&mut *trace, &serde_json::json!({
                 "iteration": iteration.index,
+                "lag_nmis": iteration.lag_nmis,
+                "open_host": iteration.open_host,
+                "picture_host": iteration.picture_host,
+                "engine_polls": observed_polls,
+                "rom_reads": iteration.apu_reads,
+                "engine_commands": previous_engine_commands,
+                "spc": game.zelda_spc_driver_clock_debug_summary(),
+                "apui00": game.zelda_read_apui00(),
+                "rom_writes": iteration.apu_writes,
                 "engine": outcome(&engine_image),
                 "rom": outcome(&images.image),
             })).expect("write outcome trace");
