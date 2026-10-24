@@ -11,6 +11,11 @@ pub(crate) struct NativePacing {
     entry_handler: u64,
     entry_worker: u64,
     entry_lag_handler: u64,
+    worker_segments: Vec<(u64, u64, bool)>,
+    pub(super) worker_after_irq: bool,
+    irq_initialized: bool,
+    irq_enabled: bool,
+    irq_line: u8,
     handler_updates: u64,
     last_lag_handler: u64,
     closing_lag_handler: Option<u64>,
@@ -27,6 +32,22 @@ pub(crate) struct NativePacing {
 impl ZeldaState {
     pub(super) fn native_begin_main_cost(&mut self) {
         self.native_pacing.accounting = self.lag_free;
+        if self.lag_free && !self.native_pacing.irq_initialized {
+            // A foreign seed is post-NMI. $1F0A holds the stack that NMI
+            // suspended: a worker stack means NMI returned to main.
+            let stack = self.game_state.display.nmi_thread_stack_pointer;
+            self.native_pacing.worker_after_irq = self.game_state.display.nmi_thread_active
+                && stack & 0xff00 == 0x1f00;
+            // A stale bootstrap stack survives song uploads; it does not
+            // prove $4200 still enables IRQ. Only an active post-NMI thread
+            // or the ordinary handler's $0128 programming establishes that.
+            self.native_pacing.irq_enabled = self.game_state.display.nmi_thread_active
+                || self.game_state.display.has_irq_control_flag();
+            self.native_pacing.irq_line = if self.game_state.display.nmi_thread_active {
+                self.game_state.display.vertical_irq_trigger
+            } else { 128 };
+            self.native_pacing.irq_initialized = true;
+        }
         // Presentation holds follow the native closing NMI, although their
         // source interruptions precede it. They must not replace the handler
         // through which the next main iteration actually enters.
@@ -39,10 +60,11 @@ impl ZeldaState {
         // $00:8144..8149 selected the preceding NMI's thread before this
         // main call. A later $012A activation/clear cannot change that slice;
         // intervening lag NMIs still inspect the live enable byte.
-        self.native_pacing.entry_worker = self.native_pacing_worker_share(
+        self.native_pacing.entry_worker = if self.native_pacing.worker_after_irq { 0 } else { self.native_pacing_worker_share(
             self.native_pacing.entry_handler.min(1364 * 262 - 1),
-        );
+        ) };
         self.native_pacing.wait_wall = [0; 3];
+        self.native_pacing.worker_segments.clear();
         self.native_pacing.predictions = [0; 3];
         self.native_pacing.early_sound = None;
         self.native_pacing.late_sound = None;
@@ -53,6 +75,17 @@ impl ZeldaState {
             self.native_pacing.closing_handler = self.last_nmi_handler_master_cycles().map(u64::from);
             self.native_pacing.closing_lag_handler = Some(self.native_pacing.last_lag_handler);
             self.native_pacing.closing_poly_upload = self.lag_free_nmi_uploaded_poly;
+            // $00:8230..823A programs $FF/A1 on the thread path. The
+            // ordinary $00:8200..8218 path only reprograms with $0128 set;
+            // zero leaves an earlier V-IRQ enabled. A negative $0128 makes
+            // its IRQ clear the enable at $00:830F..8314.
+            if self.game_state.display.nmi_thread_active {
+                self.native_pacing.irq_enabled = true;
+                self.native_pacing.irq_line = self.game_state.display.vertical_irq_trigger;
+            } else if self.game_state.display.has_irq_control_flag() {
+                self.native_pacing.irq_enabled = self.game_state.display.irq_control_flag & 0x80 == 0;
+                self.native_pacing.irq_line = 128;
+            }
             self.native_pacing.record_closing_handler = false;
         }
     }
@@ -80,6 +113,39 @@ impl ZeldaState {
         }
     }
 
+    pub(crate) fn native_checkpoint_worker_ownership(&mut self) {
+        if !self.native_pacing.accounting { return; }
+        // $00:8144 samples $012A at each NMI, not at the end of main.
+        // Retain the work completed under the old enable/IRQ-line state
+        // before a caller changes it. Already elapsed NMIs keep their owner.
+        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+            + self.lag_free_vwf_master;
+        let worker = self.native_pacing_worker_share(self.native_pacing.entry_lag_handler);
+        self.native_pacing.worker_segments.push((main, worker, self.native_pacing.worker_after_irq));
+    }
+
+    pub(crate) fn native_activate_worker_ownership(&mut self) {
+        if !self.native_pacing.accounting { return; }
+        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+            + self.lag_free_vwf_master;
+        let elapsed = self.native_cost_elapsed(main)[2];
+        // Both $00:82C9..82CF and $00:8324..832A swap stacks. If an
+        // already-enabled V-IRQ arrives first, it switches main TO the
+        // worker; NMI subsequently switches back. GO does not select this.
+        let irq = pacing_irq_offset(self.native_pacing.irq_line);
+        self.native_pacing.worker_after_irq = self.native_pacing.irq_enabled
+            && elapsed % (1364 * 262) < irq;
+    }
+
+    pub(crate) fn native_song_upload_restores_nmi_only(&mut self) {
+        if !self.lag_free { return; }
+        // The callers of the song-bank upload restore $4200=$81, not A1:
+        // $02:8564..8566, $02:9C06..9C08, $02:A046..A048,
+        // $09:F66F..F671 (and the reset caller $00:802F..8031).
+        // A later $012A activation must wait for NMI to program V-IRQ again.
+        self.native_pacing.irq_enabled = false;
+    }
+
     fn native_cost_elapsed(&self, main: u64) -> [u64; 3] {
         const FIELD: u64 = 1364 * 262;
         let handler = self.native_pacing.entry_handler.min(FIELD - 1);
@@ -89,9 +155,19 @@ impl ZeldaState {
         let refreshed = main + main.div_ceil(1324) * 40;
         // Main enters after one ordinary handler. Subsequent fields execute
         // the source's latched NMI path, excluding NMI_DoUpdates and joypads.
-        [handler + main * FIELD / (FIELD - worker),
-            elapsed_with_lag_handlers(main, handler + worker, lag_handler + lag_worker),
-            elapsed_with_lag_handlers(refreshed, handler + worker, lag_handler + lag_worker)]
+        let mut elapsed = [handler + worker; 2];
+        let mut previous = [0; 2];
+        for (end, share, after_irq) in self.native_pacing.worker_segments.iter().copied()
+            .chain(std::iter::once((main, lag_worker, self.native_pacing.worker_after_irq))) {
+            if end > main { break; }
+            let work = [end, end + end.div_ceil(1324) * 40];
+            for i in 0..2 {
+                elapsed[i] = advance_main_cost(work[i] - previous[i], elapsed[i], lag_handler, share, after_irq);
+            }
+            previous = work;
+        }
+        debug_assert_eq!(previous, [main, refreshed]);
+        [handler + main * FIELD / (FIELD - worker), elapsed[0], elapsed[1]]
     }
 
     /// Generic raster barrier: a V-counter loop exits at or after line L.
@@ -228,16 +304,107 @@ impl ZeldaState {
 /// further fields with lag handlers. Equality accepts the NMI. No update DMA
 /// is repeated just because main takes more than one field to return.
 fn elapsed_with_lag_handlers(main: u64, entry: u64, repeated: u64) -> u64 {
+    advance_main_cost(main, entry, repeated, 0, false)
+}
+
+pub(super) fn pacing_irq_offset(line: u8) -> u64 {
+    // Same NMI H=86 / V-only IRQ H=10 as poly_thread_phase_window.
+    ((u64::from(line) + 262 - 225) * 1364 + 10 + 1364 * 262 - 86) % (1364 * 262)
+}
+
+fn advance_main_cost(main: u64, elapsed: u64, handler: u64, worker: u64, after_irq: bool) -> u64 {
     const FIELD: u64 = 1364 * 262;
-    let repeated = repeated.min(FIELD - 1);
-    let first = entry + main;
-    let nmis = if first < FIELD { 0 } else { 1 + (first - FIELD) / (FIELD - repeated) };
-    first + nmis * repeated
+    let repeated = (handler + worker).min(FIELD - 1);
+    // In the reversed orientation, the IRQ starts the worker interval and
+    // its terminating NMI supplies the handler. Work before IRQ remains
+    // available to main; do not move this interval to the field's entry.
+    let offset = if after_irq && worker != 0 { FIELD - worker } else { 0 };
+    let mut next = (elapsed / FIELD) * FIELD + offset;
+    if next <= elapsed { next += FIELD; }
+    let end = elapsed + main;
+    let nmis = if end < next { 0 } else { 1 + (end - next) / (FIELD - repeated) };
+    end + nmis * repeated
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn song_restore_and_inactive_seed_do_not_inherit_a_stale_irq_enable() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.game_state.display.nmi_thread_stack_pointer = 0x1f31;
+        game.game_state.display.vertical_irq_trigger = 48;
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.native_begin_main_cost();
+        assert!(!game.native_pacing.irq_enabled);
+        game.native_pacing.irq_enabled = true;
+        game.native_song_upload_restores_nmi_only();
+        assert!(!game.native_pacing.irq_enabled);
+        game.activate_nmi_thread();
+        assert!(!game.native_pacing.worker_after_irq);
+        game.native_pacing.record_closing_handler = true;
+        game.native_record_closing_handler();
+        assert!(game.native_pacing.irq_enabled);
+        assert_eq!(game.native_pacing.irq_line, 48);
+        game.native_pacing = Default::default();
+        game.game_state.display.nmi_thread_active = false;
+        game.game_state.display.irq_control_flag = 1;
+        game.native_begin_main_cost();
+        // $00:8208 programs line 128 on the ordinary path, independently
+        // of the stale polygon stack and $FF mirror in this foreign seed.
+        assert!(game.native_pacing.irq_enabled);
+        assert_eq!(game.native_pacing.irq_line, 128);
+    }
+
+    #[test]
+    fn already_programmed_irq_can_enter_worker_before_first_threaded_nmi() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.game_state.display.vertical_irq_trigger = 144;
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.native_begin_main_cost();
+        game.native_pacing.irq_enabled = true;
+        game.native_pacing.irq_line = 144;
+        crate::cycle_ledger::charge(88_000);
+        game.activate_nmi_thread();
+        assert!(game.native_pacing.worker_after_irq);
+        // Main still owns the early part of this field, up to V-IRQ.
+        assert_eq!(game.native_cost_elapsed(206_000)[2], 206_000 + 206_000u64.div_ceil(1324) * 40);
+        assert!(game.native_cost_elapsed(300_000)[2] >= 1364 * 262);
+        let irq = pacing_irq_offset(144);
+        // The IRQ handler runs within IRQ-to-NMI wall time. One clock of
+        // main work past IRQ resumes one clock after the terminating NMI's
+        // handler, without charging the IRQ handler a second time.
+        assert_eq!(advance_main_cost(irq + 1, 0, 3284, 1364 * 262 - irq, true),
+            1364 * 262 + 3284 + 1);
+        // A foreign post-NMI worker stack records the same orientation.
+        game.native_pacing = Default::default();
+        game.game_state.display.nmi_thread_stack_pointer = 0x1f27;
+        game.native_begin_main_cost();
+        assert!(game.native_pacing.worker_after_irq);
+        assert_eq!(game.native_pacing.entry_worker, 0);
+    }
+
+    #[test]
+    fn worker_activation_does_not_own_nmis_before_its_store() {
+        const FIELD: u64 = 1364 * 262;
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.game_state.display.vertical_irq_trigger = 144;
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.native_begin_main_cost();
+        crate::cycle_ledger::charge(2 * FIELD + 1000);
+        let before = game.native_cost_elapsed(2 * FIELD + 1000);
+        game.activate_nmi_thread();
+        assert_eq!(game.native_cost_elapsed(2 * FIELD + 1000), before);
+        crate::cycle_ledger::charge(FIELD);
+        assert!(game.native_cost_elapsed(3 * FIELD + 1000)[2] > before[2] + FIELD);
+        let before_clear = game.native_cost_elapsed(3 * FIELD + 1000);
+        game.deactivate_nmi_thread();
+        assert_eq!(game.native_cost_elapsed(3 * FIELD + 1000), before_clear);
+    }
 
     #[test]
     fn entry_worker_slice_survives_enable_and_disable_inside_main() {

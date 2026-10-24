@@ -114,6 +114,8 @@ impl ZeldaState {
 
     pub(crate) fn activate_nmi_thread(&mut self) {
         if !self.game_state.display.nmi_thread_active {
+            self.native_checkpoint_worker_ownership();
+            self.native_activate_worker_ownership();
             // This remains only as the no-wire fallback. Live parity consumes
             // the source-level render-start receipt because initial thread
             // scheduling varies with the activation host's CPU/NMI phase.
@@ -130,6 +132,9 @@ impl ZeldaState {
     }
 
     pub(crate) fn deactivate_nmi_thread(&mut self) {
+        if self.game_state.display.nmi_thread_active {
+            self.native_checkpoint_worker_ownership();
+        }
         self.display_core_mut().deactivate_nmi_thread();
     }
 

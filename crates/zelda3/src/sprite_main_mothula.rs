@@ -1718,16 +1718,26 @@ impl ZeldaState {
 
     // void Sprite_C5_Medusa(int k) {  // 9dc7eb
     pub(super) fn sprite_c5_medusa(&mut self, k: usize) {
+        // $1D:C7EB..C852: parent instructions only; coordinate, inactive,
+        // collision, properties, sound and fireball bodies price themselves.
+        let lagless = self.lag_free;
+        let _scope = lagless.then(|| crate::cycle_ledger::routine(0x1d_c7eb));
+        let charge = |n| { if lagless { crate::cycle_ledger::charge(n); } };
+        charge(102);
         self.sprite_prep_oam_coord(k);
         if self.game_state.world.location.is_outdoors() {
+            charge(154);
             self.sprite_slot_view_mut(k).set_x_velocity(255);
             self.sprite_slot_view_mut(k).set_subtype(255);
             if self.sprite_check_tile_collision(k) == 0 {
+                charge(6 + 42);
                 return;
             }
+            charge(46);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
+            charge(472);
             self.sprite_slot_view_mut(k).set_sprite_type(0x19);
             self.sprite_prep_load_properties(k);
             self.sprite_slot_view_mut(k).add_e(1);
@@ -1737,22 +1747,35 @@ impl ZeldaState {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x19);
             self.sprite_slot_view_mut(k).set_deflection_bits(0x80);
         } else {
+            charge(6 + 46);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
+            charge(116);
             self.sprite_slot_view_mut(k).increment_subtype2();
+            if self.sprite_slot_view(k).subtype2() & 0x7f != 0 {
+                charge(6);
+            } else {
+                charge(72 + if self.sprite_slot_view(k).floor()
+                    != self.game_state.player.follower_link.lower_level_state() { 6 } else { 0 });
+            }
             if (self.sprite_slot_view(k).subtype2() & 0x7f) == 0
                 && self.sprite_slot_view(k).floor()
                     == self.game_state.player.follower_link.lower_level_state()
             {
+                charge(78);
                 let j = self.sprite_spawn_fireball(k);
                 if j >= 0 {
+                    charge(140);
                     let j = j as usize;
                     self.sprite_slot_view_mut(j).or_deflection_bits(8);
                     self.sprite_slot_view_mut(j).set_bump_damage(4);
+                } else {
+                    charge(6);
                 }
             }
         }
+        charge(42);
     }
 
     // void Sprite_C6_4WayShooter(int k) {  // 9dc869

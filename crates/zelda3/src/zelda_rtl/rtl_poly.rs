@@ -231,6 +231,13 @@ impl ZeldaState {
         if !self.lag_free || !self.game_state.display.nmi_thread_active { return 0; }
         let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
         let (nmi, deadline) = self.poly_thread_phase_window(field);
+        if self.native_pacing.worker_after_irq {
+            // $00:8324..832A swaps to the worker when IRQ arrives before
+            // the first threaded NMI. That NMI swaps back to main.
+            // IRQ executes inside this IRQ-to-NMI interval. Adding its
+            // handler again would count the same ownership twice.
+            return POLY_THREAD_FRAME_MASTER_CYCLES - (deadline - nmi);
+        }
         (deadline - nmi).saturating_sub(handler) + POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES
     }
 

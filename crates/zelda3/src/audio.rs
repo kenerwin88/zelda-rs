@@ -1271,6 +1271,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn begin_runtime_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) -> bool {
+        self.native_song_upload_restores_nmi_only();
         if bank_id == 0 && self.audio.modern.driver_clock.is_some() {
             self.native_begin_song_upload();
         }

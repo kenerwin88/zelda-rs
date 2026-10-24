@@ -9097,10 +9097,15 @@ impl ZeldaState {
     pub(super) fn render_text_find_y_button_item_previous(&mut self) {
         loop {
             let mut x = self.multiselect_choice().value();
+            if self.lag_free {
+                // $0E:CDC8..CDD1 M8/X8: LDX/BPL and the actual wrap.
+                crate::cycle_ledger::charge(48 + if (x as i8) < 0 { 48 } else { 6 });
+            }
             if (x as i8) < 0 {
                 self.multiselect_choice_mut().set_value(31);
                 x = 31;
             }
+            if self.lag_free { self.render_text_charge_item_scan(x); }
             // Raw RAM (not bounded inventory_item) — same fix as RenderText_FindYItem_Next.
             if x != 15
                 && (self.read_wram_byte(LINK_ITEM_BOW + x as usize) != 0
@@ -9117,10 +9122,15 @@ impl ZeldaState {
     pub(super) fn render_text_find_y_button_item_next(&mut self) {
         loop {
             let mut x = self.multiselect_choice().value();
+            if self.lag_free {
+                // $0E:CDED..CDF8 M8/X8: LDX/CPX/BCC and the actual wrap.
+                crate::cycle_ledger::charge(64 + if x >= 32 { 48 } else { 6 });
+            }
             if x >= 32 {
                 self.multiselect_choice_mut().set_value(0);
                 x = 0;
             }
+            if self.lag_free { self.render_text_charge_item_scan(x); }
             // C reads raw inventory bytes ram[LINK_ITEM_BOW + x] for x up to 32. The native
             // item_slots model only covers 28 slots, so inventory_item(x) returns 0 for x>=28 —
             // which made this scan skip owned items 28-31 and wrap to 0 (NEW landed on item 0, OLD
@@ -9134,6 +9144,27 @@ impl ZeldaState {
             self.multiselect_choice_mut().increment_value();
         }
         self.render_text_draw_selected_y_button_item();
+    }
+
+    fn render_text_charge_item_scan(&self, x: u8) {
+        // $0E:CDD2..CDEB and $0E:CDF9..CE12 are identical bodies:
+        // reserved-slot test, signed inventory byte, optional next byte,
+        // and INC/DEC plus BRA only for a rejected slot. The successful
+        // branch enters the separately priced $CE14 child with no new RTS.
+        let cost = if x == 15 { 32 + 6 + 68 } else {
+            let value = self.read_wram_byte(LINK_ITEM_BOW + usize::from(x));
+            // The existing semantic scan treats a negative nonzero byte as
+            // selected, while ROM takes BMI. Price only their shared prefix
+            // here; do not invent a rejected-slot INC/DEC that native did
+            // not execute. Resolving that selection difference is separate.
+            if value & 0x80 != 0 { 32 + 56 + 6 }
+            else if value != 0 { 32 + 56 + 16 + 6 } else {
+                32 + 56 + 16 + 32 + if x != 32 { 6 + 68 } else {
+                        56 + if self.read_wram_byte(LINK_ITEM_BOW + usize::from(x) + 1) != 0 { 6 } else { 68 }
+                    }
+            }
+        };
+        crate::cycle_ledger::charge(cost);
     }
 
     /// ROM: `RenderText_DrawSelectedYItem`

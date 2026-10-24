@@ -1115,3 +1115,377 @@ commit or push was used. Scratch scripts remain in `/tmp`.
 Reproduce with the earlier full-census command using
 `BIN=target/cost-pacing3/final-reduced-zelda3` and fresh save/output paths;
 append `--live-apu-reads` for the live-SPC gate.
+
+## Continuation on `codex/cost-pacing4` (main `b6cd47fb`)
+
+This is a verified partial continuation. Evidence is retained in
+`target/cost-pacing4/`; earlier batches remain intact. New instruction charges
+are lagless-only, carry source addresses, and come from
+`scripts/rom_block_costs.py` against the pinned ROM. No module exclusion,
+scene threshold, multiplier or duration table was added. Default and ROM-timing
+ledger prices and the logical comparison classifications are unchanged.
+`source-price-check.json` independently re-sums 49 instruction blocks and
+confirms the instruction-price sequence of the bank-1D inactive copy.
+
+### Worker ownership: the first interrupt matters
+
+`$012A` enables stack exchange, not a permanently designated NMI-to-IRQ
+worker interval. Both NMI `$00:82C9..82CF` and IRQ `$00:8324..832A` exchange
+the current stack with `$1F0A`. An already-programmed V-IRQ can therefore
+switch **main to worker first**, and the next NMI switches back to main.
+The GO spin at `$09:F81D..F81F` still owns the CPU in its assigned interval.
+
+The retained CPU-only, in-repository instruction-model trace
+`native-intro-trace.log` shows this directly: at host 890 main starts at
+V231, completes at V141, and V144 IRQ switches the waiting main to the
+worker; host 891 NMI interrupts `$09:FE65` and returns to main. The palette
+and scene-OAM bodies are actually executed. The trace prices iteration 660
+at 227,338 main clocks; the prior native counter has 206,912. This missing
+intro-parent work remains open. Treating main as unavailable until V144
+was incorrect, rather than evidence that these bodies should be discounted.
+This trace runs the repository's native CPU models with capture disabled;
+it does not load or execute the external Snes9x/libretro core.
+
+The pacing rule now retains IRQ programming and the stack orientation,
+and divides main work at actual enable/clear/IRQ-line changes. A late
+activation cannot own NMIs that preceded its store. In the reversed
+orientation, main can work until IRQ; IRQ-to-NMI wall time then includes
+its IRQ handler, and only the terminating NMI handler is added afterward.
+The final audit removes an extra IRQ-handler charge from that interval.
+The normal NMI-to-IRQ interval retains its existing IRQ-handler price.
+P0 remains a diagnostic; P1/P2 advance the segmented ownership windows.
+Refresh is still `40*ceil(main/1324)`, with cumulative rounding across
+segments. Existing raster barriers and entry/lag-handler prices are retained.
+
+The ordinary NMI only programs V-IRQ when `$0128` requests it; zero does
+not disable an earlier timer. Conversely, song-upload callers explicitly
+restore `$4200=$81`, disabling V-IRQ (`$02:8564..8566`, `$02:9C06..9C08`,
+`$02:A046..A048`, `$09:F66F..F671`). The tracker now retains that transition.
+A foreign post-NMI seed uses the saved stack to identify the returned
+context; an inactive stale polygon stack does not prove IRQ is enabled.
+The ordinary programmed line is 128, while the active-thread path uses `$FF`.
+No module number participates in these decisions.
+
+An initial trial omitted the upload reset and inferred IRQ enable from a
+stale stack. Its complete phase probes caught greatly extended crystal
+loads. Those interrupted census prefixes and the failed phase trial remain
+explicitly superseded diagnostics. The corrected probe restores every
+crystal phase before the final full validation. Twelve pacing regressions
+cover the existing rules plus late activation, IRQ-first ownership, and
+stale-stack/upload initialization. Worker execution remains ledger-muted.
+
+### Additional source work, in requested order
+
+| Group | Added work / audit | Remaining boundary |
+| --- | --- | --- |
+| 1 | Hardware stack ownership and enable-store order above. | Intro animation/control parents remain partially unpriced; real intro lag can consequently remain missing. No scene is suppressed. |
+| 2 | Raw inactive/paused entries `$06:D9EC..DA08`, including actual short-circuit and double-return paths; Medusa parent `$1D:C7EB..C852`, including world, subtype, floor and spawn-result branches. | Already-priced bank-5/1A entries call the bare predicate and keep their old prices. The lexical audit found 257 raw-call parents without a direct self charge and two priced wrappers; it is not a typed call graph. Most sprite/control bodies remain open. |
+| 3 | Prison-cell drawer `$01:9C44..9CC5`, eight-row big decor `$01:9DA2..9DD8` with its executed width, and twelve-by-twelve lamp cone `$01:9E06..9E2F`; all M16/X16 with actual plane/loop branches. | Additional object/header/stair children in the requested transition/load categories remain unpriced. |
+| 4 | Previous/next inventory scans `$0E:CDC8..CDEB` and `$0E:CDED..CE12`, M8/X8: each visited slot, wrap, reserved slot, inventory/next-byte tests and rejected-slot increment/decrement. | The already-priced `$0E:CE14` child owns the successful tail return. Other fresh-text sprite/control children beyond group 2's shared predicate remain incomplete. |
+| 5 | Live-SPC excess work audit, ordinary seed IRQ-line selection and the reversed interval's IRQ-handler ownership check. | No song-end answer, song duration or executed-work price was changed to remove excess holds. |
+
+The inventory sign audit covers 58,097 source `0E/02` entry images and
+finds negative bytes in aliased slots `$F359` and `$F360`. Presence in an
+entry image does not prove the scan visits that slot. For a negative byte,
+the new accounting stops at the shared sign-test prefix: the existing
+semantic scan selects nonzero values where the ROM can reject them. No new
+rejected-slot increment/decrement is charged when native did not execute it.
+That selection mismatch remains open; default selection behavior is unchanged.
+
+`ordinary-sprite-frequency.json` measures state-9 slot visits at ordinary
+source gameplay entry, not inclusive instruction time. Dungeon counts include
+spike block 212,895, crystal switch 208,701 and Medusa 180,926; outdoor mirror
+portal has 161,315 visits and was confirmed already priced. This identifies
+frequent work without assuming every active slot executes every child.
+The spike-block parent remains a high-frequency continuation candidate.
+
+The addition-only stage deltas retain 1,947,917,706 extra main clocks on
+1,225,029 iterations for group 2, 5,425,978 on 120 iterations for group 3,
+and 249,306 on 1,354 iterations for the group-4 trial. Group 4 crosses no
+additional field boundary. None of these stages has a negative work delta.
+`stage-work-deltas.json` records the measurements; they did not supply prices.
+
+### Live-SPC excess: changed work versus changed pricing
+
+The prior full paired CSV audit covers all 119 excess calls in the four
+requested categories (96 text, 18 dungeon gameplay, two iris, three mirror).
+Every one has different main/VWF work between cartridge-answer and live-SPC
+runs. For example, iteration 463374 has 1,360 versus 584,212 VWF clocks;
+iteration 383634 has 201,950 versus 13,670,378 total main clocks. These are
+additional text/load paths, not equal-work calls assigned different holds
+solely by a threshold. `prior-live-excess-work.json` retains every call.
+
+The source song-end branch `$08:C606..C610` either continues drawing the
+item or selects the rising-crystal continuation. The pendant poll likewise
+holds its item timer or opens its message. Live answers can move message
+rendering and the following screen load to different logical iterations.
+The final paired audit below measures the remaining excess after the generic
+IRQ corrections. Those executed children keep their instruction prices;
+removing their holds would erase real native work. This does not establish
+exact song timing, intra-NMI SPC sampling or exact audio/video parity.
+
+The final library suites use six default and four reduced isolated libtest
+processes, with one test thread each. `library-shards.json` binds their
+executables, complete disjoint case lists and individual process exits;
+the union is the entire listed suite, including the normally ignored cases.
+The interrupted duplicate serial run is not counted as library validation.
+
+### Full cartridge progression
+
+Each complete pass contains 1,473,123 iterations, 39,575 lagged calls and
+102,677 source lag frames. Missing/excess are nonnegative separate totals;
+exact/within-one count lagged calls only. Immutable CPU binaries allow the
+full census passes to finish independently; none shares writable save paths.
+
+| Stage | Held | Exact lagged | Within one | Missing | Excess | Zero-lag FP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Prior batch | 92,503 | 30,489 | 38,867 | 10,320 | 146 | 48 |
+| Group 1 | 92,338 | 30,480 | 38,872 | 10,339 | 0 | 0 |
+| Group 2 | 92,516 | 30,656 | 38,874 | 10,161 | 0 | 0 |
+| Group 3 | 92,533 | 30,656 | 38,883 | 10,144 | 0 | 0 |
+| Group 4 | 92,533 | 30,656 | 38,883 | 10,144 | 0 | 0 |
+| Group 5 / final | 92,533 | 30,656 | 38,883 | 10,144 | 0 | 0 |
+
+The four intermediate groups retain their intermediate IRQ model; group 5 includes
+the final IRQ interval/seed correction and conservative signed-scan prefix.
+All four intermediate cartridge gates and both final full gates PASS,
+unexplained zero and complete=True. Superseded interrupted prefixes are
+not counted as gates.
+
+### Final rule comparison
+
+| Mode / rule | Held | Exact lagged | Within one | Missing | Excess | FP | Absolute error |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cartridge / cost_p0 | 87,561 | 27,023 | 38,132 | 15,188 | 72 | 0 | 15,260 |
+| Cartridge / cost_p1 | 88,426 | 27,579 | 38,267 | 14,251 | 0 | 0 | 14,251 |
+| Cartridge / cost_p2 | 92,533 | 30,656 | 38,883 | 10,144 | 0 | 0 | 10,144 |
+| Live SPC / cost_p0 | 87,480 | 26,920 | 38,029 | 15,773 | 576 | 131 | 16,349 |
+| Live SPC / cost_p1 | 88,322 | 27,468 | 38,139 | 14,917 | 562 | 131 | 15,479 |
+| Live SPC / cost_p2 | 92,427 | 30,529 | 38,751 | 10,833 | 583 | 131 | 11,416 |
+
+Masked callbacks (separate from accepted holds): 2,835 / 2,811, cartridge / live.
+Runtime holds equal P2 on every iteration in both final passes.
+
+### Complete final category table
+
+Paired cells are cartridge / live. Every source-lag and zero-lag
+false-positive category is included; JSON retains all other categories.
+Exact/within-one use lagged calls only.
+
+| Entry | Source lag | Lagged calls | Held C / L | Exact C / L | Within one C / L | Missing C / L | Excess C / L | FP C / L |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0E/02` | 12,964 | 4,418 | 12,070 / 11,977 | 3,524 / 3,417 | 4,418 / 4,308 | 894 / 1,211 | 0 / 224 | 0 / 97 |
+| `07/02` | 8,770 | 1,976 | 7,802 / 7,802 | 1,217 / 1,217 | 1,780 / 1,780 | 968 / 968 | 0 / 0 | 0 / 0 |
+| `06/00` | 8,196 | 142 | 7,839 / 7,839 | 0 / 0 | 0 / 0 | 357 / 357 | 0 / 0 | 0 / 0 |
+| `07/0E` | 7,979 | 4,952 | 7,677 / 7,677 | 4,711 / 4,711 | 4,894 / 4,894 | 302 / 302 | 0 / 0 | 0 / 0 |
+| `08/00` | 6,466 | 157 | 6,314 / 6,084 | 19 / 19 | 143 / 139 | 152 / 382 | 0 / 0 | 0 / 0 |
+| `09/23` | 6,054 | 1,179 | 5,448 / 5,448 | 618 / 618 | 1,134 / 1,134 | 606 / 606 | 0 / 0 | 0 / 0 |
+| `0F/01` | 5,432 | 4,879 | 5,176 / 5,176 | 4,623 / 4,623 | 4,879 / 4,879 | 256 / 256 | 0 / 0 | 0 / 0 |
+| `09/03` | 4,372 | 251 | 4,076 / 4,076 | 0 / 0 | 206 / 206 | 296 / 296 | 0 / 0 | 0 / 0 |
+| `07/07` | 4,060 | 2,919 | 3,276 / 3,276 | 2,157 / 2,157 | 2,897 / 2,897 | 784 / 784 | 0 / 0 | 0 / 0 |
+| `07/00` | 3,679 | 2,960 | 1,894 / 1,992 | 1,175 / 1,175 | 2,960 / 2,960 | 1,785 / 1,785 | 0 / 98 | 0 / 17 |
+| `09/01` | 3,479 | 251 | 3,426 / 3,426 | 198 / 198 | 251 / 251 | 53 / 53 | 0 / 0 | 0 / 0 |
+| `07/0F` | 2,992 | 2,718 | 2,800 / 2,800 | 2,526 / 2,526 | 2,718 / 2,718 | 192 / 192 | 0 / 0 | 0 / 0 |
+| `0E/03` | 2,672 | 115 | 2,592 / 2,592 | 35 / 35 | 115 / 115 | 80 / 80 | 0 / 0 | 0 / 0 |
+| `10/01` | 2,672 | 2,669 | 2,669 / 2,673 | 2,666 / 2,664 | 2,669 / 2,668 | 3 / 4 | 0 / 5 | 0 / 0 |
+| `08/02` | 2,576 | 157 | 2,574 / 2,486 | 155 / 152 | 157 / 153 | 2 / 90 | 0 / 0 | 0 / 0 |
+| `07/15` | 2,333 | 1,735 | 2,163 / 2,163 | 1,578 / 1,578 | 1,722 / 1,722 | 170 / 170 | 0 / 0 | 0 / 0 |
+| `19/02` | 2,001 | 1,855 | 1,996 / 1,996 | 1,850 / 1,850 | 1,855 / 1,855 | 5 / 5 | 0 / 0 | 0 / 0 |
+| `0E/0A` | 1,845 | 90 | 1,637 / 1,637 | 18 / 18 | 36 / 36 | 208 / 208 | 0 / 0 | 0 / 0 |
+| `09/00` | 1,253 | 1,192 | 84 / 84 | 23 / 23 | 1,192 / 1,192 | 1,169 / 1,169 | 0 / 0 | 0 / 0 |
+| `0E/07` | 1,065 | 56 | 897 / 897 | 0 / 0 | 28 / 28 | 168 / 168 | 0 / 0 | 0 / 0 |
+| `07/06` | 984 | 603 | 943 / 943 | 564 / 564 | 601 / 601 | 41 / 41 | 0 / 0 | 0 / 0 |
+| `11/00` | 973 | 17 | 931 / 931 | 0 / 0 | 0 / 0 | 42 / 42 | 0 / 0 | 0 / 0 |
+| `07/01` | 928 | 928 | 922 / 922 | 922 / 922 | 928 / 928 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `08/01` | 706 | 157 | 706 / 741 | 157 / 153 | 157 / 153 | 0 / 17 | 0 / 52 | 0 / 0 |
+| `05/00` | 639 | 11 | 512 / 512 | 0 / 0 | 0 / 0 | 127 / 127 | 0 / 0 | 0 / 0 |
+| `09/04` | 508 | 251 | 502 / 502 | 245 / 245 | 251 / 251 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `12/03` | 472 | 391 | 391 / 391 | 310 / 310 | 391 / 391 | 81 / 81 | 0 / 0 | 0 / 0 |
+| `0F/00` | 449 | 287 | 384 / 384 | 222 / 222 | 287 / 287 | 65 / 65 | 0 / 0 | 0 / 0 |
+| `07/12` | 391 | 239 | 326 / 326 | 179 / 179 | 234 / 234 | 65 / 65 | 0 / 0 | 0 / 0 |
+| `09/2E` | 363 | 100 | 271 / 271 | 8 / 8 | 100 / 100 | 92 / 92 | 0 / 0 | 0 / 0 |
+| `07/16` | 303 | 101 | 303 / 303 | 101 / 101 | 101 / 101 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/11` | 274 | 16 | 254 / 254 | 0 / 0 | 12 / 12 | 20 / 20 | 0 / 0 | 0 / 0 |
+| `09/16` | 265 | 233 | 84 / 84 | 52 / 52 | 233 / 233 | 181 / 181 | 0 / 0 | 0 / 0 |
+| `09/0D` | 247 | 223 | 88 / 88 | 64 / 64 | 223 / 223 | 159 / 159 | 0 / 0 | 0 / 0 |
+| `0E/0B` | 243 | 81 | 239 / 239 | 77 / 77 | 81 / 81 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `09/0F` | 242 | 16 | 240 / 240 | 14 / 14 | 16 / 16 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `01/00` | 235 | 4 | 151 / 151 | 0 / 0 | 0 / 0 | 84 / 84 | 0 / 0 | 0 / 0 |
+| `09/2C` | 228 | 36 | 213 / 213 | 23 / 23 | 34 / 34 | 15 / 15 | 0 / 0 | 0 / 0 |
+| `10/00` | 157 | 157 | 157 / 236 | 157 / 154 | 157 / 155 | 0 / 1 | 0 / 80 | 0 / 0 |
+| `17/01` | 141 | 3 | 108 / 108 | 0 / 0 | 0 / 0 | 33 / 33 | 0 / 0 | 0 / 0 |
+| `1B/02` | 139 | 9 | 132 / 132 | 7 / 7 | 7 / 7 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `09/20` | 138 | 28 | 120 / 120 | 10 / 10 | 28 / 28 | 18 / 18 | 0 / 0 | 0 / 0 |
+| `0E/05` | 138 | 119 | 4 / 4 | 2 / 2 | 102 / 102 | 134 / 134 | 0 / 0 | 0 / 0 |
+| `00/01` | 114 | 11 | 47 / 47 | 1 / 1 | 8 / 8 | 67 / 67 | 0 / 0 | 0 / 0 |
+| `0B/24` | 103 | 93 | 18 / 18 | 8 / 8 | 93 / 93 | 85 / 85 | 0 / 0 | 0 / 0 |
+| `09/21` | 84 | 28 | 84 / 84 | 28 / 28 | 28 / 28 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0E` | 83 | 16 | 77 / 77 | 10 / 10 | 16 / 16 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `15/07` | 83 | 79 | 83 / 83 | 79 / 79 | 79 / 79 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `19/00` | 72 | 4 | 71 / 71 | 3 / 3 | 4 / 4 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/13` | 71 | 47 | 70 / 70 | 46 / 46 | 47 / 47 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/17` | 68 | 65 | 9 / 9 | 6 / 6 | 65 / 65 | 59 / 59 | 0 / 0 | 0 / 0 |
+| `0B/28` | 68 | 4 | 65 / 65 | 1 / 1 | 4 / 4 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `0B/2B` | 66 | 66 | 16 / 16 | 16 / 16 | 66 / 66 | 50 / 50 | 0 / 0 | 0 / 0 |
+| `0B/19` | 64 | 4 | 60 / 60 | 0 / 0 | 4 / 4 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `15/03` | 64 | 12 | 59 / 59 | 7 / 7 | 12 / 12 | 5 / 5 | 0 / 0 | 0 / 0 |
+| `00/05` | 62 | 62 | 62 / 62 | 62 / 62 | 62 / 62 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/26` | 61 | 4 | 60 / 60 | 3 / 3 | 4 / 4 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/1A` | 60 | 4 | 58 / 58 | 2 / 2 | 4 / 4 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/12` | 60 | 3 | 59 / 59 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/29` | 59 | 51 | 14 / 14 | 6 / 6 | 51 / 51 | 45 / 45 | 0 / 0 | 0 / 0 |
+| `18/00` | 59 | 2 | 59 / 59 | 2 / 2 | 2 / 2 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/00` | 59 | 3 | 56 / 56 | 2 / 2 | 2 / 2 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `1A/1A` | 59 | 3 | 58 / 58 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/1C` | 59 | 3 | 58 / 58 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/04` | 58 | 3 | 57 / 57 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/08` | 58 | 3 | 57 / 57 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/0A` | 58 | 3 | 58 / 58 | 3 / 3 | 3 / 3 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/18` | 58 | 3 | 57 / 57 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/0E` | 57 | 3 | 56 / 56 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/10` | 56 | 3 | 55 / 55 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/06` | 55 | 3 | 54 / 54 | 2 / 2 | 3 / 3 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/03` | 53 | 53 | 0 / 0 | 0 / 0 | 53 / 53 | 53 / 53 | 0 / 0 | 0 / 0 |
+| `1A/0C` | 53 | 2 | 53 / 53 | 2 / 2 | 2 / 2 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `11/07` | 51 | 17 | 46 / 46 | 12 / 12 | 17 / 17 | 5 / 5 | 0 / 0 | 0 / 0 |
+| `13/05` | 51 | 51 | 51 / 51 | 51 / 51 | 51 / 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1E` | 51 | 2 | 50 / 50 | 1 / 1 | 2 / 2 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/1C` | 48 | 40 | 19 / 19 | 11 / 11 | 40 / 40 | 29 / 29 | 0 / 0 | 0 / 0 |
+| `1A/14` | 47 | 1 | 44 / 44 | 0 / 0 | 0 / 0 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `1A/02` | 46 | 1 | 43 / 43 | 0 / 0 | 0 / 0 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `1A/16` | 45 | 1 | 42 / 42 | 0 / 0 | 0 / 0 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `07/18` | 41 | 14 | 35 / 35 | 8 / 0 | 14 / 7 | 6 / 41 | 0 / 35 | 0 / 14 |
+| `1A/20` | 41 | 1 | 38 / 38 | 0 / 0 | 0 / 0 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `09/12` | 32 | 16 | 32 / 32 | 16 / 16 | 16 / 16 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/08` | 32 | 4 | 32 / 32 | 4 / 4 | 4 / 4 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/25` | 30 | 4 | 29 / 29 | 3 / 3 | 4 / 4 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/00` | 29 | 13 | 19 / 19 | 3 / 3 | 13 / 13 | 10 / 10 | 0 / 0 | 0 / 0 |
+| `0B/18` | 24 | 4 | 20 / 20 | 0 / 0 | 4 / 4 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `12/02` | 23 | 23 | 23 / 23 | 23 / 23 | 23 / 23 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/05` | 19 | 19 | 0 / 0 | 0 / 0 | 19 / 19 | 19 / 19 | 0 / 0 | 0 / 0 |
+| `00/07` | 14 | 14 | 0 / 0 | 0 / 0 | 14 / 14 | 14 / 14 | 0 / 0 | 0 / 0 |
+| `15/05` | 14 | 1 | 14 / 14 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/02` | 7 | 7 | 0 / 0 | 0 / 0 | 7 / 7 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `00/0A` | 6 | 3 | 6 / 6 | 3 / 3 | 3 / 3 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/09` | 4 | 4 | 4 / 4 | 4 / 4 | 4 / 4 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/04` | 3 | 3 | 3 / 3 | 3 / 3 | 3 / 3 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/02` | 2 | 1 | 2 / 2 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/06` | 2 | 2 | 0 / 0 | 0 / 0 | 2 / 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `04/01` | 2 | 2 | 0 / 0 | 0 / 0 | 2 / 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `00/00` | 1 | 1 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `03/01` | 1 | 1 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/0B` | 1 | 1 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `09/06` | 1 | 1 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0E/01` | 1 | 1 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `19/01` | 1 | 1 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `16/04` | 0 | 0 | 0 / 89 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 89 | 0 / 3 |
+
+The targeted intro/ending excess and the remaining live additions are
+explicit above. Final live excess-call work audit:
+
+| Entry | Live excess calls | Calls with identical main/VWF work |
+| --- | ---: | ---: |
+| `0E/02` | 97 | 0 |
+| `07/00` | 17 | 0 |
+| `10/00` | 2 | 0 |
+| `16/04` | 3 | 0 |
+
+### Crystal / pendant phases, exceptions and rupee gaps
+
+Cells are source / prior batch / final, in presentation frames including
+masked callbacks. All eight stable room/Link-XY/whole-save outcomes match
+a source outcome. The final seven crystal phase tables retain the prior
+values; all seven iris openings are 34 source/native frames.
+
+| Seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 94000 | 65 / 66 / 66 | 5 / 5 / 5 | 17 / 17 / 17 | 2 / 2 / 2 | 35 / 34 / 34 | 16 / 16 / 16 |
+| 380000 | 84 / 85 / 85 | 7 / 7 / 7 | 24 / 23 / 23 | 2 / 2 / 2 | 34 / 34 / 34 | 16 / 16 / 16 |
+| 460000 | 84 / 84 / 84 | 7 / 7 / 7 | 24 / 24 / 24 | 2 / 2 / 2 | 34 / 34 / 34 | 16 / 16 / 16 |
+| 626000 | 91 / 89 / 89 | 9 / 9 / 9 | 24 / 24 / 24 | 2 / 2 / 2 | 34 / 34 / 34 | 16 / 16 / 16 |
+| 734000 | 84 / 85 / 85 | 7 / 7 / 7 | 25 / 25 / 25 | 2 / 2 / 2 | 34 / 34 / 34 | 16 / 16 / 16 |
+| 880000 | 84 / 84 / 84 | 7 / 7 / 7 | 26 / 26 / 26 | 2 / 2 / 2 | 34 / 34 / 34 | 16 / 16 / 16 |
+| 1064000 | 84 / 84 / 84 | 7 / 7 / 7 | 25 / 25 / 25 | 2 / 2 / 2 | 34 / 34 / 34 | 16 / 16 / 16 |
+| 1316000 | 84 / 83 / 83 | 7 / 7 / 7 | 25 / 25 / 25 | 2 / 2 / 2 | 34 / 34 / 34 | 16 / 16 / 16 |
+
+| Mode | Classified WRAM differences | $0CFD-only exceptions |
+| --- | --- | ---: |
+| rom | `{"lag": 14}` | 10 |
+| live | `{"lag": 14, "polygon": 14735, "song-end-poll": 637}` | 10 |
+
+The 162000–163000 probe has 0 $0CFD-only exceptions.
+The same 27 logical iterations request rupee ticks. Presentation gaps:
+
+- Prior batch: `[23, 8, 8, 8, 8, 10, 24, 15, 8, 8, 8, 8, 8, 14, 27, 12, 8, 8, 8, 8, 8, 14, 11, 8, 8, 8]`.
+- Final: `[23, 8, 8, 8, 8, 10, 24, 15, 8, 8, 8, 8, 8, 14, 27, 12, 8, 8, 8, 8, 8, 14, 11, 8, 8, 8]`.
+- Source: `[24, 8, 8, 8, 8, 12, 25, 14, 8, 8, 8, 8, 8, 19, 26, 8, 8, 8, 8, 8, 8, 14, 12, 8, 8, 8]`.
+
+The first retained PCM onset interval is 23.002 frames using the
+unchanged 7.9–8.7 kHz / threshold-600 detector. This is a diagnostic, not
+exact PCM or intra-NMI timestamp acceptance.
+
+### Remaining coverage at this stopping point
+
+These are entry-category deficits, not exclusive causal assignments.
+
+| Entry | Missing | Excess |
+| --- | ---: | ---: |
+| `07/00` | 1,785 | 0 |
+| `09/00` | 1,169 | 0 |
+| `07/02` | 968 | 0 |
+| `0E/02` | 894 | 0 |
+| `07/07` | 784 | 0 |
+| `09/23` | 606 | 0 |
+| `06/00` | 357 | 0 |
+| `07/0E` | 302 | 0 |
+| `09/03` | 296 | 0 |
+| `0F/01` | 256 | 0 |
+| `0E/0A` | 208 | 0 |
+| `07/0F` | 192 | 0 |
+| `09/16` | 181 | 0 |
+| `07/15` | 170 | 0 |
+| `0E/07` | 168 | 0 |
+| `09/0D` | 159 | 0 |
+| `08/00` | 152 | 0 |
+| `0E/05` | 134 | 0 |
+
+Next work remains the measured frequent sprite/control bodies (especially
+spike-block and the intro parents), additional object/header/stair children,
+and fresh-text sprite children beyond the shared predicates. Negative-byte
+inventory selection equivalence, exact IRQ/HDMA/refresh placement and live
+song timing remain open. Complete instruction coverage and exact A/V are
+not established. No default/ROM-timing price or comparison exception was
+added to improve these counts.
+
+### Validation
+
+| Check | Result |
+| --- | --- |
+| Final ordinary default / reduced builds | PASS; both warning-free |
+| Fresh clean-main default baseline versus final default | PASS; 200,000 records and EOF match |
+| Four intermediate cartridge gates | PASS; 1,473,123 iterations each |
+| Final cartridge / live-SPC full gates | PASS; unexplained zero, complete=True |
+| Zelda lib, default | 2,467 pass; 1 failure; 3 ignored; every listed case observed |
+| Zelda lib, reduced | 2,002 pass; 0 failure; 2 ignored; every listed case observed |
+| Pacing regressions, both configurations | 12 pass each |
+| SNES lib, both configurations | 504 pass; 0 failures; 7 ignored each |
+| Eight stable crystal/pendant outcomes | PASS |
+| `git diff --check` | PASS |
+| Complete instruction coverage / exact A/V | Not established |
+
+The sole default lib failure is the existing
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+Lib-test builds retain their existing unused-fixture warnings; ordinary
+builds are warning-free. Interrupted pre-final library runs are diagnostics
+and are not included in these complete final-source suite counts.
+
+`verification.json`, full stage/final CSV and JSON metrics, classification
+traces, phase/stable/PCM receipts, source listings,
+`candidate-source-sha256.json` and `artifact-hashes.json` bind this CPU
+evidence. The supplied ledgers and oracle cache were read-only. No GPU,
+`--video`, cached-A/V, external Snes9x, cargo GPU tests, `cargo fmt`, commit
+or push was used. Scratch scripts are in `/tmp`.
+
+Reproduce the final full census with the earlier command, setting
+`BIN=target/cost-pacing4/bound-zelda3`, fresh save/output paths and
+`--pacing-predictor`; append `--live-apu-reads` for the live-SPC pass.

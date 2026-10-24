@@ -1630,6 +1630,32 @@ fn sprite_return_if_paused_matches_c_boolean_gates() {
 }
 
 #[test]
+fn raw_inactive_cost_is_lagless_only_and_priced_entries_are_not_doubled() {
+    let mut state = fresh_state();
+    let k = 0;
+    state.sprite_slot_view_mut(k).set_state(9);
+    state.sprite_slot_view_mut(k).set_pause(0);
+    state.set_submodule(0);
+    let start = crate::cycle_ledger::master();
+    assert!(!state.sprite_return_if_inactive(k));
+    assert_eq!(crate::cycle_ledger::master() - start, 0);
+    state.set_lag_free(true);
+    for method in [ZeldaState::sprite_return_if_inactive,
+        ZeldaState::sprite_return_if_inactive_bank5, ZeldaState::sprite_return_if_inactive_bank1a] {
+        let start = crate::cycle_ledger::master();
+        assert!(!method(&state, k));
+        // $06:D9EC..DA08, state 9, no modal/submodule/pause: 296.
+        assert_eq!(crate::cycle_ledger::master() - start, 64 + 48 + 40 + 48 + 48 + 6 + 42);
+    }
+    state.set_submodule(2);
+    for method in [ZeldaState::sprite_return_if_paused, ZeldaState::sprite_return_if_paused_bank5] {
+        let start = crate::cycle_ledger::master();
+        assert!(method(&state, k));
+        assert_eq!(crate::cycle_ledger::master() - start, 48 + 40 + 6 + 28 + 28 + 42);
+    }
+}
+
+#[test]
 fn sprite_return_if_phasing_out_matches_stun_countdown_and_draw_gate() {
     let k = 2;
 

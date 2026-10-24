@@ -224,6 +224,15 @@ impl ZeldaState {
     // }
     // Note: in C this returns true when the caller should bail. Same here.
     pub(in crate::zelda_rtl) fn sprite_return_if_inactive(&self, k: usize) -> bool {
+        if self.lag_free {
+            // $06:D9EC..DA08, the unpriced raw-call entry. The already
+            // priced bank-5/1A entries bypass this charge below.
+            return self.sprite_return_if_inactive_with_cost(k, 0x06_d9ec);
+        }
+        self.sprite_inactive_predicate(k)
+    }
+
+    fn sprite_inactive_predicate(&self, k: usize) -> bool {
         if self.sprite_slot_view(k).state() != 9 {
             return true;
         }
@@ -258,7 +267,7 @@ impl ZeldaState {
     }
 
     fn sprite_return_if_inactive_with_cost(&self, k: usize, address: u32) -> bool {
-        let inactive = self.sprite_return_if_inactive(k);
+        let inactive = self.sprite_inactive_predicate(k);
         {
             let _wrapper = crate::cycle_ledger::routine(address);
             let slot = self.sprite_slot_view(k);
@@ -290,7 +299,7 @@ impl ZeldaState {
 
     /// Resume ReturnIfInactive after its state-9 test, at $05:F955.
     pub(in crate::zelda_rtl) fn sprite_return_if_paused_bank5(&self, k: usize) -> bool {
-        let paused = self.sprite_return_if_paused(k);
+        let paused = self.sprite_paused_predicate(k);
         {
             let _wrapper = crate::cycle_ledger::routine(0x05_f955);
             crate::cycle_ledger::charge(self.sprite_pause_test_master_cycles(k));
@@ -303,6 +312,21 @@ impl ZeldaState {
     //   return (modal_pause_flag || submodule_index || !(sprite_defl_bits[k] & 0x80) && sprite_pause[k]);
     // }
     pub(in crate::zelda_rtl) fn sprite_return_if_paused(&self, k: usize) -> bool {
+        if self.lag_free {
+            // $06:D9F3..DA08: omit the state-9 test for this entry. The
+            // double-return tail's second PLA/RTS belongs to the caller.
+            let paused = self.sprite_paused_predicate(k);
+            {
+                let _scope = crate::cycle_ledger::routine(0x06_d9f3);
+                crate::cycle_ledger::charge(self.sprite_pause_test_master_cycles(k));
+            }
+            if paused { crate::cycle_ledger::charge(28 + 42); }
+            return paused;
+        }
+        self.sprite_paused_predicate(k)
+    }
+
+    fn sprite_paused_predicate(&self, k: usize) -> bool {
         self.game_state.frame.modal_pause_flag != 0
             || self.game_state.frame.submodule != 0
             || ((self.sprite_slot_view(k).deflection_bits() & 0x80) == 0

@@ -654,6 +654,12 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_PrisonCell`
     pub(super) fn room_draw_prison_cell(&mut self, dsto: u16) {
+        if self.lag_free {
+            // $01:9C44..9CC5 M16/X16: plane branch, five eight-store
+            // columns, four taken loop branches, fixed stores and RTS.
+            crate::cycle_ledger::charge(86 + if self.room_plane_offset() != 0 { 52 } else { 6 }
+                + 110 + 5 * 738 + 4 * 6 + 648);
+        }
         let src = 0x1488;
         let dsto = dsto | self.room_plane_offset();
         for i in 0..5 {
@@ -973,6 +979,13 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_SomeBigDecors`
     pub(super) fn room_draw_some_big_decors(&mut self, n: u16, src: usize, dsto: u16) {
+        if self.lag_free {
+            // $01:9DA2..9DD8 M16/X16: eight rows, n actual tile pairs
+            // per row; the plane branch changes only the destination.
+            crate::cycle_ledger::charge(104 + if self.room_plane_offset() != 0 { 88 } else { 6 }
+                + 56 + 8 * (96 + 220 * u64::from(n)
+                    + 6 * u64::from(n.saturating_sub(1)) + 172) + 7 * 6 + 42);
+        }
         let mut dst = dsto | self.room_plane_offset();
         for y in 0..8 {
             for x in 0..n {
@@ -984,6 +997,11 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_SingleLampCone`
     pub(super) fn room_draw_single_lamp_cone(&mut self, a: u16, y: usize) {
+        if self.lag_free {
+            // $01:9E06..9E2F M16/X16: twelve rows of twelve tile pairs,
+            // eleven taken inner branches per row and eleven outer ones.
+            crate::cycle_ledger::charge(88 + 12 * (88 + 12 * 220 + 11 * 6 + 172) + 11 * 6 + 42);
+        }
         for row in 0..12 {
             for col in 0..12 {
                 self.room_write_bg(

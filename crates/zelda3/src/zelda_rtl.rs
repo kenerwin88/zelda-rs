@@ -12762,6 +12762,9 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
+        if self.game_state.display.vertical_irq_trigger != value {
+            self.native_checkpoint_worker_ownership();
+        }
         self.display_core_mut().set_vertical_irq_trigger(value);
     }
 
