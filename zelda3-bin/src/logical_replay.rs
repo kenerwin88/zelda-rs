@@ -14,6 +14,7 @@
 //!        [--poly-uploads] [--single-seed] [--outcome-trace PATH]
 //!        [--windows LO-HI,...] (inclusive uninterrupted seeded probes)
 //!        [--audio-pcm PATH] (little-endian stereo, 534 pairs per presentation frame)
+//!        [--pacing-predictor PATH] (diagnostic per-iteration cost/count CSV)
 //!
 //! The cartridge's `$2140` reads (song-end polls) are replayed per iteration
 //! like the RNG: their values depend on elapsed SPC time, which lag changes.
@@ -1160,6 +1161,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     // Disjoint uninterrupted probes share one read-only pass over the image stream.
     let mut windows: Vec<(u64, u64)> = Vec::new();
     let mut outcome_trace: Option<BufWriter<fs::File>> = None;
+    let mut pacing_predictor: Option<BufWriter<fs::File>> = None;
     let mut audio_pcm: Option<BufWriter<fs::File>> = None;
     let mut classification_trace: Option<BufWriter<fs::File>> = None;
     let mut poly_uploads: Option<PolyUploads> = None;
@@ -1190,6 +1192,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
             "--outcome-trace" => {
                 outcome_trace = Some(BufWriter::new(fs::File::create(value(index)).expect("create outcome trace")));
+            }
+            "--pacing-predictor" => {
+                use std::io::Write;
+                let mut file = BufWriter::new(fs::File::create(value(index)).expect("create pacing predictor"));
+                writeln!(file, "iteration,module,submodule,lag_nmis,native_held,native_elapsed,main_master,vwf_master,preceding_nmi_master,silent_calls,predicted,predicted_interrupts,predicted_refresh").expect("write predictor header");
+                pacing_predictor = Some(file);
             }
             "--audio-pcm" => {
                 audio_pcm = Some(BufWriter::new(fs::File::create(value(index)).expect("create PCM trace")));
@@ -1524,11 +1532,26 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let mut native_held = 0u32;
         let mut native_elapsed = 0u32;
         let mut native_nmis = 0u32;
+        // Capture before draining held callbacks: each held NMI replaces the
+        // acceptance mark used by lag_free_main_master. Never use source lag
+        // counts or these predictions to drive the engine.
+        let preceding_nmi_master = u64::from(game.last_nmi_handler_master_cycles().unwrap_or(0));
+        let silent_before = zelda3::cycle_ledger::silent_calls();
+        let mut main_master = 0;
+        let mut vwf_master = 0;
+        let mut main_silent = 0;
+        let mut first_callback = true;
         let mut engine_commands = Vec::new();
         let last_apu_push_before = last_apu_push;
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             loop {
                 game.zelda_run_frame(i32::from(input));
+                if first_callback {
+                    main_master = game.lag_free_main_master();
+                    vwf_master = game.lag_free_vwf_master();
+                    main_silent = zelda3::cycle_ledger::silent_calls() - silent_before;
+                    first_callback = false;
+                }
                 if game.native_last_callback_masked_nmi() {
                     native_elapsed += 1;
                 } else {
@@ -1590,6 +1613,24 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         let (pushes, ports) = game.zelda_last_pushed_apu_ports();
         let Some(iteration) = iteration else { continue };
+        // Entry is line 225 plus the preceding native handler cost; the next
+        // NMI is line 225 in the following 1364*262-clock field. Refinements
+        // reuse that handler estimate for interruptions, then add the generic
+        // 40-clock WRAM-refresh stall per scanline. No context calibration.
+        const FIELD: u64 = 1364 * 262;
+        let handler = preceding_nmi_master.min(FIELD - 1);
+        let predicted = (handler + main_master) / FIELD;
+        let predicted_interrupts = main_master / (FIELD - handler);
+        let refresh_work = main_master.div_ceil(1324) * 40 + main_master;
+        let predicted_refresh = refresh_work / (FIELD - handler);
+        if let Some(trace) = pacing_predictor.as_mut() {
+            use std::io::Write;
+            writeln!(trace, "{},{:02X},{:02X},{},{},{},{},{},{},{},{},{},{}",
+                iteration.index, images.image[0x10], images.image[0x11],
+                iteration.lag_nmis, native_held, native_elapsed, main_master,
+                vwf_master, preceding_nmi_master, main_silent, predicted,
+                predicted_interrupts, predicted_refresh).expect("write pacing predictor");
+        }
         segment.pacing_equal += u64::from(native_held == iteration.lag_nmis);
         segment.pacing_held += u64::from(native_held);
         segment.pacing_lag += u64::from(iteration.lag_nmis);
@@ -1741,6 +1782,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 "lag_nmis": iteration.lag_nmis,
                 "native_held": native_held,
                 "native_elapsed": native_elapsed,
+                "predicted": predicted,
+                "predicted_interrupts": predicted_interrupts,
+                "predicted_refresh": predicted_refresh,
+                "main_master": main_master,
+                "preceding_nmi_master": preceding_nmi_master,
                 "open_host": iteration.open_host,
                 "picture_host": iteration.picture_host,
                 "engine_polls": observed_polls,

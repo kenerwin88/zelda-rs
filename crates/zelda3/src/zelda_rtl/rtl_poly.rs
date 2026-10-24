@@ -173,7 +173,7 @@ impl ZeldaState {
     /// Lag-free: this frame's main-loop cost, ROM-equivalent: the cycle
     /// ledger from the frame's start to its NMI's acceptance (the NMI's own
     /// charges are not main's) plus the glyph renderer's modelled cost.
-    pub(super) fn lag_free_main_master(&self) -> u64 {
+    pub fn lag_free_main_master(&self) -> u64 {
         let end = self
             .ledger_master_at_nmi_acceptance
             .filter(|&at| at >= self.lag_free_frame_master_start)
