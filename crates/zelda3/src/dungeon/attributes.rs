@@ -1141,6 +1141,15 @@ impl ZeldaState {
         } else {
             self.game_state.dungeon.bg2_attributes.bg2_tile(offset)
         };
+        if self.lag_free {
+            // $01:C22F..C277: each bank reads and compares $66, then either
+            // takes BEQ and toggles, compares $67 and toggles, or skips it.
+            crate::cycle_ledger::charge(match value.cartridge_attribute() {
+                0x66 => 72 + 6 + 56,
+                0x67 => 72 + 32 + 56,
+                _ => 72 + 32 + 6,
+            });
+        }
         if let Some(tile) = value.toggled_crystal_peg() {
             if bg1 {
                 self.dungeon_bg2_attributes_mut()
@@ -1152,6 +1161,10 @@ impl ZeldaState {
     }
 
     fn flip_crystal_peg_attribute_index(&mut self, index: usize) {
+        if self.lag_free {
+            // $01:C277..C278: DEX and BPL, taken except at index zero.
+            crate::cycle_ledger::charge(30 + if index == 0 { 0 } else { 6 });
+        }
         for bank in 0..4 {
             self.flip_crystal_peg_attribute_bank(index, bank);
         }
@@ -1159,6 +1172,10 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_FlipCrystalPegAttribute`
     pub(super) fn dungeon_flip_crystal_peg_attribute(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_c22a));
+        if self.lag_free {
+            crate::cycle_ledger::charge(46 + 66); // $01:C22A..C22C and C27A..C27C.
+        }
         for index in (0..=0x07ff).rev() {
             self.flip_crystal_peg_attribute_index(index);
         }

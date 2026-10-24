@@ -3272,6 +3272,11 @@ impl ZeldaState {
     }
 
     pub(super) fn RecoverPegGFXFromMapping(&mut self) {
+        if self.lag_free {
+            // $02:9761: index setup/barrier test; optional index swap.
+            crate::cycle_ledger::charge(126 + 0
+                + if self.game_state.dungeon.environment.orange_blue_barrier_state() == 0 { 6 } else { 38 });
+        }
         if self
             .game_state
             .dungeon
@@ -4093,6 +4098,12 @@ impl ZeldaState {
     }
 
     pub(super) fn PrepTransAuxGfx(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_df1a));
+        if self.lag_free {
+            // $00:DF1A..DF4E: setup/calls/return; DF3C..44 only for high packs.
+            crate::cycle_ledger::charge(332 + 144
+                + if self.game_state.world.palette_theme.aux_tile_theme_index() >= 32 { 126 } else { 6 });
+        }
         let tmp = self.staged_bg_and_sprite_decompression_buffers();
         self.do3_to_4_high_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0x40);
         if self.game_state.world.palette_theme.aux_tile_theme_index() >= 32 {
@@ -4811,6 +4822,11 @@ impl ZeldaState {
 
     /// ROM: `Module07_16_UpdatePegs_Step1`
     pub(super) fn module07_16_update_pegs_step1(&mut self) {
+        if self.lag_free {
+            // $02:9739: index setup/barrier test; optional index swap.
+            crate::cycle_ledger::charge(126 + 22
+                + if self.game_state.dungeon.environment.orange_blue_barrier_state() == 0 { 6 } else { 38 });
+        }
         if self
             .game_state
             .dungeon
@@ -4826,6 +4842,11 @@ impl ZeldaState {
 
     /// ROM: `Module07_16_UpdatePegs_Step2`
     pub(super) fn module07_16_update_pegs_step2(&mut self) {
+        if self.lag_free {
+            // $02:974D: index setup/barrier test; optional index swap.
+            crate::cycle_ledger::charge(126 + 22
+                + if self.game_state.dungeon.environment.orange_blue_barrier_state() == 0 { 6 } else { 38 });
+        }
         if self
             .game_state
             .dungeon
@@ -4841,6 +4862,11 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_UpdatePegGFXBuffer`
     pub(super) fn dungeon_update_peg_gfx_buffer(&mut self, x: usize, y: usize) {
+        if self.lag_free {
+            // $02:9773..97A8, M8/X16 on entry (PHA, not a wide immediate):
+            // two 64-word copies, 63 taken branches each, NMI request/return.
+            crate::cycle_ledger::charge(166 + 2 * (64 * 190 + 63 * 6) + 32 + 132);
+        }
         self.copy_peg_tile_graphics_to_message_buffer(x, y);
         self.set_pending_nmi_subroutine(23);
     }

@@ -606,6 +606,9 @@ impl ZeldaState {
     pub(in crate::zelda_rtl) fn sprite_overworld_reload_all_just_load(
         &mut self,
     ) -> OverworldSpriteReloadWorkload {
+        if self.lag_free {
+            crate::cycle_ledger::charge(298); // $09:C49D..C4AB, calls/DBR/RTL only.
+        }
         let work = self.begin_overworld_sprite_reload_just_load();
         self.complete_overworld_sprite_reload_scan(work)
     }
@@ -672,6 +675,17 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn overworld_load_sprites(&mut self) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09_c4ac));
+        if self.lag_free {
+            // $09:C4AC..C50D: collision bounds and progress-dependent pointer;
+            // C635+area never crosses a page (area <= $9F). C55B..C55D return.
+            let pointer = match self.game_state.inventory.save_progress.progress_indicator() {
+                3 => 6 + 122,
+                2 => 32 + 6 + 100,
+                _ => 32 + 122,
+            };
+            crate::cycle_ledger::charge(672 + pointer + 48 + 78 + 6 + 64);
+        }
         let area = self.game_state.world.region.overworld_area();
         let area_lo = self.game_state.world.region.overworld_area_low() as usize;
         self.garnish_state_mut().set_sprcoll_x_base((area & 7) << 9);
@@ -703,6 +717,12 @@ impl ZeldaState {
                 break;
             }
             sprite_records += 1;
+            if self.lag_free {
+                // $09:C510..C51E; ordinary records take BNE and execute the
+                // coordinate/presence stores $C528..C559; traps take C520..26.
+                crate::cycle_ledger::charge(78 + 134
+                    + if sprites[src + 2] == 0xf4 { 110 } else { 6 + 754 });
+            }
             if sprites[src + 2] == 0xf4 {
                 self.garnish_state_mut().increment_boulder_trap_count();
                 src += 3;
@@ -728,6 +748,9 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn begin_overworld_proximity_cell_scan(&mut self) -> OverworldProximityScanWork {
+        if self.lag_free {
+            crate::cycle_ledger::charge(210); // $09:C55E..C56D: save scroll, setup.
+        }
         let saved_bg2_h = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let saved_scroll_delta = self.overworld_horizontal_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0xff);
@@ -776,6 +799,16 @@ impl ZeldaState {
     ) -> bool {
         if scan.columns_remaining == 0 {
             return false;
+        }
+        if self.lag_free {
+            // $09:C5E3..C5F3 one row's call/control, with 21 taken BPLs.
+            crate::cycle_ledger::charge(222 + if scan.rows_in_column == 21 { 0 } else { 6 });
+            if scan.rows_in_column == 0 {
+                // $09:C5BB..C5E1: nonzero negative scroll; each column enters
+                // Sprite_ActivateWhenProximal anew. C56F..C582 outer control.
+                crate::cycle_ledger::charge(64 + 16 + 14 + 332 + 42 + 268
+                    + if scan.columns_remaining == 1 { 0 } else { 6 });
+            }
         }
         scan.in_bounds_proximity_checks +=
             u16::from(self.sprite_overworld_proximity_motivated_load(scan.x, scan.y));
@@ -836,6 +869,9 @@ impl ZeldaState {
             "overworld proximity scan returned before its last cell"
         );
         assert_eq!(scan.cells_completed, scan.total_cells);
+        if self.lag_free {
+            crate::cycle_ledger::charge(206); // $09:C584..C58E restore/RTS.
+        }
         self.set_overworld_horizontal_scroll_delta_low(scan.saved_scroll_delta);
         self.set_bg2_x(scan.saved_bg2_h);
         usize::from(scan.in_bounds_proximity_checks)
@@ -935,6 +971,13 @@ impl ZeldaState {
         let sprcoll_y_base = self.game_state.sprites.garnish_runtime.sprcoll_y_word();
         let xt = x.wrapping_sub(sprcoll_x_base);
         let yt = y.wrapping_sub(sprcoll_y_base);
+        if self.lag_free {
+            // $09:C6F5..C730: X bounds; conditional Y bounds; block-index/call
+            // only in bounds. Proxima child's body remains independently owned.
+            let suffix = if xt >= self.game_state.sprites.garnish_runtime.sprcoll_x_size() { 6 }
+                else { 194 + if yt >= self.game_state.sprites.garnish_runtime.sprcoll_y_size() { 6 } else { 406 } };
+            crate::cycle_ledger::charge(164 + suffix + 64);
+        }
         if xt >= self.game_state.sprites.garnish_runtime.sprcoll_x_size()
             || yt >= self.game_state.sprites.garnish_runtime.sprcoll_y_size()
         {

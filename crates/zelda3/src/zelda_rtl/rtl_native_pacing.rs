@@ -9,6 +9,10 @@ pub(crate) struct NativePacing {
     masked_callback: bool,
     accounting: bool,
     entry_handler: u64,
+    entry_lag_handler: u64,
+    handler_updates: u64,
+    last_lag_handler: u64,
+    closing_lag_handler: Option<u64>,
     closing_handler: Option<u64>,
     closing_poly_upload: bool,
     record_closing_handler: bool,
@@ -26,6 +30,8 @@ impl ZeldaState {
         // source interruptions precede it. They must not replace the handler
         // through which the next main iteration actually enters.
         self.native_pacing.entry_handler = self.native_previous_closing_handler();
+        self.native_pacing.entry_lag_handler = self.native_pacing.closing_lag_handler
+            .unwrap_or(self.native_pacing.last_lag_handler);
         if self.native_pacing.closing_handler.is_some() {
             self.lag_free_nmi_uploaded_poly = self.native_pacing.closing_poly_upload;
         }
@@ -38,6 +44,7 @@ impl ZeldaState {
     pub(super) fn native_record_closing_handler(&mut self) {
         if self.native_pacing.record_closing_handler {
             self.native_pacing.closing_handler = self.last_nmi_handler_master_cycles().map(u64::from);
+            self.native_pacing.closing_lag_handler = Some(self.native_pacing.last_lag_handler);
             self.native_pacing.closing_poly_upload = self.lag_free_nmi_uploaded_poly;
             self.native_pacing.record_closing_handler = false;
         }
@@ -52,14 +59,32 @@ impl ZeldaState {
         self.native_pacing.entry_handler
     }
 
+    pub fn native_cost_lag_handler(&self) -> u64 {
+        self.native_pacing.entry_lag_handler
+    }
+
+    pub(crate) fn native_note_handler_updates(&mut self, master: u64) {
+        if self.lag_free { self.native_pacing.handler_updates = master; }
+    }
+
+    pub(crate) fn native_note_handler_cost(&mut self, master: u64) {
+        if self.lag_free {
+            self.native_pacing.last_lag_handler = master.saturating_sub(self.native_pacing.handler_updates);
+        }
+    }
+
     fn native_cost_elapsed(&self, main: u64) -> [u64; 3] {
         const FIELD: u64 = 1364 * 262;
         let handler = self.native_pacing.entry_handler.min(FIELD - 1);
         let worker = self.native_pacing_worker_share(handler).min(FIELD - handler - 1);
-        let budget = FIELD - handler - worker;
+        let lag_handler = self.native_pacing.entry_lag_handler.min(FIELD - 1);
+        let lag_worker = self.native_pacing_worker_share(lag_handler).min(FIELD - lag_handler - 1);
         let refreshed = main + main.div_ceil(1324) * 40;
+        // Main enters after one ordinary handler. Subsequent fields execute
+        // the source's latched NMI path, excluding NMI_DoUpdates and joypads.
         [handler + main * FIELD / (FIELD - worker),
-            main * FIELD / budget, refreshed * FIELD / budget]
+            elapsed_with_lag_handlers(main, handler + worker, lag_handler + lag_worker),
+            elapsed_with_lag_handlers(refreshed, handler + worker, lag_handler + lag_worker)]
     }
 
     /// Generic raster barrier: a V-counter loop exits at or after line L.
@@ -113,8 +138,7 @@ impl ZeldaState {
         let elapsed = self.native_cost_elapsed(main);
         self.native_pacing.predictions = std::array::from_fn(|i|
             ((elapsed[i] + self.native_pacing.wait_wall[i]) / (1364 * 262)) as u32);
-        // P2 is selected by the complete route census. Keep the existing
-        // coarse iris envelope until the raster-barrier comparison passes.
+        // P2 includes the source refresh stalls and the generic raster barrier.
         self.native_pacing.pending = self.native_pacing.pending.max(self.native_pacing.predictions[2]);
         if let Some(sounds) = self.native_pacing.early_sound.take() {
             self.native_pacing.late_sound = Some([
@@ -193,9 +217,53 @@ impl ZeldaState {
 
 }
 
+/// Wall time through a first field with one ordinary entry handler and any
+/// further fields with lag handlers. Equality accepts the NMI. No update DMA
+/// is repeated just because main takes more than one field to return.
+fn elapsed_with_lag_handlers(main: u64, entry: u64, repeated: u64) -> u64 {
+    const FIELD: u64 = 1364 * 262;
+    let repeated = repeated.min(FIELD - 1);
+    let first = entry + main;
+    let nmis = if first < FIELD { 0 } else { 1 + (first - FIELD) / (FIELD - repeated) };
+    first + nmis * repeated
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn intervening_nmis_use_lag_cost_and_accept_equality() {
+        const FIELD: u64 = 1364 * 262;
+        let entry = 80_000;
+        let lag = 3_000;
+        assert_eq!(elapsed_with_lag_handlers(FIELD - entry - 1, entry, lag), FIELD - 1);
+        assert_eq!(elapsed_with_lag_handlers(FIELD - entry, entry, lag), FIELD + lag);
+        assert_eq!(elapsed_with_lag_handlers(2 * FIELD - entry - lag - 1, entry, lag), 2 * FIELD - 1);
+        assert_eq!(elapsed_with_lag_handlers(2 * FIELD - entry - lag, entry, lag), 2 * FIELD + lag);
+        let long = elapsed_with_lag_handlers(20 * FIELD - entry - 19 * lag, entry, lag);
+        assert_eq!(long, 20 * FIELD + lag);
+    }
+
+    #[test]
+    fn ordinary_update_dma_is_removed_from_the_retained_lag_handler() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.lag_free_intro_schedule = None;
+        game.lag_free_lag_phases_run = true;
+        game.clear_nmi_update_latch();
+        game.interrupt_nmi(0, None, false);
+        let ordinary = u64::from(game.last_nmi_handler_master_cycles().unwrap());
+        let stripped = game.native_pacing.last_lag_handler;
+        assert!(stripped < ordinary);
+        game.native_pacing.record_closing_handler = true;
+        game.native_record_closing_handler();
+        game.interrupt_nmi(0, None, false);
+        assert_eq!(stripped, u64::from(game.last_nmi_handler_master_cycles().unwrap()));
+        game.native_begin_main_cost();
+        assert_eq!(game.native_cost_lag_handler(), stripped);
+        assert_eq!(game.native_cost_entry_handler(), ordinary);
+    }
 
     #[test]
     fn raster_barrier_counts_fields_once_across_held_callbacks() {

@@ -109,6 +109,11 @@ impl ZeldaState {
 
     /// ROM: `Module07_0E_SpiralStairs`
     pub(in crate::zelda_rtl) fn module07_0e_spiral_stairs(&mut self) {
+        if self.lag_free {
+            // $02:9054..906B: conditional upload/attribute JSLs, Link JSL,
+            // state load and JumpTableLocal JSL. Table bytes are not code.
+            crate::cycle_ledger::charge(56 + if self.game_state.frame.subsubmodule >= 7 { 124 } else { 6 });
+        }
         if self.game_state.frame.subsubmodule >= 7 {
             self.graphics_incremental_vram_upload();
             if self.suspend_dungeon_selectable_peg_attribute_flip(
@@ -122,6 +127,11 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn complete_module07_0e_spiral_stairs_after_attribute_loader(&mut self) {
+        if self.lag_free {
+            // $02:9062..906B and $00:8781..8799 JumpTableLocal's executed
+            // return-address/table dispatch (414); no inline table bytes.
+            crate::cycle_ledger::charge(62 + 24 + 62 + 414);
+        }
         self.HandleLinkOnSpiralStairs();
         match self.game_state.frame.subsubmodule {
             0 => self.module07_0e_00_init_priority_and_screens(),
@@ -1820,12 +1830,21 @@ impl ZeldaState {
     }
 
     pub(super) fn HandleLinkOnSpiralStairs(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_f2c1));
+        let lag_free = self.lag_free;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        // $07:F2C1..F2D2: cache XY and test the stair action step.
+        charge(236);
         self.follower_link_state_mut()
             .cache_previous_position_from_current_xy_order();
         if self.game_state.player.follower_link.y_button_action_step() != 0 {
+            charge(44); // $07:F2D4 RTL.
             return;
         }
-
+        // $07:F2D2 taken BEQ, $F2D5..F2E4 clear/DBR and direction test,
+        // $F2E6..ED or $F2FC..F303 velocity/decrement. Direction-4 also BRA.
+        let reverse = self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0;
+        charge(6 + 216 + 102 + if reverse { 22 } else { 6 });
         self.follower_link_state_mut().clear_given_damage();
         self.follower_link_state_mut().set_incapacitated_timer(0);
         self.follower_link_state_mut().clear_auxiliary_state();
@@ -1836,6 +1855,7 @@ impl ZeldaState {
             .follower_link_state_mut()
             .decrement_push_fatigue_timer();
         if (push_fatigue_timer as i8).is_negative() {
+            charge(112); // $07:F2EF..F2F8 or $F305..F30E underflow path.
             self.follower_link_state_mut().set_push_fatigue_timer(0);
             if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
                 self.follower_link_state_mut()
@@ -1844,36 +1864,49 @@ impl ZeldaState {
                 self.follower_link_state_mut()
                     .set_actual_velocity_xy(2, (-2i8) as u8);
             }
+        } else {
+            charge(6); // $07:F2ED/F303 taken BPL.
         }
+        charge(172); // $07:F310..F31B: two JSLs and fatigue test.
         self.link_move_position();
         self.link_handle_moving_animation_start_with_dash();
-        if self.game_state.player.follower_link.push_fatigue_timer() == 0
-            && self
-                .dungeon_stair_movement_mut()
-                .decrement_staircase_countdown_underflowed()
-        {
-            let facing = if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
-                4
+        if self.game_state.player.follower_link.push_fatigue_timer() == 0 {
+            charge(62); // $07:F31D..F320 countdown decrement/test.
+            if self.dungeon_stair_movement_mut().decrement_staircase_countdown_underflowed() {
+                charge(112 + 24 + if reverse { 6 } else { 16 }); // $F322..F330.
+                let facing = if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 { 4 } else { 6 };
+                self.follower_link_state_mut().set_facing(facing);
             } else {
-                6
-            };
-            self.follower_link_state_mut().set_facing(facing);
+                charge(6); // $07:F320 taken BPL.
+            }
+        } else {
+            charge(6); // $07:F31B taken BNE.
         }
-
+        charge(78 + 16); // $07:F332..F33C X distance and equality test.
         let mut xd = (self.game_state.player.follower_link.x() as u8)
             .wrapping_sub(self.game_state.player.tile_detection.x_low()) as i8;
         if xd < 0 {
+            charge(30); // $07:F339..F33B absolute value.
             xd = xd.wrapping_neg();
+        } else {
+            charge(6); // $07:F337 taken BPL.
         }
         if xd != 0 {
+            charge(6 + 94); // $07:F33C taken BNE, $F38D..F390 exit.
             return;
         }
-
+        charge(162); // $07:F33E..F34A reposition JSL and follower test.
         self.RepositionLinkAfterSpiralStairs();
         if self.game_state.sprites.follower_runtime.indicator() != 0 {
+            charge(62); // $07:F34C JSL follower (body belongs to child).
             self.follower_initialize();
+        } else {
+            charge(6); // $07:F34A taken BEQ.
         }
-
+        // $07:F350..F38A: direction-dependent detect X and action/SFX setup.
+        charge(144 + if reverse { 6 } else { 64 });
+        charge(314 + if reverse { 6 + 62 } else { 84 });
+        charge(94); // $07:F38D..F390 SEP/PLB/RTL.
         let detect_x = self.game_state.player.follower_link.x().wrapping_add(
             if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
                 (-8i16) as u16

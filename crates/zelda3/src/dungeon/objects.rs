@@ -12,12 +12,28 @@ impl ZeldaState {
         match idx {
             0x00 | 0xb8 | 0xb9 => {
                 let count = size_1to15_or(width, height, 32);
+                if self.lag_free {
+                    // $01:8B89/8A92/8C37/8B79: wrapper setup and actual loop
+                    // passes; size helper $01:B0AC/B0BE/B0CC includes its RTS.
+                    // The drawing child retains its existing independent charge.
+                    let size_master = if width == 0 && height == 0 { 206 } else { 188 };
+                    crate::cycle_ledger::charge(46 + size_master + 116 * u64::from(count)
+                        + 6 * u64::from(count.saturating_sub(1)) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_rightwards2x2(src, dsto + i * 2);
                 }
             }
             0x01 | 0x02 | 0xb6 | 0xb7 => {
                 let count = size_1to15_or(width, height, 26);
+                if self.lag_free {
+                    // $01:8B89/8A92/8C37/8B79: wrapper setup and actual loop
+                    // passes; size helper $01:B0AC/B0BE/B0CC includes its RTS.
+                    // The drawing child retains its existing independent charge.
+                    let size_master = if width == 0 && height == 0 { 206 } else { 188 };
+                    crate::cycle_ledger::charge(78 + size_master + 172 * u64::from(count)
+                        + 6 * u64::from(count.saturating_sub(1)) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_object_nx4(2, src, dsto + i * 2);
                 }
@@ -30,12 +46,28 @@ impl ZeldaState {
             }
             0x05 | 0x06 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:8B89/8A92/8C37/8B79: wrapper setup and actual loop
+                    // passes; size helper $01:B0AC/B0BE/B0CC includes its RTS.
+                    // The drawing child retains its existing independent charge.
+                    let size_master = 286;
+                    crate::cycle_ledger::charge(78 + size_master + 238 * u64::from(count)
+                        + 6 * u64::from(count.saturating_sub(1)) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_object_nx4(2, src, dsto + i * 6);
                 }
             }
             0x07 | 0x08 | 0x53 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:8B89/8A92/8C37/8B79: wrapper setup and actual loop
+                    // passes; size helper $01:B0AC/B0BE/B0CC includes its RTS.
+                    // The drawing child retains its existing independent charge.
+                    let size_master = 286;
+                    crate::cycle_ledger::charge(68 + size_master + 116 * u64::from(count)
+                        + 6 * u64::from(count.saturating_sub(1)) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_rightwards2x2(src, dsto + i * 2);
                 }
@@ -80,6 +112,12 @@ impl ZeldaState {
             }
             0x21 => {
                 let mut count = (((width as u16) << 2) | height as u16) * 2 + 1;
+                if self.lag_free {
+                    // $01:8D5D..8D7D: two cap calls and actual repeated middles;
+                    // final LDA falls into the separately priced 1x3 drawer.
+                    crate::cycle_ledger::charge(222 + 206 * u64::from(count)
+                        + 6 * u64::from(count.saturating_sub(1)) + 24);
+                }
                 let mut dst = dsto;
                 self.room_draw_1x3_rightwards(src, dst, 2);
                 dst += 2;

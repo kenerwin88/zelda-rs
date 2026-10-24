@@ -577,6 +577,12 @@ impl ZeldaState {
 
     /// ROM: `Module07_16_UpdatePegs`
     pub(in crate::zelda_rtl) fn module07_16_update_pegs(&mut self) {
+        if self.lag_free {
+            // $02:972A..9738: state increment/test; either early RTS $971F
+            // or the shift/index/indirect dispatch. Children price their bodies.
+            crate::cycle_ledger::charge(94
+                + if self.game_state.frame.subsubmodule.wrapping_add(1) & 3 != 0 { 6 + 42 } else { 98 });
+        }
         self.increment_subsubmodule();
         if self.game_state.frame.subsubmodule & 3 != 0 {
             return;
@@ -586,6 +592,9 @@ impl ZeldaState {
             2 => self.module07_16_update_pegs_step2(),
             3 => self.RecoverPegGFXFromMapping(),
             4 => {
+                if self.lag_free {
+                    crate::cycle_ledger::charge(152); // $02:97A9..97B1: JSL, clears, RTS.
+                }
                 if let Some(progress) =
                     self.take_original_timing_dungeon_peg_attribute_flip_progress()
                 {

@@ -90,6 +90,12 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_1x3_rightwards`
     pub(super) fn room_draw_1x3_rightwards(&mut self, src: usize, dsto: u16, columns: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_8d80));
+        if self.lag_free {
+            // $01:8D80..8D9D: setup/RTS, three stores per column, taken BNEs.
+            crate::cycle_ledger::charge(74 + 470 * u64::from(columns)
+                + 6 * u64::from(columns.saturating_sub(1)));
+        }
         for x in 0..columns {
             for y in 0..3 {
                 self.room_write_current(
@@ -102,6 +108,11 @@ impl ZeldaState {
 
     /// ROM: `Object_Draw_5x4`
     pub(super) fn object_draw_5x4(&mut self, src: usize, dsto: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_9aee));
+        if self.lag_free {
+            // $01:9AEE..9B17: five four-store rows, four taken loop branches.
+            crate::cycle_ledger::charge(56 + 5 * 610 + 4 * 6 + 42);
+        }
         for y in 0..5 {
             for x in 0..4 {
                 self.room_write_current(
@@ -129,6 +140,10 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_DrawObject2x2and1`
     pub(super) fn room_draw_draw_object2x2and1(&mut self, src: usize, dsto: u16) -> u16 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_b279));
+        if self.lag_free {
+            crate::cycle_ledger::charge(552); // $01:B279..B292: five pairs and RTS.
+        }
         for y in 0..5 {
             self.room_write_current(dsto + y * 64, self.tile_word(src, y as usize));
         }
@@ -1211,6 +1226,11 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_Rightwards2x2`
     pub(super) fn room_draw_rightwards2x2(&mut self, src: usize, dsto: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_9895));
+        if self.lag_free {
+            // $01:9895..98AD: four load/store pairs, four INYs, RTS.
+            crate::cycle_ledger::charge(506);
+        }
         self.room_write_current(dsto, self.tile_word(src, 0));
         self.room_write_current(dsto + 64, self.tile_word(src, 1));
         self.room_write_current(dsto + 1, self.tile_word(src, 2));
@@ -1261,6 +1281,12 @@ impl ZeldaState {
 
     /// ROM: `DrawObjects_PushableBlock`
     pub(super) fn draw_objects_pushable_block(&mut self, dsto_x2: u16, slot: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_b4d6));
+        if self.lag_free {
+            // $01:B4D6..B506: save block/replacement records, tail JMP only.
+            // RoomDraw_Rightwards2x2 prices its body and RTS separately.
+            crate::cycle_ledger::charge(842);
+        }
         let x = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
         let next = self
             .game_state
@@ -1288,6 +1314,14 @@ impl ZeldaState {
 
     /// ROM: `DrawObjects_LightableTorch`
     pub(super) fn draw_objects_lightable_torch(&mut self, dsto_x2: u16, slot: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_b509));
+        if self.lag_free {
+            // $01:B509..B539: record setup; lit/unlit branch; tail JMP 2x2.
+            let lit = if dsto_x2 & 0x8000 == 0 { 6 } else {
+                104 + if self.game_state.dungeon.torch.lit_torches() < 3 { 62 } else { 6 }
+            };
+            crate::cycle_ledger::charge(384 + lit + 126);
+        }
         let x = self.game_state.dungeon.torch.torch_index() as usize >> 1;
         let next = self.game_state.dungeon.torch.torch_index().wrapping_add(2);
         self.dungeon_torch_mut().set_torch_index(next);

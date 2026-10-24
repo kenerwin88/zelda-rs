@@ -1196,7 +1196,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             "--pacing-predictor" => {
                 use std::io::Write;
                 let mut file = BufWriter::new(fs::File::create(value(index)).expect("create pacing predictor"));
-                writeln!(file, "iteration,module,submodule,lag_nmis,native_held,native_elapsed,main_master,vwf_master,preceding_nmi_master,silent_calls,predicted,predicted_interrupts,predicted_refresh,cost_p0,cost_p1,cost_p2,cost_entry_handler").expect("write predictor header");
+                writeln!(file, "iteration,module,submodule,lag_nmis,native_held,native_elapsed,main_master,vwf_master,preceding_nmi_master,silent_calls,predicted,predicted_interrupts,predicted_refresh,cost_p0,cost_p1,cost_p2,cost_entry_handler,cost_lag_handler").expect("write predictor header");
                 pacing_predictor = Some(file);
             }
             "--audio-pcm" => {
@@ -1539,6 +1539,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let silent_before = zelda3::cycle_ledger::silent_calls();
         let mut cost_predictions = [0; 3];
         let mut cost_entry_handler = 0;
+        let mut cost_lag_handler = 0;
         let mut main_master = 0;
         let mut vwf_master = 0;
         let mut main_silent = 0;
@@ -1551,6 +1552,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 if first_callback {
                     cost_predictions = game.native_cost_predictions();
                     cost_entry_handler = game.native_cost_entry_handler();
+                    cost_lag_handler = game.native_cost_lag_handler();
                     main_master = game.lag_free_main_master();
                     vwf_master = game.lag_free_vwf_master();
                     main_silent = zelda3::cycle_ledger::silent_calls() - silent_before;
@@ -1629,11 +1631,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let predicted_refresh = refresh_work / (FIELD - handler);
         if let Some(trace) = pacing_predictor.as_mut() {
             use std::io::Write;
-            writeln!(trace, "{},{:02X},{:02X},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            writeln!(trace, "{},{:02X},{:02X},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 iteration.index, images.image[0x10], images.image[0x11],
                 iteration.lag_nmis, native_held, native_elapsed, main_master,
                 vwf_master, preceding_nmi_master, main_silent, predicted,
-                predicted_interrupts, predicted_refresh, cost_predictions[0], cost_predictions[1], cost_predictions[2], cost_entry_handler).expect("write pacing predictor");
+                predicted_interrupts, predicted_refresh, cost_predictions[0], cost_predictions[1], cost_predictions[2], cost_entry_handler, cost_lag_handler).expect("write pacing predictor");
         }
         segment.pacing_equal += u64::from(native_held == iteration.lag_nmis);
         segment.pacing_held += u64::from(native_held);

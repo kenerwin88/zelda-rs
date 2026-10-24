@@ -435,6 +435,7 @@ impl ZeldaState {
         let ledger_before = crate::cycle_ledger::master();
         self.silent_ledger_calls_at_nmi_acceptance = crate::cycle_ledger::silent_calls();
         self.nmi_dma_accounting = Some(NmiDmaAccounting::default());
+        self.native_note_handler_updates(0);
         self.interrupt_nmi_with_animated_bg_operands_body(
             input,
             oam_dma_source,
@@ -452,6 +453,7 @@ impl ZeldaState {
         self.last_nmi_dma_master_cycles = dma.master_cycles();
         self.last_nmi_handler_master_cycles =
             Some(u32::try_from(cpu + dma.master_cycles()).unwrap_or(u32::MAX));
+        self.native_note_handler_cost(cpu + dma.master_cycles());
         self.resume_scroll_clock_after_nmi(self.last_nmi_handler_master_cycles.unwrap());
         self.resume_native_vwf_clock_after_nmi(self.last_nmi_handler_master_cycles.unwrap());
         self.note_native_exact_cpu_translated_nmi_completion();
@@ -638,6 +640,8 @@ impl ZeldaState {
         } else {
             304 + 130
         });
+        let updates_cpu_start = crate::cycle_ledger::master();
+        let updates_dma_start = self.nmi_dma_accounting.unwrap_or_default().master_cycles();
         if calls_updates {
             let bg_vram_load_mode = self.game_state.display.bg_vram_load_mode;
             let stripe_work = match bg_vram_load_mode {
@@ -742,6 +746,15 @@ impl ZeldaState {
             } else if !joypad_already_sampled {
                 self.nmi_read_joypads(input);
             }
+        }
+
+        if calls_updates {
+            // $00:813A taken BNE bypasses $813C..8141: the latched header
+            // costs 310 versus 434. Remove the actual update/joypad CPU and
+            // DMA work too; polygon IRQ-GFX and the register/RTI tail remain.
+            let cpu = crate::cycle_ledger::master() - updates_cpu_start;
+            let dma = self.nmi_dma_accounting.unwrap_or_default().master_cycles() - updates_dma_start;
+            self.native_note_handler_updates(cpu + dma + (434 - 310));
         }
 
         if self.game_state.display.nmi_thread_active && context.is_none() {

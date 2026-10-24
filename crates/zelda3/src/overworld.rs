@@ -1036,6 +1036,13 @@ impl ZeldaState {
 
     /// ROM: `Overworld_LoadAmbientOverlay`
     pub(super) fn overworld_load_ambient_overlay(&mut self, load_map_data: bool) {
+        if self.lag_free {
+            // $02:ED59..ED8D with quadrant drawing; $02:ED25..ED57 without.
+            // Both save three offsets and branch on the source map-size byte.
+            let small = self.overworld_map_is_small();
+            crate::cycle_ledger::charge(320 + if small { 324 } else { 6 }
+                + if load_map_data { 22 + 46 } else if small { 22 } else { 0 });
+        }
         let saved_offsets = self.begin_overworld_ambient_overlay_map_position();
         if load_map_data {
             self.overworld_draw_quadrants_and_overlays();
@@ -1056,6 +1063,11 @@ impl ZeldaState {
     }
 
     pub(super) fn finish_overworld_ambient_overlay_map8(&mut self, saved_offsets: (u16, u16, u16)) {
+        if self.lag_free {
+            // $02:ED90..EDB8: Map16 conversion JSR, restore three offsets,
+            // upload flags, advance, brightness and RTS (child body separate).
+            crate::cycle_ledger::charge(634);
+        }
         self.Map16ToMap8(OverworldMap16SourcePage::Main, 0);
         self.set_overworld_map16_y_unit(saved_offsets.2);
         self.set_overworld_map16_dst_off(saved_offsets.1);
@@ -1641,6 +1653,10 @@ impl ZeldaState {
 
     /// ROM: `Module09_00_PlayerControl`
     pub(super) fn module09_00_player_control(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_a53c));
+        let lag_free = self.lag_free;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        charge(144); // $02:A53C..A548 four control flags and branch.
         if (self
             .game_state
             .world
@@ -1651,36 +1667,53 @@ impl ZeldaState {
             | self.special_entrance_trigger())
             == 0
         {
+            charge(6 + 56); // $02:A548 taken; A54D..A551 pause test.
             if self.game_state.player.follower_link.filtered_joypad_h() & 0x10 != 0 {
+                charge(70 + 162); // $02:A553..A570 pause setup/common return.
                 self.set_overworld_map_state(0);
                 self.set_submodule(1);
                 self.save_main_module_for_menu();
                 self.set_main_module(14);
                 return;
             }
+            charge(6 + 56); // $02:A551 taken; A55A..A55E map test.
             if self.DidPressButtonForMap() {
+                charge(48 + 162); // $02:A560..A570 map setup/common return.
                 self.set_overworld_map_state(0);
                 self.set_submodule(7);
                 self.save_main_module_for_menu();
                 self.set_main_module(14);
                 return;
             }
+            charge(6 + 56); // $02:A55E taken; A571..A575 select test.
             if self.game_state.player.follower_link.joypad1h_last() & 0x20 != 0 {
+                charge(394 + 162); // $02:A577..A595 text JSL/setup, common return.
                 self.DisplaySelectMenu();
                 return;
             }
+            charge(6); // $02:A575 taken to the ordinary control tail.
             self.hud_handle_item_switch_inputs();
+        } else {
+            charge(24); // $02:A54A JMP.
         }
-
+        charge(48); // $02:A597..A59A special entrance test.
         if self.special_entrance_trigger() != 0 {
+            charge(62); // $02:A59C entrance JSL.
             self.overworld_animate_entrance();
+        } else {
+            charge(6); // $02:A59A taken BEQ.
         }
+        charge(148); // $02:A5A0..A5AB Link JSL and super-bomb test.
         self.replay_trace_ram_watch("module09-player-before-link-main");
         self.link_main();
         self.replay_trace_ram_watch("module09-player-after-link-main");
         if self.hud_state().super_bomb_indicator_timer() != 0xff {
+            charge(62); // $02:A5AD JSL HUD indicator.
             self.hud_super_bomb_indicator();
+        } else {
+            charge(6); // $02:A5AB taken BEQ.
         }
+        charge(502 + 64); // $02:A5B1..A5D7 area/graphics/camera; A5E9..A5EB return.
         self.replay_trace_ram_watch("module09-player-after-super-bomb");
         let area = ((self.game_state.player.follower_link.y() & 0x1e00) >> 5)
             | ((self.game_state.player.follower_link.x() & 0x1e00) >> 8);
@@ -1690,6 +1723,7 @@ impl ZeldaState {
         self.overworld_operate_camera_scroll();
         self.replay_trace_ram_watch("module09-player-after-camera");
         if self.game_state.frame.main_module != 11 {
+            charge(192); // $02:A5D9..A5E4 entrance/palette/transition calls.
             self.overworld_use_entrance();
             self.replay_trace_ram_watch("module09-player-after-use-entrance");
             self.overworld_dw_death_mountain_palette_animation();
@@ -1697,6 +1731,7 @@ impl ZeldaState {
             self.OverworldHandleTransitions();
             self.replay_trace_ram_watch("module09-player-after-transitions");
         } else {
+            charge(6 + 46); // $02:A5D7 taken; A5E6 special-world JSR.
             self.ScrollAndCheckForSOWExit();
             self.replay_trace_ram_watch("module09-player-after-sow-exit");
         }
@@ -6305,6 +6340,10 @@ impl ZeldaState {
         &mut self,
         entry_phase: OverworldSpriteReloadEntryPhase,
     ) {
+        if self.lag_free {
+            // $02:ABED..AC08: transition test/optional position shift and JSL.
+            crate::cycle_ledger::charge(64 + if self.screen_transition() == 1 { 248 } else { 6 } + 62);
+        }
         if self.screen_transition() == 1 {
             let bg2v = self
                 .game_state
@@ -6467,6 +6506,15 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module09_load_new_sprites_after_reload(&mut self) {
+        if self.lag_free {
+            // $02:AC0C..AC26: clear scroll deltas, progress/submodule tests,
+            // optional fixed-color JSL or tail JMP to the shared scroll start.
+            let progress = self.game_state.inventory.save_progress.progress_indicator();
+            let tail = if progress < 2 { 24 } else {
+                6 + 56 + if self.game_state.frame.submodule == 18 { 6 + 24 } else { 62 }
+            };
+            crate::cycle_ledger::charge(136 + tail);
+        }
         if self.game_state.inventory.save_progress.progress_indicator() >= 2
             && self.game_state.frame.submodule != 18
         {
@@ -6477,6 +6525,11 @@ impl ZeldaState {
 
     /// ROM: `Overworld_StartScrollTransition`
     pub(super) fn overworld_start_scroll_transition(&mut self) {
+        if self.lag_free {
+            // $02:AC27..AC39: advance, direction test, optional scroll JSR.
+            crate::cycle_ledger::charge(102 + 42
+                + if self.edge_transition_direction_bits() >= 4 { 110 } else { 6 });
+        }
         self.increment_submodule();
         if self.edge_transition_direction_bits() >= 4 {
             let direction_bits = self.edge_transition_direction_bits();
@@ -7027,6 +7080,9 @@ impl ZeldaState {
 
     /// ROM: `Module08_02_LoadAndAdvance`
     pub(super) fn module08_02_load_and_advance(&mut self) {
+        if self.lag_free {
+            crate::cycle_ledger::charge(176); // $02:EDB9..EDC4 calls/stores/RTS.
+        }
         if self.try_native_screen_build_entry() {
             self.run_native_intro_clear_until_boundary();
             return;

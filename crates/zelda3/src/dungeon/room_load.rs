@@ -313,6 +313,10 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_LoadRoom`
     pub(super) fn dungeon_load_room(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_873a));
+        if self.lag_free {
+            crate::cycle_ledger::charge(46); // $01:873A JSR header; child owns body.
+        }
         self.dungeon_load_header();
         self.dungeon_load_room_after_header();
     }
@@ -523,6 +527,11 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_load_room_before_floors(&mut self) {
+        if self.lag_free {
+            // $01:873D..8811: M8 STZ then REP #$30; clears, sixteen seven-word
+            // clear passes, fifteen taken BPLs, stream reset and JSR floors.
+            crate::cycle_ledger::charge(2390 + 16 * 366 + 15 * 6 + 32 + 46);
+        }
         self.dungeon_load_room_reset_floor_velocity();
         // C clears SOMARIA_BLOCK_BG_CHECK_FLAG (0x3f4) here at room load (dungeon.c). It is
         // incremented per somaria-block tile during room draw, so without this reset the count
@@ -646,8 +655,21 @@ impl ZeldaState {
                     .dungeon
                     .movable_blocks
                     .movable_block_tilemap_for_offset(offset);
+                if self.lag_free {
+                    // $01:8879..8898, matching block: compare, operands/JSR, step.
+                    crate::cycle_ledger::charge(128 + 140 + 142);
+                }
                 self.draw_objects_pushable_block(tilemap, offset as u16);
+            } else if self.lag_free {
+                // Same loop: taken BNE skips the block drawing call.
+                crate::cycle_ledger::charge(128 + 6 + 142);
             }
+            if self.lag_free && offset + 4 != 0x018c {
+                crate::cycle_ledger::charge(6); // $01:8898 taken BNE.
+            }
+        }
+        if self.lag_free {
+            crate::cycle_ledger::charge(174); // $01:889A..88A5: torch range/reset.
         }
 
         let misc_objs = self.game_state.dungeon.object_tracking.misc_object_index();
@@ -660,6 +682,9 @@ impl ZeldaState {
         let room = self.game_state.world.location.dungeon_room();
         let mut i = 0usize;
         loop {
+            if self.lag_free {
+                crate::cycle_ledger::charge(128); // $01:88A7..88AF room test.
+            }
             if self
                 .game_state
                 .dungeon
@@ -667,8 +692,14 @@ impl ZeldaState {
                 .torch_data_word_at_byte_offset(i)
                 == room
             {
+                if self.lag_free {
+                    crate::cycle_ledger::charge(6 + 28); // $01:88AF taken; 88C7..C8.
+                }
                 i += 2;
                 loop {
+                    if self.lag_free {
+                        crate::cycle_ledger::charge(306); // $01:88C9..88DF, including JSR.
+                    }
                     let t = self
                         .game_state
                         .dungeon
@@ -685,8 +716,14 @@ impl ZeldaState {
                     {
                         break;
                     }
+                    if self.lag_free {
+                        crate::cycle_ledger::charge(6); // $01:88DF taken loop branch.
+                    }
                 }
                 break;
+            }
+            if self.lag_free {
+                crate::cycle_ledger::charge(28); // $01:88B1..B2 skip room word.
             }
             i += 2;
             loop {
@@ -696,14 +733,24 @@ impl ZeldaState {
                     .torch
                     .torch_data_word_at_byte_offset(i);
                 i += 2;
+                if self.lag_free {
+                    crate::cycle_ledger::charge(148); // $01:88B3..88BE stream scan.
+                }
                 if t == 0xffff {
                     break;
                 }
+                if self.lag_free { crate::cycle_ledger::charge(6); } // taken BNE.
+            }
+            if self.lag_free {
+                crate::cycle_ledger::charge(40); // $01:88C0..88C3 end test.
             }
             if i == 0x0120 {
+                if self.lag_free { crate::cycle_ledger::charge(22); } // $88C5 BRA.
                 break;
             }
+            if self.lag_free { crate::cycle_ledger::charge(6); } // $88C3 taken.
         }
+        if self.lag_free { crate::cycle_ledger::charge(66); } // $01:88E1..88E3 SEP/RTL.
         self.dungeon_room_load_mut().set_load_ptr_offset(0x0120);
         if room == 0x51 {
             self.room_prioritize_throne_room_door_edge();
@@ -1081,6 +1128,11 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_DrawAllObjectsCurrentRoom`
     pub(super) fn room_draw_draw_all_objects_current_room(&mut self) {
+        if self.lag_free {
+            // $01:8812..8877: layout/stream setup and four JSRs (children own
+            // bodies); two pointer copies with X=30,27,...,0 (eleven passes).
+            crate::cycle_ledger::charge(1014 + 2 * (11 * 144 + 10 * 6) + 178 + 78);
+        }
         let room = self.game_state.world.location.dungeon_room() as usize;
         let Some(room_layout) = self.dungeon_room_layout(room).map(Vec::from) else {
             return;

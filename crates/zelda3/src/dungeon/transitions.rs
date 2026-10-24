@@ -975,6 +975,9 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_SpiralStaircase11`
     pub(super) fn dungeon_spiral_staircase11(&mut self) {
+        if self.lag_free {
+            crate::cycle_ledger::charge(62); // $02:8AAF JSL palette filter.
+        }
         self.apply_palette_filter_bounce();
         if self.suspend_spiral_staircase_palette_filter(
             SpiralStaircasePaletteTail::BuildQuadrantForVram,
@@ -997,9 +1000,11 @@ impl ZeldaState {
                 return;
             }
             SpiralStaircasePaletteTail::BuildQuadrantForVram => {
+                if self.lag_free { crate::cycle_ledger::charge(62 + 38 + 42); } // $02:8AB3..8AB9.
                 self.water_flood_build_one_quadrant_for_vram();
             }
             SpiralStaircasePaletteTail::PrepareNextQuadrant => {
+                if self.lag_free { crate::cycle_ledger::charge(62 + 38 + 42); } // $02:8AC8..8ACE.
                 self.dungeon_prepare_next_room_quadrant_upload();
             }
         }
@@ -1047,6 +1052,9 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_SpiralStaircase12`
     pub(super) fn dungeon_spiral_staircase12(&mut self) {
+        if self.lag_free {
+            crate::cycle_ledger::charge(62); // $02:8AC4 JSL palette filter.
+        }
         self.apply_palette_filter_bounce();
         if self.suspend_spiral_staircase_palette_filter(
             SpiralStaircasePaletteTail::PrepareNextQuadrant,

@@ -4212,6 +4212,9 @@ impl ZeldaState {
 
     /// ROM: `Module0E_0A_FluteMenu`
     pub(super) fn module0e_0a_flute_menu(&mut self) {
+        if self.lag_free {
+            crate::cycle_ledger::charge(32 + 62 + 414); // $0A:B730..B736 + $00:8781..8799 JumpTableLocal; table bytes excluded.
+        }
         match self.overworld_map_state() {
             0 => self.world_map_fade_out(),
             1 => {
@@ -4388,6 +4391,9 @@ impl ZeldaState {
 
     /// ROM: `Messaging_OverworldMap`
     pub(super) fn messaging_overworld_map(&mut self) {
+        if self.lag_free {
+            crate::cycle_ledger::charge(32 + 62 + 414); // $0A:B98B..B991 + $00:8781..8799 JumpTableLocal; table bytes excluded.
+        }
         match self.overworld_map_state() {
             0 => self.world_map_fade_out(),
             1 => self.world_map_load_light_world_map_with_suspension(),
@@ -4947,6 +4953,9 @@ impl ZeldaState {
 
     /// ROM: `Module0E_03_DungeonMap`
     pub(super) fn module0e_03_dungeon_map(&mut self) {
+        if self.lag_free {
+            crate::cycle_ledger::charge(32 + 62 + 580); // $0A:E0B0..E0B6 + $00:879C..87BD JumpTableLong; table bytes excluded.
+        }
         self.replay_trace_ram_watch("dungmap-before-submodule");
         match self.overworld_map_state() {
             0 => self.dung_map_backup(),
@@ -4964,6 +4973,9 @@ impl ZeldaState {
 
     /// ROM: `Module0E_03_01_DrawMap`
     pub(super) fn module0e_03_01_draw_map(&mut self) {
+        if self.lag_free {
+            crate::cycle_ledger::charge(106); // $0A:E0DC..E0E1 indirect floor-stage dispatch; table bytes excluded.
+        }
         self.replay_trace_ram_watch("dungmap-draw-before-init");
         match self.game_state.dungeon_map_display.dungmap_init_state() {
             0 => self.module0e_03_01_00_prep_map_graphics(),
@@ -5230,6 +5242,14 @@ impl ZeldaState {
 
     /// ROM: `DungeonMap_DrawBorderForRooms`
     pub(super) fn dungeon_map_draw_border_for_rooms(&mut self, pd: u16, mask: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0a_e449));
+        if self.lag_free {
+            // $0A:E449..E4E8: four corners; two ten-word horizontal and two
+            // ten-word vertical edges, all actual inner/outer taken branches.
+            crate::cycle_ledger::charge(54 + 4 * 540 + 3 * 6 + 24
+                + 2 * (156 + 10 * 494 + 9 * 6 + 68) + 6 + 24
+                + 2 * (156 + 10 * 456 + 9 * 6 + 68) + 6 + 64);
+        }
         for i in 0..4 {
             let idx = (((DUNGEON_MAP_ROOM_BORDER_CORNER_POSITIONS[i].wrapping_add(pd)) & 0x0fff)
                 >> 1) as usize;
@@ -5291,6 +5311,10 @@ impl ZeldaState {
 
     /// ROM: `DungeonMap_DrawDungeonLayout`
     pub(super) fn dungeon_map_draw_dungeon_layout(&mut self, pd: i32) {
+        if self.lag_free {
+            // $0A:E579..E599: five room-row JSRs/control; child bodies excluded.
+            crate::cycle_ledger::charge(54 + 5 * 362 + 4 * 6 + 64);
+        }
         for i in 0..5 {
             let arg_x = ((292 + 128 * i + pd) & 0x0fff) >> 1;
             self.dungeon_map_draw_single_row_of_rooms(i, arg_x);
@@ -8324,7 +8348,8 @@ impl ZeldaState {
             }
             if exact_costs {
                 // A letter's dispatch is inside its click cost; the choice
-                // menus ($68/$69/$6F/$71/$72) are not priced yet.
+                // menu self work is charged directly on the lagless path;
+                // decoder/VWF children keep their independent ledger charges.
                 let charge = exact_command_master_cycles
                     + if is_letter { 0 } else { dispatch_master_cycles };
                 cycles_left = cycles_left.saturating_sub(u32::try_from(charge).unwrap_or(u32::MAX));
@@ -9114,6 +9139,54 @@ impl ZeldaState {
         self.set_vwf_tile_word_at_byte_offset(0x0ee, p[3]);
     }
 
+    /// Self instructions of the original choice handlers, excluding the
+    /// decoder/VWF children and the already-priced three cursor resets.
+    fn charge_native_text_choice(&self, three: bool, start_confirms: bool) {
+        if !self.lag_free { return; }
+        // $0E:CD1A..CD87 / CE83..CEF0 / CEF7..CF6D / CF72..CFE1.
+        // rom_block_costs.py: shared countdown 48+78; zero-count input test
+        // 94 (two-choice) or 110 (Start-aware); confirm tail 138; reload tail
+        // 466 minus the existing 96 in reset_choice_text_cursors.
+        let timer = self.game_state.messaging.runtime.text_wait_countdown2();
+        let mut master = 48;
+        if timer != 0 {
+            master += 78 + if timer.wrapping_sub(1) == 1 { 70 } else { 6 } + 42;
+        } else {
+            let high = self.game_state.player.follower_link.filtered_joypad_h();
+            let low = self.game_state.player.follower_link.filtered_joypad_l();
+            let input = if start_confirms { (low & 0xc0) | high } else { high };
+            let confirm = if start_confirms { input & 0xd0 != 0 } else { (high | low) & 0xc0 != 0 };
+            master += 6 + if start_confirms { 110 } else { 94 };
+            if confirm {
+                master += 6 + 138;
+            } else {
+                master += 46; // Up-bit test.
+                let up = input & 8 != 0;
+                if !up { master += 46; } // Down-bit test.
+                if input & 12 == 0 {
+                    master += 42;
+                } else {
+                    master += 6; // Taken direction branch.
+                    let choice = self.multiselect_choice().value();
+                    if three {
+                        // $0E:CF21..CF3A: decrement/increment and wrap tests.
+                        master += 78 + if (up && choice == 0) || (!up && choice == 2) { 16 } else { 6 };
+                        master += if up { 54 } else { 32 };
+                        master += 466 - 96;
+                    } else {
+                        // $0E:CD42..CD55 / CEAB..CEBD / CF9C..CFAE.
+                        let unchanged = choice == if up { 0 } else { 1 };
+                        master += if up { 48 } else { 62 };
+                        master += if unchanged { 6 + 42 } else {
+                            (if up { 54 } else { 48 }) + 466 - 96
+                        };
+                    }
+                }
+            }
+        }
+        crate::cycle_ledger::charge(master);
+    }
+
     /// ROM: `RenderText_Draw_Choose2HiOr3`
     pub(super) fn render_text_draw_choose2_hi_or3(&mut self) {
         self.render_text_draw_choose2(11);
@@ -9121,6 +9194,7 @@ impl ZeldaState {
 
     /// ROM: `RenderText_Draw_Choose2`
     fn render_text_draw_choose2(&mut self, message_base: u16) {
+        self.charge_native_text_choice(false, false);
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
@@ -9154,6 +9228,7 @@ impl ZeldaState {
 
     /// ROM: `RenderText_Draw_Choose3`
     pub(super) fn render_text_draw_choose3(&mut self) {
+        self.charge_native_text_choice(true, true);
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
@@ -9191,6 +9266,7 @@ impl ZeldaState {
 
     /// ROM: `RenderText_Draw_Choose1Or2`
     pub(super) fn render_text_draw_choose1_or2(&mut self) {
+        self.charge_native_text_choice(false, true);
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
