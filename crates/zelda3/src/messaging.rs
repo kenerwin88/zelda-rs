@@ -9054,26 +9054,40 @@ impl ZeldaState {
 
     /// ROM: `RenderText_Draw_ChooseItem`
     pub(super) fn render_text_draw_choose_item(&mut self) {
+        let lag_free = self.lag_free;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        // $0E:CD88..CDC7 M8/X8. VWF owns dispatch only; refresh and the
+        // selected-item drawing retain their own child prices.
+        charge(48); // $CD88..CD8B countdown test.
         if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
+            charge(78); // $CD8D..CD93 decrement and test.
             self.messaging_state_mut().decrement_text_wait_countdown2();
             if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
+                charge(6); // $CD93 taken BEQ into the child (tail return).
                 self.render_text_find_y_button_item_next();
-            }
+            } else { charge(22 + 42); } // $CD95 BRA, $CDC1 RTS.
         } else if (self.game_state.player.follower_link.filtered_joypad_h()
             | self.game_state.player.follower_link.filtered_joypad_l())
             & 0xc0
             != 0
         {
+            charge(6 + 80 + 6 + 90); // $CD8B/CD9D taken, $CDC2..CDC7.
             self.messaging_state_mut().set_text_render_state(4);
         } else {
+            charge(6 + 80 + 56); // $CD8B taken, $CD97..CDA3 key tests.
             if self.game_state.player.follower_link.filtered_joypad_h() & 5 != 0 {
+                charge(68); // $CDA5..CDA8 increment and BRA.
                 self.multiselect_choice_mut().increment_value();
             } else if self.game_state.player.follower_link.filtered_joypad_h() & 10 != 0 {
+                charge(6 + 56 + 160 + 42); // $CDA3 taken, $CDAA..CDC1 previous path.
                 self.multiselect_choice_mut().decrement_value();
                 self.render_text_find_y_button_item_previous();
                 self.render_text_refresh();
                 return;
+            } else {
+                charge(6 + 56 + 6); // $CDA3/CDAE taken, $CDAA..CDAE.
             }
+            charge(92 + 42); // $CDBB..CDC1 child JSRs and RTS.
             self.render_text_find_y_button_item_next();
             self.render_text_refresh();
         }
@@ -9125,6 +9139,13 @@ impl ZeldaState {
     /// ROM: `RenderText_DrawSelectedYItem`
     pub(super) fn render_text_draw_selected_y_button_item(&mut self) {
         let item = self.multiselect_choice().value();
+        if self.lag_free {
+            // $0E:CE14..CE6A M8/X8: pointer setup, variant branch, eight
+            // byte copies and RTS. No glyph/pixel loop is part of this child.
+            let variant_branch = if item == 32 { 6 + 16 }
+                else if item == 3 { 32 + 16 } else { 32 + 6 };
+            crate::cycle_ledger::charge(310 + variant_branch + 836);
+        }
         // Raw RAM (not inventory_item, which is bounded to 28 slots) — matches C and covers the
         // multiselect index range 0..=32 (see RenderText_FindYItem_Next).
         let variant = if item == 3 || item == 32 {

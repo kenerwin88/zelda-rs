@@ -224,7 +224,11 @@ impl ZeldaState {
     /// deadline; the IRQ handler returns it to main. No worker instructions
     /// are added to main's cost counter.
     pub(super) fn native_pacing_worker_share(&self, handler: u64) -> u64 {
-        if !self.lag_free_native_poly_thread() { return 0; }
+        // $00:8144..8149 tests $012A before NMI_SwitchThread $00:822D;
+        // Interrupt_IRQ $00:82D8 returns CPU ownership at the programmed
+        // V-IRQ even when Polyhedral_RunThread $09:F81D is waiting on GO.
+        // Module routing does not disable that hardware ownership.
+        if !self.lag_free || !self.game_state.display.nmi_thread_active { return 0; }
         let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
         let (nmi, deadline) = self.poly_thread_phase_window(field);
         (deadline - nmi).saturating_sub(handler) + POLY_THREAD_IRQ_HANDLER_MASTER_CYCLES

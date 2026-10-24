@@ -168,6 +168,7 @@ impl ZeldaState {
     //   Sprite_ResetAll_noDisable();
     // }
     pub(in crate::zelda_rtl) fn sprite_reset_all(&mut self) {
+        if self.lag_free { crate::cycle_ledger::charge(62); } // $09:C44E JSL DisableAll.
         self.sprite_disable_all();
         self.sprite_reset_all_no_disable();
     }
@@ -569,6 +570,11 @@ impl ZeldaState {
     /// Complete the fixed stores before Sprite_ResetAll_noDisable's first
     /// large descending clear. This is the exact source boundary at $09:C47B.
     pub(in crate::zelda_rtl) fn sprite_reset_all_no_disable_fixed_prefix(&mut self) {
+        if self.lag_free {
+            // $09:C452..C479: seven clears, follower test/branch, M8/X8
+            // then REP #$10, LDX #$0FFF, LDA #0 before the bulk clear.
+            crate::cycle_ledger::charge(296 + if self.game_state.sprites.follower_runtime.indicator() == 13 { 6 } else { 48 } + 62);
+        }
         self.garnish_state_mut()
             .clear_haunted_grove_flute_event_latch();
         self.sprite_system_mut().set_alert_flag(0);
@@ -584,11 +590,21 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_reset_all_no_disable_after_fixed_prefix(&mut self) {
+        if self.lag_free {
+            // $09:C47B..C480 M8/X16: 4096 STA-long,X/DEX/BPL passes.
+            crate::cycle_ledger::charge(4096 * 70 + 4095 * 6);
+        }
         self.sprite_workspace_mut().clear_where_in_room();
         self.sprite_reset_all_after_room_mask_clear();
     }
 
     pub(super) fn sprite_reset_all_after_room_mask_clear(&mut self) {
+        if self.lag_free {
+            // $09:C482..C498: 512 loaded-mask clears, SEP #$10,
+            // eight room-history stores and RTL; actual taken loop branches.
+            crate::cycle_ledger::charge(24 + 512 * 70 + 511 * 6 + 54
+                + 8 * 68 + 7 * 6 + 44);
+        }
         self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
     }

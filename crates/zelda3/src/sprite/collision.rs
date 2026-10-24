@@ -1052,10 +1052,22 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_ripple_if_in_water(&mut self, k: usize) {
+        let lag_free = self.lag_free;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        // $1E:FF8D..FFDD, M8/X8; the child bodies retain their own prices.
+        charge(72);
+        if self.sprite_slot_view(k).draw_i() == 8 {
+            charge(6); // $FF93 taken BEQ.
+        } else {
+            charge(32); // $FF95..FF97 second tile test.
+        }
         if self.sprite_slot_view(k).draw_i() != 8 && self.sprite_slot_view(k).draw_i() != 9 {
+            charge(6 + 44); // $FF97 taken BNE, $FFDD RTL.
             return;
         }
+        charge(64); // $FF99..FF9E flags3 test.
         if self.sprite_slot_view(k).flags3() & 0x20 != 0 {
+            charge(238); // $FFA0..FFB6 X adjustment and type test.
             let x = self
                 .game_state
                 .sprites
@@ -1064,6 +1076,7 @@ impl ZeldaState {
                 .wrapping_sub(4);
             self.sprite_workspace_mut().set_current_sprite_x(x);
             if self.sprite_slot_view(k).sprite_type() == 0xdf {
+                charge(174); // $FFB8..FFC6 Y adjustment.
                 let y = self
                     .game_state
                     .sprites
@@ -1071,9 +1084,16 @@ impl ZeldaState {
                     .current_sprite_y()
                     .wrapping_sub(7);
                 self.sprite_workspace_mut().set_current_sprite_y(y);
+            } else {
+                charge(6); // $FFB6 taken BNE.
             }
+        } else {
+            charge(6); // $FF9E taken BEQ.
         }
+        charge(276 + 44); // $FFC9..FFDD calls, allocation size, RTL.
         self.sprite_draw_water_ripple(k);
+        // $06:84BD..84C0 wrapper around the separately priced coordinate body.
+        charge(90);
         self.sprite_get16_bit_coords(k);
         self.oam_allocate_from_region_a(((self.sprite_slot_view(k).flags2() & 0x1f) + 1) * 4);
     }

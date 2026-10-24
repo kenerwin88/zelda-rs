@@ -3462,6 +3462,7 @@ impl ZeldaState {
         &mut self,
         interrupt_module0f_goal_caller: bool,
     ) -> (bool, bool) {
+        if self.lag_free { crate::cycle_ledger::charge(62); } // $02:9A19 table JSL.
         let entry_main_module = self.game_state.frame.main_module;
         let reached_spotlight_goal = self.iris_spotlight_configure_table();
         let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
@@ -3476,6 +3477,11 @@ impl ZeldaState {
         entry_main_module: u8,
         interrupt_module0f_goal_caller: bool,
     ) -> bool {
+        if self.lag_free {
+            // $02:9A1D..9A25 fixed clears and submodule test; the nonzero
+            // branch returns through $9A18, the goal path continues below.
+            crate::cycle_ledger::charge(104 + if self.game_state.frame.submodule != 0 { 6 + 42 } else { 0 });
+        }
         self.deactivate_nmi_thread();
         self.clear_pending_polyhedral_update();
         if self.game_state.frame.submodule != 0 {
@@ -3497,6 +3503,10 @@ impl ZeldaState {
     }
 
     fn complete_spotlight_configure_table_and_control_caller(&mut self) {
+        if self.lag_free {
+            // $02:9A27..9A35 module test and optional saved-Y restore.
+            crate::cycle_ledger::charge(56 + if self.game_state.frame.main_module == 6 { 124 } else { 6 });
+        }
         if self.game_state.frame.main_module == 6 {
             self.follower_link_state_mut()
                 .restore_y_from_overworld_exit();
@@ -3946,6 +3956,10 @@ impl ZeldaState {
                 self.publish_or_stage_spotlight_active_field(&plan.active_window_words);
             }
         }
+        if self.lag_free {
+            // $02:9982..998A: Sprite_Main JSL, submodule and indirect JSR.
+            crate::cycle_ledger::charge(176);
+        }
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
             self.dungeon_prep_exit_with_spotlight_before_table();
@@ -4223,18 +4237,29 @@ impl ZeldaState {
     }
 
     fn module0f_spotlight_close_before_velocity(&mut self) {
+        let lag_free = self.lag_free;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        charge(40); // $02:998D..998F indoor test.
         if !self.game_state.world.location.is_outdoors() {
+            charge(6); // Taken BNE to $99A8.
             return;
         }
+        charge(56); // $02:9991..9995 area test.
         if self.game_state.world.location.overworld_screen_index() == 0x0f {
+            charge(48); // $9997..9999 ripple store.
             self.follower_link_state_mut()
                 .set_water_ripple_or_grass_state(1);
         }
+        if self.game_state.world.location.overworld_screen_index() != 0x0f {
+            charge(6); // $9995 taken BNE.
+        }
+        charge(40); // $02:999C..999E speed store.
         self.follower_link_state_mut().set_speed_setting(6);
     }
 
     fn module0f_spotlight_close_velocity_and_oam(&mut self) {
         if self.game_state.world.location.is_outdoors() {
+            if self.lag_free { crate::cycle_ledger::charge(62); } // $02:99A0 JSL.
             self.link_handle_velocity();
         }
         self.module0f_spotlight_close_after_velocity();
@@ -4321,6 +4346,15 @@ impl ZeldaState {
     }
 
     fn module0f_spotlight_close_after_velocity(&mut self) {
+        if self.lag_free {
+            // $02:99A4..99C6: velocity clears, actual direction branches,
+            // movement-animation JSL and tail JML; both children price themselves.
+            let outdoors = self.game_state.world.location.is_outdoors();
+            crate::cycle_ledger::charge(if outdoors { 48 } else { 0 }
+                + 92 + if outdoors {
+                    80 + if self.game_state.world.region.which_entrance() == 0x43 { 14 } else { 6 }
+                } else { 6 } + 182);
+        }
         if self.game_state.world.location.is_outdoors() {
             self.follower_link_state_mut().clear_movement_velocity();
         }

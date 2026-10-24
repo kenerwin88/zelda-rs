@@ -1335,28 +1335,44 @@ impl ZeldaState {
         if self.sprite_return_if_inactive_bank5(k) {
             return;
         }
+        // $05:A8CB..A95A: executed rat control suffix, M8/X8.
+        let lag_free = self.lag_free;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        charge(46); // $A8CB recoil JSR; double return skips the suffix.
         if self.sprite_return_if_recoiling(k) {
             return;
         }
+        charge(3 * 46); // $A8CE/A8D1/A8D4 child JSRs.
         self.sprite_check_damage_to_and_from_link(k);
         self.sprite_move_xy(k);
         let _ = self.sprite_check_tile_collision(k);
+        charge(48); // $A8D7..A8DA state test.
         if self.sprite_slot_view(k).ai_state() != 0 {
-            if self.sprite_slot_view(k).delay_main() == 0 {
+            charge(6 + 48); // Taken BNE, $A917..A91A delay test.
+            let delay_expired = self.sprite_slot_view(k).delay_main() == 0;
+            if delay_expired {
+                charge(48 + 92); // $A91C..A91F world test, $A927..A92C stores.
                 if !self.game_state.world.region.is_in_dark_world() {
+                    charge(78); // $A921..A923 sound argument/JSL.
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x17);
+                } else {
+                    charge(6); // $A91F taken BNE.
                 }
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
                 let value = 80;
                 self.sprite_slot_view_mut(k).set_delay_main(value);
             }
+            if !delay_expired { charge(6); } // $A91A taken BNE.
+            charge(80); // $A92F..A935 direction and wall test.
             let mut j = usize::from(self.sprite_slot_view(k).direction());
             if self.sprite_slot_view(k).wall_collision() != 0 {
+                charge(84); // $A937..A93D turn stores.
                 let value = RAT_WALL_TURN_DIRECTIONS[j];
                 self.sprite_slot_view_mut(k).set_direction(value);
                 j = usize::from(self.sprite_slot_view(k).direction());
-            }
+            } else { charge(6); } // $A935 taken BEQ.
+            charge(378); // $A93E..A95A velocities, animation, RTS.
             let value = SPRITE_6_D_RAT_LOCAL_X_VELOCITIES[j] as u8;
             self.sprite_slot_view_mut(k).set_x_velocity(value);
             let value = SPRITE_6_D_RAT_LOCAL_Y_VELOCITIES[j] as u8;
@@ -1367,8 +1383,10 @@ impl ZeldaState {
             )];
             self.sprite_slot_view_mut(k).set_a(value);
         } else {
+            charge(94); // $A8DC..A8E2 zero-velocity JSR and delay test.
             self.sprite_zero_velocity_xy(k);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                charge(288); // $A8E4..A8F6 RNG JSL, direction, delay.
                 let random = self.get_random_number_with_carry();
                 let a = random.value();
                 let value = a & 3;
@@ -1376,7 +1394,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).add_ai_state(1);
                 let value = rat_random_run_delay(random);
                 self.sprite_slot_view_mut(k).set_delay_main(value);
-            }
+            } else { charge(6); } // $A8E2 taken BNE.
+            charge(252); // $A8F9..A90A idle animation and RTS.
             let value = RAT_IDLE_ANIM_STATES[usize::from(
                 self.sprite_slot_view(k).direction() * 2
                     + ((self.game_state.frame.frame_counter >> 3) & 1),

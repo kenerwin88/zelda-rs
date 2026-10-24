@@ -125,6 +125,10 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_RightwardShelfEnd`
     pub(super) fn room_draw_rightward_shelf_end(&mut self, src: usize, dsto: u16) {
+        if self.lag_free {
+            // $01:B2E1..B2F5 four tile pairs and RTS (M16/X16).
+            crate::cycle_ledger::charge(450);
+        }
         for y in 0..4 {
             self.room_write_current(dsto + y * 64, self.tile_word(src, y as usize));
         }
@@ -132,6 +136,10 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_RightwardBarSegment`
     pub(super) fn room_draw_rightward_bar_segment(&mut self, src: usize, dsto: u16) -> u16 {
+        if self.lag_free {
+            // $01:B2F6..B305 three tile pairs and RTS (M16/X16).
+            crate::cycle_ledger::charge(348);
+        }
         for y in 0..3 {
             self.room_write_current(dsto + y * 64, self.tile_word(src, y as usize));
         }
@@ -849,6 +857,13 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_SinglePot`
     pub(super) fn room_draw_single_pot(&mut self, src: usize, dsto: u16) {
+        if self.lag_free {
+            // $01:B395..B3DE, M16/X16; JMP enters the already priced 2x2 body.
+            let plane = self.game_state.dungeon.room_tilemaps.first_line_pointer_row0();
+            let world = self.game_state.inventory.save_progress.dark_world_state();
+            crate::cycle_ledger::charge(474 + if plane == 0x4000 { 84 } else { 6 }
+                + 380 + if world != 0 { 24 } else { 6 } + 24);
+        }
         let index = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
         self.dungeon_object_tracking_mut()
             .set_misc_object_index(((index + 1) * 2) as u16);
@@ -914,6 +929,10 @@ impl ZeldaState {
 
     /// ROM: `Object_Draw8x8`
     pub(super) fn object_draw8x8(&mut self, src: usize, dsto: u16) {
+        if self.lag_free {
+            // $01:A7DC..A7EF four JSRs, row reposition, RTS; children charge separately (M16/X16).
+            crate::cycle_ledger::charge(310);
+        }
         self.room_draw_4x4(src, dsto);
         self.room_draw_4x4(src + 32, dsto + 4);
         self.room_draw_4x4(src + 64, dsto + 4 * 64);
@@ -922,6 +941,10 @@ impl ZeldaState {
 
     /// ROM: `Object_Draw_3x2`
     pub(super) fn object_draw_3x2(&mut self, src: usize, dsto: u16) {
+        if self.lag_free {
+            // $01:9D04..9D28 two three-store rows and actual loop branch (M16/X16).
+            crate::cycle_ledger::charge(56 + 2 * 526 + 6 + 42);
+        }
         for y in 0..2 {
             for x in 0..3 {
                 self.room_write_current(
@@ -934,6 +957,10 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_WaterHoldingObject`
     pub(super) fn room_draw_water_holding_object(&mut self, n: u16, src: usize, dsto: u16) {
+        if self.lag_free {
+            // $01:9D6F..9D95 four-store rows, counted by the executed height (M16/X16).
+            crate::cycle_ledger::charge(32 + 610 * u64::from(n) + 6 * u64::from(n.saturating_sub(1)) + 42);
+        }
         for y in 0..n {
             for x in 0..4 {
                 self.room_write_current(

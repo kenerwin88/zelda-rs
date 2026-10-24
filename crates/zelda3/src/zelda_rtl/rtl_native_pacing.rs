@@ -9,6 +9,7 @@ pub(crate) struct NativePacing {
     masked_callback: bool,
     accounting: bool,
     entry_handler: u64,
+    entry_worker: u64,
     entry_lag_handler: u64,
     handler_updates: u64,
     last_lag_handler: u64,
@@ -35,6 +36,12 @@ impl ZeldaState {
         if self.native_pacing.closing_handler.is_some() {
             self.lag_free_nmi_uploaded_poly = self.native_pacing.closing_poly_upload;
         }
+        // $00:8144..8149 selected the preceding NMI's thread before this
+        // main call. A later $012A activation/clear cannot change that slice;
+        // intervening lag NMIs still inspect the live enable byte.
+        self.native_pacing.entry_worker = self.native_pacing_worker_share(
+            self.native_pacing.entry_handler.min(1364 * 262 - 1),
+        );
         self.native_pacing.wait_wall = [0; 3];
         self.native_pacing.predictions = [0; 3];
         self.native_pacing.early_sound = None;
@@ -76,7 +83,7 @@ impl ZeldaState {
     fn native_cost_elapsed(&self, main: u64) -> [u64; 3] {
         const FIELD: u64 = 1364 * 262;
         let handler = self.native_pacing.entry_handler.min(FIELD - 1);
-        let worker = self.native_pacing_worker_share(handler).min(FIELD - handler - 1);
+        let worker = self.native_pacing.entry_worker.min(FIELD - handler - 1);
         let lag_handler = self.native_pacing.entry_lag_handler.min(FIELD - 1);
         let lag_worker = self.native_pacing_worker_share(lag_handler).min(FIELD - lag_handler - 1);
         let refreshed = main + main.div_ceil(1324) * 40;
@@ -231,6 +238,50 @@ fn elapsed_with_lag_handlers(main: u64, entry: u64, repeated: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entry_worker_slice_survives_enable_and_disable_inside_main() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.game_state.display.vertical_irq_trigger = 96;
+        game.game_state.display.nmi_thread_active = false;
+        game.native_begin_main_cost();
+        assert_eq!(game.native_pacing.entry_worker, 0);
+        game.game_state.display.nmi_thread_active = true;
+        // No worker ran before this call. A call shorter than one field
+        // cannot retroactively give its preceding NMI a worker phase.
+        assert_eq!(game.native_cost_elapsed(200_000)[1], 200_000);
+        // Once main crosses NMI, the newly enabled worker does own a slice.
+        assert!(game.native_cost_elapsed(400_000)[1] > 400_000);
+        game.native_begin_main_cost();
+        let entered = game.native_pacing.entry_worker;
+        assert!(entered > 0);
+        game.game_state.display.nmi_thread_active = false;
+        // The preceding slice has already happened; clearing the byte only
+        // removes worker ownership from subsequent lag NMIs.
+        assert_eq!(game.native_cost_elapsed(200_000)[1], entered + 200_000);
+    }
+
+    #[test]
+    fn worker_cpu_ownership_follows_the_enable_byte_across_module_routing() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.game_state.display.vertical_irq_trigger = 96;
+        game.game_state.display.nmi_thread_active = true;
+        game.game_state.frame.main_module = 7;
+        let enabled = game.native_pacing_worker_share(3000);
+        assert!(enabled > 0);
+        // No module duration or category participates in the hardware rule.
+        for module in 0..=0x1b {
+            game.game_state.frame.main_module = module;
+            assert_eq!(game.native_pacing_worker_share(3000), enabled);
+        }
+        game.game_state.display.nmi_thread_active = false;
+        assert_eq!(game.native_pacing_worker_share(3000), 0);
+        game.game_state.display.nmi_thread_active = true;
+        game.set_lag_free(false);
+        assert_eq!(game.native_pacing_worker_share(3000), 0);
+    }
 
     #[test]
     fn intervening_nmis_use_lag_cost_and_accept_equality() {

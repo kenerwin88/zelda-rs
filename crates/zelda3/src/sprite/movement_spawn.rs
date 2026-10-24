@@ -1371,12 +1371,24 @@ impl ZeldaState {
     //   return Sprite_CheckIfOverlordsClear();
     // }
     pub(in crate::zelda_rtl) fn sprite_check_if_room_is_clear(&self) -> bool {
+        let lag_free = self.lag_free;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        // $09:AF61..AF74, M8/X8. The shared overlord tail below already
+        // charges its own loop and the saved-X/RTL return.
+        charge(38); // PHX, LDX #15.
         for i in (0..=15usize).rev() {
-            if self.sprite_slot_view(i).state() != 0
-                && (self.sprite_slot_view(i).flags4() & 0x40) == 0
-            {
-                return false;
+            charge(48); // LDA state, BEQ.
+            if self.sprite_slot_view(i).state() != 0 {
+                charge(64); // LDA flags4, AND, BNE.
+                if (self.sprite_slot_view(i).flags4() & 0x40) == 0 {
+                    charge(86); // $AF70..AF72 PLX, CLC, RTL.
+                    return false;
+                }
+                charge(6); // Taken BNE.
+            } else {
+                charge(6); // Taken BEQ.
             }
+            charge(if i == 0 { 30 } else { 36 }); // DEX, BPL.
         }
         self.sprite_check_if_overlords_clear()
     }
