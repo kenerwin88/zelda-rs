@@ -1,21 +1,75 @@
-use std::env;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use zelda3::ZeldaState;
+use zelda3::debug_env;
 
-use crate::libretro_timeline::format_input_history;
 use crate::{PlayCrashCheckpoint, PLAY_CRASH_CHECKPOINT_MAGIC};
 use zelda3::RUN_MAIN;
-
-pub(crate) const RECORDING_ENV: &str = "ZELDA3_RECORD_INPUT_SESSION";
 
 pub(crate) struct LiveInputRecording {
     dir: PathBuf,
     events: BufWriter<File>,
     input_history: Vec<(u32, u16)>,
+    output: RecordingOutput,
+}
+
+// Native movies stay available in the shipped build; cartridge scripts are tooling.
+enum RecordingOutput {
+    Lagless(crate::lagless_replay::MovieWriter),
+    #[cfg(feature = "rom-timing")]
+    Cartridge(crate::cartridge_input_recording::CartridgeInputRecording),
+}
+
+impl RecordingOutput {
+    fn start(dir: &Path, game: &ZeldaState, samples: usize, channels: usize) -> Result<Self, String> {
+        if game.lag_free() {
+            return crate::lagless_replay::MovieWriter::create(&dir.join("input.z3lag"), game, samples, channels)
+                .map(Self::Lagless).map_err(|e| format!("create lagless recording: {e}"));
+        }
+        Self::cartridge()
+    }
+
+    #[cfg(feature = "rom-timing")]
+    fn cartridge() -> Result<Self, String> {
+        Ok(Self::Cartridge(crate::cartridge_input_recording::CartridgeInputRecording))
+    }
+
+    #[cfg(not(feature = "rom-timing"))]
+    fn cartridge() -> Result<Self, String> {
+        Err("cartridge input recording requires the rom-timing Cargo feature".into())
+    }
+
+    fn record(&mut self, frame: u32, input: u16, count: usize) -> Result<(), String> {
+        match self {
+            Self::Lagless(movie) => {
+                if frame as usize != count {
+                    return Err("lagless recording requires contiguous iterations from boot".into());
+                }
+                movie.record(input).map_err(|e| format!("write lagless input: {e}"))
+            }
+            #[cfg(feature = "rom-timing")]
+            Self::Cartridge(_) => Ok(()),
+        }
+    }
+
+    fn artifact(&self) -> &'static str {
+        match self {
+            Self::Lagless(_) => "input.z3lag",
+            #[cfg(feature = "rom-timing")]
+            Self::Cartridge(_) => "input.txt",
+        }
+    }
+
+    fn finish(&self, _dir: &Path, _history: &[(u32, u16)]) -> Result<(), String> {
+        match self {
+            Self::Lagless(_) => Ok(()),
+            #[cfg(feature = "rom-timing")]
+            Self::Cartridge(script) => script.finish(_dir, _history),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -25,27 +79,24 @@ struct LiveInputEvent {
 }
 
 impl LiveInputRecording {
-    pub(crate) fn start_from_env(game: &ZeldaState) -> Result<Option<Self>, String> {
-        let Some(dir) = env::var_os(RECORDING_ENV) else {
+    pub(crate) fn start_from_env(game: &ZeldaState, samples: usize, channels: usize) -> Result<Option<Self>, String> {
+        let Some(dir) = debug_env::var_os!("ZELDA3_RECORD_INPUT_SESSION") else {
             return Ok(None);
         };
-        // Snes9x replays a poll per cartridge frame, lag frames included.
-        if game.lag_free() {
-            return Err(format!("{RECORDING_ENV} needs the cartridge's frame timing; launch with --rom-timing"));
-        }
-        Self::start(Path::new(&dir), game).map(Some)
+        Self::start(Path::new(&dir), game, samples, channels).map(Some)
     }
 
-    fn start(dir: &Path, game: &ZeldaState) -> Result<Self, String> {
+    pub(crate) fn start(dir: &Path, game: &ZeldaState, samples: usize, channels: usize) -> Result<Self, String> {
         fs::create_dir_all(dir)
             .map_err(|e| format!("create live input session {}: {e}", dir.display()))?;
-        for stale in ["input.txt", "input.recovered.txt", "result.json"] {
+        for stale in ["input.txt", "input.recovered.txt", "result.json", "input.z3lag"] {
             match fs::remove_file(dir.join(stale)) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(format!("remove stale live input {stale}: {error}")),
             }
         }
+        let output = RecordingOutput::start(dir, game, samples, channels)?;
         fs::write(dir.join("initial.srm"), &game.sram)
             .map_err(|e| format!("write live input initial.srm: {e}"))?;
         fs::write(
@@ -63,13 +114,15 @@ impl LiveInputRecording {
         let manifest = serde_json::json!({
             "schema": 1,
             "status": "recording",
-            "controller_polling": "once-per-game-frame",
-            "transfer_boundary": "initial-sram-plus-clean-rom-boot",
+            "controller_polling": if game.lag_free() { "once-per-main-iteration" } else { "once-per-game-frame" },
+            "lag_free": game.lag_free(),
+            "native_movie": game.lag_free().then_some("input.z3lag"),
+            "transfer_boundary": if game.lag_free() { "embedded-sram-plus-clean-native-boot" } else { "initial-sram-plus-clean-rom-boot" },
             "artifacts": [
                 "initial.srm",
                 "rust_initial.z3state",
                 "live_inputs.jsonl",
-                "input.txt",
+                output.artifact(),
                 "result.json"
             ]
         });
@@ -86,10 +139,12 @@ impl LiveInputRecording {
             dir: dir.to_path_buf(),
             events,
             input_history: Vec::new(),
+            output,
         })
     }
 
     pub(crate) fn record(&mut self, frame: u32, input: u16) -> Result<(), String> {
+        self.output.record(frame, input, self.input_history.len())?;
         self.input_history.push((frame, input));
         serde_json::to_writer(
             &mut self.events,
@@ -114,11 +169,7 @@ impl LiveInputRecording {
         self.events
             .flush()
             .map_err(|e| format!("flush live input events: {e}"))?;
-        fs::write(
-            self.dir.join("input.txt"),
-            format_input_history(&self.input_history),
-        )
-        .map_err(|e| format!("write deterministic input script: {e}"))?;
+        self.output.finish(&self.dir, &self.input_history)?;
         let result = serde_json::json!({
             "status": "complete",
             "frames": self.input_history.len(),
@@ -146,6 +197,32 @@ impl LiveInputRecording {
 mod tests {
     use super::*;
 
+    #[cfg(not(feature = "rom-timing"))]
+    #[test]
+    fn cartridge_recording_requires_rom_timing() {
+        assert!(matches!(RecordingOutput::cartridge(), Err(error) if error.contains("rom-timing")));
+    }
+
+    #[test]
+    fn lagless_recording_writes_native_movie_from_shipped_boot() {
+        let dir = std::env::temp_dir().join(format!("zelda3-native-record-{}", std::process::id()));
+        let mut game = crate::load_romless_play_state();
+        game.set_lag_free(true);
+        let mut recording = LiveInputRecording::start(&dir, &game, 735, 2).unwrap();
+        recording.record(0, 0x80).unwrap();
+        assert!(recording.record(2, 0).is_err());
+        recording.finish().unwrap();
+        let movie = fs::read(dir.join("input.z3lag")).unwrap();
+        assert_eq!(&movie[..8], b"Z3LGIN01");
+        assert_eq!(&movie[movie.len() - 2..], &0x80u16.to_le_bytes());
+        let manifest: serde_json::Value = serde_json::from_slice(&fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["lag_free"], true);
+        assert!(manifest["artifacts"].as_array().unwrap().iter().any(|value| value == "input.z3lag"));
+        assert!(!dir.join("input.txt").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(feature = "rom-timing")]
     #[test]
     fn recording_writes_crash_resilient_events_and_deterministic_script() {
         let dir = std::env::temp_dir().join(format!(
@@ -155,7 +232,7 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&dir);
         let game = ZeldaState::new();
-        let mut recording = LiveInputRecording::start(&dir, &game).unwrap();
+        let mut recording = LiveInputRecording::start(&dir, &game, 735, 2).unwrap();
         recording.record(0, 0).unwrap();
         recording.record(1, 0x80).unwrap();
         recording.record(2, 0x80).unwrap();

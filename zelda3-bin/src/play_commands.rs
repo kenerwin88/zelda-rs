@@ -11,7 +11,6 @@ use crate::developer_room_commands::{
     current_developer_location_from_ram, load_developer_destination,
 };
 use crate::input_script::InputScript;
-#[cfg(feature = "rom-timing")]
 use crate::live_input_recording::LiveInputRecording;
 use crate::{
     apply_sram_to_game_or_exit, captured_panic_from, developer_destinations,
@@ -180,11 +179,6 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
             game.state_recorder = state_recorder;
         }
     }
-    #[cfg(feature = "rom-timing")]
-    let mut input_recording = LiveInputRecording::start_from_env(&game).unwrap_or_else(|error| {
-        eprintln!("failed to start frontend-smoke input recording: {error}");
-        process::exit(1);
-    });
     let width = 256u32;
     let height = 224u32;
     let mut renderer = match play_renderer::configured_from_env(
@@ -201,6 +195,10 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
     let renderer_name = renderer.name();
     let audio_samples = renderer.audio_samples_per_frame();
     let audio_channels = renderer.audio_channels();
+    let mut input_recording = LiveInputRecording::start_from_env(&game, audio_samples, audio_channels).unwrap_or_else(|error| {
+        eprintln!("failed to start frontend-smoke input recording: {error}");
+        process::exit(1);
+    });
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut audio_peak = 0i16;
     let mut triggered_voices = 0u64;
@@ -216,7 +214,6 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         } else {
             options.input_script.input_for_frame(completed)
         };
-        #[cfg(feature = "rom-timing")]
         if let Some(recording) = input_recording.as_mut() {
             recording
                 .record(completed, live_input)
@@ -251,7 +248,6 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
     if !options.frame_pacing {
         renderer.wait_idle();
     }
-    #[cfg(feature = "rom-timing")]
     if let Some(recording) = input_recording.take() {
         recording.finish().unwrap_or_else(|error| {
             eprintln!("failed to finish frontend-smoke input recording: {error}");
@@ -273,7 +269,13 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
 pub(crate) fn run_play() {
     let mut game = crate::load_romless_play_state();
     game.set_lag_free(true);
-    run_play_with_state(game);
+    run_play_with_state(game, None);
+}
+
+pub(crate) fn run_record_lagless(dir: &Path) {
+    let mut game = crate::load_romless_play_state();
+    game.set_lag_free(true);
+    run_play_with_state(game, Some(dir));
 }
 
 /// `--rom-timing`: the cartridge's frame-exact schedule, lag frames included.
@@ -285,10 +287,10 @@ pub(crate) fn run_rom_timing_play(rom_path: Option<&str>) {
     run_play_with_state(match rom_path {
         Some(rom_path) => load_play_state(rom_path),
         None => crate::load_romless_play_state(),
-    });
+    }, None);
 }
 
-fn run_play_with_state(mut game: ZeldaState) {
+fn run_play_with_state(mut game: ZeldaState, record_dir: Option<&Path>) {
     let last_panic = install_crash_panic_hook();
     let capture_crash_snapshot =
         zelda3::debug_env::var("ZELDA3_DEBUG_CRASH_SNAPSHOT").as_deref() == Ok("1");
@@ -309,14 +311,15 @@ fn run_play_with_state(mut game: ZeldaState) {
     let audio_channels = renderer.audio_channels();
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut host_frame = 0u32;
-    #[cfg(feature = "rom-timing")]
-    let mut input_recording = LiveInputRecording::start_from_env(&game).unwrap_or_else(|error| {
+    let mut input_recording = record_dir.map_or_else(
+        || LiveInputRecording::start_from_env(&game, audio_samples, audio_channels),
+        |dir| LiveInputRecording::start(dir, &game, audio_samples, audio_channels).map(Some),
+    ).unwrap_or_else(|error| {
         eprintln!("failed to start live input recording: {error}");
         process::exit(1);
     });
-    #[cfg(feature = "rom-timing")]
     if input_recording.is_some() {
-        eprintln!("recording each game-frame controller poll for Snes9x replay");
+        eprintln!("recording controller polls (lagless sessions also write input.z3lag)");
     }
     let mut game_started = env::var_os("ZELDA3_SKIP_HOST_MENU").is_some();
     let mut host_menu = HostMenuState::new(
@@ -368,10 +371,9 @@ fn run_play_with_state(mut game: ZeldaState) {
                             eprintln!("host menu controls panel selected: {panel:?}");
                         }
                         HostMenuAction::WarpToVerifiedDestination(id) => {
-                            #[cfg(feature = "rom-timing")]
                             if input_recording.is_some() {
                                 eprintln!(
-                                    "cannot use developer warp `{id}` while recording a Snes9x-replayable input route; record the route from normal boot"
+                                    "cannot use developer warp `{id}` while recording an input route; record the route from normal boot"
                                 );
                                 process::exit(2);
                             }
@@ -426,7 +428,6 @@ fn run_play_with_state(mut game: ZeldaState) {
             game_started = true;
         }
         let run_what = select_run_what(&game.wram_image());
-        #[cfg(feature = "rom-timing")]
         if let Some(recording) = input_recording.as_mut() {
             recording
                 .record(host_frame, live_input)
@@ -506,7 +507,6 @@ fn run_play_with_state(mut game: ZeldaState) {
     if audio_dropped_samples != 0 {
         eprintln!("live audio timeline dropped {audio_dropped_samples} interleaved samples");
     }
-    #[cfg(feature = "rom-timing")]
     if let Some(recording) = input_recording.take() {
         match recording.finish() {
             Ok(dir) => eprintln!("captured deterministic input session: {}", dir.display()),

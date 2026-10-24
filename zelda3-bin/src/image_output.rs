@@ -113,8 +113,10 @@ pub(crate) fn decode_rgba_png(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "rom-timing")]
+    use super::write_argb_frame_png;
     use super::{
-        decode_rgba_png, write_argb_frame_png, write_assets_index_png, write_rgba_frame_png,
+        decode_rgba_png, write_assets_index_png, write_rgba_frame_png,
     };
     use std::fs;
     use std::path::PathBuf;

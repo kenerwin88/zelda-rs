@@ -60,7 +60,7 @@ fn obsolete_native_bank_checkpoints_are_rejected_before_positional_decode() {
         // A header alone cannot deserialize as a checkpoint. The useful layout
         // error must be returned before attempting the obsolete positional body.
         fs::write(&path, old_magic).unwrap();
-        let error = crate::snes9x_apu_tools::load_play_crash_checkpoint(&path)
+        let error = crate::load_play_crash_checkpoint(&path)
             .err()
             .expect("old checkpoint layout must be rejected")
             .to_string();

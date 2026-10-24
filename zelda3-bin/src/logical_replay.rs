@@ -1120,6 +1120,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut apu_trace: Option<(u64, u64)> = None;
     let mut start_at: u64 = 0;
     let mut apu_read_replay = true;
+    let mut native_rng = false;
     let mut eager_seed = false;
     let mut poly_uploads: Option<PolyUploads> = None;
     let mut dump_wram: Option<(u64, PathBuf)> = None;
@@ -1132,6 +1133,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             })
         };
         match args[index].as_str() {
+            "--native-rng" => { native_rng = true; index += 1; continue; }
             "--frames" => frames = value(index).parse().expect("--frames"),
             "--image" => image_kind = value(index),
             "--offset" => offset = value(index).parse().expect("--offset"),
@@ -1364,7 +1366,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         };
         // Each frame draws exactly its iteration's RNG outputs; a draw the ROM
         // did not make, or an output left unused, is a divergence to count.
-        let (unconsumed, extra) = game.replace_rom_random_frame(rng_samples(iteration, frame as u32), frame as u32);
+        let (unconsumed, extra) = if native_rng { (0, 0) } else {
+            game.replace_rom_random_frame(rng_samples(iteration, frame as u32), frame as u32)
+        };
         if segment.iterations != 0 || segment.continued {
             segment.rng_unconsumed += unconsumed as u64;
             segment.rng_extra += u64::from(extra);
@@ -1578,6 +1582,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             let vram: Vec<u8> = game.vram().iter().flat_map(|word| word.to_le_bytes()).collect();
             fs::write(dir.join(format!("engine-{target}.vram")), vram).expect("write engine VRAM");
         }
+        // Exclusive native owners make this an owned export. Reuse one image
+        // throughout the read-only comparison, rather than rebuilding 128 KB
+        // for every differing byte in the histogram and lag classification.
+        let engine_wram = game.wram_image();
         for (written, &byte) in written.iter_mut().zip(&images.image) {
             *written |= byte != POWER_ON_FILL;
         }
@@ -1597,9 +1605,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         // The intro and attract modules (after a save-and-quit too) run on
         // the NMI clock as well.
         let poly_active = images.image[NMI_THREAD_ACTIVE] != 0
-            || game.wram_image()[NMI_THREAD_ACTIVE] != 0
+            || engine_wram[NMI_THREAD_ACTIVE] != 0
             || timing_defined(&images.image)
-            || timing_defined(&game.wram_image())
+            || timing_defined(&engine_wram)
             || resync.contains(&(iteration.index + 1));
         if poly_active {
             segment.poly_iterations += 1;
@@ -1620,13 +1628,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 Some(companion) if image_kind != "pre" => &companion.image,
                 _ => &images.image,
             };
-            poly_uploads.observe(iteration.index, poly_active, rom_pre_nmi, &game.wram_image());
+            poly_uploads.observe(iteration.index, poly_active, rom_pre_nmi, &engine_wram);
         }
-        hide_undrawn_extended_oam(&game.wram_image(), &images.image, &mut compared_now);
-        let ranges = diff_ranges(&game.wram_image(), &images.image, &compared_now);
+        hide_undrawn_extended_oam(&engine_wram, &images.image, &mut compared_now);
+        let ranges = diff_ranges(&engine_wram, &images.image, &compared_now);
         for &(lo, hi) in &ranges {
             for address in lo..=hi {
-                if game.wram_image()[address] != images.image[address] && compared_now[address] {
+                if engine_wram[address] != images.image[address] && compared_now[address] {
                     let slot = &mut histogram[address];
                     if slot.0 == 0 {
                         slot.1 = iteration.index;
@@ -1638,7 +1646,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let differing: Vec<usize> = ranges
             .iter()
             .flat_map(|&(lo, hi)| lo..=hi)
-            .filter(|&address| compared_now[address] && game.wram_image()[address] != images.image[address])
+            .filter(|&address| compared_now[address] && engine_wram[address] != images.image[address])
             .collect();
         lag_carried.retain(|address| differing.binary_search(address).is_ok());
         if iteration.lag_nmis != 0 {
@@ -1683,7 +1691,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     let end = hi.min(lo + 7);
                     format!(
                         "{lo:05x}-{hi:05x} rust={} rom={}",
-                        hex(&game.wram_image()[lo..=end]),
+                        hex(&engine_wram[lo..=end]),
                         hex(&images.image[lo..=end])
                     )
                 })

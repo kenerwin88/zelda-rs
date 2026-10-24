@@ -26,7 +26,9 @@ mod libretro_core;
 #[cfg(feature = "rom-timing")]
 mod libretro_timeline;
 #[cfg(feature = "rom-timing")]
+mod cartridge_input_recording;
 mod live_input_recording;
+mod lagless_replay;
 mod logical_replay;
 mod oracle_lock;
 mod overworld_dump_commands;
@@ -74,9 +76,6 @@ use snes9x_apu_tools::*;
 use snes9x_compare::*;
 #[cfg(feature = "rom-timing")]
 use snes9x_record_commands::*;
-
-#[cfg(not(feature = "rom-timing"))]
-use zelda3::debug_env;
 
 use std::backtrace::Backtrace;
 use std::env;
@@ -183,11 +182,6 @@ const EMBEDDED_ASSETS: &[u8] = include_bytes!(env!("ZELDA3_EMBEDDED_ASSETS"));
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    #[cfg(not(feature = "rom-timing"))]
-    if crate::debug_env::var_os!("ZELDA3_RECORD_INPUT_SESSION").is_some() {
-        eprintln!("live input recording requires the rom-timing Cargo feature");
-        process::exit(2);
-    }
     #[cfg(not(feature = "rom-timing"))]
     if args.iter().any(|arg| {
         (arg.starts_with("--") && arg.contains("snes9x"))
@@ -425,6 +419,18 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("--logical-replay") {
         logical_replay::run_logical_replay(&args[2..]);
+        return;
+    }
+    if matches!(args.get(1).map(String::as_str), Some("--replay-lagless" | "--convert-lagless")) {
+        lagless_replay::run(&args[2..], args[1] == "--convert-lagless");
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--record-lagless") {
+        let dir = args.get(2).filter(|_| args.len() == 3).unwrap_or_else(|| {
+            eprintln!("usage: zelda3 --record-lagless SESSION_DIRECTORY");
+            process::exit(2);
+        });
+        play_commands::run_record_lagless(Path::new(dir));
         return;
     }
     if args.get(1).map(String::as_str) == Some("--coverage-probe") {
@@ -2907,6 +2913,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn recorder_telemetry_captures_progress_and_ending_markers() {
         let mut ram = vec![0u8; 0x20000];
         ram[0x10] = 0x1a;
@@ -2931,6 +2938,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn recorder_audio_resampling_preserves_stereo_channels() {
         let input = [10, -10, 20, -20];
         assert_eq!(
@@ -2950,6 +2958,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn replay_hash_precondition_rejects_a_replaced_oracle() {
         let path = std::env::temp_dir().join(format!(
             "zelda3-oracle-hash-{}-{}",
@@ -3006,6 +3015,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rom-timing")]
     fn gpu_readback_pixels_remain_rgba_during_oracle_comparison() {
         assert_eq!(
             rgba_pixel_at(&[0x12, 0x34, 0x56, 0x78], 0),
