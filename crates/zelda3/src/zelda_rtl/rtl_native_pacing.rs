@@ -6,9 +6,53 @@ use super::*;
 pub(crate) struct NativePacing {
     iris_work: u32,
     pending: u32,
+    pub(super) song_upload: bool,
+    masked_callback: bool,
 }
 
 impl ZeldaState {
+    pub fn native_presentation_pending(&self) -> bool {
+        self.native_held_frames_pending() != 0 || self.lag_free && self.native_pacing.song_upload
+    }
+
+    /// Elapsed audio while $4200 masks NMI is not an accepted lag NMI.
+    pub fn native_last_callback_masked_nmi(&self) -> bool {
+        self.lag_free && self.native_pacing.masked_callback
+    }
+
+    pub(crate) fn native_begin_song_upload(&mut self) {
+        if self.lag_free && self.lag_free_intro_schedule.is_none() {
+            self.native_pacing.song_upload = true;
+        }
+    }
+
+    pub(crate) fn native_mask_song_upload_nmi(&mut self) -> bool {
+        if self.lag_free && self.native_pacing.song_upload {
+            self.native_pacing.masked_callback = true;
+            true
+        } else { false }
+    }
+
+    pub(super) fn native_begin_callback(&mut self) {
+        self.native_pacing.masked_callback = false;
+    }
+
+    pub(super) fn run_native_song_upload_frame(&mut self, input: u16) {
+        self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
+        self.capture_display_snapshot();
+        let transferring = self.native_song_bank_transfer_pending();
+        if transferring {
+            self.native_pacing.masked_callback = true;
+        } else {
+            // The retained receiver has acknowledged the final block and
+            // cleared the ports. Restore the closing NMI, exactly once.
+            self.native_pacing.song_upload = false;
+            self.interrupt_nmi(input, None, false);
+        }
+        self.zelda_push_apu_state();
+        self.poison_owned_wram();
+    }
+
     pub fn native_held_frames_pending(&self) -> u32 {
         if self.lag_free { self.native_pacing.pending } else { 0 }
     }
@@ -58,6 +102,35 @@ impl ZeldaState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn masked_upload_preserves_nmi_commands_and_resumes_closing_nmi_once() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.lag_free_intro_schedule = None;
+        game.lag_free_lag_phases_run = true;
+        game.latch_nmi_update();
+        game.set_sound_effect_1(0x29);
+        let frame = game.game_state.frame;
+        let recorder = game.state_recorder.total_frames;
+        game.native_begin_song_upload();
+        game.interrupt_nmi(0, None, false);
+        assert!(game.native_last_callback_masked_nmi());
+        assert_eq!(game.game_state.system_signals.sound_effect_1(), 0x29);
+        assert_eq!(game.native_held_frames_pending(), 0);
+        assert!(game.native_presentation_pending());
+        // No receiver is installed in this fixture: the upload has returned.
+        game.zelda_run_frame(0);
+        assert!(!game.native_last_callback_masked_nmi());
+        assert!(!game.native_presentation_pending());
+        assert_eq!(game.game_state.frame, frame);
+        assert_eq!(game.state_recorder.total_frames, recorder);
+        assert_eq!(game.game_state.system_signals.sound_effect_1(), 0);
+        game.native_begin_song_upload();
+        game.set_lag_free(false);
+        assert!(!game.native_presentation_pending());
+        assert!(!game.native_pacing.song_upload);
+    }
 
     #[test]
     fn held_frame_preserves_main_and_recorder_but_delivers_sound() {

@@ -1271,6 +1271,9 @@ impl ZeldaState {
     }
 
     pub(crate) fn begin_runtime_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) -> bool {
+        if bank_id == 0 && self.audio.modern.driver_clock.is_some() {
+            self.native_begin_song_upload();
+        }
         if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
             if let Some(NativeOverworldSongUpload::CommandAt { host, position }) =
                 self.native_overworld_song_upload
@@ -1297,6 +1300,11 @@ impl ZeldaState {
             self.native_dungeon_song_upload_awaiting_return = false;
             false
         }
+    }
+
+    pub(crate) fn native_song_bank_transfer_pending(&self) -> bool {
+        self.audio.modern.driver_clock.as_ref()
+            .is_some_and(|clock| clock.song_bank_transfer_pending())
     }
 
     pub(super) fn native_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {

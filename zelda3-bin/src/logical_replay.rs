@@ -467,6 +467,7 @@ struct Segment {
     pacing_equal: u64,
     pacing_held: u64,
     pacing_lag: u64,
+    pacing_elapsed: u64,
 }
 
 /// An engine with no miss in this many iterations before a seed boundary is
@@ -537,6 +538,7 @@ impl Segment {
             pacing_equal: 0,
             pacing_held: 0,
             pacing_lag: 0,
+            pacing_elapsed: 0,
         }
     }
 
@@ -610,8 +612,8 @@ impl Segment {
             self.deferred_work_frames,
             self.lag_diverged
         );
-        println!("logical-segment-pacing start={} iterations={} equal={} held={} lag={}",
-            self.start, self.iterations, self.pacing_equal, self.pacing_held, self.pacing_lag);
+        println!("logical-segment-pacing start={} iterations={} equal={} held={} lag={} elapsed={}",
+            self.start, self.iterations, self.pacing_equal, self.pacing_held, self.pacing_lag, self.pacing_elapsed);
         if self.poly_iterations != 0 {
             println!(
                 "logical-segment-poly start={} iterations={} wram_diverged={} rng_unconsumed={} rng_extra={}",
@@ -1340,7 +1342,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut segment = Segment::starting(0);
     let mut audio_buffer = vec![0i16; AUDIO_SAMPLES * 2];
     // Entry-context census: [iterations, equal counts, held frames, lag NMIs].
-    let mut pacing_categories = std::collections::BTreeMap::<(u8, u8), [u64; 4]>::new();
+    let mut pacing_categories = std::collections::BTreeMap::<(u8, u8), [u64; 5]>::new();
     let mut last_apu_push = game.zelda_last_pushed_apu_ports().0;
     let mut engine_ports = game.zelda_last_pushed_apu_ports().1;
     let mut rom_ports = [0u8; 4];
@@ -1520,11 +1522,18 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
         }
         let mut native_held = 0u32;
+        let mut native_elapsed = 0u32;
+        let mut native_nmis = 0u32;
         let mut engine_commands = Vec::new();
         let last_apu_push_before = last_apu_push;
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             loop {
                 game.zelda_run_frame(i32::from(input));
+                if game.native_last_callback_masked_nmi() {
+                    native_elapsed += 1;
+                } else {
+                    native_nmis += 1;
+                }
                 // The audio side consumes the frame's commands and takes the
                 // SPC acknowledgements before the next main or held callback.
                 game.zelda_render_audio(&mut audio_buffer, AUDIO_SAMPLES as i32, 2);
@@ -1539,9 +1548,9 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     engine_commands.extend(port_commands((0..4u8).zip(ports), &mut engine_ports));
                 }
                 last_apu_push = pushes;
-                if game.native_held_frames_pending() == 0 { break; }
-                native_held += 1;
+                if !game.native_presentation_pending() { break; }
             }
+            native_held = native_nmis.saturating_sub(1);
         }));
         if ran.is_err() {
             segment.panicked = Some(iteration_index.max(0) as u64);
@@ -1584,11 +1593,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         segment.pacing_equal += u64::from(native_held == iteration.lag_nmis);
         segment.pacing_held += u64::from(native_held);
         segment.pacing_lag += u64::from(iteration.lag_nmis);
+        segment.pacing_elapsed += u64::from(native_elapsed);
         let pacing = pacing_categories.entry((images.image[0x10], images.image[0x11])).or_default();
         pacing[0] += 1;
         pacing[1] += u64::from(native_held == iteration.lag_nmis);
         pacing[2] += u64::from(native_held);
         pacing[3] += u64::from(iteration.lag_nmis);
+        pacing[4] += u64::from(native_elapsed);
         let index = iteration_index as usize;
         if apu_trace.is_some_and(|(lo, hi)| (lo..=hi).contains(&iteration.index)) {
             println!(
@@ -1729,6 +1740,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 "iteration": iteration.index,
                 "lag_nmis": iteration.lag_nmis,
                 "native_held": native_held,
+                "native_elapsed": native_elapsed,
                 "open_host": iteration.open_host,
                 "picture_host": iteration.picture_host,
                 "engine_polls": observed_polls,
@@ -1960,8 +1972,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         video.drain(&iterations, &mut segment);
     }
     segment.report(video.is_some());
-    for ((module, submodule), [iterations, equal, held, lag]) in pacing_categories {
-        println!("logical-pacing-category module={module:02x}/{submodule:02x} iterations={iterations} equal={equal} held={held} lag={lag}");
+    for ((module, submodule), [iterations, equal, held, lag, elapsed]) in pacing_categories {
+        println!("logical-pacing-category module={module:02x}/{submodule:02x} iterations={iterations} equal={equal} held={held} lag={lag} elapsed={elapsed}");
     }
     if let Some(path) = histogram_path {
         let lines: String = histogram

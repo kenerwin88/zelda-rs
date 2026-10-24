@@ -14202,6 +14202,9 @@ impl ZeldaState {
 
     /// Run complete main-loop iterations with native presentation holds.
     pub fn set_lag_free(&mut self, enabled: bool) {
+        if self.lag_free != enabled {
+            self.native_pacing = Default::default();
+        }
         self.lag_free = enabled;
         if enabled && self.frame_ctr_dbg == 0 && !self.boot_memory_initialized {
             self.lag_free_intro_schedule = Some(0);

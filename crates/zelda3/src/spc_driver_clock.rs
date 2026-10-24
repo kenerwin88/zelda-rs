@@ -1002,6 +1002,10 @@ impl AbsoluteDspEventClock {
         self.song_bank_transfer.as_mut().unwrap().interleave_host_cpu = interleave_host_cpu;
     }
 
+    pub(crate) fn song_bank_transfer_pending(&self) -> bool {
+        self.song_bank_transfer.is_some()
+    }
+
     pub(crate) fn begin_song_bank_transfer_at(
         &mut self, bank_id: u8, stream: &[u8], position: Option<snes::CpuRasterPosition>,
     ) {

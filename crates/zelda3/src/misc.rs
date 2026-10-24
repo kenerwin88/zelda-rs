@@ -365,8 +365,12 @@ impl ZeldaState {
             .asset_raw(asset)
             .expect("runtime song bank asset must be loaded")
             .to_vec();
-        let stream = self
-            .rom_song_bank_upload_stream(asset)
+        // The ordinary semantic bank is a complete sample image. Runtime
+        // uploads carry only the cartridge's changed blocks, not that image.
+        let native_stream = (self.lag_free && asset == 0).then(|| self.assets.as_ref()
+            .and_then(|assets| assets.asset_by_name(&format!("kSpcRuntimeUpload{asset}")))
+            .map(<[u8]>::to_vec)).flatten();
+        let stream = native_stream.or_else(|| self.rom_song_bank_upload_stream(asset))
             .unwrap_or_else(|| asset_stream.clone());
         if !self.begin_runtime_song_bank_transfer(asset as u8, &stream) {
             // The semantic sequencer has no SPC receiver to acknowledge the

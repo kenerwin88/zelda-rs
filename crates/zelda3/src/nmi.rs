@@ -290,6 +290,7 @@ impl ZeldaState {
         oam_dma_source: Option<&[u8]>,
         defer_bg_vram_upload: bool,
     ) {
+        if self.native_mask_song_upload_nmi() { return; }
         self.interrupt_nmi_with_animated_bg_operands(
             input,
             oam_dma_source,
