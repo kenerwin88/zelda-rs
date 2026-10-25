@@ -356,6 +356,8 @@ mod sprite_decompression_cursor_tests {
         let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
         for pattern in [Pattern::Normal, Pattern::Triforce, Pattern::DungeonMap] {
             let mut native = template.clone();
+            native.set_lag_free(true);
+            native.native_begin_main_cost();
             native.ppu.vram.fill(0x5aa5);
             native.ppu.vram_pointer = 0x7312;
             native.ppu.vram_increment = 32;
@@ -407,6 +409,7 @@ mod sprite_decompression_cursor_tests {
             assert!(run.is_complete());
             assert_eq!(transfers, 4);
             assert_eq!(bytes, 20480);
+            assert_eq!(native.native_cost_main_dma(), u64::from(4 * 26 + bytes * 8));
             assert_eq!(instructions, if matches!(pattern, Pattern::Normal) {48} else {49});
         }
     }

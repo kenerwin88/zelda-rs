@@ -1521,6 +1521,16 @@ impl ZeldaState {
         else {
             return;
         };
+        let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x0090e3));
+        if self.lag_free { crate::cycle_ledger::charge(90); } // $00:90E3 JSR / RTL.
+        let _upload = self.lag_free.then(|| crate::cycle_ledger::routine(0x008cb0));
+        if self.lag_free {
+            // $00:8CB0..8CE3, M8/X8, system DB. All supported target pages
+            // are below $78, so LDA $9888,X does not cross a page. $8CD8's
+            // $420B stalls are separate bus ownership, never CPU instructions.
+            crate::cycle_ledger::charge(568);
+            self.account_nmi_dma_transfer(word_count * 2);
+        }
         for i in 0..word_count {
             self.ppu.vram[dst + i] = self.vram_upload_tilemap_word(i * 2);
         }

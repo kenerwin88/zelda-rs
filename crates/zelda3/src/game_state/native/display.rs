@@ -3553,11 +3553,12 @@ impl DisplayState {
     }
 
     pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
+        if self.hdma_enable_mask != value { crate::cycle_ledger::note_hdma_program_write(); }
         self.hdma_enable_mask = value;
     }
 
     pub(crate) fn clear_hdma_enable_mask(&mut self) {
-        self.hdma_enable_mask = 0;
+        self.set_hdma_enable_mask(0);
     }
 
     pub(crate) fn is_hdma_channel_enabled(&self, channel: usize) -> bool {

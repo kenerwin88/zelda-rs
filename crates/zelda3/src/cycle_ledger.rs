@@ -46,6 +46,7 @@ thread_local! {
     static MUTED: Cell<u32> = const { Cell::new(0) };
     /// Routine scopes opened so far on this thread (an annotation census).
     static SCOPES_OPENED: Cell<u64> = const { Cell::new(0) };
+    static HDMA_PROGRAM_EPOCH: Cell<u64> = const { Cell::new(0) };
     /// Probed calls that charged nothing and opened no scope: translated
     /// routines the ledger does not price yet (see `probe_annotation`).
     static SILENT_CALLS: Cell<u64> = const { Cell::new(0) };
@@ -119,6 +120,20 @@ pub fn muted<R>(probe: impl FnOnce() -> R) -> R {
     let result = probe();
     MUTED.with(|depth| depth.set(depth.get() - 1));
     result
+}
+
+pub(crate) fn is_muted() -> bool {
+    MUTED.with(Cell::get) != 0
+}
+
+/// Actual native programming changes invalidate an immutable HDMA lease.
+/// Payload writes do not: they cannot change the transfer's bus duration.
+pub(crate) fn note_hdma_program_write() {
+    if !is_muted() { HDMA_PROGRAM_EPOCH.with(|epoch| epoch.set(epoch.get().wrapping_add(1))); }
+}
+
+pub(crate) fn hdma_program_epoch() -> u64 {
+    HDMA_PROGRAM_EPOCH.with(Cell::get)
 }
 
 /// A routine scope: created at the routine's entry with its ROM address,

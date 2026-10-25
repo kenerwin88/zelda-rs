@@ -5534,6 +5534,15 @@ impl ZeldaState {
 
     /// ROM: `BufferAndBuildMap16Stripes_X`
     pub(super) fn buffer_and_build_map16_stripes_x(&mut self, dst: usize) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f3b9));
+        if self.lag_free {
+            // $02:F3B9..F434: 16 two-word buffer passes, actual quadrant
+            // branch, and two half headers. F435's first invocation is a
+            // child JSR; the second half falls through in this caller.
+            let (own, half) = self.overworld_scroll_stripe_cost(true);
+            crate::cycle_ledger::charge(own);
+            crate::cycle_ledger::charge_routine(0x02f435, half);
+        }
         let map8 = self.GetMap16toMap8Table();
         for step in 0..164 { self.write_overworld_scroll_stripe_step(true, dst, step, &map8); }
         dst + 132
@@ -5541,9 +5550,31 @@ impl ZeldaState {
 
     /// ROM: `BufferAndBuildMap16Stripes_Y`
     pub(super) fn buffer_and_build_map16_stripes_y(&mut self, dst: usize) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f482));
+        if self.lag_free {
+            // $02:F482..F509, then F50A..F549: 16 source pairs and
+            // 16 four-word conversions per half. Only the first half is
+            // called; the second falls through and owns the caller's RTS.
+            let (own, half) = self.overworld_scroll_stripe_cost(false);
+            crate::cycle_ledger::charge(own);
+            crate::cycle_ledger::charge_routine(0x02f50a, half);
+        }
         let map8 = self.GetMap16toMap8Table();
         for step in 0..162 { self.write_overworld_scroll_stripe_step(false, dst, step, &map8); }
         dst + 130
+    }
+
+    fn overworld_scroll_stripe_cost(&self, horizontal: bool) -> (u64, u64) {
+        // $02:F3B9..F481 / F482..F549, M16/X16. The first half is a
+        // separate JSR frame; the identical fall-through half stays in own.
+        let (prefix, pair, setup, header, unit) = if horizontal {
+            (414, 566, 400, 286, self.overworld_map16_dst_off())
+        } else {
+            (428, 490, 682, 88, self.overworld_map16_y_unit())
+        };
+        let half = header + 16 * 696 + 15 * 6 + 126;
+        (prefix + 16 * pair + 15 * 6 + 136
+            + if unit < 16 { 6 } else { 112 } + setup + half, half)
     }
 
     fn write_overworld_scroll_stripe_step(&mut self, horizontal: bool, dst: usize, step: u16, map8: &[u8]) {
@@ -5586,6 +5617,9 @@ impl ZeldaState {
 
     /// ROM: `BuildFullStripeDuringTransition_North`
     pub(super) fn build_full_stripe_during_transition_north(&mut self, dst: usize) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f2f1));
+        // $02:F2F1..F310: header, child JSR, offsets and return.
+        if self.lag_free { crate::cycle_ledger::charge(454); }
         self.write_overworld_vram_word(dst, 0x0080);
         let dst = self.buffer_and_build_map16_stripes_y(dst + 1);
         let src = self.overworld_map16_src_off().wrapping_sub(0x80);
@@ -5597,6 +5631,9 @@ impl ZeldaState {
 
     /// ROM: `BuildFullStripeDuringTransition_South`
     pub(super) fn build_full_stripe_during_transition_south(&mut self, dst: usize) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f325));
+        // $02:F325..F344; conversion body belongs to F482/F50A.
+        if self.lag_free { crate::cycle_ledger::charge(454); }
         self.write_overworld_vram_word(dst, 0x0080);
         let dst = self.buffer_and_build_map16_stripes_y(dst + 1);
         let src = self.overworld_map16_src_off().wrapping_add(0x80);
@@ -5608,6 +5645,9 @@ impl ZeldaState {
 
     /// ROM: `BuildFullStripeDuringTransition_West`
     pub(super) fn build_full_stripe_during_transition_west(&mut self, dst: usize) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f363));
+        // $02:F363..F37E; two actual DEC $84 instructions.
+        if self.lag_free { crate::cycle_ledger::charge(460); }
         self.write_overworld_vram_word(dst, 0x8040);
         let dst = self.buffer_and_build_map16_stripes_x(dst + 1);
         let src = self.overworld_map16_src_off().wrapping_sub(2);
@@ -5619,6 +5659,9 @@ impl ZeldaState {
 
     /// ROM: `BuildFullStripeDuringTransition_East`
     pub(super) fn build_full_stripe_during_transition_east(&mut self, dst: usize) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f39d));
+        // $02:F39D..F3B8; two actual INC $84 instructions.
+        if self.lag_free { crate::cycle_ledger::charge(460); }
         self.write_overworld_vram_word(dst, 0x8040);
         let dst = self.buffer_and_build_map16_stripes_x(dst + 1);
         let src = self.overworld_map16_src_off().wrapping_add(2);
@@ -5650,6 +5693,7 @@ impl ZeldaState {
     }
 
     pub(super) fn CreateInitialNewScreenMapToScroll(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f031));
         let mut cursor = self.native_initial_scroll.take()
             .unwrap_or_else(|| self.begin_initial_scroll_cursor());
         let target = cursor.total_steps();
@@ -5661,6 +5705,20 @@ impl ZeldaState {
         assert!(matches!(dir, 1 | 2 | 4 | 8), "invalid initial scroll direction {dir}");
         let small = self.overworld_map_is_small();
         let map = self.game_state.world.overworld.map16.active_load;
+        if self.lag_free {
+            // $02:F031..F048 dispatches to F06B/F087/F0C0/F0DC or
+            // F10F/F141/F185/F1B7. Only instructions preceding the stripe
+            // child are here; the 7/8-stripe loop and caller suffix retire
+            // below. Big South's F08B subtraction loop really iterates
+            // src_off / $80 times; no duration is selected by a scene.
+            let prefix = if small {
+                if dir == 4 { 556 } else { 570 }
+            } else if dir == 4 {
+                360 + 86 * u64::from(map.src_off / 0x80)
+            } else if dir == 1 { 352 } else { 314 };
+            crate::cycle_ledger::charge_in_routine(0x02f031,
+                208 + if small { 6 } else { 0 } + prefix);
+        }
         if small {
             let (src_off, dst_off, y_unit) = match dir {
                 8 => (map.src_off.wrapping_sub(0x700), map.dst_off, 10),
@@ -5704,6 +5762,44 @@ impl ZeldaState {
         let span = if cursor.horizontal { 132 } else { 130 };
         while cursor.completed_steps < target {
             let step = cursor.completed_steps;
+            if self.lag_free {
+                let trigger = if cursor.horizontal { 0x02efb3 } else { 0x02ef7a };
+                let price_trigger = |clocks| crate::cycle_ledger::with_profile_call_path(
+                    &[0x02f031, trigger], || crate::cycle_ledger::charge(clocks));
+                if step < body {
+                    let within = step % stripe_steps;
+                    let stores = if cursor.horizontal { 164 } else { 162 };
+                    if step == 0 { price_trigger(294); } // EF7A..EF91 / EFB3..EFCA.
+                    if within == stores - 1 {
+                        // The completed stripe owns its real source pairs
+                        // and conversions. Direct ordinary callers use the
+                        // same price; this cursor never invokes them again.
+                        let (own, half) = self.overworld_scroll_stripe_cost(cursor.horizontal);
+                        let (entry, child) = if cursor.horizontal {
+                            (0x02f3b9, 0x02f435)
+                        } else { (0x02f482, 0x02f50a) };
+                        crate::cycle_ledger::with_profile_call_path(&[0x02f031, trigger, entry],
+                            || crate::cycle_ledger::charge(own));
+                        crate::cycle_ledger::with_profile_call_path(&[0x02f031, trigger, entry, child],
+                            || crate::cycle_ledger::charge(half));
+                    }
+                    if within == stripe_steps - 1 {
+                        // EF93..EFA8 / EFCC..EFDD: child call instruction,
+                        // actual offset updates, decrement and loop branch.
+                        price_trigger(if cursor.horizontal { 326 } else { 320 }
+                            + if step + 1 < body { 6 } else { 0 });
+                    }
+                } else if step == body {
+                    price_trigger(144); // Terminator and trigger's RTS.
+                    if cursor.stripes == 7 {
+                        crate::cycle_ledger::charge_in_routine(0x02f031, 64); // SEP/RTS.
+                    }
+                } else {
+                    // F0F9..F10E / F0AA..F0BF and the small-map equivalents.
+                    crate::cycle_ledger::charge_in_routine(0x02f031,
+                        if step == body + 1 { 126 } else { 102 + 64 });
+                }
+            }
             if step < body {
                 let stripe = step / stripe_steps;
                 let within = step % stripe_steps;

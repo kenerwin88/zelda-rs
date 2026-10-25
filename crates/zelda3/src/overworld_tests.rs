@@ -501,6 +501,125 @@ fn high_expansion_prices_match_executed_rom_paths() {
 }
 
 #[test]
+fn scroll_stripe_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    base.set_lag_free(true);
+    // Cover both quadrant branches, rotations at both buffer ends, every
+    // direction and the four offset-update callers. No source hold counts.
+    for entry in [0x02f3b9, 0x02f482, 0x02f2f1, 0x02f325, 0x02f363, 0x02f39d] {
+        for unit in [0, 15, 16, 31] {
+            for rotation in [0, 31] {
+                for direction in [1, 2, 4, 8] {
+                    let mut native = base.clone();
+                    native.set_overworld_map16_src_off(0x1000);
+                    native.set_overworld_map16_dst_off(if entry == 0x02f482 { rotation } else { unit });
+                    native.set_overworld_map16_y_unit(if entry == 0x02f482 { unit } else { rotation });
+                    native.set_screen_transition_direction_bits(direction);
+                    let mut machine = Snes::new();
+                    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                    machine.ram.copy_from_slice(&native.wram_image());
+                    machine.ram[0x0e..0x10].copy_from_slice(&6u16.to_le_bytes());
+                    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0);
+                    machine.cpu.k = 2;
+                    machine.cpu.db = 0x7e;
+                    machine.cpu.pc = entry as u16;
+                    machine.cpu.sp = 0x1fc;
+                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                    let mut source = RomCpuTimingProbe::new(machine, clock,
+                        SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut measured = 0;
+                    for _ in 0..10000 {
+                        let step = source.step().unwrap();
+                        measured += step.transactions.iter()
+                            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                        if source.snes().cpu.pc == 0x8000 { break; }
+                    }
+                    assert_eq!(source.snes().cpu.pc, 0x8000);
+                    let before = crate::cycle_ledger::master();
+                    match entry {
+                        0x02f3b9 => { native.buffer_and_build_map16_stripes_x(3); }
+                        0x02f482 => { native.buffer_and_build_map16_stripes_y(3); }
+                        0x02f2f1 => { native.build_full_stripe_during_transition_north(3); }
+                        0x02f325 => { native.build_full_stripe_during_transition_south(3); }
+                        0x02f363 => { native.build_full_stripe_during_transition_west(3); }
+                        _ => { native.build_full_stripe_during_transition_east(3); }
+                    }
+                    assert_eq!(crate::cycle_ledger::master() - before, measured,
+                        "entry={entry:06x} unit={unit} rotation={rotation} direction={direction}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn initial_scroll_prices_match_executed_rom_paths_and_slices() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    base.set_lag_free(true);
+    for small in [false, true] {
+        let screen = (0..128).find(|&screen| (base.asset_u8(107, screen) != 0) == small).unwrap();
+        for direction in [1, 2, 4, 8] {
+            for source_offset in [0, 0x7f, 0x1080] {
+                let mut native = base.clone();
+                native.set_overworld_screen(screen as u8);
+                native.set_screen_transition_direction_bits(direction);
+                native.set_overworld_map16_src_off(source_offset);
+                native.set_overworld_map16_dst_off(17);
+                native.set_overworld_map16_y_unit(13);
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = 2;
+                machine.cpu.db = 0x7e;
+                machine.cpu.pc = 0xf031;
+                machine.cpu.sp = 0x1fc;
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                let mut measured = 0;
+                for _ in 0..100000 {
+                    let step = source.step().unwrap();
+                    measured += step.transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                    if source.snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.snes().cpu.pc, 0x8000);
+                let mut split = native.clone();
+                let before = crate::cycle_ledger::master();
+                native.CreateInitialNewScreenMapToScroll();
+                assert_eq!(crate::cycle_ledger::master() - before, measured,
+                    "small={small} direction={direction} source_offset={source_offset:04x}");
+                let before = crate::cycle_ledger::master();
+                let mut cursor = split.begin_initial_scroll_cursor();
+                for target in 1..=cursor.total_steps() {
+                    split.advance_initial_scroll_cursor(&mut cursor, target);
+                }
+                assert_eq!(crate::cycle_ledger::master() - before, measured);
+            }
+        }
+    }
+}
+
+#[test]
 fn palette_copy_prices_match_executed_rom_paths_and_partial_rows() {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};

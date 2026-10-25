@@ -461,7 +461,7 @@ impl ZeldaState {
     }
 
     /// Count one DMA transfer the NMI handler performs (`bytes` on the
-    /// A-bus); a no-op outside the handler.
+    /// A-bus), or a main-thread transfer while lagless accounting is active.
     pub(super) fn account_nmi_dma_transfer(&mut self, bytes: usize) {
         self.account_nmi_dma_run(1, bytes);
     }
@@ -471,6 +471,14 @@ impl ZeldaState {
             accounting.runs += 1;
             accounting.channels += channels;
             accounting.bytes += bytes as u64;
+        } else {
+            // $420B stalls the issuing CPU, including main-thread writes
+            // such as EraseTileMaps $00:8374/$838E/$83B0/$83CB. DMA bus ownership is
+            // 18 clocks/run + 8/channel + 8/byte (snes::dma); it is never
+            // instruction work and never repeats in a held NMI.
+            self.native_note_main_dma(NmiDmaAccounting {
+                runs: 1, channels, bytes: bytes as u64,
+            }.master_cycles());
         }
     }
 
@@ -478,7 +486,8 @@ impl ZeldaState {
     /// helpers still count the channels and bytes they actually transfer.
     fn with_nmi_dma_run(&mut self, transfer: impl FnOnce(&mut Self)) {
         let previous = self.nmi_dma_accounting.take();
-        self.nmi_dma_accounting = previous.map(|_| NmiDmaAccounting::default());
+        self.nmi_dma_accounting = (previous.is_some() || self.native_main_cost_active())
+            .then(NmiDmaAccounting::default);
         transfer(self);
         let group = self.nmi_dma_accounting.take();
         self.nmi_dma_accounting = previous;
@@ -486,6 +495,10 @@ impl ZeldaState {
             total.runs += u32::from(group.channels != 0);
             total.channels += group.channels;
             total.bytes += group.bytes;
+        } else if let Some(group) = group {
+            self.native_note_main_dma(NmiDmaAccounting {
+                runs: u32::from(group.channels != 0), ..group
+            }.master_cycles());
         }
     }
 
@@ -3247,6 +3260,67 @@ mod tests;
 #[cfg(test)]
 mod nmi_dma_accounting_tests {
     use super::NmiDmaAccounting;
+
+    #[test]
+    fn main_dma_is_lagless_bus_work_and_groups_one_mdmaen_write_once() {
+        let mut game = super::ZeldaState::default();
+        game.account_nmi_dma_transfer(1024);
+        assert_eq!(game.native_cost_main_dma(), 0);
+        game.set_lag_free(true);
+        game.native_begin_main_cost();
+        let before = crate::cycle_ledger::master();
+        game.with_nmi_dma_run(|game| {
+            game.account_nmi_dma_transfer(1024);
+            game.account_nmi_dma_transfer(512);
+        });
+        assert_eq!(game.native_cost_main_dma(), 18 + 2 * 8 + 1536 * 8);
+        crate::cycle_ledger::muted(|| game.with_nmi_dma_run(|game| {
+            game.account_nmi_dma_transfer(4096);
+        }));
+        assert_eq!(game.native_cost_main_dma(), 18 + 2 * 8 + 1536 * 8);
+        assert_eq!(crate::cycle_ledger::master(), before);
+        game.native_finish_main_cost();
+        let main_dma = game.native_cost_main_dma();
+        game.account_nmi_dma_transfer(4096);
+        assert_eq!(game.native_cost_main_dma(), main_dma);
+        game.native_begin_main_cost();
+        assert_eq!(game.native_cost_main_dma(), 0);
+    }
+
+    #[test]
+    fn tilemap_main_upload_prices_match_executed_rom_paths() {
+        use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        for page in 0..35 {
+            let mut game = super::ZeldaState::default();
+            game.set_lag_free(true);
+            game.set_nmi_load_target_page(page);
+            game.native_begin_main_cost();
+            let checkpoint = RomCpuCheckpoint {
+                entry_pc: 0x0090e3, stop_pc: 0x008036,
+                a: 0, x: 0, y: 0, sp: 0x01fc, dp: 0, db: 0,
+                carry: false, zero: false, overflow: false, negative: false,
+                interrupt_disable: true, decimal: false, accumulator_is_8_bit: true,
+                index_is_8_bit: true, emulation: false, waiting: false,
+                stack_address: 0x01fd, stack_bytes: &[0x35, 0x80, 0],
+            };
+            let mut source = RomCpuTimingRun::new(&rom, &game.wram_image(), &game.sram,
+                &game.ppu, &game.dma, [0; 4], checkpoint).unwrap();
+            let mut instructions = 0u64;
+            let mut dma = 0u64;
+            while !source.is_complete() {
+                instructions += u64::from(source.step().master_cycles);
+                dma += u64::from(source.drain_started_dma_master_cycles());
+            }
+            let before = crate::cycle_ledger::master();
+            game.upload_tilemap_now();
+            assert_eq!(crate::cycle_ledger::master() - before, instructions, "page={page}");
+            assert_eq!(game.native_cost_main_dma(), dma, "page={page}");
+            assert_eq!(dma, 26 + 2048 * 8);
+            assert_eq!(&game.ppu.vram[..], source.vram());
+        }
+    }
 
     #[test]
     fn dma_bus_time_follows_the_pinned_core_per_run_and_per_byte_costs() {

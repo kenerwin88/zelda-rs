@@ -284,6 +284,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut profile: std::collections::BTreeMap<(u64, u32), [u64; 3]> = Default::default();
     let mut profile_complete = std::collections::BTreeSet::new();
     let mut previous_sp = 0u16;
+    // Selected main steps only. Wall minus CPU transactions includes the
+    // stalls deliberately excluded from routine-profile.csv.
+    let mut structural: std::collections::BTreeMap<u64, [u64; 6]> = Default::default();
+    let mut dma_sizes = [0u16; 8];
     // `ZELDA3_LEDGER_NMI_PROFILE=<lo>-<hi>` (hosts) does the same for the
     // NMI handler, from its acceptance to its RTI, with each frame's wall
     // time beside its bus cycles (DMA runs inside the storing instruction):
@@ -335,6 +339,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut awaiting_picture: std::collections::VecDeque<Iteration> = Default::default();
     let mut host_picture: Option<String> = None;
     drop(cpu.take_dsp_samples());
+    let mut bus_observer = cpu.machine().timeline().synchronous_event_observer();
     // `current` accumulates the iteration Main is running; `opening` is the
     // iteration whose NMI handler is running. Image j of each stream is taken
     // at the j-th wait-loop NMI: pre-NMI image j ends iteration j-1, post-NMI
@@ -386,6 +391,32 @@ fn main() -> Result<(), Box<dyn Error>> {
             |step, exec| -> Result<(), snes::SourceCpuError> {
                 if failure.is_some() {
                     return Ok(());
+                }
+                let mut refresh_events = 0u64;
+                exec.machine().timeline().observe_processed_synchronous_events(&mut bus_observer, |event| {
+                    if event == snes::CpuSynchronousTimelineEvent::Bus(snes::CpuBusEvent::WramRefresh) {
+                        refresh_events += 1;
+                    }
+                });
+                let mut dma_master = 0;
+                for access in &step.accesses {
+                    if system_bank(access.address)
+                        && access.address & 0xffff == 0x420b
+                        && let SourceCpuBusAccessKind::Write { value, .. } = access.kind
+                        && value != 0
+                    {
+                        dma_master += 18;
+                        for (channel, size) in dma_sizes.iter().enumerate() {
+                            if value & (1 << channel) != 0 {
+                                dma_master += 8 + 8 * if *size == 0 { 65536 } else { u64::from(*size) };
+                            }
+                        }
+                    }
+                }
+                if step.accesses.iter().any(|access| system_bank(access.address)
+                    && matches!(access.kind, SourceCpuBusAccessKind::Write { .. })
+                    && matches!(access.address & 0xffff, 0x420b | 0x4300..=0x437f)) {
+                    dma_sizes = std::array::from_fn(|i| exec.machine().snes().dma.channel[i].size);
                 }
                 if let Some(frame) = exec.take_captured_frame() {
                     let sha = (!frame.is_empty()).then(|| {
@@ -474,6 +505,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let cycles: u64 = step.transactions.iter()
                                 .filter(|transaction| transaction.started_at < end)
                                 .map(|transaction| u64::from(transaction.duration_master_cycles)).sum();
+                            let row = structural.entry(index).or_default();
+                            row[0] += end.master_cycles() - step.started_at.master_cycles();
+                            row[1] += cycles;
+                            row[2] += refresh_events * 40;
+                            row[3] += dma_master;
+                            row[4] += u64::from(step.accesses.iter().any(|access|
+                                system_bank(access.address) && access.address & 0xffff == 0x213d));
+                            // An interrupt-entry refresh may be observed by
+                            // this step although its clocks follow `end`.
+                            row[5] += u64::from(step.accepted_interrupt.is_some() && refresh_events != 0);
                             let routine = profile_stack.last().map_or(0x008034, |frame| frame.0);
                             profile.entry((index, routine)).or_default()[2] += cycles;
                             profile.entry((index, 0x008034)).or_default()[1] += cycles;
@@ -797,6 +838,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("ledger-nmi-profile host={host} routine={routine:06x} master={master} wall={wall}");
     }
     if let Some(writer) = profile_output.as_mut() {
+        let mut wall = BufWriter::new(fs::File::create(out_dir.join("structural-profile.csv"))?);
+        writeln!(wall, "iteration,main_wall,instructions,refresh_master,dma_master,vcounter_reads,interrupt_refresh_edges")?;
+        for (index, row) in &structural {
+            if profile_complete.contains(index) {
+                writeln!(wall, "{index},{},{},{},{},{},{}", row[0], row[1], row[2], row[3], row[4], row[5])?;
+            }
+        }
         for ((iteration, routine), [calls, inclusive, exclusive]) in &profile {
             if !profile_complete.contains(iteration) { continue; }
             writeln!(writer, "{iteration},{routine:06x},{calls},{inclusive},{exclusive}")?;

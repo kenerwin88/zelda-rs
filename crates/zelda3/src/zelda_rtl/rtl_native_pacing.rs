@@ -1,6 +1,8 @@
 //! Lagless cost accounting. Runtime decisions use native work and hardware
 //! field/interrupt ownership only; source lag counts remain census data.
 use super::*;
+#[path = "rtl_native_pacing_bus.rs"]
+mod bus;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativePacing {
@@ -29,6 +31,14 @@ pub(crate) struct NativePacing {
     predictions: [u32; 3],
     early_sound: Option<[u8; 2]>,
     late_sound: Option<[u8; 2]>,
+    finished_main: u64,
+    finished_lag_worker: u64,
+    main_dma: u64,
+    bus_program: Option<bus::Program>,
+    bus_epoch: u64,
+    bus_admitted: bool,
+    finished_hdma: u64,
+    raster_wait_seen: bool,
 
 }
 
@@ -67,8 +77,10 @@ impl ZeldaState {
             self.native_pacing.entry_handler.min(1364 * 262 - 1),
         ) };
         self.native_pacing.wait_wall = [0; 3];
+        self.native_pacing.main_dma = 0;
         self.native_pacing.worker_segments.clear();
         self.native_pacing.predictions = [0; 3];
+        if self.lag_free { self.native_begin_bus_lease(); }
         self.native_pacing.early_sound = None;
         self.native_pacing.late_sound = None;
     }
@@ -122,16 +134,14 @@ impl ZeldaState {
         // $00:8144 samples $012A at each NMI, not at the end of main.
         // Retain the work completed under the old enable/IRQ-line state
         // before a caller changes it. Already elapsed NMIs keep their owner.
-        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-            + self.lag_free_vwf_master;
+        let main = self.native_main_work();
         let worker = self.native_pacing_worker_share(self.native_pacing.entry_lag_handler);
         self.native_pacing.worker_segments.push((main, worker, self.native_pacing.worker_after_irq));
     }
 
     pub(crate) fn native_activate_worker_ownership(&mut self) {
         if !self.native_pacing.accounting { return; }
-        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-            + self.lag_free_vwf_master;
+        let main = self.native_main_work();
         let elapsed = self.native_cost_elapsed(main)[2];
         // Both $00:82C9..82CF and $00:8324..832A swap stacks. If an
         // already-enabled V-IRQ arrives first, it switches main TO the
@@ -150,12 +160,49 @@ impl ZeldaState {
         self.native_pacing.irq_enabled = false;
     }
 
+    fn native_main_work(&self) -> u64 {
+        crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+            + self.lag_free_vwf_master + self.native_pacing.main_dma
+    }
+
+    pub(super) fn native_main_cost_active(&self) -> bool {
+        self.native_pacing.accounting && !crate::cycle_ledger::is_muted()
+    }
+
+    pub(super) fn native_note_main_dma(&mut self, master: u64) {
+        if self.native_main_cost_active() { self.native_pacing.main_dma += master; }
+    }
+
+    /// Bus stalls are separate from the instruction-only cycle ledger.
+    pub fn native_cost_main_dma(&self) -> u64 {
+        self.native_pacing.main_dma
+    }
+
+    /// Completed P2 refresh and raster-wait components, for CPU diagnostics.
+    pub fn native_cost_bus_waits(&self) -> (u64, u64) {
+        ((self.native_pacing.finished_main + self.native_pacing.finished_hdma).div_ceil(1324) * 40,
+            self.native_pacing.wait_wall[2])
+    }
+
+    pub fn native_cost_main_hdma(&self) -> (u64, bool) {
+        (self.native_pacing.finished_hdma, self.native_pacing.bus_admitted)
+    }
+
     fn native_cost_elapsed(&self, main: u64) -> [u64; 3] {
+        self.native_cost_elapsed_with_worker(main,
+            self.native_pacing_worker_share(self.native_pacing.entry_lag_handler))
+    }
+
+    fn native_cost_elapsed_with_worker(&self, main: u64, lag_worker: u64) -> [u64; 3] {
+        self.native_cost_components(main, lag_worker).0
+    }
+
+    fn native_cost_components(&self, main: u64, lag_worker: u64) -> ([u64; 3], u64) {
         const FIELD: u64 = 1364 * 262;
         let handler = self.native_pacing.entry_handler.min(FIELD - 1);
         let worker = self.native_pacing.entry_worker.min(FIELD - handler - 1);
         let lag_handler = self.native_pacing.entry_lag_handler.min(FIELD - 1);
-        let lag_worker = self.native_pacing_worker_share(lag_handler).min(FIELD - lag_handler - 1);
+        let lag_worker = lag_worker.min(FIELD - lag_handler - 1);
         let refreshed = main + main.div_ceil(1324) * 40;
         // Main enters after one ordinary handler. Subsequent fields execute
         // the source's latched NMI path, excluding NMI_DoUpdates and joypads.
@@ -171,7 +218,19 @@ impl ZeldaState {
             previous = work;
         }
         debug_assert_eq!(previous, [main, refreshed]);
-        [handler + main * FIELD / (FIELD - worker), elapsed[0], elapsed[1]]
+        let mut hdma = 0;
+        // Complete-call HDMA ownership is admitted only after the program
+        // lease has been checked. Mid-call timed producers retain their
+        // existing scheduling; mixed raster/VWF owners decline this term.
+        if !self.native_pacing.accounting && self.native_pacing.bus_admitted {
+            if let Some((wall, bus)) = self.native_pacing.bus_program.as_ref().and_then(|program|
+                program.advance(main, handler + worker, lag_handler, lag_worker,
+                    self.native_pacing.worker_after_irq)) {
+                elapsed[1] = wall;
+                hdma = bus;
+            }
+        }
+        ([handler + main * FIELD / (FIELD - worker), elapsed[0], elapsed[1]], hdma)
     }
 
     /// Generic raster barrier: a V-counter loop exits at or after line L.
@@ -179,10 +238,10 @@ impl ZeldaState {
     /// work excludes NMI/worker ownership and refresh while wall time does not.
     pub(super) fn native_wait_until_line(&mut self, line: u16, loop_master: u64) {
         if !self.native_pacing.accounting { return; }
+        self.native_pacing.raster_wait_seen = true;
         const FIELD: u64 = 1364 * 262;
         const NMI: u64 = 225 * 1364;
-        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-            + self.lag_free_vwf_master;
+        let main = self.native_main_work();
         let elapsed = self.native_cost_elapsed(main);
         for (i, work) in elapsed.into_iter().enumerate() {
             let raster = (NMI + work + self.native_pacing.wait_wall[i]) % FIELD;
@@ -199,8 +258,7 @@ impl ZeldaState {
     pub(super) fn native_checkpoint_sound_queue(&mut self) {
         if !self.native_pacing.accounting || self.native_pacing.song_upload
             || self.native_pacing.early_sound.is_some() { return; }
-        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-            + self.lag_free_vwf_master;
+        let main = self.native_main_work();
         if self.native_cost_elapsed(main)[2] + self.native_pacing.wait_wall[2] < 1364 * 262 {
             return;
         }
@@ -216,13 +274,39 @@ impl ZeldaState {
         self.native_pacing.predictions
     }
 
+    /// Diagnostic inverse of the completed P2 model. The replay CLI supplies
+    /// a source count only after main has returned; this never schedules work.
+    /// Extra work is appended after the existing ownership checkpoints, with
+    /// the completed call's worker share and raster wait held fixed.
+    pub fn native_cost_shortfall(&self, holds: u32) -> (u64, u64) {
+        const FIELD: u64 = 1364 * 262;
+        let elapsed = |extra| self.native_cost_elapsed_with_worker(
+            self.native_pacing.finished_main + extra,
+            self.native_pacing.finished_lag_worker)[2] + self.native_pacing.wait_wall[2];
+        let base = elapsed(0);
+        if holds <= self.native_pacing.predictions[2] { return (base, 0); }
+        let target = u64::from(holds) * FIELD;
+        let mut lo = 0;
+        let mut hi = target.saturating_sub(base);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if elapsed(mid) >= target { hi = mid; } else { lo = mid + 1; }
+        }
+        (base, lo)
+    }
+
     pub(super) fn native_finish_main_cost(&mut self) {
         if !self.native_pacing.accounting { return; }
+        self.native_pacing.bus_admitted = self.native_bus_lease_valid();
         self.native_pacing.accounting = false;
         self.native_pacing.record_closing_handler = true;
-        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-            + self.lag_free_vwf_master;
-        let elapsed = self.native_cost_elapsed(main);
+        let main = self.native_main_work();
+        let (elapsed, hdma) = self.native_cost_components(main,
+            self.native_pacing_worker_share(self.native_pacing.entry_lag_handler));
+        self.native_pacing.finished_hdma = hdma;
+        self.native_pacing.finished_main = main;
+        self.native_pacing.finished_lag_worker =
+            self.native_pacing_worker_share(self.native_pacing.entry_lag_handler);
         self.native_pacing.predictions = std::array::from_fn(|i|
             ((elapsed[i] + self.native_pacing.wait_wall[i]) / (1364 * 262)) as u32);
         // P2 includes the source refresh stalls and the generic raster barrier.
@@ -281,8 +365,7 @@ impl ZeldaState {
 
     pub(crate) fn native_defer_song_upload(&mut self, bank: u8, stream: &[u8]) -> bool {
         if !self.native_pacing.accounting || !self.native_pacing.song_upload { return false; }
-        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-            + self.lag_free_vwf_master;
+        let main = self.native_main_work();
         // Capture at the command, not at main's return: any later ordinary
         // instruction work belongs after the masked transfer.
         self.native_pacing.upload_prefix_holds =
@@ -389,6 +472,38 @@ fn advance_main_cost(main: u64, elapsed: u64, handler: u64, worker: u64, after_i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostic_shortfall_is_the_first_clock_reaching_the_requested_hold() {
+        const FIELD: u64 = 1364 * 262;
+        for worker in [false, true] {
+            for main in [0, 1324, 200_000, 900_000] {
+                let mut game = ZeldaState::default();
+                game.set_lag_free(true);
+                game.game_state.display.nmi_thread_active = worker;
+                game.game_state.display.vertical_irq_trigger = 144;
+                game.lag_free_frame_master_start = crate::cycle_ledger::master();
+                game.native_begin_main_cost();
+                crate::cycle_ledger::charge(main / 2);
+                game.native_checkpoint_worker_ownership();
+                crate::cycle_ledger::charge(main - main / 2);
+                game.native_wait_until_line(192, 178);
+                game.native_finish_main_cost();
+                let prediction = game.native_cost_predictions()[2];
+                assert_eq!(game.native_cost_shortfall(prediction).1, 0);
+                for target in prediction + 1..=prediction + 3 {
+                    let (elapsed, extra) = game.native_cost_shortfall(target);
+                    assert_eq!(elapsed / FIELD, u64::from(prediction));
+                    let evaluate = |delta| game.native_cost_elapsed_with_worker(
+                        main + delta, game.native_pacing.finished_lag_worker)[2]
+                        + game.native_pacing.wait_wall[2];
+                    assert!(extra > 0);
+                    assert!(evaluate(extra) >= u64::from(target) * FIELD);
+                    assert!(evaluate(extra - 1) < u64::from(target) * FIELD);
+                }
+            }
+        }
+    }
 
     #[test]
     fn upload_command_waits_for_the_preceding_instruction_holds() {

@@ -729,6 +729,7 @@ impl ZeldaState {
         reg7: u8,
         indirect_bank: u8,
     ) {
+        crate::cycle_ledger::note_hdma_program_write();
         if addr6 != 0 {
             let ch = &mut self.dma.channel[6];
             ch.mode = transfer_unit & 7;
