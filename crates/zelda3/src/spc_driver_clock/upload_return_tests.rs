@@ -280,6 +280,54 @@ fn upload_command_uses_its_cpu_position_instead_of_the_audio_window_end() {
 }
 
 #[test]
+fn lagless_upload_command_keeps_its_remainder_on_the_output_clock_for_every_bank() {
+    for bank in 0..=2 {
+        for phase in [0, 1324, 100_003, 1364 * 262 - 1] {
+            let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+            clock.host_frame_index = 146541;
+            clock.absolute_apu_cycle = 2_504_092_629;
+            let master = apu_cycle_to_snes_master_clock(clock.absolute_apu_cycle) + phase;
+            let ports = clock.apu.in_ports;
+            clock.begin_lagless_song_bank_transfer(bank, &[0, 0], phase);
+            assert_eq!(clock.apu.in_ports, ports);
+            assert!(clock.pending_main_cpu_port_writes.is_empty());
+            assert_eq!(clock.pending_timed_main_cpu_port_writes,
+                [(snes_master_clock_to_apu_cycle(master), 0, 0xff)]);
+            let caller = if bank == 0 { 364 } else { 386 };
+            assert_eq!(clock.song_bank_transfer.as_ref().unwrap().next_host_access_master_clock,
+                Some(advance_snes_cpu_master_clock(master, caller)));
+        }
+    }
+}
+
+#[test]
+fn lagless_upload_forecast_uses_the_return_suffix_and_does_not_retire_the_receiver() {
+    let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+    let mut transfer = SongBankHostTransfer::new(1, &[0, 0]);
+    transfer.command_pending = false;
+    transfer.phase = SongBankHostTransferPhase::ClearPort { port: 0 };
+    transfer.next_host_access_master_clock = Some(1000);
+    clock.song_bank_transfer = Some(transfer);
+    let before = bincode::serialize(&clock).unwrap();
+    assert_eq!(clock.preview_lagless_song_upload_return(),
+        Some(advance_snes_cpu_master_clock(1090, 174)));
+    assert_eq!(bincode::serialize(&clock).unwrap(), before);
+    assert!(clock.song_bank_transfer.is_some());
+    assert!(clock.completed_song_bank_port_clear_master_clock.is_none());
+
+    // A clear within the output window is insufficient if the real CPU
+    // return and $4200 store are still beyond it. Equality belongs next.
+    clock.song_bank_transfer = None;
+    let end = 534 * APU_CYCLES_PER_DSP_SAMPLE;
+    let master_end = apu_cycle_to_snes_master_clock(end);
+    clock.completed_song_bank_port_clear_master_clock = Some(master_end);
+    assert_eq!(clock.preview_lagless_song_upload_return(), None);
+    clock.completed_song_bank_port_clear_master_clock = Some(master_end - 1000);
+    assert!(clock.preview_lagless_song_upload_return().is_some());
+}
+
+
+#[test]
 fn future_cpu_port_write_survives_until_its_scheduled_bus_access() {
     let mut clock = clock_at_first_host_boundary();
     // SPC MOV A,$f4; MOV $f5,A; BRA: echo CPU port0 to output port1.

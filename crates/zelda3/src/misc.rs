@@ -367,7 +367,7 @@ impl ZeldaState {
             .to_vec();
         // The ordinary semantic bank is a complete sample image. Runtime
         // uploads carry only the cartridge's changed blocks, not that image.
-        let native_stream = (self.lag_free && asset == 0).then(|| self.assets.as_ref()
+        let native_stream = self.lag_free.then(|| self.assets.as_ref()
             .and_then(|assets| assets.asset_by_name(&format!("kSpcRuntimeUpload{asset}")))
             .map(<[u8]>::to_vec)).flatten();
         let stream = native_stream.or_else(|| self.rom_song_bank_upload_stream(asset))

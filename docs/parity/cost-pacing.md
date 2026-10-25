@@ -8327,3 +8327,187 @@ Retained source/native phase counts remain within one; all eight stable room/Lin
 | reduced | 2,055 | 0 | 2 |
 
 The only default library failure is the known spotlight caller-return fixture; reduced passes completely. The complete disjoint library manifest and binary hashes were revalidated. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU tests, oracle-cache writes, cargo fmt, commit or push was used. Scratch analysis programs remain in `/tmp`; supplied ledgers/cache were read-only. This stops at a source-bound diagnostic point, with no pricing fix and the exact source NMI/IRQ/DMA split still open.
+
+## Masked elapsed fields
+
+Single-measurement stopping point on `codex/masked-fields`, main `618fc6b5`
+plus parked WIP `1ca3965a`. The WIP was inspected and retained unchanged as
+the measurement candidate: lagless-only bank-1/2 presentation ownership,
+native runtime streams, fractional command placement after prefix audio,
+and receiver-return forecasting. Bank 0 retains its existing command start.
+No per-routine instruction price was changed. **This is not acceptance of
+the candidate.**
+
+Exactly one fresh full cartridge-answer census was run, using the Reproduction
+command above with `target/masked-fields-step/candidate-zelda3`, separate
+save/output paths, `--seed-every 2000`, and no video. It completed all
+1,473,123 iterations; the census gate PASSed with unexplained zero. The
+warning-free binary was freshly built from the requested HEAD. Evidence,
+source/binary/input hashes, the captured diff, full predictor CSV,
+classification trace, gate summary and `measurement.json` are retained in
+`target/masked-fields-step/`. The comparison uses batch 21 group 1's retained
+`final-rom.csv`; every source hash in its source manifest was checked against
+git main `618fc6b5`.
+
+Masked counts below are cartridge answers. Missing/excess are summed **per
+iteration** outside `[strict, strict + edges]`, not differences of context
+totals.
+
+| Context | Source strict | Edges | Main masked | Candidate masked | Candidate missing / excess | Main → candidate envelope error |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `06/00` | 2,163 | 50 | 0 | 2,198 | 19 / 37 | 2,163 → 56 |
+| `08/00` | 2,513 | 54 | 2,606 | 2,495 | 38 / 11 | 62 → 49 |
+| `11/00` | 282 | 8 | 0 | 290 | 2 / 5 | 282 → 7 |
+| `15/00` | 22 | 0 | 24 | 24 | 0 / 2 | 2 → 2 |
+| `17/01` | 69 | 2 | 72 | 69 | 1 / 1 | 2 → 2 |
+| `18/00` | 23 | 1 | 24 | 23 | 0 / 0 | 0 → 0 |
+| `19/00` | 15 | 1 | 0 | 15 | 0 / 0 | 15 → 0 |
+| `1B/02` | 21 | 1 | 0 | 23 | 0 / 1 | 21 → 1 |
+| Total | 5,108 | 117 | 2,726 | 5,137 | 60 / 57 | 2,547 → 117 |
+
+No context's envelope error increases. Accepted holds are byte-for-byte equal
+as CSV values on every row: 97,649 holds, 5,028 missing, zero excess/FP, and
+every runtime hold equals P2. The audio-duration callback component
+`534 * (iterations + held + masked - 1,580,998)` changes from **−4,005,000
+to −2,717,526 sample pairs**, an improvement of 1,287,474 pairs. The 534-pair
+output budget is unchanged.
+
+The largest residuals are `06/00` (56) and `08/00` (49), followed by `11/00`
+(7): together 112 of the remaining 117. The concrete unresolved mechanisms
+are command placement and the return/enable boundary:
+
+- Bank 0 still drops the command remainder. Its return now uses the forecast;
+  the measured `08/00` callbacks fall by 111 across 92 changed episodes.
+  This locates a count-sensitive lane, but does not prove each missing field's
+  source timestamp or individual cause.
+- Banks 1/2 retain a remainder but still use estimated elapsed work and an
+  output-clock anchor, without a suspended semantic CPU caller carried through
+  adjacent calls/restores. Aggregate `06/00` and `11/00` totals near their
+  envelopes therefore coexist with per-episode missing and excess fields.
+- The forecast checks whether the port-clear plus return suffix fits the
+  534-pair window, then runs one closing NMI. It does not retain the actual
+  `$4200` enable edge and pending acceptance sequence. Batch 20's source
+  host 37,686 demonstrates why one callback cannot establish that sequence.
+  The unchanged two-field `15/00` excess and remaining single-field errors
+  have not been individually attributed.
+
+The older `target/masked-fields/return-*` full censuses and phase/default
+checks predate `618fc6b5` (their source binding differs in the lifted-sprite
+production file and its tests); several library shards are incomplete.
+They were not reused as current-HEAD acceptance. In this bounded step no
+live-SPC census, eight-phase sweep, default 200k comparison or library suites
+were run. Thus only the fresh cartridge count/gate result is verified;
+the full incremental acceptance remains unestablished. Production code is
+unchanged from the parked WIP, and this report is left uncommitted.
+
+No GPU runs, `--video`, cached-av, Snes9x, cargo GPU tests, oracle-cache
+writes, cargo fmt, commit or push were used. Scratch analysis stayed in
+`/tmp`; supplied source evidence was read-only.
+
+### Verification-only follow-up (2026-10-25)
+
+Completed the remaining CPU-only checks on the unchanged `1ca3965a` candidate.
+Live-SPC and phase probes used the exact retained `candidate-zelda3` binary
+(`ba78c60467c83466e21483b6a125681c638832570c13df63cd8da84fb89e5af9`).
+The retained binary and a fresh default build both ran the default ledger
+comparison. Production and test sources were rechecked unchanged. Results,
+commands, binary/input hashes, full census/probe outputs and exhaustive library
+reconciliation are retained in `target/masked-fields-step/acceptance/`.
+Only this documentation was edited.
+
+**Live-SPC full gate: PASS**, all 1,473,123 iterations, unexplained zero.
+Every runtime hold equals P2. The comparison reads batch 21 group 1’s retained
+`final-live.csv`; its recorded source hashes were verified against main
+`618fc6b5`. **Live hold stability regresses**, despite the full gate passing:
+
+| Live metric | Main | Candidate |
+| --- | ---: | ---: |
+| Held | 97,542 | 97,542 |
+| Missing holds | 5,728 | 5,729 |
+| Excess holds | 593 | 594 |
+| False-positive iterations | 132 | 133 |
+| Masked callbacks | 2,703 | 5,117 |
+
+Twelve rows change held placement (`live-hold-deltas.json`). The song-end poll
+mismatch moves 94,849 → 94,848 (`engine=[0]`, source `[(0,19)]`). Across
+94,849–94,855 this shifts holds earlier and adds **one missing hold, one excess
+hold and one false-positive iteration**. The other six changes follow the
+1,064,728 → 1,064,729 poll movement and relocate three workloads by one iteration
+without changing those aggregate errors. Classification traces retain the
+observed song-end-poll progression; this is not independent attribution of
+each masked field’s physical command/enable timestamp. No fix was attempted.
+
+Live masked-envelope errors use the same per-iteration strict/edge bounds as
+above. Total error improves **2,722 → 285** (candidate missing 157 / excess 128);
+no context’s error increases. Live context placement differs from cartridge
+answers, so contexts with zero source strict/edge counts are retained too.
+
+| Context | Source strict | Edges | Main masked | Candidate masked | Candidate missing / excess | Main → candidate error |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `06/00` | 2,163 | 50 | 0 | 2,203 | 16 / 38 | 2,163 → 54 |
+| `08/00` | 2,513 | 54 | 2,512 | 2,403 | 137 / 13 | 166 → 150 |
+| `08/01` | 0 | 0 | 23 | 22 | 0 / 22 | 23 → 22 |
+| `10/00` | 0 | 0 | 25 | 24 | 0 / 24 | 25 → 24 |
+| `11/00` | 282 | 8 | 0 | 289 | 3 / 5 | 282 → 8 |
+| `15/00` | 22 | 0 | 24 | 24 | 0 / 2 | 2 → 2 |
+| `16/04` | 0 | 0 | 23 | 22 | 0 / 22 | 23 → 22 |
+| `17/01` | 69 | 2 | 72 | 69 | 1 / 1 | 2 → 2 |
+| `18/00` | 23 | 1 | 24 | 23 | 0 / 0 | 0 → 0 |
+| `19/00` | 15 | 1 | 0 | 15 | 0 / 0 | 15 → 0 |
+| `1B/02` | 21 | 1 | 0 | 23 | 0 / 1 | 21 → 1 |
+| Total | 5,108 | 117 | 2,703 | 5,117 | 157 / 128 | 2,722 → 285 |
+
+**Phase/outcome checks: PASS.** Counts below are source / candidate.
+All eight probes remain within one for every phase. All eight stable room,
+Link-XY and whole-save outcomes match source and retained main.
+
+| Seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 94000 | 65 / 64 | 5 / 5 | 17 / 17 | 2 / 2 | 35 / 35 | 16 / 16 |
+| 380000 | 84 / 84 | 7 / 7 | 24 / 23 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 460000 | 84 / 84 | 7 / 7 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 626000 | 91 / 90 | 9 / 9 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 734000 | 84 / 84 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 880000 | 84 / 83 | 7 / 7 | 26 / 26 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1064000 | 84 / 83 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1316000 | 84 / 83 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+
+The entire 162000–163000 rupee probe is unchanged: all 1,001 outcome rows and
+all 2,537,568 PCM bytes match retained main. The same 27 requests, every request
+gap and every PCM onset/gap match; PCM-gap median is 8.253745 frames.
+That window has zero classified differences and zero `$0CFD`-only exceptions.
+`rupee-window-reconciliation.json`, `results.json` and
+`probe-classifications-summary.json` retain the comparisons.
+
+**Default 200k state ledger: PASS.** A fresh default binary built from an
+isolated `git archive 618fc6b5` recorded 200,000 consecutive schema-3 records.
+Both the exact retained candidate binary and the fresh candidate default
+binary matched every state/display/SRAM/PCM/input/context record and EOF.
+The record and both comparisons completed successfully.
+
+**Ordinary builds: PASS, default and reduced warning-free.** The fresh main
+default build is warning-free too. The isolated main build initially lacked
+asset/ROM paths; final compilation used existing assets and ROM through the
+supported environment settings, with no source changes. Lib-test compilation
+warnings remain separate from these warning-free ordinary builds.
+
+**Library suites: complete.** Every listed test appears exactly once across
+four disjoint completed shards per Zelda configuration; manifests verify the
+full named union and retain each shard’s process exit and test footer.
+
+| Library | Configuration | Pass | Fail | Ignored |
+| --- | --- | ---: | ---: | ---: |
+| Zelda | default | 2,523 | 1 | 3 |
+| SNES | default | 504 | 0 | 7 |
+| Zelda | reduced | 2,058 | 0 | 2 |
+| SNES | reduced | 504 | 0 | 7 |
+
+The only default Zelda failure is the expected
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`
+fixture: its assertion at `spotlight_caller_return.rs:411` reads
+`Some(1047868)` versus `Some(170442)`. Reduced Zelda and both SNES suites
+pass completely. The known fixture
+failure and the live hold-placement regression were reported without fixes.
+No GPU run, `--video`, cached-av, Snes9x, cargo GPU test, oracle-cache write,
+`cargo fmt`, commit or push was used. Scratch scripts stayed in `/tmp`; the
+other working checkout’s requested retained evidence was read-only.

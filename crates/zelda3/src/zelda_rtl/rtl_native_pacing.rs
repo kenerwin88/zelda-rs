@@ -8,7 +8,8 @@ mod bus;
 pub(crate) struct NativePacing {
     pending: u32,
     pub(super) song_upload: bool,
-    deferred_song: Option<(u8, Vec<u8>)>,
+    deferred_song: Option<(u8, Vec<u8>, u64)>,
+    positioned_upload: bool,
     upload_prefix_holds: u32,
     upload_return_latch: Option<bool>,
     masked_callback: bool,
@@ -342,6 +343,7 @@ impl ZeldaState {
     pub(crate) fn native_begin_song_upload(&mut self) {
         if self.lag_free && self.lag_free_intro_schedule.is_none() {
             self.native_pacing.song_upload = true;
+            self.native_pacing.positioned_upload = false;
         }
     }
 
@@ -360,7 +362,9 @@ impl ZeldaState {
                 }
                 self.native_pacing.pending -= 1;
                 self.native_pacing.upload_prefix_holds -= 1;
-                if self.native_pacing.upload_prefix_holds == 0 { self.native_start_deferred_song(); }
+                if !self.native_pacing.positioned_upload && self.native_pacing.upload_prefix_holds == 0 {
+                    self.native_start_deferred_song();
+                }
                 return false;
             }
             self.native_start_deferred_song();
@@ -378,15 +382,19 @@ impl ZeldaState {
         let main = self.native_main_work();
         // Capture at the command, not at main's return: any later ordinary
         // instruction work belongs after the masked transfer.
-        self.native_pacing.upload_prefix_holds =
-            (self.native_cost_elapsed(main)[2] / (1364 * 262)) as u32;
-        self.native_pacing.deferred_song = Some((bank, stream.to_vec()));
+        let elapsed = self.native_cost_elapsed(main)[2];
+        // Bank 0 already owns elapsed callbacks on main. Preserve that lane
+        // while the newly presented runtime banks retain their command phase.
+        self.native_pacing.positioned_upload = bank != 0;
+        self.native_pacing.upload_prefix_holds = (elapsed / (1364 * 262)) as u32;
+        self.native_pacing.deferred_song = Some((bank, stream.to_vec(), elapsed % (1364 * 262)));
         true
     }
 
     fn native_start_deferred_song(&mut self) {
-        if let Some((bank, stream)) = self.native_pacing.deferred_song.take() {
-            self.start_deferred_song_bank_transfer(bank, &stream);
+        if let Some((bank, stream, phase)) = self.native_pacing.deferred_song.take() {
+            self.start_deferred_song_bank_transfer(bank, &stream,
+                self.native_pacing.positioned_upload.then_some(phase));
         }
     }
 
@@ -402,7 +410,9 @@ impl ZeldaState {
         // $00:80C9 accepts the latched NMI while the main caller is still
         // before the upload. It is not the main's ordinary closing handler.
         self.interrupt_nmi_with_animated_bg_operands(input, None, false, None);
-        if self.native_pacing.upload_prefix_holds == 0 { self.native_start_deferred_song(); }
+        if !self.native_pacing.positioned_upload && self.native_pacing.upload_prefix_holds == 0 {
+            self.native_start_deferred_song();
+        }
         self.zelda_push_apu_state();
         self.poison_owned_wram();
     }
@@ -410,7 +420,8 @@ impl ZeldaState {
     pub(super) fn run_native_song_upload_frame(&mut self, input: u16) {
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.capture_display_snapshot();
-        let transferring = self.native_song_bank_transfer_pending();
+        self.native_start_deferred_song();
+        let transferring = self.native_lagless_song_upload_return().is_none();
         if transferring {
             self.native_pacing.masked_callback = true;
         } else {
@@ -579,6 +590,39 @@ mod tests {
         assert_eq!(game.game_state.display.pending_nmi_subroutine, 0);
         assert!(game.native_pacing.closing_handler.is_some());
         assert!(game.native_pacing.upload_return_latch.is_none());
+    }
+
+    #[test]
+    fn newly_presented_banks_start_after_the_prefix_audio_window() {
+        let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../zelda3_assets.dat")).unwrap();
+        for bank in [1, 2] {
+            let mut game = ZeldaState::new();
+            game.set_assets(&assets).unwrap();
+            game.set_lag_free(true);
+            game.lag_free_intro_schedule = None;
+            game.lag_free_lag_phases_run = true;
+            game.lag_free_frame_master_start = crate::cycle_ledger::master();
+            game.native_begin_main_cost();
+            crate::cycle_ledger::charge(800_000);
+            assert!(game.begin_runtime_song_bank_transfer(bank, &[0, 0]));
+            let phase = game.native_pacing.deferred_song.as_ref().unwrap().2;
+            assert!(phase > 0 && phase < 1364 * 262);
+            game.set_pending_nmi_subroutine(7);
+            game.clear_nmi_update_latch();
+            game.native_finish_main_cost();
+            assert!(!game.native_mask_song_upload_nmi());
+            while game.native_upload_prefix_pending() {
+                game.run_native_upload_prefix_frame(0);
+                assert!(!game.native_song_bank_transfer_pending(),
+                    "the last prefix's audio still precedes the positioned command");
+                assert_eq!(game.game_state.display.pending_nmi_subroutine, 7);
+            }
+            assert!(game.native_mask_song_upload_nmi());
+            assert!(game.native_song_bank_transfer_pending());
+            assert!(game.native_last_callback_masked_nmi());
+            assert_eq!(game.game_state.display.pending_nmi_subroutine, 7);
+        }
     }
 
     #[test]

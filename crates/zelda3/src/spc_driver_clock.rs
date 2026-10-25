@@ -265,7 +265,8 @@ impl SongBankHostTransfer {
             // overworld entry at $8913. Both then enter the same receiver.
             let caller_cycles = match self.bank_id {
                 0 => TIMED_OVERWORLD_COMMAND_TO_FIRST_READY_READ_MASTER_CLOCKS,
-                1 => 386,
+                // $8925 and $8931 share the pointer setup and BRA $891D.
+                1 | 2 => 386,
                 _ => panic!("song bank has no measured command caller"),
             };
             advance_snes_cpu_master_clock(command_master_clock,
@@ -889,6 +890,7 @@ impl AbsoluteDspEventClock {
         DspClockWindow { writes, polls }
     }
 
+
     pub(crate) fn absolute_dsp_cycle(&self) -> u64 {
         self.absolute_apu_cycle / APU_CYCLES_PER_DSP_SAMPLE
     }
@@ -1063,6 +1065,31 @@ impl AbsoluteDspEventClock {
 
     pub(crate) fn song_bank_transfer_pending(&self) -> bool {
         self.song_bank_transfer.is_some()
+    }
+
+    pub(crate) fn begin_lagless_song_bank_transfer(&mut self, bank: u8, stream: &[u8], phase: u64) {
+        assert!(self.song_bank_transfer.is_none());
+        let mut transfer = SongBankHostTransfer::new(bank, stream);
+        transfer.timed_command = true;
+        transfer.interleave_host_cpu = true;
+        // Place the command on the continuous output clock. The callback
+        // index is not a physical field clock with the fixed 534-pair budget.
+        let master = apu_cycle_to_snes_master_clock(self.absolute_apu_cycle) + phase;
+        transfer.mark_command_scheduled_at_master_clock(master);
+        self.completed_song_bank_port_clear_master_clock = None;
+        self.song_bank_transfer = Some(transfer);
+        self.pending_timed_main_cpu_port_writes.push((
+            snes_master_clock_to_apu_cycle(master), 0, 0xff));
+    }
+
+    pub(crate) fn preview_lagless_song_upload_return(&self) -> Option<u64> {
+        let end = self.absolute_apu_cycle + 534 * APU_CYCLES_PER_DSP_SAMPLE;
+        let mut preview = self.clone();
+        preview.advance_lagless(Default::default(), 534, 0);
+        let clear = preview.completed_song_bank_port_clear_master_clock?;
+        // $00:88FF PLP/RTS, $8923 CLI/RTL and caller LDA/STA $4200.
+        let restored = advance_snes_cpu_master_clock(clear, 174);
+        (snes_master_clock_to_apu_cycle(restored) < end).then_some(restored)
     }
 
     pub(crate) fn begin_song_bank_transfer_at(

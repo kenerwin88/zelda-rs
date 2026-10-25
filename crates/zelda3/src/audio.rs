@@ -1274,7 +1274,7 @@ impl ZeldaState {
 
     pub(crate) fn begin_runtime_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) -> bool {
         self.native_song_upload_restores_nmi_only();
-        if bank_id == 0 && self.audio.modern.driver_clock.is_some() {
+        if (bank_id == 0 || self.lag_free) && self.audio.modern.driver_clock.is_some() {
             self.native_begin_song_upload();
             if self.lag_free && self.native_defer_song_upload(bank_id, stream) {
                 return true;
@@ -1313,9 +1313,18 @@ impl ZeldaState {
             .is_some_and(|clock| clock.song_bank_transfer_pending())
     }
 
-    pub(crate) fn start_deferred_song_bank_transfer(&mut self, bank: u8, stream: &[u8]) {
-        self.audio.modern.driver_clock.as_mut().unwrap()
-            .begin_song_bank_transfer(bank, stream, true);
+    pub(crate) fn start_deferred_song_bank_transfer(&mut self, bank: u8, stream: &[u8], phase: Option<u64>) {
+        let clock = self.audio.modern.driver_clock.as_mut().unwrap();
+        if let Some(phase) = phase {
+            clock.begin_lagless_song_bank_transfer(bank, stream, phase);
+        } else {
+            clock.begin_song_bank_transfer(bank, stream, true);
+        }
+    }
+
+    pub(super) fn native_lagless_song_upload_return(&self) -> Option<u64> {
+        self.audio.modern.driver_clock.as_ref().map_or(Some(0), |clock|
+            clock.preview_lagless_song_upload_return())
     }
 
     pub(super) fn native_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
