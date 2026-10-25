@@ -1,5 +1,77 @@
 use super::*;
 
+#[test]
+fn ordinary_object_tail_prices_match_executed_rom_paths() {
+    use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
+    let rom = dungeon_render_test_rom().expect("object price test requires the ROM");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut template = ZeldaState::new();
+    template.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    template.set_lag_free(true);
+    let ids = [0x03u8, 0x04, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
+        0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x33, 0x36, 0x37,
+        0x38, 0x39, 0x3a, 0x3b, 0x3d, 0x5e, 0x75, 0x7f, 0x80, 0x81,
+        0x82, 0x83, 0x84, 0x87, 0xb2, 0xba, 0xbb];
+    for idx in ids {
+        for width in 0..4u8 {
+            for height in 0..4u8 {
+                for plane in [0x2000u16, 0x4000] {
+                    let mut state = template.clone();
+                    let dsto = if (0x09..=0x20).contains(&idx) { 0x640u16 } else { 0x40 };
+                    let src = objects::object_subtype1_param(idx).unwrap() as u16;
+                    // $01:8719 supplies four columns followed by the next
+                    // rows for BG2. The other plane subtracts $2000.
+                    for row in 0..11 {
+                        let base = lorom_offset(0x01_8719 + row * 3).unwrap();
+                        let pointer = u16::from_le_bytes([rom[base], rom[base + 1]])
+                            - 0x4000 + plane;
+                        let address = 0xbf + row as usize * 3;
+                        state.ram[address..address + 2].copy_from_slice(&pointer.to_le_bytes());
+                        state.ram[address + 2] = 0x7e;
+                    }
+                    for (address, value) in [(0xb2, u16::from(width)),
+                        (0xb4, u16::from(height)), (8, dsto * 2)] {
+                        state.ram[address..address + 2].copy_from_slice(&value.to_le_bytes());
+                    }
+                    state.sync_native_game_state_from_ram();
+                    let target = lorom_offset(0x01_8200 + u32::from(idx) * 2).unwrap();
+                    let entry = 0x01_0000 | u32::from(u16::from_le_bytes([rom[target], rom[target + 1]]));
+                    let checkpoint = RomCpuCheckpoint {
+                        entry_pc: entry, stop_pc: 0x01_8036,
+                        a: dsto * 2, x: src, y: dsto * 2, sp: 0x01fc, dp: 0, db: 0,
+                        carry: false, zero: false, overflow: false, negative: false,
+                        interrupt_disable: true, decimal: false,
+                        accumulator_is_8_bit: false, index_is_8_bit: false,
+                        emulation: false, waiting: false,
+                        stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+                    };
+                    let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
+                        &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+                    run.enable_cpu_write_trace();
+                    let mut expected = state.wram_image().into_owned();
+                    let (mut cycles, mut instructions) = (0u64, 0);
+                    while !run.is_complete() {
+                        cycles += u64::from(run.step().master_cycles);
+                        for (address, value) in run.take_cpu_wram_writes() { expected[address] = value; }
+                        instructions += 1;
+                        assert!(instructions < 10_000, "object {idx:02x} failed to return");
+                    }
+                    let before = crate::cycle_ledger::master();
+                    state.LoadType1ObjectSubtype1(idx, width, height, dsto);
+                    assert_eq!(crate::cycle_ledger::master() - before, cycles,
+                        "object={idx:02x} width={width} height={height} plane={plane:04x}");
+                    let actual = state.wram_image();
+                    for address in 0x2000..0x6000 {
+                        assert_eq!(actual[address], expected[address],
+                            "object={idx:02x} width={width} height={height} plane={plane:04x} address={address:04x}");
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn check_torch_door_call(rom: &[u8], mut state: ZeldaState, label: &str,
     visited: &mut std::collections::BTreeSet<u32>) {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};

@@ -40,6 +40,13 @@ impl ZeldaState {
             }
             0x03 | 0x04 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:8B0D..8B73: register setup, size child $B0AC,
+                    // eight load/two-background-store triples per pass, RTS.
+                    // The native both-background tile helper has no price.
+                    crate::cycle_ledger::charge(88 + 286 + 1262 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_data_draw_object_nx4_both_bgs(src, dsto + i * 2, 2);
                 }
@@ -74,6 +81,13 @@ impl ZeldaState {
             }
             0x09 | 0x0c | 0x0d | 0x10 | 0x11 | 0x14 => {
                 let count = size_a_to_a_plus_15(width, height, 6);
+                if self.lag_free {
+                    // $01:8C58..8C60 -> B2AA; B2A1..B2AE. The initial
+                    // DEC/BNE enters the loop; $B279 owns its five stores.
+                    // $B0AF's size body is 262 (without $B0AC's LDA).
+                    crate::cycle_ledger::charge(94 + 262 + 70 + 6
+                        + 182 * u64::from(count) + 6 * u64::from(count - 1) + 42);
+                }
                 let mut dst = dsto;
                 for _ in 0..count {
                     self.room_draw_draw_object2x2and1(src, dst);
@@ -82,6 +96,12 @@ impl ZeldaState {
             }
             0x0a | 0x0b | 0x0e | 0x0f | 0x12 | 0x13 => {
                 let count = size_a_to_a_plus_15(width, height, 6);
+                if self.lag_free {
+                    // $01:8C61..8C69 -> B29C; B293..B2A0, the opposite
+                    // diagonal's identical control work; $B279 prices stores.
+                    crate::cycle_ledger::charge(94 + 262 + 70 + 6
+                        + 182 * u64::from(count) + 6 * u64::from(count - 1) + 42);
+                }
                 let mut dst = dsto;
                 for _ in 0..count {
                     self.room_draw_draw_object2x2and1(src, dst);
@@ -90,6 +110,12 @@ impl ZeldaState {
             }
             0x15 | 0x18 | 0x19 | 0x1c | 0x1d | 0x20 => {
                 let count = size_a_to_a_plus_15(width, height, 6);
+                if self.lag_free {
+                    // $01:8C6A..8CB8: setup/size, five pairs of direct
+                    // background stores and the actual diagonal steps.
+                    crate::cycle_ledger::charge(168 + 262 + 854 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 let mut dst = dsto;
                 for _ in 0..count {
                     for y in 0..5 {
@@ -101,6 +127,12 @@ impl ZeldaState {
             }
             0x16 | 0x17 | 0x1a | 0x1b | 0x1e | 0x1f => {
                 let count = size_a_to_a_plus_15(width, height, 6);
+                if self.lag_free {
+                    // $01:8CB9..8CC6 -> 8C76..8CB8: opposite diagonal
+                    // setup (158 plus shared STA 32), size and direct stores.
+                    crate::cycle_ledger::charge(190 + 262 + 854 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 let mut dst = dsto;
                 for _ in 0..count {
                     for y in 0..5 {
@@ -195,6 +227,12 @@ impl ZeldaState {
             }
             0x33 | 0xb2 | 0xba => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9111..911F: size/parameter setup, JSR $97ED,
+                    // DEC/BNE and RTS; the 4x4 child keeps its own price.
+                    crate::cycle_ledger::charge(78 + 286 + 148 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_4x4(src, dsto + i * 4);
                 }
@@ -208,6 +246,12 @@ impl ZeldaState {
             }
             0x36 | 0x37 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:92FB..930D: size/parameter setup and four extra
+                    // INYs after each independently priced $97ED call.
+                    crate::cycle_ledger::charge(78 + 286 + 204 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_4x4(src, dsto + i * 6);
                 }
@@ -215,18 +259,36 @@ impl ZeldaState {
             0x38 => {
                 let statue_src = 0x0e26;
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9323..9337: size, statue source/width, JSR $8D80
+                    // and horizontal spacing; child stores stay separate.
+                    crate::cycle_ledger::charge(46 + 286 + 220 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_1x3_rightwards(statue_src, dsto + i * 4, 2);
                 }
             }
             0x39 | 0x3d => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:936F..9386: size, saved source, width/call,
+                    // spacing and loop; $97F0 prices only the tile body.
+                    crate::cycle_ledger::charge(78 + 286 + 238 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_object_nx4(2, src, dsto + i * 6);
                 }
             }
             0x3a | 0x3b => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9387..939E: width-four $8D80 calls plus actual
+                    // spacing/loop control, excluding the priced child.
+                    crate::cycle_ledger::charge(78 + 286 + 238 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_1x3_rightwards(src, dsto + i * 8, 4);
                 }
@@ -323,6 +385,12 @@ impl ZeldaState {
             }
             0x5e | 0xbb => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9338..9346: size, JSR $9895, four INYs,
+                    // DEC/BNE and RTS; $9895 retains its four-store price.
+                    crate::cycle_ledger::charge(46 + 286 + 172 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_rightwards2x2(src, dsto + i * 4);
                 }
@@ -373,12 +441,24 @@ impl ZeldaState {
             }
             0x7f | 0x80 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9702..9719: width-two $97F0 call and vertical
+                    // spacing, size child $B0AC, loop and RTS.
+                    crate::cycle_ledger::charge(78 + 286 + 238 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_object_nx4(2, src, dsto + i * 12 * 64);
                 }
             }
             0x81..=0x84 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:971B..9732: width-three $97F0 call and vertical
+                    // spacing; tile child independently prices its stores.
+                    crate::cycle_ledger::charge(78 + 286 + 238 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_object_nx4(3, src, dsto + i * 6 * 64);
                 }
@@ -478,6 +558,11 @@ impl ZeldaState {
             }
             0x75 | 0x87 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9357..936E, the other IDs sharing this ROM tail.
+                    crate::cycle_ledger::charge(78 + 286 + 238 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                }
                 for i in 0..count {
                     self.room_draw_object_nx4(2, src, dsto + i * 6 * 64);
                 }
