@@ -26,10 +26,19 @@ impl ZeldaState {
         let map16 = self.overworld_map16_at_location(x, y);
         let map8_index = (map16 as usize) * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map8 = self.asset_u16(70, map8_index);
-        self.assets
+        let tile = self.assets
             .as_ref()
             .map(|assets| assets.outdoor_tile_definition(map8))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if self.lag_free {
+            // $00:882E..8887, M8/X8 -> REP #$30 -> SEP #$30.
+            // The slope variant's bit-6 fold does not change its range.
+            let attribute = tile.cartridge_attribute();
+            let suffix = if attribute < 0x10 { 6 }
+                else { 32 + if attribute >= 0x1c { 6 } else { 130 } };
+            crate::cycle_ledger::charge_routine(0x00_882e, 976 + suffix + 44);
+        }
+        tile
     }
 
     /// The guard's forward probe reads the whole-map16 attribute table

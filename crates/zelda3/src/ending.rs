@@ -23,6 +23,67 @@ use ending_shared::*;
 mod pacing_cost_tests {
     use super::*;
 
+#[test]
+fn intro_actor_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (Ok(assets), Ok(rom)) = (std::fs::read(root.join("zelda3_assets.dat")),
+        std::fs::read(root.join("saves/zelda3.sfc"))) else { return; };
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    base.set_lag_free(true);
+    for phase in [0u8, 1, 2] {
+        for (slot, subtype) in [(0usize, 0u8), (2, 0), (0, 1), (0, 2), (0, 3), (0, 4), (2, 4)] {
+            for step in 0..=5u8 {
+                if subtype == 4 && step == 5 { continue; }
+                let mut native = base.clone();
+                let mut image = native.wram_image().into_owned();
+                image[0x1e00] = step;
+                image[0x1e10 + slot] = phase;
+                image[0x1e18 + slot] = subtype;
+                image[0x1e08..0x1e0a].copy_from_slice(&0x0800u16.to_le_bytes());
+                image[0x1e30 + slot] = 100;
+                image[0x1e48 + slot] = 80;
+                image[0x1e58 + slot] = 1;
+                image[0x1e60 + slot] = 0xff;
+                native.import_wram_image(&image);
+                native.sync_native_game_state_from_ram();
+                let entry = 0x0cc534u32;
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = (entry >> 16) as u8;
+                machine.cpu.db = 12;
+                machine.cpu.x = slot as u16;
+                machine.cpu.dp = 0;
+                machine.cpu.pc = entry as u16;
+                machine.cpu.sp = 0x1fc;
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                let mut measured = 0;
+                for _ in 0..10000 {
+                    let step = source.step().unwrap_or_else(|error| panic!("phase={phase} slot={slot} subtype={subtype}: {error:?}"));
+                    measured += step.transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                    if source.snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.snes().cpu.pc, 0x8000);
+                let start = crate::cycle_ledger::master();
+                native.intro_anim_one_obj(slot);
+                assert_eq!(crate::cycle_ledger::master() - start, measured,
+                    "phase={phase} slot={slot} subtype={subtype} step={step}");
+            }
+        }
+    }
+}
+
+
     #[test]
     fn triangle_motion_prices_the_roms_zero_positive_and_negative_paths() {
         use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
@@ -887,6 +948,8 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_copy_sprite_type4_to_oam(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x0c_c82f);
+        if self.lag_free { crate::cycle_ledger::charge(96 + if k == 2 { 6 + 80 } else { 102 } + 88); }
         self.animate_scene_sprite_add_objects_to_oam_buffer(
             k,
             if k == 2 {
@@ -897,7 +960,9 @@ impl ZeldaState {
         );
     }
 
-    pub(super) fn exit_0_cca90(&mut self, _k: usize) {}
+    pub(super) fn exit_0_cca90(&mut self, _k: usize) {
+        if self.lag_free { crate::cycle_ledger::charge(42); } // $0C:C84F RTS, tail of C534.
+    }
 
     #[rustfmt::skip]
     pub(super) fn animate_scene_sprite_add_objects_to_oam_buffer(&mut self, k: usize, entries: &[IntroSpriteEnt]) {
@@ -1033,6 +1098,7 @@ impl ZeldaState {
     }
 
     pub(super) fn initialize_scene_sprite_triforce_room_triangle(&mut self, k: usize) {
+        if self.lag_free { crate::cycle_ledger::charge(556); } // $0C:CBE8..CC12, M8/X8.
         self.write_intro_x(
             k,
             INITIALIZE_SCENE_SPRITE_TRIFORCE_ROOM_TRIANGLE_X_OFFSETS[k],
@@ -1049,7 +1115,12 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_sprite_type_b_456(&mut self, k: usize) {
+        if self.lag_free { crate::cycle_ledger::charge(46 + 46); } // $0C:CC13..CC16 JSRs only.
         self.intro_copy_sprite_type4_to_oam(k);
+        if self.lag_free {
+            // $0C:CA4C..CA53 may pop the caller's return as well.
+            crate::cycle_ledger::charge_routine(0x0c_ca4c, 48 + if self.game_state.ending.intro_scene.triangle_motion_is_paused() { 56 } else { 6 } + 42);
+        }
         if self
             .game_state
             .ending
@@ -1059,8 +1130,19 @@ impl ZeldaState {
             return;
         }
         self.animate_scene_sprite_move_triangle(k);
+        if self.lag_free {
+            // $0C:CC19..CC1F plus JumpTableLocal's 414 clocks.
+            crate::cycle_ledger::charge(46 + 32 + 62 + 362);
+            crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        }
         match self.game_state.ending.attract_scene.intro_step_index() {
             0 => {
+                if self.lag_free {
+                    let frame = self.game_state.ending.attract_scene.intro_frame_counter();
+                    // $0C:CC33..CC55: independent x/y acceleration tests.
+                    crate::cycle_ledger::charge(64 + if frame & 7 == 0 { 116 } else { 6 }
+                        + 64 + if frame & 3 == 0 { 116 } else { 6 } + 42);
+                }
                 if self.game_state.ending.attract_scene.intro_frame_counter() & 7 == 0 {
                     self.intro_actor_mut(k).add_x_velocity(
                         ANIMATE_SCENE_SPRITE_CREDITS_TRIANGLE_X_ACCELERATION[k] as u8,
@@ -1072,26 +1154,39 @@ impl ZeldaState {
                 }
             }
             1 => {
+                if self.lag_free { crate::cycle_ledger::charge(118); } // $0C:CC56..CC5C.
                 self.intro_actor_mut(k).set_x_velocity(0);
                 self.intro_actor_mut(k).set_y_velocity(0);
             }
             2 => {
+                if self.lag_free {
+                    // $0C:CC6B..CC72, excluding the contracting child.
+                    crate::cycle_ledger::charge(64 + if self.game_state.ending.attract_scene.intro_frame_counter() & 3 == 0 { 46 } else { 6 });
+                }
                 if self.game_state.ending.attract_scene.intro_frame_counter() & 3 == 0 {
                     self.animate_triforce_room_triangle_handle_contracting(k);
                 }
                 if ANIMATE_TRIFORCE_ROOM_TRIANGLE_HANDLE_CONTRACTING_FINAL_X[k]
                     == self.intro_actor(k).x_low()
                 {
+                    if self.lag_free { crate::cycle_ledger::charge(80 + 38); }
                     self.intro_actor_mut(k).set_x_velocity(0);
+                } else {
+                    if self.lag_free { crate::cycle_ledger::charge(80 + 6); }
                 }
                 if ANIMATE_TRIFORCE_ROOM_TRIANGLE_HANDLE_CONTRACTING_FINAL_Y[k]
                     == self.intro_actor(k).y_low()
                 {
+                    if self.lag_free { crate::cycle_ledger::charge(80 + 38 + 42); }
                     self.intro_actor_mut(k).set_y_velocity(0);
+                } else {
+                    if self.lag_free { crate::cycle_ledger::charge(80 + 6 + 42); }
                 }
             }
             3 | 4 => {
                 let ctr = self.game_state.ending.intro_scene.triforce_countdown;
+                // $0C:CC8F..CCAF: countdown zero/store or 16-bit decrement.
+                if self.lag_free { crate::cycle_ledger::charge(80 + if ctr == 0 { 112 } else { 6 + 216 }); }
                 if ctr == 0 {
                     self.intro_actor_mut(k)
                         .set_y_low(INTRO_SPRITE_TYPE_B_456_FINAL_Y2[k]);
@@ -1104,6 +1199,18 @@ impl ZeldaState {
     }
 
     pub(super) fn animate_triforce_room_triangle_handle_contracting(&mut self, k: usize) {
+        if self.lag_free {
+            // $0C:CCB0..CD0C, M8/X8; each axis selects acceleration and
+            // clamps only the two actual overflow sentinels.
+            let axis = |position: u8, goal: u8, velocity: u8| {
+                let next = velocity.wrapping_add(if position <= goal { 1 } else { 0xff });
+                80 + if position <= goal { 54 } else { 6 + 32 } + 132
+                    + if next == 0xef { 68 + 38 } else { 6 + 48 + if next == 0x11 { 46 + 38 } else { 6 } }
+            };
+            crate::cycle_ledger::charge_routine(0x0c_ccb0,
+                axis(self.intro_actor(k).x_low(), ANIMATE_TRIFORCE_ROOM_TRIANGLE_HANDLE_CONTRACTING_FINAL_X[k], self.intro_actor(k).x_velocity())
+                + axis(self.intro_actor(k).y_low(), ANIMATE_TRIFORCE_ROOM_TRIANGLE_HANDLE_CONTRACTING_FINAL_Y[k], self.intro_actor(k).y_velocity()) + 42);
+        }
         let xv = self.intro_actor(k).x_velocity().wrapping_add(
             if self.intro_actor(k).x_low()
                 <= ANIMATE_TRIFORCE_ROOM_TRIANGLE_HANDLE_CONTRACTING_FINAL_X[k]
@@ -1135,6 +1242,7 @@ impl ZeldaState {
     }
 
     pub(super) fn initialize_scene_sprite_credits_triangle(&mut self, k: usize) {
+        if self.lag_free { crate::cycle_ledger::charge(416); } // $0C:CD19..CD37.
         self.intro_actor_mut(k).set_x(i16::from(
             INITIALIZE_SCENE_SPRITE_CREDITS_TRIANGLE_X_OFFSETS[k],
         ));
@@ -3315,6 +3423,21 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_anim_one_obj(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x0c_c534);
+        if self.lag_free {
+            // $0C:C534..C562, M8/X8. Zero phase takes BEQ then RTS;
+            // phases 1/2 tail-dispatch through the two inline tables.
+            if self.intro_actor(k).init_phase() == 0 {
+                crate::cycle_ledger::charge(32 + 16 + 6 + 42);
+            } else if self.intro_actor(k).init_phase() <= 2 {
+                crate::cycle_ledger::charge(32 + 16 + 62 + 362 + 32 + 62 + 362);
+                // JumpTableLocal pops its JSL frame at PLY ($00:8783),
+                // so only STY/PLY (52) remain in that source call frame;
+                // its 362-clock tail belongs to this caller, twice.
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+                crate::cycle_ledger::charge_routine(0x00_8781, 52);
+            }
+        }
         match self.intro_actor(k).init_phase() {
             1 => match self.intro_actor(k).subtype() {
                 0 => self.intro_sprite_type_a_0(k),
@@ -3339,6 +3462,7 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_sprite_type_a_0(&mut self, k: usize) {
+        if self.lag_free { crate::cycle_ledger::charge(648); } // $0C:C57E..C5B0.
         self.write_intro_x(k, INTRO_SPRITE_TYPE_A_0_X_OFFSETS[k]);
         self.write_intro_y(k, INTRO_SPRITE_TYPE_A_0_Y_OFFSETS[k]);
         self.intro_actor_mut(k)
@@ -3349,15 +3473,27 @@ impl ZeldaState {
     }
 
     pub(super) fn initialize_scene_sprite_copyright(&mut self, k: usize) {
+        if self.lag_free { crate::cycle_ledger::charge(278); } // $0C:C850..C863.
         self.write_intro_x(k, 76);
         self.write_intro_y(k, 184);
         self.intro_actor_mut(k).increment_init_phase();
     }
 
     pub(super) fn intro_sprite_type_b_0(&mut self, k: usize) {
+        if self.lag_free {
+            // $0C:C5B1..C5BA, including call instructions but no children.
+            crate::cycle_ledger::charge(46 + 46 + 32 + 62 + 362);
+            crate::cycle_ledger::charge_routine(0x00_8781, 52);
+        }
         self.animate_scene_sprite_draw_triangle(k);
         self.animate_scene_sprite_move_triangle(k);
         if self.game_state.ending.attract_scene.intro_step_index() != 5 {
+            if self.lag_free {
+                // $0C:C5D6..C607, after the two motion/drawing calls.
+                crate::cycle_ledger::charge(64 + if self.game_state.ending.attract_scene.intro_frame_counter() & 31 == 0 { 232 } else { 6 }
+                    + 80 + if self.intro_actor(k).x_low() == INTRO_SPRITE_TYPE_B_0_X_LIMITS[k] { 38 } else { 6 }
+                    + 80 + if self.intro_actor(k).y_low() == INTRO_SPRITE_TYPE_B_0_Y_LIMITS[k] { 38 } else { 6 } + 42);
+            }
             if self.game_state.ending.attract_scene.intro_frame_counter() & 31 == 0 {
                 self.intro_actor_mut(k)
                     .add_x_velocity(INTRO_SPRITE_TYPE_A_0_X_VELOCITIES[k] as u8);
@@ -3371,12 +3507,16 @@ impl ZeldaState {
                 self.intro_actor_mut(k).set_y_velocity(0);
             }
         } else {
+            if self.lag_free { crate::cycle_ledger::charge(118); } // $0C:C608..C60E.
             self.intro_actor_mut(k).set_x_velocity(0);
             self.intro_actor_mut(k).set_y_velocity(0);
         }
     }
 
     pub(super) fn animate_scene_sprite_copyright(&mut self, k: usize) {
+        if self.lag_free { crate::cycle_ledger::charge(88); } // $0C:C864..C867, child below.
+        let _scope = crate::cycle_ledger::routine(0x0c_c8d0);
+        if self.lag_free { crate::cycle_ledger::charge(232); } // $0C:C8D0..C8E1.
         self.animate_scene_sprite_add_objects_to_oam_buffer(
             k,
             &ANIMATE_SCENE_SPRITE_COPYRIGHT_SPRITE_ENTRIES,
@@ -3385,6 +3525,7 @@ impl ZeldaState {
 
     pub(super) fn initialize_scene_sprite_sparkle(&mut self, k: usize) {
         let j = (self.game_state.ending.attract_scene.intro_frame_counter() >> 5 & 3) as usize;
+        if self.lag_free { crate::cycle_ledger::charge(366 + if j == 3 { 6 } else { 0 }); } // $0C:C8E2..C8FC; C8FD,Y crosses at Y=3.
         self.intro_actor_mut(k)
             .set_x_low(INITIALIZE_SCENE_SPRITE_SPARKLE_X_OFFSETS[j]);
         self.intro_actor_mut(k)
@@ -3394,11 +3535,19 @@ impl ZeldaState {
 
     pub(super) fn animate_scene_sprite_sparkle(&mut self, k: usize) {
         let state = self.intro_actor(k).state();
+        if self.lag_free {
+            let j = (self.game_state.ending.attract_scene.intro_frame_counter() >> 5) & 3;
+            crate::cycle_ledger::charge(520 + if j == 3 { 6 } else { 0 }); // $0C:C90D..C935.
+        }
+        {
+        let _scope = crate::cycle_ledger::routine(0x0c_c956);
+        if self.lag_free { crate::cycle_ledger::charge(112 + if state < 4 { 184 } else { 6 } + 42); } // $0C:C956..C971.
         if state < 4 {
             self.animate_scene_sprite_add_objects_to_oam_buffer(
                 k,
                 &ANIMATE_SCENE_SPRITE_SPARKLE_SPRITE_ENTRIES[state as usize..state as usize + 1],
             );
+        }
         }
 
         let next_state = ANIMATE_SCENE_SPRITE_SPARKLE_STATES
@@ -3412,6 +3561,8 @@ impl ZeldaState {
     }
 
     pub(super) fn animate_scene_sprite_draw_triangle(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x0c_c70f);
+        if self.lag_free { crate::cycle_ledger::charge(96 + if k == 2 { 6 + 80 } else { 102 } + 88); } // $0C:C70F..C72E.
         self.animate_scene_sprite_add_objects_to_oam_buffer(
             k,
             if k == 2 {

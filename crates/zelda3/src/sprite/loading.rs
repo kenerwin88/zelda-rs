@@ -168,6 +168,7 @@ impl ZeldaState {
     //   Sprite_ResetAll_noDisable();
     // }
     pub(in crate::zelda_rtl) fn sprite_reset_all(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x09_c44e);
         if self.lag_free { crate::cycle_ledger::charge(62); } // $09:C44E JSL DisableAll.
         self.sprite_disable_all();
         self.sprite_reset_all_no_disable();
@@ -983,6 +984,7 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_overworld_proximity_motivated_load(&mut self, x: u16, y: u16) -> bool {
+        let _scope = crate::cycle_ledger::routine(0x09_c6f5);
         let sprcoll_x_base = self.game_state.sprites.garnish_runtime.sprcoll_x_word();
         let sprcoll_y_base = self.game_state.sprites.garnish_runtime.sprcoll_y_word();
         let xt = x.wrapping_sub(sprcoll_x_base);
@@ -1007,25 +1009,34 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn overworld_load_proxima_sprite_if_alive(&mut self, blk: u16) {
+        let _scope = crate::cycle_ledger::routine(0x09_c739);
+        // $09:C739..C74B, M8/X8; the shared C76F RTS belongs here.
+        if self.lag_free { crate::cycle_ledger::charge(250 + 42); }
         let sprite_to_spawn = self
             .game_state
             .sprites
             .overworld_sprite_presence
             .marker(blk as usize);
         if sprite_to_spawn == 0 {
+            if self.lag_free { crate::cycle_ledger::charge(6); }
             return;
         }
 
         let loadedmask = 0x80u8 >> (blk & 7);
+        // $09:C74D..C76A, no C731,Y page crossing for Y=0..7.
+        if self.lag_free { crate::cycle_ledger::charge(378); }
         if self
             .game_state
             .sprites
             .overworld_sprite_loaded
             .is_loaded(blk, loadedmask)
         {
+            if self.lag_free { crate::cycle_ledger::charge(6); }
             return;
         }
 
+        if self.lag_free { crate::cycle_ledger::charge(46); } // $09:C76C JSR only.
+        let _child = crate::cycle_ledger::routine(0x09_c770);
         if sprite_to_spawn >= 0xf4 {
             let k = self.alloc_overlord();
             if k < 0 {

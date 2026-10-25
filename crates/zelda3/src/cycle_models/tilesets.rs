@@ -73,6 +73,23 @@ pub(crate) struct Inputs {
 }
 
 impl TilesetWork {
+    /// The current operation is retained until the next step, so ancestry
+    /// comes from native call composition, never an observed clock deficit.
+    pub(crate) fn profile_call_path(&self, instruction: &Instruction) -> Vec<u32> {
+        if !crate::cycle_ledger::profiling() { return Vec::new(); }
+        let root = match &self.operations[0] {
+            Operation::Caller { instructions, .. } => instructions[0].routine,
+            _ => unreachable!(),
+        };
+        let mut path = vec![root];
+        match &self.operations[self.next] {
+            Operation::Sheet { work, .. } => path.extend(work.profile_call_path(instruction.routine)),
+            Operation::Caller { .. } | Operation::RawConversion { .. } => {
+                if root != 0xe6b7 && instruction.routine == 0xe6b7 { path.push(0xe6b7); }
+            }
+        }
+        path
+    }
     pub(crate) fn common(
         module: u8,
         misc: u8,
@@ -367,7 +384,7 @@ impl TilesetWork {
                     source,
                     base,
                     destination,
-                    high,
+                    high: _,
                 } => {
                     let step = work.step_with_reader(|offset| {
                         let byte = |offset: usize| {
@@ -385,7 +402,9 @@ impl TilesetWork {
                     });
                     step.map(|step| Instruction {
                         master_cycles: step.master_cycles,
-                        routine: if *high { 0xe6b7 } else { 0xe63c },
+                        // $00:E741 tail-jumps; the raw low conversion is
+                        // part of LoadCommonSprites, like its high prefix.
+                        routine: 0xe6b7,
                         publication: step.publication.map(|p| Publication::Graphics {
                             destination: *destination,
                             publication: match p {

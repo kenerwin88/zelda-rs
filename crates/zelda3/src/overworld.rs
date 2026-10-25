@@ -1124,6 +1124,14 @@ impl ZeldaState {
 
     pub(super) fn LookupInOwEntranceTab(&self, r0: u16, r2: u16) -> bool {
         for i in (0..OVERWORLD_ENTRANCE_PRIMARY_AREA_BY_INDEX.len()).rev() {
+            // $1B:BCD6..BCE8: first comparison, short-circuit second
+            // comparison, then the actual descending-loop branch.
+            if self.lag_free {
+                let first = r0 == OVERWORLD_ENTRANCE_PRIMARY_AREA_BY_INDEX[i];
+                let found = first && r2 == OVERWORLD_ENTRANCE_SECONDARY_AREA_BY_INDEX[i];
+                crate::cycle_ledger::charge(96 + if first { 96 + if found { 6 } else { 0 } } else { 6 }
+                    + if found { 0 } else { 44 + if i != 0 { 6 } else { 0 } });
+            }
             if r0 == OVERWORLD_ENTRANCE_PRIMARY_AREA_BY_INDEX[i]
                 && r2 == OVERWORLD_ENTRANCE_SECONDARY_AREA_BY_INDEX[i]
             {
@@ -1141,6 +1149,17 @@ impl ZeldaState {
             .asset_raw(124)
             .expect("LookupInOwEntranceTab2 missing kOverworld_Entrance_Area asset");
         for i in (0..=128).rev() {
+            // $1B:BD0A..BD1D: retained position load, DEX/DEX/BMI,
+            // position compare and conditional area compare. A failed area
+            // comparison reloads position at BD0A on the following pass.
+            if self.lag_free {
+                let position_matches = pos == read_word_from_slice(entrance_pos, i * 2);
+                let area_matches = self.game_state.world.region.overworld_area_index_word()
+                    == read_word_from_slice(entrance_area, i * 2);
+                crate::cycle_ledger::charge(44 + 64 + if position_matches {
+                    104 + if area_matches { 0 } else { 6 + 32 }
+                } else { 6 });
+            }
             if pos == read_word_from_slice(entrance_pos, i * 2)
                 && self.game_state.world.region.overworld_area_index_word()
                     == read_word_from_slice(entrance_area, i * 2)
@@ -1148,11 +1167,26 @@ impl ZeldaState {
                 return i as i32;
             }
         }
+        if self.lag_free { crate::cycle_ledger::charge(44 + 6); } // $1B:BD0C taken BMI.
         -1
     }
 
     pub(super) fn CanEnterWithTagalong(&self, e: i32) -> bool {
         let t = self.game_state.sprites.follower_runtime.indicator();
+        if self.lag_free {
+            // $1B:BD33..BD58, inline follower tests in UseEntrance.
+            let mut clocks = 88;
+            for candidate in [0, 5, 14, 1, 7, 8] {
+                if candidate != 0 { clocks += 40; }
+                if t == candidate {
+                    clocks += if candidate == 8 { 0 } else { 6 };
+                    if candidate == 7 || candidate == 8 { clocks += 40 + if e < 59 { 6 } else { 0 }; }
+                    break;
+                }
+                if candidate == 8 { clocks += 6; }
+            }
+            crate::cycle_ledger::charge(clocks);
+        }
         t == 0 || t == 5 || t == 14 || t == 1 || (t == 7 || t == 8) && e >= 59
     }
 
@@ -1739,6 +1773,11 @@ impl ZeldaState {
 
     /// ROM: `Overworld_UseEntrance`
     pub(super) fn overworld_use_entrance(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x1b_bbf4);
+        let lag_free = self.lag_free;
+        let charge = |clocks| { if lag_free { crate::cycle_ledger::charge(clocks); } };
+        // $1B:BBF4..BC2A: location, map16 and facing test, M8/X8 -> M16/X16.
+        charge(742);
         let xc = self.game_state.player.follower_link.x() >> 3;
         let yc = self.game_state.player.follower_link.y().wrapping_add(7);
         let mut pos = ((yc.wrapping_sub(self.game_state.world.scroll.overworld_offset_base_y())
@@ -1760,15 +1799,20 @@ impl ZeldaState {
             .expect("Overworld_UseEntrance missing kMap16ToMap8 asset")
             .to_vec();
         if self.game_state.player.follower_link.facing() == 0 {
+            charge(112); // $1B:BC2C..BC36.
             let mut a = read_word_from_slice(&map16_to_map8, (x + 1) * 2) & 0x41ff;
             if a == 0x00e9 {
+                charge(6 + 412); // $1B:BC63..BC84, callee bodies excluded.
                 self.overworld_draw_map16_persist(pos, 0x0da4);
                 self.overworld_draw_map16_persist(pos.wrapping_add(2), 0x0da6);
                 self.set_sound_effect_2(21);
                 self.set_bg_vram_load_mode(1);
                 return;
             }
+            charge(40); // $1B:BC38..BC3B.
+            if a != 0x0149 { charge(40); } // $1B:BC3D..BC40.
             if a != 0x0149 && a != 0x0169 {
+                charge(230); // $1B:BC42..BC55.
                 x = self
                     .game_state
                     .dungeon
@@ -1776,7 +1820,10 @@ impl ZeldaState {
                     .bg2_tile(((pos >> 1) + 1) as usize) as usize
                     * 4;
                 a = read_word_from_slice(&map16_to_map8, x * 2) & 0x41ff;
+                if a != 0x4149 { charge(40); } // $1B:BC57..BC5A.
+                if a != 0x4149 && a != 0x4169 { charge(40); } // $1B:BC5C..BC5F.
                 if a == 0x40e9 {
+                    charge(28 + 412); // $1B:BC61..BC84.
                     pos = pos.wrapping_sub(2);
                     self.overworld_draw_map16_persist(pos, 0x0da4);
                     self.overworld_draw_map16_persist(pos.wrapping_add(2), 0x0da6);
@@ -1785,17 +1832,24 @@ impl ZeldaState {
                     return;
                 }
                 if a == 0x4149 || a == 0x4169 {
+                    charge(6 + 28); // $1B:BC55/BC5A taken, BC87..BC88.
                     pos = pos.wrapping_sub(2);
                 } else {
+                    charge(6); // $1B:BC5F taken.
                     a = 0;
                 }
             }
+            else { charge(6); } // $1B:BC3B/BC40 taken.
             if a == 0x0149 || a == 0x0169 || a == 0x4149 || a == 0x4169 {
+                charge(104); // $1B:BC89..BC92.
                 self.dungeon_doors_mut().clear_door_open_counter_low();
                 if a & 0x20 != 0 {
+                    charge(112); // $1B:BC94..BC9E.
                     if self.game_state.inventory.save_progress.progress_indicator() & 0x0f >= 3 {
+                        charge(6);
                         // Mirror the C goto after: skip opening, continue entrance lookup.
                     } else {
+                        charge(64 + 324); // $1B:BCA0..BCC0.
                         self.dungeon_doors_mut().set_door_open_counter_low(24);
                         self.dungeon_object_tracking_mut()
                             .set_big_rock_starting_address(pos.wrapping_sub(0x80));
@@ -1806,6 +1860,7 @@ impl ZeldaState {
                         return;
                     }
                 } else {
+                    charge(6 + 324); // $1B:BC92 taken, BCA6..BCC0.
                     self.dungeon_object_tracking_mut()
                         .set_big_rock_starting_address(pos.wrapping_sub(0x80));
                     self.set_sound_effect_2(21);
@@ -1815,19 +1870,31 @@ impl ZeldaState {
                     return;
                 }
             }
+        } else {
+            charge(6 + 22); // $1B:BC2A taken, BC85 BRA.
         }
 
+        charge(232); // $1B:BCC1..BCD3.
         if !self.LookupInOwEntranceTab(
             read_word_from_slice(&map16_to_map8, (x + 2) * 2) & 0x01ff,
             read_word_from_slice(&map16_to_map8, (x + 3) * 2) & 0x01ff,
         ) {
+            charge(40 + 66); // $1B:BCEA..BCEF.
             self.set_big_key_door_message_triggered(0);
             return;
         }
 
+        charge(70 + 32); // $1B:BD04..BD0A.
         let lx = self.LookupInOwEntranceTab2(pos);
         if lx < 0 {
+            charge(66); // $1B:BD77..BD79.
             return;
+        }
+        charge(88); // $1B:BD1F..BD26.
+        if self.game_state.sprites.follower_runtime.dropped() != 0 {
+            charge(6); // $1B:BD26 taken.
+        } else {
+            charge(104 + if self.game_state.player.follower_link.item_hold_pose() == 1 { 6 } else { 0 });
         }
         let entrance = self
             .asset_raw(126)
@@ -1836,6 +1903,7 @@ impl ZeldaState {
             && (self.game_state.player.follower_link.item_hold_pose() == 1
                 || !self.CanEnterWithTagalong(i32::from(entrance).wrapping_sub(1)))
         {
+            charge(56); // $1B:BCF0..BCF3.
             if self
                 .game_state
                 .world
@@ -1843,11 +1911,15 @@ impl ZeldaState {
                 .big_key_door_message_triggered()
                 == 0
             {
+                charge(180); // $1B:BCF5..BD00; tail message body retains its owner.
                 self.set_big_key_door_message_triggered(1);
                 self.dialogue_message_index_mut().set_value(5);
                 self.main_show_text_message();
+            } else {
+                charge(6 + 66); // $1B:BCF3 taken, BCED..BCEF.
             }
         } else {
+            charge(320 + 66); // $1B:BD5A..BD79.
             self.set_which_entrance(entrance);
             self.follower_link_state_mut().clear_auxiliary_state();
             self.follower_link_state_mut().set_incapacitated_timer(0);
@@ -5802,6 +5874,7 @@ impl ZeldaState {
             }
             if store == 0 { self.charge_overworld_quadrant_tile(tile); }
             let input = self.overworld_map16_decode().source_word(tile * 2).wrapping_mul(2);
+            let _scope = crate::cycle_ledger::routine(0x02_f691);
             if store == 0 {
                 self.prepare_overworld_map32_definition(input);
             }
@@ -5892,6 +5965,7 @@ impl ZeldaState {
 
     /// ROM: `Overworld_ParseMap32Definition`
     pub(super) fn overworld_parse_map32_definition(&mut self, dst: usize, input: u16) {
+        let _scope = crate::cycle_ledger::routine(0x02_f691);
         self.prepare_overworld_map32_definition(input);
         // $02:F7AD..F7CA: index, four loads/stores, destination advance, RTS.
         if self.lag_free { crate::cycle_ledger::charge(580); }

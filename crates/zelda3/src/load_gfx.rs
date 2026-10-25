@@ -2083,40 +2083,25 @@ impl ZeldaState {
         dst = self.load_item_animation_gfx_one(dst, 7, 1, false);
         dst = self.load_item_animation_gfx_one(dst, 3, 2, false);
 
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            95,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(95, false);
         dst = self.load_item_animation_gfx_one(dst, 4, 3, true);
         dst = self.load_item_animation_gfx_one(dst, 3, 4, true);
         dst = self.load_item_animation_gfx_one(dst, 1, 5, true);
         dst = self.load_item_animation_gfx_one(dst, 4, 6, false);
 
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            96,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(96, false);
         dst = self.load_item_animation_gfx_one(dst, 14, 7, true);
         dst = self.load_item_animation_gfx_one(dst, 7, 8, true);
 
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            95,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(95, false);
         self.load_item_animation_gfx_one(dst, 2, 9, true);
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            84,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(84, false);
 
         let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.expand3_to_4_high_from_slice(0xa480, &tmp, 0, 0, 8);
         self.expand3_to_4_high_from_slice(0xa580, &tmp, 0x180, 0, 8);
 
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            96,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(96, false);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.expand3_to_4_high_from_slice(0xb280, &tmp, 0, 0, 3);
         self.expand3_to_4_high_from_slice(0xb2e0, &tmp, 0x180, 0, 3);
@@ -2146,38 +2131,23 @@ impl ZeldaState {
     }
 
     pub(super) fn load_item_gfx_auxiliary(&mut self) {
-        self.decompress_background_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x0f,
-        );
+        self.decompress_background_graphics_fixed_buffer(0x0f);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
-        self.do3_to_4_low_16bit_from_slice(PEG_TILE_GFX_BUFFER, &tmp, 0, 16);
+        self.do3_to_4_low_animated_from_slice(PEG_TILE_GFX_BUFFER, &tmp, 0, 16);
 
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x58,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(0x58, false);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
-        self.do3_to_4_low_16bit_from_slice(0xb540, &tmp, 0, 32);
+        self.do3_to_4_low_animated_from_slice(0xb540, &tmp, 0, 32);
 
-        self.decompress_background_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x05,
-        );
+        self.decompress_background_graphics_fixed_buffer(0x05);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
-        self.do3_to_4_low_16bit_from_slice(0xbdc0, &tmp, 0x480, 2);
+        self.do3_to_4_low_animated_from_slice(0xbdc0, &tmp, 0x480, 2);
     }
 
     pub(super) fn load_follower_graphics(&mut self) {
         let first_sheet = self.follower_graphics_first_sheet();
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::secondary_buffer_offset(),
-            first_sheet,
-        );
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x65,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(first_sheet, true);
+        self.decompress_sprite_graphics_fixed_buffer(0x65, false);
         self.finish_follower_graphics_conversion();
     }
 
@@ -2295,19 +2265,13 @@ impl ZeldaState {
             .get(follower)
             .copied()
             .unwrap_or(0);
-        self.do3_to_4_low_16bit_from_slice(0xb940, &tmp, offset, 0x20);
+        self.do3_to_4_low_animated_from_slice(0xb940, &tmp, offset, 0x20);
     }
 
     pub(super) fn decompress_sword_graphics(&mut self) {
         self.replay_trace_ram_watch("loadgfx-before-decompress-sword");
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::secondary_buffer_offset(),
-            0x5f,
-        );
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x5e,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(0x5f, true);
+        self.decompress_sprite_graphics_fixed_buffer(0x5e, false);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
         let sword = self.game_state.inventory.items.sword_type() as usize;
         let src = SWORD_TYPE_TO_GFX_OFFSETS.get(sword).copied().unwrap_or(0);
@@ -2318,14 +2282,8 @@ impl ZeldaState {
 
     pub(super) fn decompress_shield_graphics(&mut self) {
         self.replay_trace_ram_watch("loadgfx-before-decompress-shield");
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::secondary_buffer_offset(),
-            0x5f,
-        );
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x5e,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(0x5f, true);
+        self.decompress_sprite_graphics_fixed_buffer(0x5e, false);
         let tmp = self.graphics_combined_decompression_buffers();
         let shield = self.game_state.inventory.items.shield_type() as usize;
         let src = SHIELD_TYPE_TO_GFX_OFFSETS
@@ -2645,9 +2603,11 @@ impl ZeldaState {
     }
 
     pub(super) fn initialize_tilesets(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_e19b);
         let Some(mut work) = self.native_initialize_tilesets_work() else { return };
         while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
-            self.retire_tileset_instruction(instruction);
+            let path = work.profile_call_path(&instruction);
+            crate::cycle_ledger::with_profile_call_path(&path, || self.retire_tileset_instruction(instruction));
         }
         self.record_common_sprite_provenance();
         for slot in 0..4 {
@@ -2662,12 +2622,14 @@ impl ZeldaState {
     }
 
     pub(super) fn load_common_sprites(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_e6b7);
         let module = self.game_state.frame.main_module;
         let misc = self.game_state.world.palette_theme.misc_sprites_graphics_index();
         let Some(mut work) = crate::cycle_models::tilesets::TilesetWork::common(module, misc,
             |sheet| self.sprite_graphics_decompression_stream(sheet as usize)) else { return };
         while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
-            self.retire_tileset_instruction(instruction);
+            let path = work.profile_call_path(&instruction);
+            crate::cycle_ledger::with_profile_call_path(&path, || self.retire_tileset_instruction(instruction));
         }
         self.record_common_sprite_provenance();
     }
@@ -2701,8 +2663,7 @@ impl ZeldaState {
             }
             return;
         }
-        let _scope = crate::cycle_ledger::routine(instruction.routine);
-        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        crate::cycle_ledger::charge_in_routine(instruction.routine, u64::from(instruction.master_cycles));
         match instruction.publication {
             Some(Publication::PpuByte { register, value }) => self.ppu.write(register, value),
             Some(Publication::VramAddress(address)) => {
@@ -2722,6 +2683,7 @@ impl ZeldaState {
         gfx_pack: usize,
         decompression_buffer_offset: usize,
     ) {
+        let _scope = crate::cycle_ledger::routine(0x00_e583);
         let Some(stream) = self.sprite_graphics_decompression_stream(gfx_pack) else { return };
         let mut work = crate::cycle_models::graphics_load::SheetWork::sprite(
             gfx_pack as u8, decompression_buffer_offset, &stream,
@@ -2751,6 +2713,8 @@ impl ZeldaState {
         slot: usize,
         decompression_buffer_offset: usize,
     ) {
+        let _scope = crate::cycle_ledger::routine(
+            if decompression_buffer_offset == 0x14000 { 0x00_e609 } else { 0x00_e60d });
         let Some(stream) = self.asset_bytes(65, gfx_pack) else { return };
         let mut work = crate::cycle_models::graphics_load::SheetWork::background(
             gfx_pack as u8, decompression_buffer_offset, stream,
@@ -2766,7 +2730,8 @@ impl ZeldaState {
         self.vram_chr_source.record_tiles(dst, 64, kind, pack as u16);
         self.vram_chr_preview_source.record_tiles(dst, 64, kind, pack as u16);
         while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
-            self.retire_sheet_load_instruction(dst, instruction);
+            let path = work.profile_call_path(instruction.routine);
+            crate::cycle_ledger::with_profile_call_path(&path, || self.retire_sheet_load_instruction(dst, instruction));
         }
         self.tag_stream_content_hash(dst, 64);
     }
@@ -2779,24 +2744,18 @@ impl ZeldaState {
             for sheet in [pack, 0x5c] {
                 self.charge_sheet_decompression(DecompressEntry::BackgroundTables, 65, sheet,
                     GraphicsDecompressionScratch::primary_buffer_offset());
-                let _scope = crate::cycle_ledger::routine(0x00_dfb8);
-                crate::cycle_ledger::charge(32 + 48 * 3736 + 47 * 6 + 42);
+                let _scope = crate::cycle_ledger::routine(if self.lag_free { 0x00_d5ce } else { 0x00_dfb8 });
+                crate::cycle_ledger::charge(32 + 48 * if self.lag_free { 3808 } else { 3736 } + 47 * 6 + 42);
             }
             return;
         }
-        self.decompress_background_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            pack,
-        );
+        self.decompress_background_graphics_fixed_buffer(pack);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
-        self.do3_to_4_low_16bit_from_slice(0xa680, &tmp, 0, 48);
+        self.do3_to_4_low_animated_from_slice(0xa680, &tmp, 0, 48);
 
-        self.decompress_background_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x5c,
-        );
+        self.decompress_background_graphics_fixed_buffer(0x5c);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
-        self.do3_to_4_low_16bit_from_slice(0xac80, &tmp, 0, 48);
+        self.do3_to_4_low_animated_from_slice(0xac80, &tmp, 0, 48);
 
         self.rotate_animated_dungeon_tile_planes();
 
@@ -2813,9 +2772,24 @@ impl ZeldaState {
     pub(super) fn decompress_sprite_graphics_to_buffer(
         &mut self,
         dst: usize,
-        mut gfx: usize,
+        gfx: usize,
     ) -> usize {
-        let _scope = crate::cycle_ledger::routine(0x00_e772);
+        self.decompress_sprite_graphics_at_entry(dst, gfx, 0x00_e772, 0)
+    }
+
+    fn decompress_sprite_graphics_fixed_buffer(&mut self, gfx: usize, secondary: bool) -> usize {
+        // $00:E766..E770 sets $7F:4000 (128 clocks); $00:E75C..E770
+        // sets $7F:4600 using its BRA (150 clocks). The decoder is shared.
+        let dst = if secondary { GraphicsDecompressionScratch::secondary_buffer_offset() }
+            else { GraphicsDecompressionScratch::primary_buffer_offset() };
+        let routine = if self.lag_free { if secondary { 0x00_e75c } else { 0x00_e766 } } else { 0x00_e772 };
+        self.decompress_sprite_graphics_at_entry(dst, gfx, routine,
+            if self.lag_free { if secondary { 150 } else { 128 } } else { 0 })
+    }
+
+    fn decompress_sprite_graphics_at_entry(&mut self, dst: usize, mut gfx: usize, routine: u32, prefix: u64) -> usize {
+        let _scope = crate::cycle_ledger::routine(routine);
+        crate::cycle_ledger::charge(prefix);
         self.charge_sheet_decompression(DecompressEntry::Sprite, 64, gfx, dst);
         if gfx < 12 {
             gfx = 12;
@@ -2828,19 +2802,26 @@ impl ZeldaState {
 
     /// `Decomp_bg` (`$00:E78F`): the table loads and the decompressor, the
     /// destination set by the caller.
-    // TODO(cycle-ledger): DecompressAnimatedDungeonTiles ($00:D33A/$00:D34E),
-    // DecompressAnimatedOverworldTiles ($00:D398/$00:D3AC) and
-    // LoadItemGFX_Auxiliary ($00:D3C8/$00:D3F0) call `Decomp_bg_to_7f4000`
-    // ($00:E783: STZ $00 : LDA #$40 : STA $01 : LDA #$7F : STA $02 : STA $05,
-    // 128 more cycles, `DecompressEntry::Background`) instead; give them
-    // their own entry when they are annotated.
+    // Fixed-buffer callers use decompress_background_graphics_fixed_buffer
+    // for $00:E783; this entry keeps only $00:E78F's table/decoder work.
     pub(super) fn decompress_background_graphics_to_buffer(
         &mut self,
         dst: usize,
         gfx: usize,
     ) -> usize {
-        let _scope = crate::cycle_ledger::routine(0x00_e78f);
-        self.charge_sheet_decompression(DecompressEntry::BackgroundTables, 65, gfx, dst);
+        self.decompress_background_graphics_at_entry(dst, gfx, DecompressEntry::BackgroundTables)
+    }
+
+    fn decompress_background_graphics_fixed_buffer(&mut self, gfx: usize) -> usize {
+        // $00:E783..E78D owns the 128-clock destination setup, then falls
+        // through into E78F. Default/ROM-timing retain the prior entry.
+        self.decompress_background_graphics_at_entry(GraphicsDecompressionScratch::primary_buffer_offset(), gfx,
+            if self.lag_free { DecompressEntry::Background } else { DecompressEntry::BackgroundTables })
+    }
+
+    fn decompress_background_graphics_at_entry(&mut self, dst: usize, gfx: usize, entry: DecompressEntry) -> usize {
+        let _scope = crate::cycle_ledger::routine(if entry == DecompressEntry::Background { 0x00_e783 } else { 0x00_e78f });
+        self.charge_sheet_decompression(entry, 65, gfx, dst);
         let Some(data) = self.decompressed_background_graphics_data(gfx) else {
             return 0;
         };
@@ -3013,18 +2994,35 @@ impl ZeldaState {
     /// `$DFBA` for every tile but the last. The ROM's `DEC $0C : BNE` loop
     /// assumes `num >= 1`, as every caller passes.
     pub(super) fn do3_to_4_low_16bit_from_slice(
+        &mut self, dst: usize, data: &[u8], src: usize, num: usize,
+    ) {
+        self.convert_low_buffer(dst, data, src, num, false);
+    }
+
+    fn do3_to_4_low_animated_from_slice(
+        &mut self, dst: usize, data: &[u8], src: usize, num: usize,
+    ) {
+        self.convert_low_buffer(dst, data, src, num, true);
+    }
+
+    fn convert_low_buffer(
         &mut self,
         mut dst: usize,
         data: &[u8],
         mut src: usize,
         num: usize,
+        animated: bool,
     ) {
-        let _scope = crate::cycle_ledger::routine(0x00_dfb8);
+        let animated = animated && self.lag_free;
+        let _scope = crate::cycle_ledger::routine(if animated { 0x00_d5ce } else { 0x00_dfb8 });
         // $DFB8: STY $0C.
         crate::cycle_ledger::charge(32);
         for tile in 0..num {
             // $DFBA-$E02E for one tile (see above).
-            crate::cycle_ledger::charge(3_736);
+            // $00:D5D0..D616: 126 + 4*874 + 3*6 + 168 = 3808.
+            // Animated low conversion increments its DP source pointers;
+            // $00:DFBA..E02E instead uses the 3736-clock four-row variant.
+            crate::cycle_ledger::charge(if animated { 3_808 } else { 3_736 });
             if tile + 1 < num {
                 // $E02E: BNE $DFBA taken.
                 crate::cycle_ledger::charge(6);
@@ -3100,8 +3098,7 @@ impl ZeldaState {
     ) {
         use crate::cycle_models::graphics_load::Publication;
         use crate::cycle_models::graphics_convert::Publication as Conversion;
-        let _scope = crate::cycle_ledger::routine(instruction.routine);
-        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        crate::cycle_ledger::charge_in_routine(instruction.routine, u64::from(instruction.master_cycles));
         match instruction.publication {
             Some(Publication::Byte { address, value }) => self.ram[address] = value,
             Some(Publication::SourcePointer(value)) => self.ram[..2].copy_from_slice(&value.to_le_bytes()),
@@ -3313,19 +3310,13 @@ impl ZeldaState {
     }
 
     pub(super) fn DecompressAnimatedOverworldTiles(&mut self, a: u8) {
-        self.decompress_background_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            a as usize,
-        );
+        self.decompress_background_graphics_fixed_buffer(a as usize);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
-        self.do3_to_4_low_16bit_from_slice(0xa680, &tmp, 0, 64);
+        self.do3_to_4_low_animated_from_slice(0xa680, &tmp, 0, 64);
 
-        self.decompress_background_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            a.wrapping_add(1) as usize,
-        );
+        self.decompress_background_graphics_fixed_buffer(a.wrapping_add(1) as usize);
         let tmp = self.graphics_primary_decompression_buffer(0x600);
-        self.do3_to_4_low_16bit_from_slice(0xae80, &tmp, 0, 32);
+        self.do3_to_4_low_animated_from_slice(0xae80, &tmp, 0, 32);
         self.set_animated_tile_vram_destination_address(
             OVERWORLD_ANIMATED_BG_VRAM_DESTINATION as u16,
         );
@@ -3514,14 +3505,8 @@ impl ZeldaState {
     pub(super) fn decode_animated_sprite_tile_variable(&mut self, a: u8) {
         self.replay_trace_ram_watch("loadgfx-before-decode-animated-sprite-tile");
         let secondary_sheet = animated_sprite_tile_secondary_sheet(a);
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::secondary_buffer_offset(),
-            secondary_sheet.into(),
-        );
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x5a,
-        );
+        self.decompress_sprite_graphics_fixed_buffer(secondary_sheet.into(), true);
+        self.decompress_sprite_graphics_fixed_buffer(0x5a, false);
         self.write_to4_bpp_buffer_at_7f4000(a);
         self.replay_trace_ram_watch("loadgfx-after-decode-animated-sprite-tile");
     }

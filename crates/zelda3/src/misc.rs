@@ -2240,6 +2240,7 @@ impl ZeldaState {
 
 
     pub(super) fn module_main_routing(&mut self) {
+        let _scope = crate::cycle_ledger::routine(0x00_80b5);
         // `Module_MainRouting` (`$00:80B5`): `LDY $10`, three `LDA $80xx,Y
         // : STA $0x` table loads of the module's long pointer (Y is at most
         // 27, no page crossing) and `JML [$03]`: 24 + 3 x (32 + 24) + 48.
@@ -2247,7 +2248,7 @@ impl ZeldaState {
         // translated module through here, but the ROM's RTI returns straight
         // into the suspended routine: no routing runs.
         if !self.dialogue_fast_forward_hold_active {
-            crate::cycle_ledger::charge_routine(0x00_80b5, 240);
+            crate::cycle_ledger::charge(240);
         }
         match self.game_state.frame.main_module {
             0 => self.module00_intro(),

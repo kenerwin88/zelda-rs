@@ -186,13 +186,20 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord19_armos_coordinator_bounce(&mut self, k: usize) {
+        let _scope = crate::cycle_ledger::routine(0x1d_ebf3);
+        let lag_free = self.lag_free;
+        let charge = |clocks| { if lag_free { crate::cycle_ledger::charge(clocks); } };
+        // $1D:EBF3..EC01, M8/X8; JumpTableLocal consumes its JSL frame.
+        charge(48 + if self.overlord_slot_view(k).gen2() == 0 { 6 } else { 52 } + 32 + 62 + 414);
         if self.overlord_slot_view(k).gen2() != 0 {
             let value = self.overlord_slot_view(k).gen2().wrapping_sub(1);
             self.overlord_slot_view_mut(k).set_gen2(value);
         }
         match self.overlord_slot_view(k).gen1() {
             0 => {
+                charge(48);
                 if self.sprite_slot_view(0).a() != 0 {
+                    charge(298 + 42); // $1D:EC17..EC33, child body excluded.
                     let value = 120;
                     self.overlord_slot_view_mut(k).set_x_low(value);
                     let value = 255;
@@ -202,44 +209,62 @@ impl ZeldaState {
                     self.overlord_slot_view_mut(0).set_x_low(192);
                     let value = 1;
                     self.overlord_slot_view_mut(1).set_x_low(value);
+                    let _child = crate::cycle_ledger::routine(0x1d_eccc);
                     self.armos_coordinator_rotate_knights(k);
+                } else {
+                    charge(6 + 42);
                 }
             }
             1 => {
+                charge(62 + 42); // $1D:EC34..EC41, excluding CheckKnights.
                 if self.armos_coordinator_check_knights() {
+                    charge(106);
                     let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
                     self.overlord_slot_view_mut(k).set_gen1(value);
                     let value = 0xff;
                     self.overlord_slot_view_mut(k).set_gen2(value);
+                } else {
+                    charge(6);
                 }
             }
             2 | 4 => self.armos_coordinator_rotate_knights(k),
             3 => {
+                charge(110 + 22); // $1D:EC96..ECA9, tail Rotate below.
                 let value = self.overlord_slot_view(2).x_low().wrapping_sub(1);
                 self.overlord_slot_view_mut(2).set_x_low(value);
                 if self.overlord_slot_view(2).x_low() == 32 {
+                    charge(106);
                     let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
                     self.overlord_slot_view_mut(k).set_gen1(value);
                     let value = 64;
                     self.overlord_slot_view_mut(k).set_gen2(value);
+                } else {
+                    charge(6);
                 }
                 self.armos_coordinator_rotate(k);
             }
             5 => {
+                charge(110 + 22); // $1D:ECAB..ECBE, tail Rotate below.
                 let value = self.overlord_slot_view(2).x_low().wrapping_add(1);
                 self.overlord_slot_view_mut(2).set_x_low(value);
                 if self.overlord_slot_view(2).x_low() == 64 {
+                    charge(106);
                     let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
                     self.overlord_slot_view_mut(k).set_gen1(value);
                     let value = 64;
                     self.overlord_slot_view_mut(k).set_gen2(value);
+                } else {
+                    charge(6);
                 }
                 self.armos_coordinator_rotate(k);
             }
             6 => {
+                charge(48 + 42); // $1D:EC48..EC68.
                 if self.overlord_slot_view(k).gen2() != 0 {
+                    charge(6);
                     return;
                 }
+                charge(62 + 6 * 154 + 5 * 6 + 106);
                 self.armos_coordinator_disable_coercion(k);
                 for j in (0..=5).rev() {
                     let value = ARMOS_COORDINATOR_BACK_WALL_X_OFFSETS[j];
@@ -253,21 +278,28 @@ impl ZeldaState {
                 self.overlord_slot_view_mut(k).set_gen2(value);
             }
             7 => {
+                charge(48); // $1D:EC69..EC6C.
                 if self.overlord_slot_view(k).gen2() != 0 {
+                    charge(6 + 42);
                     return;
                 }
+                charge(16); // $1D:EC6E.
                 for j in (0..=5).rev() {
+                    charge(132); // $1D:EC70..EC7B.
                     let value = self.overlord_slot_view(j).gen2().wrapping_add(1);
                     self.overlord_slot_view_mut(j).set_gen2(value);
                     if self.overlord_slot_view(j).gen2() == 192 {
+                        charge(288); // $1D:EC7D..EC91, children excluded.
                         let value = 1;
                         self.overlord_slot_view_mut(k).set_gen1(value);
                         let value = 0u8.wrapping_sub(self.overlord_slot_view(k).floor());
                         self.overlord_slot_view_mut(k).set_floor(value);
                         self.armos_coordinator_disable_coercion(k);
+                        let _child = crate::cycle_ledger::routine(0x1d_ecd4);
                         self.armos_coordinator_rotate(k);
                         return;
                     }
+                    charge(6 + 30 + if j != 0 { 6 } else { 42 });
                 }
             }
             _ => {}
@@ -898,6 +930,8 @@ impl ZeldaState {
     }
 
     pub(super) fn armos_coordinator_rotate_knights(&mut self, k: usize) {
+        // $1D:ECCC..ECD1; Rotate is a shared fall-through, not another call.
+        if self.lag_free { crate::cycle_ledger::charge(48 + if self.overlord_slot_view(k).gen2() == 0 { 52 } else { 6 }); }
         if self.overlord_slot_view(k).gen2() == 0 {
             let value = self.overlord_slot_view(k).gen1().wrapping_add(1);
             self.overlord_slot_view_mut(k).set_gen1(value);
@@ -906,6 +940,8 @@ impl ZeldaState {
     }
 
     pub(super) fn armos_coordinator_rotate(&mut self, k: usize) {
+        // $1D:ECD4..ECEA, M8/X8. All eight overlord indices stay in-page.
+        if self.lag_free { crate::cycle_ledger::charge(64 + if self.overlord_slot_view(k).floor() & 0x80 != 0 { 14 } else { 6 } + 188); }
         let angle = self
             .overlord_slot_view(0)
             .adjacent_x_low_word()
@@ -916,6 +952,20 @@ impl ZeldaState {
         for (i, offset) in ARMOS_KNIGHT_RING_ANGLE_OFFSETS.iter().enumerate() {
             let t0 = angle.wrapping_add(*offset);
             let size = self.overlord_slot_view(2).x_low();
+            if self.lag_free {
+                // $1D:ECED..EDB7: two sine-table/multiply/sign paths per
+                // knight. System-bank $4202/$4203/$4216/$4217 bus accesses
+                // cost six clocks; the eight actual NOPs remain priced.
+                let axis = |angle: u16| {
+                    let magnitude = ARMOS_SINE_LOOKUP_TABLE[(angle & 255) as usize];
+                    let value = armos_sin(angle, size);
+                    (if magnitude < 256 { 230 } else { 6 }) + 54
+                        + if angle & 256 != 0 { 30 } else { 6 }
+                        + 56 + if value < 0 { 38 } else { 6 }
+                };
+                crate::cycle_ledger::charge(946 + axis(t0) + 328
+                    + axis(t0.wrapping_add(0x80)) + 320 + if i == 5 { 6 + 42 } else { 24 });
+            }
             let tx = self
                 .overlord_get_x(k)
                 .wrapping_add(armos_sin(t0, size) as i16 as u16);
@@ -935,16 +985,26 @@ impl ZeldaState {
     }
 
     pub(super) fn armos_coordinator_check_knights(&self) -> bool {
+        let _scope = crate::cycle_ledger::routine(0x1d_edb8);
+        if self.lag_free { crate::cycle_ledger::charge(16); } // $1D:EDB8.
         for j in (0..=5).rev() {
             let sprite = self.sprite_slot_view(j);
+            if self.lag_free {
+                crate::cycle_ledger::charge(48 + if sprite.state() == 0 { 6 } else { 48 });
+            }
             if sprite.state() != 0 && sprite.ai_state() == 0 {
+                if self.lag_free { crate::cycle_ledger::charge(56); }
                 return false;
             }
+            if self.lag_free { crate::cycle_ledger::charge(if sprite.state() != 0 { 6 } else { 0 } + 30 + if j != 0 { 6 } else { 0 }); }
         }
+        if self.lag_free { crate::cycle_ledger::charge(56); } // $1D:EDC9..EDCA.
         true
     }
 
     pub(super) fn armos_coordinator_disable_coercion(&mut self, _k: usize) {
+        // $1D:EDCB..EDD5: six stores, five taken branches and RTS.
+        if self.lag_free { crate::cycle_ledger::charge_routine(0x1d_edcb, 16 + 6 * 84 + 5 * 6 + 42); }
         for j in (0..=5).rev() {
             self.sprite_slot_view_mut(j).set_ai_state(0);
         }
@@ -1022,4 +1082,68 @@ impl ZeldaState {
         crate::cycle_ledger::charge(48);
         self.archery_game_mut().clear_out_of_arrows();
     }
+}
+
+#[cfg(test)]
+mod pacing_cost_tests {
+    use super::*;
+#[test]
+fn armos_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (Ok(assets), Ok(rom)) = (std::fs::read(root.join("zelda3_assets.dat")),
+        std::fs::read(root.join("saves/zelda3.sfc"))) else { return; };
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    base.set_lag_free(true);
+    for phase in 0..8u8 {
+        for timer in [0u8, 1, 2, 0xbf] {
+            for direction in [1u8, 0xff] {
+                let mut native = base.clone();
+                let mut image = native.wram_image().into_owned();
+                let slot = 7;
+                image[0xb28 + slot] = phase;
+                image[0xb30 + slot] = timer;
+                image[0xb40 + slot] = direction;
+                image[0xb0a] = 0x30;
+                image[0xb08] = 0x80;
+                image[0xb09] = 1;
+                image[0xd90] = 1;
+                native.import_wram_image(&image);
+                native.sync_native_game_state_from_ram();
+                let entry = 0x1debf3u32;
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = (entry >> 16) as u8;
+                machine.cpu.db = 0x1d;
+                machine.cpu.x = 7;
+                machine.cpu.dp = 0;
+                machine.cpu.pc = entry as u16;
+                machine.cpu.sp = 0x1fc;
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                let mut measured = 0;
+                for _ in 0..10000 {
+                    let step = source.step().unwrap();
+                    measured += step.transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                    if source.snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.snes().cpu.pc, 0x8000);
+                let start = crate::cycle_ledger::master();
+                native.overlord19_armos_coordinator_bounce(7);
+                assert_eq!(crate::cycle_ledger::master() - start, measured,
+                    "phase={phase} timer={timer} direction={direction}");
+            }
+        }
+    }
+}
+
 }

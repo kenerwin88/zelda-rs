@@ -20,6 +20,8 @@ use std::collections::BTreeMap;
 struct RoutineProfile {
     active: bool,
     rows: BTreeMap<u32, [u64; 3]>, // calls, inclusive, exclusive
+    fragment_path: Vec<u32>,
+    fragment_depth: usize,
 }
 
 #[derive(Debug, Default)]
@@ -138,7 +140,7 @@ pub fn routine(address: u32) -> RoutineScope {
             ledger.addresses.push(address);
         });
         PROFILE.with(|profile| {
-            if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active) {
+            if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active && p.fragment_depth == 0) {
                 profile.rows.entry(address).or_default()[0] += 1;
             }
         });
@@ -214,6 +216,55 @@ pub fn charge_routine(address: u32, master: u64) {
     charge(master);
 }
 
+/// Instruction continuations can retire inside their ordinary call scope.
+/// Reuse that frame rather than reporting a recursive call per instruction.
+pub(crate) fn charge_in_routine(address: u32, master: u64) {
+    let current = LEDGER.with(|ledger| ledger.borrow().addresses.last().copied());
+    if current == Some(address) {
+        charge(master);
+    } else {
+        charge_routine(address, master);
+    }
+}
+
+/// Restore call ancestry for a flattened instruction continuation while
+/// profiling. Ordinary ledger prices and retirement remain unchanged.
+pub(crate) fn with_profile_call_path<R>(path: &[u32], retire: impl FnOnce() -> R) -> R {
+    if path.is_empty() || MUTED.with(Cell::get) != 0 || !profiling() { return retire(); }
+    let base = LEDGER.with(|ledger| ledger.borrow().addresses.clone());
+    let mut full = base.clone();
+    for &address in path {
+        if full.last() != Some(&address) { full.push(address); }
+    }
+    PROFILE.with(|profile| {
+        let mut profile = profile.borrow_mut();
+        let profile = profile.as_mut().unwrap();
+        // Fragments retain a single logical call until their path leaves
+        // that frame. A byte-reader entry after its caller's next JSR is a
+        // new call; another instruction inside that byte reader is not.
+        for depth in base.len()..full.len() {
+            if profile.fragment_path.get(..=depth) != full.get(..=depth) {
+                profile.rows.entry(full[depth]).or_default()[0] += 1;
+            }
+        }
+        profile.fragment_path = full;
+        profile.fragment_depth += 1;
+    });
+    fn enter<R>(path: &[u32], retire: impl FnOnce() -> R) -> R {
+        let Some((&address, rest)) = path.split_first() else { return retire(); };
+        let current = LEDGER.with(|ledger| ledger.borrow().addresses.last().copied());
+        let _scope = (current != Some(address)).then(|| routine(address));
+        enter(rest, retire)
+    }
+    let result = enter(path, retire);
+    PROFILE.with(|profile| profile.borrow_mut().as_mut().unwrap().fragment_depth -= 1);
+    result
+}
+
+pub(crate) fn profiling() -> bool {
+    PROFILE.with(|profile| profile.borrow().as_ref().is_some_and(|p| p.active))
+}
+
 /// Append this host's routine charges to `<dir>/ledger.csv` when
 /// `ZELDA3_DEBUG_CYCLE_LEDGER` is set, then forget them.
 pub fn flush_host(host: u32) {
@@ -267,6 +318,29 @@ pub(crate) fn measure_routine_self_work(address: u32, run: impl FnOnce()) -> u64
 #[cfg(test)]
 mod annotation_probe_tests {
     use super::*;
+
+    #[test]
+    fn flattened_call_paths_count_entries_and_conserve_instruction_work() {
+        profile_iteration(true);
+        let parent = routine(0x00e19b);
+        profile_main_begin();
+        for path in [&[0x00e19b, 0x00e583][..], &[0x00e19b, 0x00e583],
+            &[0x00e19b, 0x00e583, 0x00e772], &[0x00e19b, 0x00e583, 0x00e772, 0x00e843],
+            &[0x00e19b, 0x00e583, 0x00e772, 0x00e843], &[0x00e19b, 0x00e583, 0x00e772],
+            &[0x00e19b, 0x00e583, 0x00e772, 0x00e843], &[0x00e19b, 0x00e583]] {
+            with_profile_call_path(path, || charge_in_routine(*path.last().unwrap(), 10));
+        }
+        muted(|| with_profile_call_path(&[0x00e19b, 0x00f000], || charge_in_routine(0x00f000, 1000)));
+        drop(parent);
+        profile_main_end();
+        let rows = take_routine_profile();
+        assert_eq!(rows[&0x00e19b], [1, 80, 0]);
+        assert_eq!(rows[&0x00e583], [1, 80, 30]);
+        assert_eq!(rows[&0x00e772], [1, 50, 20]);
+        assert_eq!(rows[&0x00e843], [2, 30, 30]);
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows.values().map(|row| row[2]).sum::<u64>(), 80);
+    }
 
     #[test]
     fn routine_profile_reconciles_nested_muted_and_unscoped_main_work() {

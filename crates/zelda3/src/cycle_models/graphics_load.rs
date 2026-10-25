@@ -44,6 +44,16 @@ struct Progress {
 }
 
 impl SheetWork {
+    pub(crate) fn profile_call_path(&self, routine: u32) -> Vec<u32> {
+        if !crate::cycle_ledger::profiling() { return Vec::new(); }
+        let mut path = vec![self.prefix[0].routine];
+        if routine == 0xe772 || routine == 0xe78f || routine == 0xe843 {
+            path.push(self.decompressor);
+        }
+        if routine == 0xe843 { path.push(routine); }
+        path
+    }
+
     pub(crate) fn sprite(sheet: u8, destination: usize, stream: &[u8]) -> Self {
         let mut prefix = Builder::new(0xe583);
         prefix.byte(0xe583, 24, 0, 0);
@@ -254,7 +264,9 @@ impl SheetWork {
                     });
                     return Some(Instruction {
                         master_cycles: step.master_cycles,
-                        routine: if self.high { 0xe5af } else { 0xe63c },
+                        // $00:E5AC/E633 tail-jump to conversion: no new
+                        // return address, so the ROM loader owns its clocks.
+                        routine: self.prefix[0].routine,
                         publication,
                         #[cfg(test)]
                         pc: Some(step.pc),

@@ -256,13 +256,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     // CPU-only instruction coverage. Inclusive rows retain every live JSR/JSL
     // caller; exclusive rows belong to the innermost call target. Tail jumps
     // keep the caller's identity (they do not push a return address).
-    let profile_iterations: Vec<(u64, u64)> = env::var("ZELDA3_LEDGER_PROFILE")
+    let mut profile_iterations: Vec<(u64, u64)> = env::var("ZELDA3_LEDGER_PROFILE")
         .ok().map(|value| value.split(',').map(|range| {
             let (lo, hi) = range.split_once('-').unwrap_or((range, range));
             let (lo, hi) = (lo.parse::<u64>()?, hi.parse::<u64>()?);
             if lo > hi { return Err("reversed profile window".into()); }
             Ok::<_, Box<dyn Error>>((lo, hi))
         }).collect::<Result<_, _>>()).transpose()?.unwrap_or_default();
+    profile_iterations.sort_unstable();
+    let mut merged: Vec<(u64, u64)> = Vec::new();
+    for (lo, hi) in profile_iterations {
+        if let Some(last) = merged.last_mut().filter(|last| lo <= last.1.saturating_add(1)) {
+            last.1 = last.1.max(hi);
+        } else {
+            merged.push((lo, hi));
+        }
+    }
+    let profile_iterations = merged;
     let mut profile_output = (!profile_iterations.is_empty()).then(|| {
         let mut writer = BufWriter::new(fs::File::create(out_dir.join("routine-profile.csv"))?);
         writeln!(writer, "iteration,routine,calls,inclusive,exclusive")?;
@@ -442,8 +452,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // entry when identifying the just-executed call target.
                     let main_stack = previous_sp >> 8 == 0x01;
                     let iteration = current.as_ref().map(|iteration| iteration.index);
-                    let selected = iteration.filter(|index| profile_iterations.iter()
-                        .any(|&(lo, hi)| (lo..=hi).contains(index)));
+                    let selected = iteration.filter(|index| {
+                        let end = profile_iterations.partition_point(|&(lo, _)| lo <= *index);
+                        end != 0 && *index <= profile_iterations[end - 1].1
+                    });
                     if step.origin_pc == 0x00_8038 {
                         profile_main_active = true;
                         profile_depth = 0;

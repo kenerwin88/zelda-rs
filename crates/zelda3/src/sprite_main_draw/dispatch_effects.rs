@@ -31,6 +31,17 @@ impl ZeldaState {
 
     // void SpriteActive_Main(int k) {  // 869271
     pub(in crate::zelda_rtl) fn sprite_active_main(&mut self, k: usize) {
+        if (0x41..=0x70).contains(&self.sprite_slot_view(k).sprite_type()) {
+            // $06:9271 RTS-dispatches through BFEA. Restore the two real
+            // call frames; these 844 clocks were already charged together
+            // by charge_sprite_active_main_dispatch, not missing work.
+            crate::cycle_ledger::charge(260 + 62 + 42);
+            let _long = crate::cycle_ledger::routine(0x05_b5c3);
+            crate::cycle_ledger::charge(190);
+            let _main = crate::cycle_ledger::routine(0x05_b5d3);
+            crate::cycle_ledger::charge(290);
+            return self.sprite_active_main_dispatch(k);
+        }
         self.charge_sprite_active_main_dispatch(k);
         // Types $79-$BC and $BD-$D7 dispatch to the bank-6 bounces
         // $06:BFEF/BFF4 (JSL ... RTS, 104, charged into the open scope) into
