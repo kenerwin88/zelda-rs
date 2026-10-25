@@ -39,7 +39,8 @@ pub(crate) struct NativePacing {
     bus_admitted: bool,
     bus_decline: u16,
     finished_hdma: u64,
-    raster_wait_seen: bool,
+    raster_barriers: Vec<(u64, u16, u64)>,
+    finished_raster_wait: u64,
 
 }
 
@@ -78,6 +79,7 @@ impl ZeldaState {
             self.native_pacing.entry_handler.min(1364 * 262 - 1),
         ) };
         self.native_pacing.wait_wall = [0; 3];
+        self.native_pacing.raster_barriers.clear();
         self.native_pacing.main_dma = 0;
         self.native_pacing.worker_segments.clear();
         self.native_pacing.predictions = [0; 3];
@@ -182,7 +184,7 @@ impl ZeldaState {
     /// Completed P2 refresh and raster-wait components, for CPU diagnostics.
     pub fn native_cost_bus_waits(&self) -> (u64, u64) {
         ((self.native_pacing.finished_main + self.native_pacing.finished_hdma).div_ceil(1324) * 40,
-            self.native_pacing.wait_wall[2])
+            self.native_pacing.finished_raster_wait)
     }
 
     pub fn native_cost_main_hdma(&self) -> (u64, bool) {
@@ -204,7 +206,7 @@ impl ZeldaState {
         self.native_cost_components(main, lag_worker).0
     }
 
-    fn native_cost_components(&self, main: u64, lag_worker: u64) -> ([u64; 3], u64) {
+    fn native_cost_components(&self, main: u64, lag_worker: u64) -> ([u64; 3], u64, u64) {
         const FIELD: u64 = 1364 * 262;
         let handler = self.native_pacing.entry_handler.min(FIELD - 1);
         let worker = self.native_pacing.entry_worker.min(FIELD - handler - 1);
@@ -225,19 +227,24 @@ impl ZeldaState {
             previous = work;
         }
         debug_assert_eq!(previous, [main, refreshed]);
+        let mut result = [handler + main * FIELD / (FIELD - worker), elapsed[0], elapsed[1]];
+        for (wall, wait) in result.iter_mut().zip(self.native_pacing.wait_wall) { *wall += wait; }
         let mut hdma = 0;
+        let mut raster_wait = self.native_pacing.wait_wall[2];
         // Complete-call HDMA ownership is admitted only after the program
         // lease has been checked. Mid-call timed producers retain their
-        // existing scheduling; mixed raster/VWF owners decline this term.
+        // existing scheduling. Raster barriers own wall time, including
+        // the bus events that occur while polling $00:F3A3..F3B2.
         if !self.native_pacing.accounting && self.native_pacing.bus_admitted {
-            if let Some((wall, bus)) = self.native_pacing.bus_program.as_ref().and_then(|program|
-                program.advance(main, handler + worker, lag_handler, lag_worker,
-                    self.native_pacing.worker_after_irq)) {
-                elapsed[1] = wall;
+            if let Some((wall, bus, wait)) = self.native_pacing.bus_program.as_ref().and_then(|program|
+                program.compose(main, handler + worker, lag_handler, lag_worker,
+                    self.native_pacing.worker_after_irq, &self.native_pacing.raster_barriers)) {
+                result[2] = wall;
                 hdma = bus;
+                raster_wait = wait;
             }
         }
-        ([handler + main * FIELD / (FIELD - worker), elapsed[0], elapsed[1]], hdma)
+        (result, hdma, raster_wait)
     }
 
     /// Generic raster barrier: a V-counter loop exits at or after line L.
@@ -245,13 +252,13 @@ impl ZeldaState {
     /// work excludes NMI/worker ownership and refresh while wall time does not.
     pub(super) fn native_wait_until_line(&mut self, line: u16, loop_master: u64) {
         if !self.native_pacing.accounting { return; }
-        self.native_pacing.raster_wait_seen = true;
         const FIELD: u64 = 1364 * 262;
         const NMI: u64 = 225 * 1364;
         let main = self.native_main_work();
         let elapsed = self.native_cost_elapsed(main);
+        self.native_pacing.raster_barriers.push((main, line, loop_master));
         for (i, work) in elapsed.into_iter().enumerate() {
-            let raster = (NMI + work + self.native_pacing.wait_wall[i]) % FIELD;
+            let raster = (NMI + work) % FIELD;
             let target = u64::from(line) * 1364;
             if raster < target {
                 self.native_pacing.wait_wall[i] += (target - raster).div_ceil(loop_master) * loop_master;
@@ -266,7 +273,7 @@ impl ZeldaState {
         if !self.native_pacing.accounting || self.native_pacing.song_upload
             || self.native_pacing.early_sound.is_some() { return; }
         let main = self.native_main_work();
-        if self.native_cost_elapsed(main)[2] + self.native_pacing.wait_wall[2] < 1364 * 262 {
+        if self.native_cost_elapsed(main)[2] < 1364 * 262 {
             return;
         }
         let sounds = [self.game_state.system_signals.sound_effect_1(),
@@ -289,7 +296,7 @@ impl ZeldaState {
         const FIELD: u64 = 1364 * 262;
         let elapsed = |extra| self.native_cost_elapsed_with_worker(
             self.native_pacing.finished_main + extra,
-            self.native_pacing.finished_lag_worker)[2] + self.native_pacing.wait_wall[2];
+            self.native_pacing.finished_lag_worker)[2];
         let base = elapsed(0);
         if holds <= self.native_pacing.predictions[2] { return (base, 0); }
         let target = u64::from(holds) * FIELD;
@@ -309,14 +316,15 @@ impl ZeldaState {
         self.native_pacing.accounting = false;
         self.native_pacing.record_closing_handler = true;
         let main = self.native_main_work();
-        let (elapsed, hdma) = self.native_cost_components(main,
+        let (elapsed, hdma, raster_wait) = self.native_cost_components(main,
             self.native_pacing_worker_share(self.native_pacing.entry_lag_handler));
         self.native_pacing.finished_hdma = hdma;
+        self.native_pacing.finished_raster_wait = raster_wait;
         self.native_pacing.finished_main = main;
         self.native_pacing.finished_lag_worker =
             self.native_pacing_worker_share(self.native_pacing.entry_lag_handler);
         self.native_pacing.predictions = std::array::from_fn(|i|
-            ((elapsed[i] + self.native_pacing.wait_wall[i]) / (1364 * 262)) as u32);
+            (elapsed[i] / (1364 * 262)) as u32);
         // P2 includes the source refresh stalls and the generic raster barrier.
         self.native_pacing.pending = self.native_pacing.pending.max(self.native_pacing.predictions[2]);
         if let Some(sounds) = self.native_pacing.early_sound.take() {
@@ -377,7 +385,7 @@ impl ZeldaState {
         // Capture at the command, not at main's return: any later ordinary
         // instruction work belongs after the masked transfer.
         self.native_pacing.upload_prefix_holds =
-            ((self.native_cost_elapsed(main)[2] + self.native_pacing.wait_wall[2]) / (1364 * 262)) as u32;
+            (self.native_cost_elapsed(main)[2] / (1364 * 262)) as u32;
         self.native_pacing.deferred_song = Some((bank, stream.to_vec()));
         true
     }
@@ -503,8 +511,7 @@ mod tests {
                     let (elapsed, extra) = game.native_cost_shortfall(target);
                     assert_eq!(elapsed / FIELD, u64::from(prediction));
                     let evaluate = |delta| game.native_cost_elapsed_with_worker(
-                        main + delta, game.native_pacing.finished_lag_worker)[2]
-                        + game.native_pacing.wait_wall[2];
+                        main + delta, game.native_pacing.finished_lag_worker)[2];
                     assert!(extra > 0);
                     assert!(evaluate(extra) >= u64::from(target) * FIELD);
                     assert!(evaluate(extra - 1) < u64::from(target) * FIELD);
