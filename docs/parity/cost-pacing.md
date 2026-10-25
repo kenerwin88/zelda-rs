@@ -7458,3 +7458,279 @@ All 8,339 original missing rows retain their source HDMA upper bounds and the sa
 The only default failure is the known spotlight caller-return test; reduced passes completely. Both SNES library suites, profile/pacing/executed-ROM checks, song-bank source checks and Python coverage tests pass. Lib-test fixture warnings remain separate from warning-free ordinary builds. The earlier `profiles/` and `final/` candidates were superseded during the tail/parent audit; a recovery attempt correctly rejected its stale source boundary. Only `children/` binaries and manifests are delivery evidence.
 
 This is the verified stopping point for the profile group. The bank-1/2 masked-owner integration, generic retained masked CPU phase/restores, real NMI-enable edges, remaining raster ownership and source-derived actor-body prices remain open. No GPU runs, --video, cached-av, external Snes9x execution, cargo GPU tests, oracle-cache writes, cargo fmt, commit or push were used. Scratch drivers stayed in `/tmp`; supplied ledgers/cache remained read-only. `git diff --check` passes.
+
+## Continuation on `codex/cost-pacing20` (main `382264f6`)
+
+Evidence is retained in `target/cost-pacing20/callers/`; fresh main controls and rejected upload-placement trials are in `target/cost-pacing20/`. This is a verified **spotlight caller-pricing group**, not acceptance of the elapsed masked-field owner or completion of the raster/actor work. No all-bank upload change is shipped.
+
+### ROM-derived preceding work
+
+`IrisSpotlight_close` now prices its missing `$00:F28B..F293` entry: REP, LDY, LDX and BRA, **92 clocks**. The existing shared `$F29D` prefix, `$F312` child and return keep their prices; the new caller frame correctly owns the shared instructions without pricing them again. Its self work is 1,016 clocks indoors / 1,130 outdoors.
+
+`Dungeon_PrepExitWithSpotlight` now prices the instructions actually executed at `$02:99CA..9A18`: worker/polygon clears, indoor/outdoor work, entrance/progress/current-music branches, HUD and spotlight calls, and the submodule/return suffix. The worker-disable store is charged before its ownership checkpoint; the post-spotlight suffix is charged after the table returns. Each child still owns its own work. These additions are explicitly lagless-only. No charge is selected from a lag count, scene threshold or residual.
+
+`source-{exit,close}-caller.txt` retain `scripts/rom_block_costs.py` listings. The new CPU-only ROM-path test compares caller self work on all **36** indoor/outdoor × entrance-track × progress × current-music fixtures. It executes the unmodified spotlight child with hardware OAM and APU ports, including the high-byte reads of `$2137` and `$213F`; no register response or child instruction is replaced. Both feature configurations pass. The initial fixture failures from unbound OAM/APU ports are retained separately.
+
+### Elapsed-owner investigation: rejected placement candidates
+
+The experiment retained the command remainder instead of only the integer prefix holds, placed `$02:855D/$02:9BFF` on the output clock, selected native streams for all banks, and forecast receiver return through the current output window. The first version exposed an additional ordering error: starting the receiver on the last prefix callback placed the command in the preceding audio interval. Deferring that start to the next callback corrected this one-field error without a route table.
+
+The corrected placement candidate passes all eight phase probes within one, but still has per-iteration masked counts outside the source episode-edge envelope. Its interrupted cartridge/live prefixes contain 391,082 / 390,796 rows; they are rejected diagnostics, not full gates. The preceding candidate contains 728,191 rows and also fails phase tolerance. Their binaries, diffs, logs, probes and prefix extents are retained. All experimental runtime edits were reverted before the caller-pricing group was built.
+
+The cached source receipt at host 37,686 has `NmiAccepted::LatchHeld`, `NmiHandlerCompleted`, the common-suffix completion, then `NmiAccepted::Open` in the same host. A single unmasked callback does not establish both hardware acceptances or the pending enable edge. The suspended semantic caller, restored fractional phase, real `$4200` writes, and source command/acceptance timestamps remain required. The 206 excess / 17 missing gate-trial iterations have **not** all been assigned proven individual causes; count sensitivity alone is not that attribution.
+
+### Raster and actor frontier
+
+The V-counter barrier and its `$00:F3AC` eight-bit mask/sample rule are unchanged. Before this group, a matched CPU-only probe at iteration 44,264 reaches the native poll at V254 (350,102 instruction clocks, 398,072 elapsed clocks before the poll); zero wait is correct at that entry. Missing preceding instructions can move it through the physical V256 wrap and produce a long wait. The new prices above come from those callers, not a fitted raster adjustment.
+
+The retained 185-row raster cohort has 183 zero-wait entries before / **180 after**; 3 wait values change and 182 rows still have missing holds. Within the 165 raw parent-gap closures, zero-wait entries are 163 before / 163 after; 165 still have missing holds. This does not resolve the complete raster frontier. Per-row waits and new shortfalls are in `verification.json`.
+
+No sprite-body price is added. `actor-cohort-inventory.json` narrows the native type/state body inventory to the 60 retained `$06:84E2` raw-gap closures. Counts in this inventory are not source body attribution or independent per-type closures; source derivation and descending closure-order pricing remain open.
+
+### Complete CPU-only verification
+
+Both final full census gates PASS with 1,473,123 iterations each and unexplained zero. Every runtime held count equals P2. Both fresh main controls also pass; they use the freshly built main default binary through the CLI's ROM-less logical-replay entry, rather than borrowing batch-19 totals. These are seeded logical CPU gates, not continuous physical-field or exact A/V proof.
+
+| Capture | Held | Masked | Missing | Excess | FP | Exact lagged | Within one lagged | Audio callback component, pairs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| main / rom | 97,639 | 2,727 | 5,038 | 0 | 0 | 34,591 | 39,561 | -4,009,806 |
+| main / live | 97,532 | 2,704 | 5,734 | 589 | 131 | 34,457 | 39,429 | -4,079,226 |
+| final / rom | 97,642 | 2,729 | 5,035 | 0 | 0 | 34,594 | 39,561 | -4,007,136 |
+| final / live | 97,535 | 2,697 | 5,731 | 589 | 131 | 34,460 | 39,429 | -4,081,362 |
+
+The callback component is `534 * (iterations + held + masked - 1,580,998 source hosts)`. The 534-pair output budget is unchanged. Host cuts and terminal conventions remain analysis corrections. This table does not claim the rejected elapsed owner was integrated.
+
+| Category | Source lag | Missing rom/live | Excess rom/live | FP rom/live | Exact lagged rom/live | Within one rom/live |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `0E/02` | 12,964 | 49 / 369 | 0 / 223 | 0 / 96 | 4,369 / 4,259 | 4,418 / 4,308 |
+| `07/02` | 8,770 | 341 / 341 | 0 / 0 | 0 / 0 | 1,635 / 1,635 | 1,976 / 1,976 |
+| `06/00` | 8,196 | 89 / 89 | 0 / 0 | 0 / 0 | 60 / 60 | 135 / 135 |
+| `07/0E` | 7,979 | 121 / 121 | 0 / 0 | 0 / 0 | 4,831 / 4,831 | 4,952 / 4,952 |
+| `08/00` | 6,466 | 19 / 253 | 0 / 0 | 0 / 0 | 138 / 134 | 157 / 153 |
+| `09/23` | 6,054 | 365 / 365 | 0 / 0 | 0 / 0 | 814 / 814 | 1,179 / 1,179 |
+| `0F/01` | 5,432 | 84 / 84 | 0 / 0 | 0 / 0 | 4,795 / 4,795 | 4,879 / 4,879 |
+| `09/03` | 4,372 | 9 / 9 | 0 / 0 | 0 / 0 | 242 / 242 | 251 / 251 |
+| `07/07` | 4,060 | 264 / 264 | 0 / 0 | 0 / 0 | 2,655 / 2,655 | 2,919 / 2,919 |
+| `07/00` | 3,679 | 1,673 / 1,673 | 0 / 102 | 0 / 18 | 1,287 / 1,287 | 2,960 / 2,960 |
+| `09/01` | 3,479 | 2 / 2 | 0 / 0 | 0 / 0 | 249 / 249 | 251 / 251 |
+| `07/0F` | 2,992 | 71 / 71 | 0 / 0 | 0 / 0 | 2,647 / 2,647 | 2,718 / 2,718 |
+| `0E/03` | 2,672 | 37 / 37 | 0 / 0 | 0 / 0 | 78 / 78 | 115 / 115 |
+| `10/01` | 2,672 | 1 / 2 | 0 / 5 | 0 / 0 | 2,668 / 2,666 | 2,669 / 2,668 |
+| `08/02` | 2,576 | 2 / 90 | 0 / 0 | 0 / 0 | 155 / 152 | 157 / 153 |
+| `07/15` | 2,333 | 76 / 76 | 0 / 0 | 0 / 0 | 1,659 / 1,659 | 1,735 / 1,735 |
+| `19/02` | 2,001 | 0 / 0 | 0 / 0 | 0 / 0 | 1,855 / 1,855 | 1,855 / 1,855 |
+| `0E/0A` | 1,845 | 20 / 20 | 0 / 0 | 0 / 0 | 70 / 70 | 90 / 90 |
+| `09/00` | 1,253 | 1,159 / 1,159 | 0 / 0 | 0 / 0 | 33 / 33 | 1,192 / 1,192 |
+| `0E/07` | 1,065 | 0 / 0 | 0 / 0 | 0 / 0 | 56 / 56 | 56 / 56 |
+| `07/06` | 984 | 23 / 23 | 0 / 0 | 0 / 0 | 580 / 580 | 603 / 603 |
+| `11/00` | 973 | 7 / 7 | 0 / 0 | 0 / 0 | 10 / 10 | 17 / 17 |
+| `07/01` | 928 | 1 / 1 | 0 / 0 | 0 / 0 | 927 / 927 | 928 / 928 |
+| `08/01` | 706 | 0 / 17 | 0 / 53 | 0 / 0 | 157 / 153 | 157 / 153 |
+| `05/00` | 639 | 6 / 6 | 0 / 0 | 0 / 0 | 5 / 5 | 11 / 11 |
+| `09/04` | 508 | 1 / 1 | 0 / 0 | 0 / 0 | 250 / 250 | 251 / 251 |
+| `12/03` | 472 | 2 / 2 | 0 / 0 | 0 / 0 | 389 / 389 | 391 / 391 |
+| `0F/00` | 449 | 24 / 24 | 0 / 0 | 0 / 0 | 263 / 263 | 287 / 287 |
+| `07/12` | 391 | 18 / 18 | 0 / 0 | 0 / 0 | 221 / 221 | 239 / 239 |
+| `09/2E` | 363 | 10 / 10 | 0 / 0 | 0 / 0 | 90 / 90 | 100 / 100 |
+| `07/16` | 303 | 0 / 0 | 0 / 0 | 0 / 0 | 101 / 101 | 101 / 101 |
+| `09/11` | 274 | 1 / 1 | 0 / 0 | 0 / 0 | 15 / 15 | 16 / 16 |
+| `09/16` | 265 | 88 / 88 | 0 / 0 | 0 / 0 | 145 / 145 | 233 / 233 |
+| `09/0D` | 247 | 89 / 89 | 0 / 0 | 0 / 0 | 134 / 134 | 223 / 223 |
+| `0E/0B` | 243 | 0 / 0 | 0 / 0 | 0 / 0 | 81 / 81 | 81 / 81 |
+| `09/0F` | 242 | 2 / 2 | 0 / 0 | 0 / 0 | 14 / 14 | 16 / 16 |
+| `01/00` | 235 | 48 / 48 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/2C` | 228 | 4 / 4 | 0 / 0 | 0 / 0 | 32 / 32 | 36 / 36 |
+| `10/00` | 157 | 0 / 1 | 0 / 81 | 0 / 0 | 157 / 154 | 157 / 155 |
+| `17/01` | 141 | 3 / 3 | 0 / 0 | 0 / 0 | 1 / 1 | 2 / 2 |
+| `1B/02` | 139 | 2 / 2 | 0 / 0 | 0 / 0 | 7 / 7 | 9 / 9 |
+| `09/20` | 138 | 5 / 5 | 0 / 0 | 0 / 0 | 23 / 23 | 28 / 28 |
+| `0E/05` | 138 | 36 / 36 | 0 / 0 | 0 / 0 | 83 / 83 | 119 / 119 |
+| `00/01` | 114 | 7 / 7 | 0 / 0 | 0 / 0 | 4 / 4 | 11 / 11 |
+| `0B/24` | 103 | 61 / 61 | 0 / 0 | 0 / 0 | 32 / 32 | 93 / 93 |
+| `09/21` | 84 | 0 / 0 | 0 / 0 | 0 / 0 | 28 / 28 | 28 / 28 |
+| `09/0E` | 83 | 5 / 5 | 0 / 0 | 0 / 0 | 11 / 11 | 16 / 16 |
+| `15/07` | 83 | 0 / 0 | 0 / 0 | 0 / 0 | 79 / 79 | 79 / 79 |
+| `19/00` | 72 | 1 / 1 | 0 / 0 | 0 / 0 | 3 / 3 | 4 / 4 |
+| `07/13` | 71 | 0 / 0 | 0 / 0 | 0 / 0 | 47 / 47 | 47 / 47 |
+| `0B/17` | 68 | 32 / 32 | 0 / 0 | 0 / 0 | 33 / 33 | 65 / 65 |
+| `0B/28` | 68 | 0 / 0 | 0 / 0 | 0 / 0 | 4 / 4 | 4 / 4 |
+| `0B/2B` | 66 | 23 / 23 | 0 / 0 | 0 / 0 | 43 / 43 | 66 / 66 |
+| `0B/19` | 64 | 2 / 2 | 0 / 0 | 0 / 0 | 2 / 2 | 4 / 4 |
+| `15/03` | 64 | 1 / 1 | 0 / 0 | 0 / 0 | 11 / 11 | 12 / 12 |
+| `00/05` | 62 | 0 / 0 | 0 / 0 | 0 / 0 | 62 / 62 | 62 / 62 |
+| `0B/26` | 61 | 1 / 1 | 0 / 0 | 0 / 0 | 3 / 3 | 4 / 4 |
+| `0B/1A` | 60 | 2 / 2 | 0 / 0 | 0 / 0 | 2 / 2 | 4 / 4 |
+| `1A/12` | 60 | 1 / 1 | 0 / 0 | 0 / 0 | 2 / 2 | 3 / 3 |
+| `0B/29` | 59 | 33 / 33 | 0 / 0 | 0 / 0 | 18 / 18 | 51 / 51 |
+| `18/00` | 59 | 0 / 0 | 0 / 0 | 0 / 0 | 2 / 2 | 2 / 2 |
+| `1A/00` | 59 | 2 / 2 | 0 / 0 | 0 / 0 | 2 / 2 | 2 / 2 |
+| `1A/1A` | 59 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `1A/1C` | 59 | 1 / 1 | 0 / 0 | 0 / 0 | 2 / 2 | 3 / 3 |
+| `1A/04` | 58 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `1A/08` | 58 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `1A/0A` | 58 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `1A/18` | 58 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `1A/0E` | 57 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `1A/10` | 56 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `1A/06` | 55 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `07/03` | 53 | 53 / 53 | 0 / 0 | 0 / 0 | 0 / 0 | 53 / 53 |
+| `1A/0C` | 53 | 0 / 0 | 0 / 0 | 0 / 0 | 2 / 2 | 2 / 2 |
+| `11/07` | 51 | 0 / 0 | 0 / 0 | 0 / 0 | 17 / 17 | 17 / 17 |
+| `13/05` | 51 | 0 / 0 | 0 / 0 | 0 / 0 | 51 / 51 | 51 / 51 |
+| `1A/1E` | 51 | 0 / 0 | 0 / 0 | 0 / 0 | 2 / 2 | 2 / 2 |
+| `0B/1C` | 48 | 11 / 11 | 0 / 0 | 0 / 0 | 29 / 29 | 40 / 40 |
+| `1A/14` | 47 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 |
+| `1A/02` | 46 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 |
+| `1A/16` | 45 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 |
+| `07/18` | 41 | 6 / 41 | 0 / 35 | 0 / 14 | 8 / 0 | 14 / 7 |
+| `1A/20` | 41 | 2 / 2 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/12` | 32 | 0 / 0 | 0 / 0 | 0 / 0 | 16 / 16 | 16 / 16 |
+| `12/08` | 32 | 0 / 0 | 0 / 0 | 0 / 0 | 4 / 4 | 4 / 4 |
+| `0B/25` | 30 | 0 / 0 | 0 / 0 | 0 / 0 | 4 / 4 | 4 / 4 |
+| `0B/00` | 29 | 9 / 9 | 0 / 0 | 0 / 0 | 4 / 4 | 13 / 13 |
+| `0B/18` | 24 | 0 / 0 | 0 / 0 | 0 / 0 | 4 / 4 | 4 / 4 |
+| `12/02` | 23 | 0 / 0 | 0 / 0 | 0 / 0 | 23 / 23 | 23 / 23 |
+| `12/05` | 19 | 0 / 0 | 0 / 0 | 0 / 0 | 19 / 19 | 19 / 19 |
+| `00/07` | 14 | 12 / 12 | 0 / 0 | 0 / 0 | 2 / 2 | 14 / 14 |
+| `15/05` | 14 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 |
+| `01/02` | 7 | 7 / 7 | 0 / 0 | 0 / 0 | 0 / 0 | 7 / 7 |
+| `00/0A` | 6 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `12/09` | 4 | 0 / 0 | 0 / 0 | 0 / 0 | 4 / 4 | 4 / 4 |
+| `13/04` | 3 | 0 / 0 | 0 / 0 | 0 / 0 | 3 / 3 | 3 / 3 |
+| `00/02` | 2 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 | 1 / 1 |
+| `00/06` | 2 | 2 / 2 | 0 / 0 | 0 / 0 | 0 / 0 | 2 / 2 |
+| `04/01` | 2 | 2 / 2 | 0 / 0 | 0 / 0 | 0 / 0 | 2 / 2 |
+| `00/00` | 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 |
+| `03/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 |
+| `07/0B` | 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 |
+| `09/06` | 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 |
+| `0E/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 |
+| `19/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 1 / 1 |
+| `00/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/10` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/14` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/17` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/19` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/1A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/10` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/13` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/14` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/15` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/1F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/2D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/2F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/1B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/27` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/2A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/06` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0E` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/06` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/04` | 0 | 0 / 0 | 0 / 90 | 0 / 3 | 0 / 0 | 0 / 0 |
+| `1A/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/11` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/13` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/15` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/17` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/19` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/21` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+| Seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 94000 | 65 / 65 | 5 / 5 | 17 / 17 | 2 / 2 | 35 / 35 | 16 / 16 |
+| 380000 | 84 / 85 | 7 / 7 | 24 / 23 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 460000 | 84 / 85 | 7 / 7 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 626000 | 91 / 91 | 9 / 9 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 734000 | 84 / 85 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 880000 | 84 / 84 | 7 / 7 | 26 / 26 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1064000 | 84 / 84 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1316000 | 84 / 84 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+
+All phase counts are source/native and within one. All eight stable room/Link-XY/whole-save outcomes have source matches. In 162000–163000, all 27 rupee requests and all request/PCM onset gaps match fresh main; the PCM gap median remains 8.253745 frames. Probe PCM and classification files are byte-identical to fresh main; only three `main_master` diagnostic fields change in the outcome JSONL.
+
+| Capture | Classified differences | $0CFD-only |
+| --- | --- | ---: |
+| main / rom | `{"lag": 14}` | 10 |
+| main / live | `{"lag": 14, "polygon": 14741, "song-end-poll": 638}` | 10 |
+| main / probes | `{}` | 0 |
+| final / rom | `{"lag": 14}` | 10 |
+| final / live | `{"lag": 14, "polygon": 14742, "song-end-poll": 638}` | 10 |
+| final / probes | `{}` | 0 |
+
+All 8,339 original missing rows stay at or below their source HDMA bounds, and the same 47 masked-init leases remain declined. Both ordinary builds are warning-free. The final default binary matches every record and EOF of the fresh main 200k state/display/SRAM/PCM/input/context ledger. Default/ROM-timing state and audio behavior are unchanged.
+
+| Library configuration | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,519 | 1 | 3 |
+| reduced | 2,054 | 0 | 2 |
+
+The only default failure is the known spotlight caller-return test; reduced passes completely. Both SNES library suites and the Python routine-coverage tests pass. Lib-test fixture warnings remain separate from the warning-free ordinary builds. Library results are the checked disjoint union of completed original prefixes and newly executed tails; in-flight tests finish before their original workers stop. `library-shards.json` retains every test name/status and binary hash. After the environment denied individual signals, tail completion is established by complete Rust test footers and exhaustive named statuses; unreaped child exit codes are not inferred. The repaired test-only bus fixture is bound separately in `source-binding.json`; every production source and ordinary binary stays fixed across the final censuses.
+
+This is the verified stopping point for the caller-pricing group. The all-bank elapsed-field owner, individual attribution of the remaining gate-trial errors, retained CPU phase/restores and real NMI-enable edges, the remaining raster lead, and source-derived sprite bodies remain open. No GPU runs, --video, cached-av, external Snes9x execution, cargo GPU tests, oracle-cache writes, cargo fmt, commit or push were used. Scratch drivers stayed in `/tmp`; supplied ledgers/cache remained read-only. `git diff --check` passes.

@@ -5011,36 +5011,72 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_PrepExitWithSpotlight_table_and_advance`
     pub(super) fn dungeon_prep_exit_with_spotlight_table_and_advance(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine_continuation(0x02_99ca));
         self.iris_spotlight_close();
+        // $02:9A16 INC $11 and $9A18 RTS, after the spotlight has returned.
+        if self.lag_free { crate::cycle_ledger::charge(38 + 42); }
         self.increment_submodule();
     }
 
     /// ROM: `Dungeon_PrepExitWithSpotlight_before_table`
     pub(super) fn dungeon_prep_exit_with_spotlight_before_table(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_99ca));
+        // $02:99CA..99D2: the worker disable and pending-poly clear precede
+        // the indoor/outdoor branch. Charge the first store before transferring
+        // worker ownership, rather than placing the whole caller at return.
+        if self.lag_free { crate::cycle_ledger::charge(32); }
         self.deactivate_nmi_thread();
+        if self.lag_free { crate::cycle_ledger::charge(32); }
         self.clear_pending_polyhedral_update();
+        if self.lag_free { crate::cycle_ledger::charge(24 + 16); }
         if self.game_state.world.location.is_outdoors() {
+            // $99D4 JSL; $99D8..99E0 REP/LDA/STA long/SEP after the child.
+            if self.lag_free { crate::cycle_ledger::charge(62); }
             self.ancilla_terminate_waterfall_splashes();
+            if self.lag_free { crate::cycle_ledger::charge(22 + 32 + 48 + 22); }
             self.follower_link_state_mut()
                 .store_overworld_exit_y_from_current();
+        } else if self.lag_free {
+            crate::cycle_ledger::charge(6); // $99D2 BNE taken.
         }
 
+        // $99E2..99EB: entrance table lookup and CMP #3/BNE.
+        if self.lag_free { crate::cycle_ledger::charge(32 + 40 + 16 + 16); }
         let mut m = self
             .zelda_get_entrance_music_track(self.game_state.world.region.which_entrance() as i32);
+        let entrance_music = m;
         if m != 3 || {
+            // $99ED..99F3 LDA long progress, CMP #2, BCC.
+            if self.lag_free { crate::cycle_ledger::charge(40 + 16 + 16); }
             m = self.game_state.inventory.save_progress.progress_indicator();
             m >= 2
         } {
+            // A non-3 entrance takes $99EB directly to $99F5. The progress
+            // path falls through with the accumulator's progress value.
+            if self.lag_free && entrance_music != 3 {
+                crate::cycle_ledger::charge(6);
+            }
+            if self.lag_free { crate::cycle_ledger::charge(16 + 16); } // $99F5..99F7.
             if m != 0xf2 {
+                if self.lag_free { crate::cycle_ledger::charge(6 + 16); } // taken / LDA #$F1.
                 m = 0xf1;
             } else if self.game_state.system_signals.current_music_control() == 12 {
+                if self.lag_free { crate::cycle_ledger::charge(32 + 16 + 16 + 16 + 22); }
                 m = 7;
+            } else if self.lag_free {
+                crate::cycle_ledger::charge(32 + 16 + 16 + 6); // $99FE BNE taken.
             }
+            if self.lag_free { crate::cycle_ledger::charge(32); } // $9A06 STA $012C.
             self.set_music_control(m);
+        } else if self.lag_free {
+            crate::cycle_ledger::charge(6); // $99F3 BCC taken, no music store.
         }
 
+        // $9A09..9A12: STZ $04A0, JSL HUD, INC $16, JSL spotlight.
+        if self.lag_free { crate::cycle_ledger::charge(32 + 62); }
         self.clear_hud_floor_changed_timer();
         self.hud_floor_indicator();
+        if self.lag_free { crate::cycle_ledger::charge(38 + 62); }
         self.increment_hud_update_flag();
     }
 

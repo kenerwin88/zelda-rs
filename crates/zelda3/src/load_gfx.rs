@@ -4741,6 +4741,10 @@ impl ZeldaState {
 
     /// ROM: `IrisSpotlight_close`
     pub(super) fn iris_spotlight_close(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_f28b));
+        // $00:F28B..F293: REP #$10, LDY #0, LDX #$7E, BRA $F29D.
+        // The shared prefix, table call and return keep their existing prices.
+        if self.lag_free { crate::cycle_ledger::charge(22 + 24 + 24 + 22); }
         self.spotlight_internal(0x7e, 0);
     }
 

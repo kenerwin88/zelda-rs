@@ -4,11 +4,15 @@ use super::*;
 // refresh and interrupts. The range selects caller self instructions only.
 fn load_price_rom_work(entry: u32, image: &[u8], y: u16, long_return: bool,
     self_range: std::ops::RangeInclusive<u32>) -> (u64, u64) {
+    load_price_rom_work_on_bus(entry, image, y, long_return, self_range, snes::Snes::new())
+}
+
+fn load_price_rom_work_on_bus(entry: u32, image: &[u8], y: u16, long_return: bool,
+    self_range: std::ops::RangeInclusive<u32>, mut machine: snes::Snes) -> (u64, u64) {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
-        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+        CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
     let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../saves/zelda3.sfc")).unwrap();
-    let mut machine = Snes::new();
     machine.cart.load(CartType::LoRom, &rom, 0x2000);
     machine.ram.copy_from_slice(image);
     machine.ram[0x1fc..0x200].copy_from_slice(&[0xff, 0x7f, 0, 0]);
@@ -22,13 +26,20 @@ fn load_price_rom_work(entry: u32, image: &[u8], y: u16, long_return: bool,
     machine.cpu.sp = 0x1fb;
     let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
         CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+    let apu = machine.source_oam_port().map(|_| {
+        use snes::apu::{ApuHostPortProbe, ApuHostPortTiming};
+        ApuHostPortTiming::new(ApuHostPortProbe::from_snes9x_coroutine(machine.apu.clone())
+            .unwrap(), Default::default()).unwrap()
+    });
     let mut source = RomCpuTimingProbe::new(machine, clock,
         SourcePpuReadState::snes9x_reset()).unwrap();
+    if let Some(apu) = apu { source.attach_apu_port_owner(apu).unwrap(); }
     let (mut total, mut own) = (0, 0);
     for _ in 0..1_000_000 {
         let cpu = &source.snes().cpu;
         let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
-        let step = source.step().unwrap();
+        let step = source.step().unwrap_or_else(|error|
+            panic!("entry={entry:06x} pc={pc:06x}: {error:?}"));
         let work = step.transactions.iter()
             .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
         total += work;
@@ -190,6 +201,55 @@ fn dungeon_entrance_prices_match_executed_rom_paths() {
                     native.dungeon_load_entrance();
                     assert_eq!(crate::cycle_ledger::master() - before, total,
                         "follower={follower} restart={restart} entrance={entrance} start={start} progress={progress} game_over={game_over}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn spotlight_exit_caller_prices_match_executed_rom_paths() {
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    let mut fixture = ZeldaState::new();
+    fixture.set_assets(&assets).unwrap();
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    // The unmodified spotlight child reads $2138 as the high byte of its
+    // 16-bit LDA $2137; LDA $213F also reads APUI0 as its high byte.
+    // Retain hardware OAM and APU ports, rather than inventing
+    // a constant bus response or replacing that child with a stub.
+    let mut source_bus = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom)
+        .unwrap().machine().snes().clone();
+    source_bus.write(0x2100, 0x80);
+    let entrances: Vec<_> = [3, 0xf2, 0x12].into_iter().map(|track|
+        (0..0x85).find(|&entrance|
+            fixture.zelda_get_entrance_music_track(entrance) == track).unwrap()).collect();
+    for indoors in [false, true] {
+        for &entrance in &entrances {
+            for progress in [0u8, 2, 0xf2] {
+                for current in [0u8, 12] {
+                    let mut native = fixture.clone();
+                    native.set_lag_free(true);
+                    let mut image = native.wram_image().into_owned();
+                    image[0x1b] = u8::from(indoors);
+                    image[0x10e] = entrance as u8;
+                    image[0xf3c5] = progress;
+                    image[0x130] = current;
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    let (_, source) = load_price_rom_work_on_bus(0x0299ca,
+                        &native.wram_image(), 0, false, 0x0299ca..=0x029a18,
+                        source_bus.clone());
+                    crate::cycle_ledger::profile_iteration(true);
+                    crate::cycle_ledger::profile_main_begin();
+                    native.dungeon_prep_exit_with_spotlight();
+                    let rows = crate::cycle_ledger::take_routine_profile();
+                    assert_eq!(rows[&0x02_99ca][0], 1);
+                    assert_eq!(rows[&0x02_99ca][2], source,
+                        "indoors={indoors} entrance={entrance} progress={progress} current={current}");
+                    assert_eq!(rows[&0x00_f28b][2], if indoors { 1016 } else { 1130 });
+                    crate::cycle_ledger::profile_iteration(false);
                 }
             }
         }
