@@ -14,6 +14,9 @@
 //!        [--poly-uploads] [--single-seed] [--outcome-trace PATH]
 //!        [--windows LO-HI,...] (inclusive uninterrupted seeded probes)
 //!        [--audio-pcm PATH] (little-endian stereo, 534 pairs per presentation frame)
+//!        [--audio-map PATH] (JSONL iteration/source/PCM mapping, no clock changes)
+//!        [--audio-state-at ITERATION:DIR] (audio snapshots and SPC instruction trace)
+//!        [--audio-only] (continuous observation, skips WRAM/command census checks)
 //!        [--pacing-predictor PATH] (diagnostic per-iteration cost/count CSV)
 //!
 //! The cartridge's `$2140` reads (song-end polls) are replayed per iteration
@@ -1166,6 +1169,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut object_profile: Option<BufWriter<fs::File>> = None;
     let mut routine_profile_iterations: Vec<(u64, u64)> = Vec::new();
     let mut audio_pcm: Option<BufWriter<fs::File>> = None;
+    let mut audio_map: Option<BufWriter<fs::File>> = None;
+    let mut audio_only = false;
+    let mut audio_state_at: Vec<(u64, PathBuf)> = Vec::new();
+    let mut audio_pairs = 0u64;
     let mut classification_trace: Option<BufWriter<fs::File>> = None;
     let mut poly_uploads: Option<PolyUploads> = None;
     let mut dump_wram: Option<(u64, PathBuf)> = None;
@@ -1223,6 +1230,15 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
             "--audio-pcm" => {
                 audio_pcm = Some(BufWriter::new(fs::File::create(value(index)).expect("create PCM trace")));
+            }
+            "--audio-map" => {
+                audio_map = Some(BufWriter::new(fs::File::create(value(index)).expect("create audio map")));
+            }
+            "--audio-only" => { audio_only = true; index += 1; continue; }
+            "--audio-state-at" => {
+                let text = value(index);
+                let (at, dir) = text.split_once(':').expect("--audio-state-at ITERATION:DIR");
+                audio_state_at.push((at.parse().expect("audio state iteration"), PathBuf::from(dir)));
             }
             "--classification-trace" => {
                 classification_trace = Some(BufWriter::new(fs::File::create(value(index)).expect("create classification trace")));
@@ -1289,6 +1305,14 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         assert!(windows.windows(2).all(|pair| pair[0].1 < pair[1].0),
             "--windows must be ordered and disjoint");
         frames = frames.min(windows.last().unwrap().1.saturating_add(1));
+    }
+    if audio_only {
+        assert!(audio_pcm.is_some() && audio_map.is_some(), "--audio-only requires --audio-pcm and --audio-map");
+        assert!(seed_every.is_none() && video_cache.is_none() && start_at == 0 && offset == 0,
+            "--audio-only requires continuous cold replay without seeds, video, start or offset");
+        assert!(outcome_trace.is_none() && classification_trace.is_none() && histogram_path.is_none()
+            && dump_wram.is_none() && poly_uploads.is_none() && apu_trace.is_none(),
+            "--audio-only omits WRAM/command census outputs");
     }
     let ledger = PathBuf::from(ledger);
     let records = fs::File::open(ledger.join("iterations.jsonl")).unwrap_or_else(|error| {
@@ -1400,6 +1424,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
             continue;
         }
+        let mut audio_reseeded = false;
         if let (Some(every), Some(iteration)) = (seed_every, iteration) {
             let at_resync = resync.contains(&iteration.index) && iteration.index != start_at;
             if (!single_seed && ((iteration.index % every == 0 && iteration.index != 0)
@@ -1425,6 +1450,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     segment = Segment::starting(iteration.index);
                     segment.continued = true;
                 } else if let Ok(seed) = fs::read(&path) {
+                    audio_reseeded = true;
                     segment.report(video.is_some());
                     // A fresh engine per segment: nothing the previous
                     // segment left running (a suspended translated call)
@@ -1571,6 +1597,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let mut vwf_master = 0;
         let mut main_silent = 0;
         let mut first_callback = true;
+        let audio_start = audio_pairs;
+        let mut audio_callbacks = 0u64;
+        let entry_audio_context = audio_map.as_ref().map(|_| {
+            let ram = game.wram_image();
+            (ram[0x10], ram[0x11], u16::from_le_bytes([ram[0xa0], ram[0xa1]]), ram[0x130])
+        });
         let mut engine_commands = Vec::new();
         let last_apu_push_before = last_apu_push;
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1579,6 +1611,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     .any(|&(lo, hi)| (lo..=hi).contains(&iteration.index)));
             zelda3::cycle_ledger::profile_iteration(profiling);
             loop {
+                let state_dir = audio_state_at.iter().find(|(at, _)|
+                    iteration.is_some_and(|row| row.index == *at)).map(|(_, dir)| dir);
+                if let Some(dir) = state_dir {
+                    fs::create_dir_all(dir).expect("create audio state directory");
+                    fs::write(dir.join(format!("{audio_callbacks}-before.audio")), game.zelda_audio_snapshot_bytes()).expect("audio snapshot");
+                    game.zelda_begin_spc_driver_instruction_trace();
+                }
                 game.zelda_run_frame(i32::from(input));
                 if first_callback {
                     cost_predictions = game.native_cost_predictions();
@@ -1620,7 +1659,18 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 }
                 // The audio side consumes the frame's commands and takes the
                 // SPC acknowledgements before the next main or held callback.
-                game.zelda_render_audio(&mut audio_buffer, AUDIO_SAMPLES as i32, 2);
+                let audio_events = game.zelda_render_audio(&mut audio_buffer, AUDIO_SAMPLES as i32, 2);
+                audio_pairs += AUDIO_SAMPLES as u64;
+                if let Some(dir) = state_dir {
+                    fs::write(dir.join(format!("{audio_callbacks}-events.json")),
+                        serde_json::to_vec(&audio_events).expect("serialize DSP events"))
+                        .expect("write DSP events");
+                    fs::write(dir.join(format!("{audio_callbacks}-after.audio")), game.zelda_audio_snapshot_bytes()).expect("audio snapshot");
+                    fs::write(dir.join(format!("{audio_callbacks}-spc.txt")), format!("{:?}\n{:?}\n{:?}",
+                        game.zelda_spc_driver_clock_debug_summary(), game.zelda_modern_audio_voice_debug_states(),
+                        game.zelda_take_spc_driver_instruction_trace())).expect("SPC trace");
+                }
+                audio_callbacks += 1;
                 if let Some(output) = audio_pcm.as_mut() {
                     use std::io::Write;
                     for sample in &audio_buffer {
@@ -1650,6 +1700,22 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             continue;
         }
         let observed_polls = game.take_song_end_poll_observations();
+        if let (Some(output), Some(iteration), Some((module, submodule, room, song))) =
+            (audio_map.as_mut(), iteration, entry_audio_context)
+        {
+            use std::io::Write;
+            serde_json::to_writer(&mut *output, &serde_json::json!({
+                "iteration": iteration.index, "source_start": iteration.open_host,
+                "source_end": iterations.get(iteration_index as usize + 1).map(|row| row.open_host),
+                "sample_start": audio_start, "sample_end": audio_pairs, "callbacks": audio_callbacks,
+                "held": native_held, "masked": native_elapsed, "lag_nmis": iteration.lag_nmis,
+                "module": module, "submodule": submodule, "room": room, "song": song,
+                "source_module": images.image[0x10], "source_submodule": images.image[0x11],
+                "reseeded": audio_reseeded, "cartridge_apu_answers": apu_read_replay,
+                "polls": observed_polls,
+            })).expect("write audio map");
+            writeln!(output).expect("audio map newline");
+        }
         previous_gameplay_poll = !observed_polls.is_empty();
         if !apu_read_replay && let Some(iteration) = iteration {
             let expected: Vec<bool> = iteration.apu_reads.iter()
@@ -1705,6 +1771,14 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         pacing[2] += u64::from(native_held);
         pacing[3] += u64::from(iteration.lag_nmis);
         pacing[4] += u64::from(native_elapsed);
+        if audio_only {
+            // All game, RNG, APU and presentation callbacks above are unchanged.
+            // Only read-only census bookkeeping is omitted. Never use this
+            // shortcut with reseeding, which depends on those comparisons.
+            segment.iterations += 1;
+            assert!(images.advance(), "audio-only replay exhausted WRAM images");
+            continue;
+        }
         let index = iteration_index as usize;
         if apu_trace.is_some_and(|(lo, hi)| (lo..=hi).contains(&iteration.index)) {
             println!(
@@ -2082,6 +2156,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 shown.join("\n  "),
             );
         }
+    }
+    if audio_only {
+        use std::io::Write;
+        audio_pcm.as_mut().unwrap().flush().expect("flush audio PCM");
+        audio_map.as_mut().unwrap().flush().expect("flush audio map");
+        println!("logical audio-only replay: {} completed iteration(s)", segment.iterations);
+        return;
     }
     if let Some(video) = video.as_mut() {
         video.drain(&iterations, &mut segment);

@@ -736,6 +736,7 @@ impl AbsoluteDspEventClock {
                         port,
                         value,
                     );
+                    self.debug_host_port_write(boundary, port, value, "scheduled");
                     if debug_transport {
                         eprintln!(
                             "spc_transport_event host={} port={} value={:02x} target={} instruction=[{}, {}] boundary={}",
@@ -794,6 +795,7 @@ impl AbsoluteDspEventClock {
                         break;
                     }
                     self.apu.in_ports[usize::from(port)] = value;
+                    self.debug_host_port_write(execution_cycle, port, value, "instruction-return");
                     last_host_boundary = execution_cycle;
                     next_host_port += 1;
                 }
@@ -884,10 +886,27 @@ impl AbsoluteDspEventClock {
         let owner = self.cpu_ports.as_mut().unwrap();
         if let Some(value) = write {
             owner.write_cpu_port_at(master, port, value).map_err(|e| e.to_string())?;
+            let at = self.apu_cycle_origin + u64::from(owner.machine().cycles);
+            self.debug_host_port_write(at, port, value, "cpu-bus");
             Ok(value)
         } else {
             let value = owner.read_cpu_port_at(master, port).map_err(|e| e.to_string())?;
             Ok(value)
+        }
+    }
+
+    // Observation only: cycles name the SPC delivery boundary, not the nominal
+    // CPU deadline. Song-bank handshakes use their separate transfer owner.
+    fn debug_host_port_write(&self, cycle: u64, port: u8, value: u8, delivery: &str) {
+        let selected = crate::debug_env::var!("ZELDA3_DEBUG_SPC_PORT_TRACE_FRAMES")
+            .ok().is_some_and(|selection| {
+                let (lo, hi) = selection.split_once('-').unwrap_or((&selection, &selection));
+                lo.parse::<u64>().ok().zip(hi.parse::<u64>().ok())
+                    .is_some_and(|(lo, hi)| (lo..=hi).contains(&self.host_frame_index))
+            });
+        if selected {
+            eprintln!("spc_port_write host={} cycle={cycle} port={port} value={value} delivery={delivery}",
+                self.host_frame_index);
         }
     }
 
