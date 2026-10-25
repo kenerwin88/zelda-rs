@@ -3041,3 +3041,302 @@ cached-A/V, external Snes9x, cargo GPU tests, `cargo fmt`, commit or push
 was used. Scratch drivers remain in `/tmp`. `verification.json`, artifact
 hashes, predictor CSVs, per-call agreement, source listings, rankings,
 phase/PCM/stable receipts and the library manifest retain the evidence.
+
+## Continuation on `codex/cost-pacing9` (main `a5e7cb2c`)
+
+Evidence is retained in `target/cost-pacing9/`. This is a verified partial stopping point after movement, selected player-handler setup and camera instruction work. Striping, explosion, individual actor/garnish/effect tails, the 06/00 ordinary remainder and the remaining load groups are still open. No price reads source lag counts or uses a fitted scene threshold, multiplier or duration table.
+
+### Source-derived work and ownership
+
+| Work | ROM derivation and ownership |
+| --- | --- |
+| MovePosition `$07:E373..E3DB` | Coordinate save, handler/platform branches, two or three actual signed axis passes, loop branches and the two child JSRs. Moving floor, conveyor and sand drag are separate bodies. The Somaria exit bypasses integration. |
+| Sand drag / return `$07:E3E0..E405`, `$E402..E405` | 546 drag/delta/return clocks, or only the 94-clock common return on the all-blocked collision exit. The velocity-selection prefix owns its BRL, never these bodies. |
+| Swim `$07:E42A..E4D0` | Two real stroke-timer decrements, acceleration-mode/table selection, signed sum/clamp/direction branches, drag and loop control. Subpixel integration remains a separate tail. |
+| Subpixel integration `$07:E4D3..E53E` | Actual signed component branches and both axis passes, header-collision branch, floor JSR and sand-drag BRL. No floor or sand-drag body in this price. |
+| Dash in place `$07:E545..E592` | Joypad/water speed selection, actual direction-bit scan, sign/axis setup, early return or BRL to subpixel integration. Lagless now executes this ROM branch when the dash counter is below the ROM immediate 16; the default path retains its prior behavior. |
+| Moving floor / conveyor `$07:E595..E670` | Actual guard exits, floor-direction branches and shared 346-clock E5CD body; conveyor predicates and its two signed axis passes. E595 excludes the separately priced shared tail. Invalid native belt-table indices remain unsupported, with no invented ROM-body price. |
+| Default handler `$07:8109..812E` | Camera/bunny call instructions and the actual post-bunny branch to ground, auxiliary handling, bunny or RTS. The unported debug-cheat toggle at 8112..8117 remains unpriced. Ground/bunny bodies and BunnyTransformation remain separate open work. |
+| Auxiliary handler `$07:8130..819F` | Scratch/property clearing, actual electrical/cape/indoors branches and child call/BRL instructions. Swimming/cape/sword reset, SFX and recoil/zap bodies are excluded. |
+| Camera cache `$01:FF28..FFB5`, wrapper `$07:F514..F51C` | 1,776 fixed cache-copy clocks plus the actual indoor/outdoor wrapper branch, optional JSL and RTS. |
+| Indoor camera caller `$07:E8F0..E900`, page deltas `$E9D3..EA05` | Caller branch/JSL/JML and return; 244 page-delta prefix clocks, then actual X/Y sign branches and quadrant child calls. Quadrant/door bodies are excluded. The page-delta suffix reuses the active routine scope. |
+| Overworld camera `$02:BB90..BD61`, boundary `$BD62..BDBF` | Actual Z/velocity setup, one instruction-loop pass per real pixel of movement, changing camera/room-bound comparisons, optional boundary calls, scroll fractions/sign/clamps, overlay branches and special-room stores. Boundary counter rollover and equal-bound exits have separate ownership. Literal overlay operands and clamp values come directly from these ROM instructions. |
+
+The retained listings and `source-price-instructions.json` come from `scripts/rom_block_costs.py`; a listing does not mean every reached block is priced. `open-next-work.json` and the open-stripes/open-explosion listings retain the next unshipped audit targets. Executed-ROM tests cover the movement/tail chains, signed axes, platform and floor/conveyor guards, swim timers/modes/clamps, all dash directions, selected handler branches, camera loop/boundary/parallax/clamp paths and camera callers. All 24 executed-ROM price families pass in both configurations. Source tests prove their exercised prices; they do not establish route-wide semantic or raster equivalence. `price-routine-agreement.json` retains all sampled scope/call/operand disagreements.
+
+### Full cartridge progression
+
+| Stage | Held | Missing | Excess | Zero-lag FP |
+| --- | ---: | ---: | ---: | ---: |
+| Main / prior batch | 93,771 | 8,906 | 0 | 0 |
+| Movement and velocity tails | 93,789 | 8,888 | 0 | 0 |
+| Selected handler setup | 93,789 | 8,888 | 0 | 0 |
+| Camera | 93,793 | 8,884 | 0 | 0 |
+
+Every group has a complete cartridge census with `--pacing-predictor`. Both final full gates PASS, complete=True, unexplained zero, with 1,473,123 iterations each. Every runtime hold equals P2 on every row. Cartridge excess and zero-lag FP remain zero. Live-SPC executes different work and is reported separately.
+
+| Mode | Held | Exact lagged | Within one | Missing | Excess | FP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| rom | 93,793 | 31,236 | 39,104 | 8,884 | 0 | 0 |
+| live | 93,680 | 31,129 | 38,996 | 9,529 | 532 | 104 |
+
+### Refreshed rankings and remaining work
+
+`movement-`, `handlers-` and `final-gameplay-weighted-rankings.json` refresh the nine-category occurrence-weighted ordering after each group. Each uses the same retained whole-route source-lagged quantiles; sample occurrences are exact, while population weighting is only a prioritization heuristic. All signed rows and independent total reconciliations remain in the category rankings and coverage receipts. Dispatch parents 0684E2, 1E8B19 and 09B0B6 remain separate from their open individual tail bodies.
+
+| Ordinary category | Prior signed gap | Final signed gap |
+| --- | ---: | ---: |
+| `06/00` | 13,032,096 | 12,975,264 |
+| `05/00` | 3,831,300 | 3,818,868 |
+| `0E/0A` | 1,157,806 | 1,157,806 |
+| `0E/07` | 743,318 | 743,318 |
+
+These signed source-minus-SPC-owner-minus-native totals are accounting remainders, not additive budgets. This batch does not price the open object fill/door/adjacency wrappers, sprite cache/reset/load or custom attributes. D619 still needs its 24-clock LDY wrapper; B2AF still needs exact alias separation and its 10-clock entry difference without charging the existing 9895 body twice. Camera door/quadrant wrappers and other player-state bodies are also incomplete. The next requested work is striping, explosion and individual actor/garnish/effect tails, followed by the ordinary/load remainders.
+
+### Complete category table
+
+Paired cells are cartridge / live.
+
+| Entry | Source lag | Missing C / L | Excess C / L | FP C / L |
+| --- | ---: | ---: | ---: | ---: |
+| `0E/02` | 12,964 | 892 / 1,161 | 0 / 175 | 0 / 71 |
+| `07/02` | 8,770 | 968 / 968 | 0 / 0 | 0 / 0 |
+| `06/00` | 8,196 | 240 / 240 | 0 / 0 | 0 / 0 |
+| `07/0E` | 7,979 | 299 / 299 | 0 / 0 | 0 / 0 |
+| `08/00` | 6,466 | 19 / 253 | 0 / 0 | 0 / 0 |
+| `09/23` | 6,054 | 533 / 533 | 0 / 0 | 0 / 0 |
+| `0F/01` | 5,432 | 255 / 255 | 0 / 0 | 0 / 0 |
+| `09/03` | 4,372 | 296 / 296 | 0 / 0 | 0 / 0 |
+| `07/07` | 4,060 | 728 / 728 | 0 / 0 | 0 / 0 |
+| `07/00` | 3,679 | 1,706 / 1,706 | 0 / 93 | 0 / 16 |
+| `09/01` | 3,479 | 53 / 53 | 0 / 0 | 0 / 0 |
+| `07/0F` | 2,992 | 192 / 192 | 0 / 0 | 0 / 0 |
+| `0E/03` | 2,672 | 79 / 79 | 0 / 0 | 0 / 0 |
+| `10/01` | 2,672 | 3 / 4 | 0 / 5 | 0 / 0 |
+| `08/02` | 2,576 | 2 / 90 | 0 / 0 | 0 / 0 |
+| `07/15` | 2,333 | 168 / 168 | 0 / 0 | 0 / 0 |
+| `19/02` | 2,001 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/0A` | 1,845 | 56 / 56 | 0 / 0 | 0 / 0 |
+| `09/00` | 1,253 | 1,163 / 1,163 | 0 / 0 | 0 / 0 |
+| `0E/07` | 1,065 | 28 / 28 | 0 / 0 | 0 / 0 |
+| `07/06` | 984 | 41 / 41 | 0 / 0 | 0 / 0 |
+| `11/00` | 973 | 28 / 28 | 0 / 0 | 0 / 0 |
+| `07/01` | 928 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `08/01` | 706 | 0 / 17 | 0 / 53 | 0 / 0 |
+| `05/00` | 639 | 20 / 20 | 0 / 0 | 0 / 0 |
+| `09/04` | 508 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `12/03` | 472 | 43 / 43 | 0 / 0 | 0 / 0 |
+| `0F/00` | 449 | 55 / 55 | 0 / 0 | 0 / 0 |
+| `07/12` | 391 | 59 / 59 | 0 / 0 | 0 / 0 |
+| `09/2E` | 363 | 29 / 29 | 0 / 0 | 0 / 0 |
+| `07/16` | 303 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/11` | 274 | 20 / 20 | 0 / 0 | 0 / 0 |
+| `09/16` | 265 | 181 / 181 | 0 / 0 | 0 / 0 |
+| `09/0D` | 247 | 159 / 159 | 0 / 0 | 0 / 0 |
+| `0E/0B` | 243 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `09/0F` | 242 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `01/00` | 235 | 48 / 48 | 0 / 0 | 0 / 0 |
+| `09/2C` | 228 | 12 / 12 | 0 / 0 | 0 / 0 |
+| `10/00` | 157 | 0 / 1 | 0 / 81 | 0 / 0 |
+| `17/01` | 141 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `1B/02` | 139 | 5 / 5 | 0 / 0 | 0 / 0 |
+| `09/20` | 138 | 18 / 18 | 0 / 0 | 0 / 0 |
+| `0E/05` | 138 | 45 / 45 | 0 / 0 | 0 / 0 |
+| `00/01` | 114 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `0B/24` | 103 | 85 / 85 | 0 / 0 | 0 / 0 |
+| `09/21` | 84 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0E` | 83 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `15/07` | 83 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `19/00` | 72 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/13` | 71 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/17` | 68 | 59 / 59 | 0 / 0 | 0 / 0 |
+| `0B/28` | 68 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `0B/2B` | 66 | 42 / 42 | 0 / 0 | 0 / 0 |
+| `0B/19` | 64 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `15/03` | 64 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `00/05` | 62 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/26` | 61 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/1A` | 60 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/12` | 60 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/29` | 59 | 45 / 45 | 0 / 0 | 0 / 0 |
+| `18/00` | 59 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/00` | 59 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/1A` | 59 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/1C` | 59 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/04` | 58 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/08` | 58 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/0A` | 58 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/18` | 58 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/0E` | 57 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/10` | 56 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/06` | 55 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/03` | 53 | 53 / 53 | 0 / 0 | 0 / 0 |
+| `1A/0C` | 53 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `11/07` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/05` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1E` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/1C` | 48 | 29 / 29 | 0 / 0 | 0 / 0 |
+| `1A/14` | 47 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/02` | 46 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/16` | 45 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `07/18` | 41 | 6 / 41 | 0 / 35 | 0 / 14 |
+| `1A/20` | 41 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `09/12` | 32 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/08` | 32 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/25` | 30 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/00` | 29 | 9 / 9 | 0 / 0 | 0 / 0 |
+| `0B/18` | 24 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/02` | 23 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/05` | 19 | 19 / 19 | 0 / 0 | 0 / 0 |
+| `00/07` | 14 | 12 / 12 | 0 / 0 | 0 / 0 |
+| `15/05` | 14 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/02` | 7 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `00/0A` | 6 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/09` | 4 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/04` | 3 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/02` | 2 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/06` | 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `04/01` | 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `00/00` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `03/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/0B` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `09/06` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0E/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `19/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `00/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/10` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/14` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/17` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/19` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/1A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/10` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/13` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/14` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/15` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/1F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/2D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/2F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/1B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/27` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/2A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/06` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0E` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/06` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/04` | 0 | 0 / 0 | 0 / 90 | 0 / 3 |
+| `1A/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/11` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/13` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/15` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/17` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/19` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/21` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+### Crystal / pendant phases, exceptions and rupee gaps
+
+Cells are source / final presentation frames. Every phase is within one; all eight stable room/Link-XY/whole-save outcomes match source.
+
+| Seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 94000 | 65 / 66 | 5 / 5 | 17 / 17 | 2 / 2 | 35 / 34 | 16 / 16 |
+| 380000 | 84 / 85 | 7 / 7 | 24 / 23 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 460000 | 84 / 85 | 7 / 7 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 626000 | 91 / 91 | 9 / 9 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 734000 | 84 / 84 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 880000 | 84 / 85 | 7 / 7 | 26 / 26 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1064000 | 84 / 85 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1316000 | 84 / 83 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+
+| Mode | Classified WRAM differences | $0CFD-only exceptions |
+| --- | --- | ---: |
+| rom | `{"lag": 14}` | 10 |
+| live | `{"lag": 14, "polygon": 14731, "song-end-poll": 636}` | 10 |
+
+The 162000–163000 probe retains zero $0CFD-only exceptions. The same 27 rupee requests retain gaps `[23, 8, 8, 8, 8, 10, 24, 15, 8, 8, 8, 8, 8, 14, 27, 12, 8, 8, 8, 8, 8, 14, 11, 8, 8, 8]`. Every measured PCM onset interval from the unchanged detector is also unchanged from cost-pacing8. Absolute concatenated PCM frame positions can shift with preceding work. These are CPU/PCM diagnostics, not exact A/V acceptance.
+
+### Verification and stopping point
+
+| Check | Result |
+| --- | --- |
+| Default / reduced ordinary builds | PASS, both warning-free |
+| Fresh main-default 200k ledger versus final default | PASS, 200,000 records and EOF |
+| Three cartridge gates; final live-SPC gate | PASS, complete=True, unexplained zero |
+| Zelda lib, default | 2,495 pass; 1 failure; 3 ignored |
+| Zelda lib, reduced | 2,030 pass; 0 failures; 2 ignored |
+| SNES lib, both configurations | 504 pass, zero failures, 7 ignored each |
+| Pacing / profile regressions, both configurations | 13 / 3 pass |
+| Executed-ROM price families, both configurations | 24 pass |
+| Diagnostic join tests | 4 pass |
+| Stable crystal/pendant outcomes | 8 source matches |
+| `git diff --check` | PASS |
+
+The sole default lib failure remains `cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`. The library manifest verifies complete disjoint shard unions. Fixture warnings in lib-test builds are separate from warning-free ordinary builds. The default baseline was freshly recorded from the clean main a5e7cb2c binary built before edits; binary/input/ledger hashes are retained.
+
+The final joined sample adds 8,156,704 clocks over 4,450 iterations; 0 negative per-iteration deltas are retained in `sample-work-deltas.json`. This remains partial instruction coverage, not exact unseeded-route behavior, raster scheduling or exact A/V acceptance. All new charges and the dash branch are lagless-only; default/ROM-timing ledger paths retain their prior prices. The supplied ledgers and oracle cache stayed read-only. No GPU, `--video`, cached-A/V, external Snes9x, cargo GPU tests, `cargo fmt`, commit or push was used. Scratch drivers remain in `/tmp`. `verification.json`, artifact hashes, predictor CSVs, source listings, rankings, phase/PCM/stable receipts and the library manifest retain the evidence.

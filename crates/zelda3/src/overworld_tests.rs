@@ -41,6 +41,100 @@ fn load_price_rom_work(entry: u32, image: &[u8], y: u16, long_return: bool,
 }
 
 #[test]
+fn camera_prices_match_executed_rom_paths() {
+    let mut cases = Vec::new();
+    for overlay in [0u8, 0x95, 0x97, 0x9c, 0x9d, 0x9e, 0xb5, 0xbe] {
+        for velocity in [0u8, 1, 4, 0xff, 0xfc] {
+            for position in [0u16, 0x100, 0x2000] {
+                for equal_bound in [false, true] {
+                    let mut image = ZeldaState::new().wram_image().into_owned();
+                    image[0x8c] = overlay;
+                    image[0x30] = velocity;
+                    image[0x31] = velocity;
+                    for address in [0x20, 0x22] {
+                        image[address..address+2].copy_from_slice(&position.to_le_bytes());
+                    }
+                    for address in [0xe2, 0xe8] {
+                        image[address..address+2].copy_from_slice(&0x80u16.to_le_bytes());
+                    }
+                    for address in (0x600..0x610).step_by(2) {
+                        let bound = if equal_bound { 0x80u16 } else { 0x4000 };
+                        image[address..address+2].copy_from_slice(&bound.to_le_bytes());
+                    }
+                    for address in (0x618..0x620).step_by(2) {
+                        image[address..address+2].copy_from_slice(&0x100u16.to_le_bytes());
+                    }
+                    for address in (0x624..0x62c).step_by(2) { image[address] = 15; }
+                    cases.push(image);
+                }
+            }
+        }
+    }
+    for screen in [0u8, 0x1b, 0x47] {
+        for height in [0u16, 0xffff, 8] {
+            for scroll in [0x5ffu16, 0x600, 0x640, 0x6c0, 0x6c1] {
+                let mut image = ZeldaState::new().wram_image().into_owned();
+                image[0x8a] = screen;
+                image[0x78] = 1;
+                image[0x24..0x26].copy_from_slice(&height.to_le_bytes());
+                image[0x30] = 4;
+                image[0x31] = 0xff;
+                image[0x20..0x22].copy_from_slice(&0x200u16.to_le_bytes());
+                image[0xe6..0xe8].copy_from_slice(&scroll.to_le_bytes());
+                image[0xa0..0xa2].copy_from_slice(&0x181u16.to_le_bytes());
+                for address in (0x600..0x610).step_by(2) { image[address+1] = 0x40; }
+                cases.push(image);
+            }
+        }
+    }
+    for image in cases {
+        let mut native = ZeldaState::new();
+        native.set_lag_free(true);
+        native.import_wram_image(&image);
+        native.sync_native_game_state_from_ram();
+        let (total, own) = load_price_rom_work(0x02bb90, &native.wram_image(), 0,
+            false, 0x02bb90..=0x02bd61);
+        let before = crate::cycle_ledger::master();
+        let measured = crate::cycle_ledger::measure_routine_self_work(0x02bb90, || {
+            native.overworld_operate_camera_scroll();
+        });
+        assert_eq!(measured, own, "overlay={:x} velocity={} position={} screen={} z={}",
+            image[0x8c], image[0x30], u16::from_le_bytes([image[0x20],image[0x21]]),
+            image[0x8a], u16::from_le_bytes([image[0x24],image[0x25]]));
+        assert_eq!(crate::cycle_ledger::master() - before, total);
+    }
+    for entry in [0x01ff28u32, 0x07f514, 0x07e9d3, 0x07e8f0] {
+        for indoors in [0u8, 1] {
+            for x in [0u8, 1, 0xff] {
+                for y in [0u8, 1, 0xff] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    let mut image = native.wram_image().into_owned();
+                    image[0x1b] = indoors;
+                    image[0x23] = x;
+                    image[0x21] = y;
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    let end = match entry { 0x01ff28 => 0x01ffb5, 0x07f514 => 0x07f51c,
+                        0x07e9d3 => 0x07ea05, _ => 0x07e900 };
+                    let (_, own) = load_price_rom_work(entry, &native.wram_image(), 0,
+                        matches!(entry, 0x01ff28 | 0x07e9d3), entry..=end);
+                    let measured = crate::cycle_ledger::measure_routine_self_work(entry, || {
+                        match entry {
+                            0x01ff28 => native.cache_camera_properties(),
+                            0x07f514 => native.cache_camera_properties_if_outdoors(),
+                            0x07e9d3 => native.apply_links_movement_to_camera(),
+                            _ => native.handle_indoor_camera_and_doors(),
+                        }
+                    });
+                    assert_eq!(measured, own, "entry={entry:x} indoors={indoors} x={x} y={y}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn ordinary_load_prices_match_executed_rom_paths() {
     let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../zelda3_assets.dat")).unwrap();

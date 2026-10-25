@@ -11,6 +11,103 @@ mod velocity_price_tests {
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
 
     #[test]
+    fn movement_tail_prices_match_executed_rom_paths() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut cases = Vec::new();
+        for airborne in [0u8, 1] {
+            for velocity in [0u8, 1, 0x7f, 0x80, 0xff] {
+                for handler in [0u8, 10] {
+                    for platform in [0u8, 2] {
+                        cases.push((0xe373u16, vec![(0x4d, airborne), (0x27, velocity),
+                            (0x28, velocity), (0x29, velocity), (0x5d, handler), (0x2f5, platform)]));
+                    }
+                }
+            }
+        }
+        cases.push((0xe3e0, vec![(0xb7c, 0xff), (0xb7e, 1)]));
+        for timer in [0u8, 1, 2, 0x80] {
+            for mode in [0u8, 1, 2, 3] {
+                for flag in [0u8, 1] {
+                    for acceleration in [0u16, 1, 0x80, 0x200, 0x8000] {
+                        cases.push((0xe42a, vec![(0x326, timer), (0x328, timer),
+                            (0x32b, mode), (0x32d, mode), (0x34a, flag), (0x6a, flag),
+                            (0x33c, acceleration as u8), (0x33d, (acceleration >> 8) as u8),
+                            (0x33e, acceleration as u8), (0x33f, (acceleration >> 8) as u8),
+                            (0x334, 0x80), (0x336, 0x80), (0x338, flag), (0x33a, flag)]));
+                    }
+                }
+            }
+        }
+        for velocity in [0u16, 0x7f, 0x800, 0x7fff, 0x8000, 0xffff] {
+            cases.push((0xe4d3, vec![(0xa, velocity as u8), (0xb, (velocity >> 8) as u8),
+                (8, velocity as u8), (9, (velocity >> 8) as u8)]));
+        }
+        for direction in 0u8..16 {
+            for input in [0u8, 1] {
+                for water in [0u8, 1] {
+                    cases.push((0xe545, vec![(0x67, direction), (0xf0, input), (0x351, water)]));
+                }
+            }
+        }
+        for collision in [0u8, 1, 4] {
+            for z in [0u8, 1, 0xff] {
+                for belt in 0u8..=4 {
+                    for floor in [0u8, 1, 0xff] {
+                        cases.push((0xe373, vec![(0x46c, collision), (0x24, z),
+                            (0x3f3, belt), (0x310, floor), (0x312, floor), (0x322, 3)]));
+                    }
+                }
+            }
+        }
+        for (entry, changes) in cases {
+            let mut native = ZeldaState::new();
+            native.set_lag_free(true);
+            let mut image = native.wram_image().into_owned();
+            for &(address, value) in &changes { image[address] = value; }
+            native.import_wram_image(&image);
+            native.sync_native_game_state_from_ram();
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.ram.copy_from_slice(&native.wram_image());
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(if entry == 0xe4d3 { 0x10 } else { 0x30 });
+            machine.cpu.k = 7;
+            machine.cpu.db = 7;
+            machine.cpu.pc = entry;
+            machine.cpu.sp = 0x1fc;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut measured = 0;
+            for _ in 0..3000 {
+                let pc = source.snes().cpu.pc;
+                let step = source.step().unwrap();
+                if (0xe373..=0xe670).contains(&pc) {
+                    measured += step.transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                }
+                if pc == 0xe405 || pc == 0xe575 { break; }
+            }
+            assert_eq!(source.snes().cpu.k, 0, "return entry={entry:x}");
+            let before = crate::cycle_ledger::master();
+            match entry {
+                0xe373 => native.link_move_position(),
+                0xe545 => native.link_dash_in_place(),
+                0xe3e0 => native.link_handle_velocity_and_sand_drag(0, 0),
+                0xe42a => native.handle_swim_stroke_and_subpixels(),
+                0xe4d3 => native.player_something_with_velocity_tired_or_swim(
+                    u16::from_le_bytes([image[0xa], image[0xb]]),
+                    u16::from_le_bytes([image[8], image[9]])),
+                _ => unreachable!(),
+            }
+            let total = crate::cycle_ledger::master() - before;
+            assert_eq!(total, measured, "entry={entry:x} operands={changes:?}");
+        }
+    }
+
+    #[test]
     fn velocity_selection_prices_match_executed_rom_paths() {
         let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../saves/zelda3.sfc")).unwrap();
@@ -652,6 +749,10 @@ impl ZeldaState {
     }
 
     pub(super) fn link_apply_moving_floor_velocity(&mut self) {
+        if self.lag_free {
+            // $07:E5CD..E5E3: shared floor-velocity tail, including RTS.
+            crate::cycle_ledger::charge_routine(0x07_e5cd, 346);
+        }
         self.follower_link_state_mut()
             .clear_orthogonal_direction_count();
         let y = self
@@ -671,6 +772,8 @@ impl ZeldaState {
     }
 
     pub(super) fn link_apply_conveyor(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e5f0));
+        if self.lag_free { crate::cycle_ledger::charge(self.link_conveyor_master()); }
         if self.game_state.player.follower_link.conveyor_belt_state() == 0 {
             return;
         }
@@ -780,6 +883,33 @@ impl ZeldaState {
     fn link_move_position_until_coordinates_integrated(
         &mut self,
     ) -> Option<LinkMovePositionReturn> {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e373));
+        if self.lag_free {
+            // $07:E373..E3DB: save coordinates, axis loop and child call
+            // instructions only. Floor/conveyor and E3E0 own their bodies.
+            let p = &self.game_state.player.follower_link;
+            let mut clocks = 344;
+            if p.handler_state() == 10 { clocks += 6; }
+            else {
+                clocks += 64;
+                if p.on_somaria_platform() == 2 {
+                    crate::cycle_ledger::charge(clocks + 6);
+                    let x = p.x();
+                    let y = p.y();
+                    self.follower_link_state_mut().store_safe_return_position(x, y);
+                    self.link_handle_velocity_and_sand_drag(x, y);
+                    return None;
+                }
+            }
+            clocks += 72 + if p.auxiliary_state() != 0 { 6 } else { 32 };
+            let velocities = [p.actual_x_velocity(), p.actual_y_velocity(), p.actual_z_velocity()];
+            let count = if p.auxiliary_state() != 0 { 3 } else { 2 };
+            for (i, velocity) in velocities[..count].iter().enumerate() {
+                clocks += 352 + if velocity & 0x80 == 0 { 6 } else { 32 };
+                clocks += 248 + if i + 1 < count { 6 } else { 0 };
+            }
+            crate::cycle_ledger::charge(clocks + 114);
+        }
         let x = self.game_state.player.follower_link.x();
         let y = self.game_state.player.follower_link.y();
         self.follower_link_state_mut()
@@ -818,6 +948,11 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_velocity_and_sand_drag(&mut self, old_x: u16, old_y: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e3e0));
+        if self.lag_free {
+            // $07:E3E0..E405: drag, coordinate deltas and common return.
+            crate::cycle_ledger::charge(546);
+        }
         let y = self
             .game_state
             .player
@@ -836,7 +971,80 @@ impl ZeldaState {
         player.set_movement_velocity_from_position_delta(x, y, old_x, old_y);
     }
 
+    // $07:E595..E5CB, with early RTS at E5E3. Successful paths enter
+    // E5CD, whose shared body/return is charged by its native helper.
+    fn link_moving_floor_master(&self) -> u64 {
+        let p = &self.game_state.player.follower_link;
+        let mut clocks = 48;
+        if self.game_state.dungeon.room_load.header_collision() == 0 { return clocks + 6 + 42; }
+        clocks += 40;
+        if p.z_low() == 0 { clocks += 6; }
+        else {
+            clocks += 32;
+            if p.z_low() != 0xff { return clocks + 6 + 42; }
+        }
+        clocks += 80;
+        if !self.has_player_layer_collision(crate::game_state::constants::player::LAYER_COLLISION_BOTH) {
+            return clocks + 6 + 42;
+        }
+        clocks += 56;
+        if p.handler_state() == 19 { return clocks + 6 + 42; }
+        for velocity in [self.game_state.dungeon.moving_floor.floor_y_velocity(),
+            self.game_state.dungeon.moving_floor.floor_x_velocity()] {
+            clocks += 64;
+            let low = velocity as u8;
+            clocks += if low == 0 { 6 } else { 16 + if (low as i8) < 0 { 6 } else { 16 } + 52 };
+        }
+        clocks
+    }
+
+    // $07:E5F0..E670 and the shared early RTS at E5E3. Conveyor table
+    // accesses use the actual belt index; the two fixed axis passes are
+    // instruction loops, not a duration estimate.
+    fn link_conveyor_master(&self) -> u64 {
+        let p = &self.game_state.player.follower_link;
+        let mut clocks = 48;
+        if p.conveyor_belt_state() == 0 { return clocks + 6 + 42; }
+        clocks += 40;
+        if p.z_low() == 0 { clocks += 6; }
+        else {
+            clocks += 32;
+            if p.z_low() != 0xff { return clocks + 6 + 42; }
+        }
+        clocks += 64;
+        if p.grabbing_wall_has(1) { return clocks + 6 + 42; }
+        clocks += 56;
+        if p.handler_state() == 19 { return clocks + 6 + 42; }
+        clocks += 40;
+        if p.has_auxiliary_state() { return clocks + 6 + 42; }
+        clocks += 48;
+        let j = p.conveyor_belt_state().wrapping_sub(1) as usize;
+        // Native rejects invalid table indices rather than emulating foreign
+        // ROM data. Keep that unsupported path unpriced beyond its guards.
+        if j >= LINK_APPLY_CONVEYOR_MOVE_POS_DIR_FLAG.len() { return clocks; }
+        if !p.is_running() { clocks += 6; }
+        else {
+            clocks += 64;
+            if p.dash_counter() != 32 { clocks += 6; }
+            else {
+                clocks += 118;
+                if p.direction() & LINK_APPLY_CONVEYOR_MOVE_POS_DIR_FLAG[j] != 0 {
+                    return clocks + 6 + 42;
+                }
+            }
+        }
+        clocks += 284;
+        for (i, velocity) in [LINK_APPLY_CONVEYOR_MOVING_BELT_X[j],
+            LINK_APPLY_CONVEYOR_MOVING_BELT_Y[j]].iter().enumerate() {
+            clocks += 360 + if *velocity >= 0 { 6 } else { 30 };
+            clocks += 240 + if i == 0 { 6 } else { 0 };
+        }
+        clocks + 64
+    }
+
     pub(super) fn link_handle_moving_floor(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e595));
+        if self.lag_free { crate::cycle_ledger::charge(self.link_moving_floor_master()); }
         if self.game_state.dungeon.room_load.header_collision() == 0 {
             return;
         }
@@ -1345,6 +1553,20 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn player_something_with_velocity_tired_or_swim(&mut self, xvel: u16, yvel: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e4d3));
+        if self.lag_free {
+            // $07:E4D3..E53E: two signed subpixel passes. E5CD and E3E0
+            // are separate children; include only their call/BRL here.
+            let mut clocks = 342;
+            for (i, velocity) in [xvel, yvel].iter().enumerate() {
+                let high = (velocity >> 8) as u8;
+                clocks += 236 + if high < 8 { 6 } else { 32 };
+                clocks += 352 + if high < 0x80 { 6 } else { 30 };
+                clocks += 182 + if i == 0 { 6 } else { 0 };
+            }
+            clocks += 64 + if self.game_state.dungeon.room_load.header_collision() == 4 { 46 } else { 6 };
+            crate::cycle_ledger::charge(clocks + 78);
+        }
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
         self.follower_link_state_mut()
@@ -1882,6 +2104,10 @@ impl ZeldaState {
             24
         } else {
             if self.game_state.player.follower_link.is_running() {
+                if self.lag_free && self.game_state.player.follower_link.dash_counter() < 16 {
+                    self.link_dash_in_place();
+                    return None;
+                }
                 self.follower_link_state_mut().clear_speed_modifier();
                 assert!(self.game_state.player.follower_link.dash_counter() >= 32);
             }
@@ -1897,6 +2123,10 @@ impl ZeldaState {
                     .tile_collision_bits_secondary())
                 == 0x0f
             {
+                if self.lag_free {
+                    // $07:E402..E405: all-blocked BRL's common return only.
+                    crate::cycle_ledger::charge_routine(0x07_e402, 94);
+                }
                 return None;
             }
             if self
@@ -2142,7 +2372,96 @@ impl ZeldaState {
             .move_axis_by_velocity(axis, velocity);
     }
 
+    fn link_dash_in_place(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e545));
+        let p = &self.game_state.player.follower_link;
+        let mut clocks = 104;
+        let speed = if p.joypad1h_last() & 15 == 0 {
+            clocks += 6;
+            0u16
+        } else {
+            clocks += 64 + 64;
+            if p.water_ripple_or_grass_state() == 0 { clocks += 6; 0x180 }
+            else { clocks += 16; 0x150 }
+        };
+        clocks += 184;
+        let direction = p.direction() & 15;
+        let mut index = 3;
+        let mut bits = direction;
+        while bits & 1 == 0 {
+            clocks += 30 + 30;
+            if index == 0 {
+                if self.lag_free {
+                    // $07:E545..E575: no direction returns without integration.
+                    crate::cycle_ledger::charge(clocks + 72);
+                }
+                self.follower_link_state_mut().clear_actual_velocity_xy();
+                return;
+            }
+            clocks += 6;
+            bits >>= 1;
+            index -= 1;
+        }
+        clocks += 30 + 6 + 100;
+        if index == 0 { clocks += 6 + 38; }
+        else { clocks += 32 + if index != 2 { 6 } else { 38 }; }
+        if self.lag_free {
+            // $07:E576..E592: sign/axis selection and BRL only; E4D3 owns
+            // integration and E3E0 owns the final drag/common-return tail.
+            crate::cycle_ledger::charge(clocks + 208);
+        }
+        let velocity = if index == 0 || index == 2 { 0u16.wrapping_sub(speed) } else { speed };
+        self.follower_link_state_mut().clear_actual_velocity_xy();
+        let (x, y) = if index & 2 != 0 { (velocity, 0) } else { (0, velocity) };
+        self.player_something_with_velocity_tired_or_swim(x, y);
+    }
+
+    // $07:E42A..E4D0: actual timer, acceleration, clamp and direction
+    // branches. E4D3 owns integration; E3E0 owns the drag/return tail.
+    fn swim_stroke_master(&self) -> u64 {
+        let p = &self.game_state.player.follower_link;
+        let a = &self.game_state.player.swim_acceleration;
+        let mut clocks = 86;
+        for offset in [2, 0] {
+            let mut mode = a.mode(offset);
+            let timer = p.swim_stroke_frame_counter(offset).wrapping_sub(1);
+            clocks += 122;
+            if (timer as i16) < 0 { clocks += 116; mode = 1; }
+            else { clocks += 6; }
+            clocks += 148;
+            let mut table_index = mode.wrapping_mul(2) as u8;
+            if p.flag_moving() == 0 { clocks += 6; }
+            else {
+                clocks += 148;
+                table_index = table_index.wrapping_add(p.flag_moving().wrapping_mul(8));
+            }
+            clocks += 110 + if u16::from(table_index) + 0x06 > 0xff { 6 } else { 0 };
+            let delta = HANDLE_SWIM_STROKE_AND_SUBPIXELS_SWIM_ACCELERATION_DELTAS
+                [usize::from(table_index / 2)] as i16 as u16;
+            let sum = a.acceleration(offset).wrapping_add(delta);
+            if sum == 0 { clocks += 6; }
+            else { clocks += 16 + if (sum as i16) > 0 { 6 } else { 0 }; }
+            if (sum as i16) <= 0 {
+                clocks += 216 + if mode == 2 { 178 } else { 6 + 138 };
+            } else {
+                clocks += 322;
+                let index = (offset as u16).wrapping_add(a.acceleration_direction(offset))
+                    .wrapping_mul(2) as u8;
+                if u16::from(index) + 0x22 > 0xff { clocks += 6; }
+                clocks += if sum < a.max_speed(offset) { 6 } else { 40 };
+            }
+            clocks += 132 + if p.has_swim_axis_drag() { 220 } else { 6 };
+            clocks += 80 + if a.acceleration_direction(offset) as u8 != 0 { 6 } else { 114 };
+            clocks += 44 + if offset == 0 { 6 } else { 30 };
+        }
+        clocks
+    }
+
     pub(in crate::zelda_rtl) fn handle_swim_stroke_and_subpixels(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e42a));
+        if self.lag_free {
+            crate::cycle_ledger::charge(self.swim_stroke_master());
+        }
         self.follower_link_state_mut().clear_actual_velocity_xy();
 
         let mut stroke = [0u16; 2];

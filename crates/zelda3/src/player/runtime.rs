@@ -10,6 +10,108 @@ mod control_price_tests {
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
 
     #[test]
+    fn default_handler_prices_match_executed_rom_paths() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for auxiliary in [0u8, 1] {
+            for timer in [0u8, 1] {
+                for poof in [0u8, 1] {
+                    for handler in [0u8, 23, 28] {
+                        let mut native = ZeldaState::new();
+                        let mut image = native.wram_image().into_owned();
+                        image[0x4d] = auxiliary;
+                        image[0x3f5] = timer;
+                        image[0x3f7] = poof;
+                        image[0x5d] = handler;
+                        image[0x2e2] = 1;
+                        native.import_wram_image(&image);
+                        native.sync_native_game_state_from_ram();
+                        let mut machine = Snes::new();
+                        machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                        machine.ram.copy_from_slice(&native.wram_image());
+                        machine.cpu.e = false;
+                        machine.cpu.unpack_flags(0x30);
+                        machine.cpu.k = 7;
+                        machine.cpu.db = 7;
+                        machine.cpu.pc = 0x8109;
+                        machine.cpu.sp = 0x1fc;
+                        let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                        let mut source = RomCpuTimingProbe::new(machine, clock,
+                            SourcePpuReadState::snes9x_reset()).unwrap();
+                        let mut measured = 0;
+                        let mut ended = false;
+                        for _ in 0..20000 {
+                            let cpu = &source.snes().cpu;
+                            let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+                            if matches!(pc, 0x078130 | 0x0781a0 | 0x0783a1) {
+                                ended = true; break;
+                            }
+                            let step = source.step().unwrap();
+                            if (0x078109..=0x07812e).contains(&pc) {
+                                measured += step.transactions.iter()
+                                    .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                            }
+                            if pc == 0x078128 { ended = true; break; }
+                        }
+                        assert!(ended);
+                        let entry = native.link_default_entry_master();
+                        let transformed = native.link_handle_bunny_transformation();
+                        assert_eq!(entry + native.link_default_tail_master(transformed), measured,
+                            "auxiliary={auxiliary} timer={timer} poof={poof} handler={handler}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn auxiliary_handler_prices_match_executed_rom_paths() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for indoors in [0u8, 1] {
+            for electric in [0u8, 1] {
+                for cape in [0u8, 1] {
+                    let mut native = ZeldaState::new();
+                    let mut image = native.wram_image().into_owned();
+                    image[0x1b] = indoors;
+                    image[0x360] = electric;
+                    image[0x55] = cape;
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    let mut machine = Snes::new();
+                    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                    machine.ram.copy_from_slice(&native.wram_image());
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0x30);
+                    machine.cpu.k = 7;
+                    machine.cpu.db = 7;
+                    machine.cpu.pc = 0x8130;
+                    machine.cpu.sp = 0x1fc;
+                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                    let mut source = RomCpuTimingProbe::new(machine, clock,
+                        SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut measured = 0;
+                    for _ in 0..20000 {
+                        let cpu = &source.snes().cpu;
+                        let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+                        let step = source.step().unwrap();
+                        if (0x078130..=0x07819f).contains(&pc) {
+                            measured += step.transactions.iter()
+                                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                        }
+                        if matches!(pc, 0x078190 | 0x07819d) { break; }
+                    }
+                    assert!(matches!(source.snes().cpu.pc, 0x86b5 | 0x996c));
+                    assert_eq!(native.handle_link_from1d_self_master(), measured,
+                        "indoors={indoors} electric={electric} cape={cape}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn player_control_prices_match_executed_rom_paths() {
         let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../saves/zelda3.sfc")).unwrap();
@@ -445,6 +547,10 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn cache_camera_properties(&mut self) {
+        if self.lag_free {
+            // $01:FF28..FFB5: exact fixed camera/property cache and RTL.
+            crate::cycle_ledger::charge_routine(0x01_ff28, 1776);
+        }
         let bg2_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         self.cache_bg2_live_scroll_from(bg2_x, bg2_y);
@@ -610,12 +716,26 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_state_default(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_8109));
+        if self.lag_free {
+            // $07:8109..811D: camera/bunny call instructions and control.
+            // The unported F5 debug-cheat toggle ($8112..8117) stays unpriced.
+            crate::cycle_ledger::charge(self.link_default_entry_master());
+        }
         self.cache_camera_properties_if_outdoors();
         if self.link_handle_bunny_transformation() {
+            if self.lag_free {
+                // $07:811F..8128: tail to Bunny or RTS; body excluded.
+                crate::cycle_ledger::charge(self.link_default_tail_master(true));
+            }
             if self.game_state.player.follower_link.handler_state() == 23 {
                 self.player_handler_17_bunny();
             }
             return;
+        }
+        if self.lag_free {
+            // $07:8129..812E, including the taken BCC from $811D.
+            crate::cycle_ledger::charge(self.link_default_tail_master(false));
         }
         self.follower_link_state_mut().set_pit_correction_timer(0);
         if self.game_state.player.follower_link.has_auxiliary_state() {
@@ -625,7 +745,38 @@ impl ZeldaState {
         }
     }
 
+    fn link_default_entry_master(&self) -> u64 {
+        // $07:8109..811D, excluding the unported debug toggle at $8112.
+        102 + if self.ram[0xf5] & 0x80 == 0 { 6 } else { 0 } + 62
+    }
+
+    fn link_default_tail_master(&self, transformed: bool) -> u64 {
+        // $07:811F..812E, selected after BunnyTransformation returns.
+        let p = &self.game_state.player.follower_link;
+        if transformed {
+            56 + if p.handler_state() == 23 { 30 } else { 6 + 42 }
+        } else {
+            6 + 72 + if p.has_auxiliary_state() { 0 } else { 6 }
+        }
+    }
+
+    // $07:8130..819F: scratch/property clearing, electrical/cape branches,
+    // and call/BRL instructions only. Swimming reset, cape/sword reset, SFX
+    // and selected recoil/zap bodies retain separate ownership.
+    fn handle_link_from1d_self_master(&self) -> u64 {
+        let p = &self.game_state.player.follower_link;
+        let mut clocks = 630;
+        if p.electrocute_on_touch() == 0 {
+            clocks += 6 + 40 + if self.game_state.world.location.is_indoors() { 6 } else { 0 } + 94;
+        } else {
+            clocks += 40 + if p.is_cape_active() { 46 } else { 6 } + 386;
+        }
+        clocks
+    }
+
     pub(super) fn handle_link_from1_d(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_8130));
+        if self.lag_free { crate::cycle_ledger::charge(self.handle_link_from1d_self_master()); }
         self.follower_link_state_mut().clear_item_in_hand();
         self.follower_link_state_mut().clear_position_mode();
         self.follower_link_state_mut().clear_action_scratch_state();
@@ -1235,6 +1386,14 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn handle_indoor_camera_and_doors(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e8f0));
+        if self.lag_free {
+            // $07:E8F0..E900: tail JML or camera JSL; child bodies excluded.
+            let clocks = if self.game_state.world.location.is_outdoors() { 40 + 6 + 42 }
+                else if self.game_state.player.follower_link.doorway_state() != 0 { 40 + 40 + 32 }
+                else { 40 + 40 + 6 + 62 + 42 };
+            crate::cycle_ledger::charge(clocks);
+        }
         if self.game_state.world.location.is_outdoors() {
             return;
         }
@@ -1246,6 +1405,11 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn cache_camera_properties_if_outdoors(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_f514));
+        if self.lag_free {
+            // $07:F514..F51C: branch, optional JSL and RTS; FF28 excluded.
+            crate::cycle_ledger::charge(40 + if self.game_state.world.location.is_outdoors() { 62 } else { 6 } + 42);
+        }
         if self.game_state.world.location.is_outdoors() {
             self.cache_camera_properties();
         }
@@ -1329,6 +1493,11 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn apply_links_movement_to_camera(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e9d3));
+        if self.lag_free {
+            // $07:E9D3..E9E2: bank setup and page-delta stores only.
+            crate::cycle_ledger::charge(244);
+        }
         self.apply_links_movement_to_camera_called = true;
         let (y_delta, x_delta) = {
             (
@@ -1351,6 +1520,15 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn finish_camera_after_native_page_deltas(&mut self) {
+        if self.lag_free {
+            // $07:E9E4..EA05: X/Y branch/call instructions and bank return.
+            let p = &self.game_state.player.follower_link;
+            let x = p.x_page_movement_delta_signed();
+            let y = p.y_page_movement_delta_signed();
+            let clocks = 40 + if x == 0 { 6 } else if x < 0 { 16 + 6 + 62 } else { 16 + 84 }
+                + 40 + if y == 0 { 6 + 72 } else if y < 0 { 16 + 134 } else { 16 + 6 + 62 + 72 };
+            crate::cycle_ledger::charge_in_routine(0x07_e9d3, clocks);
+        }
         self.apply_links_movement_to_camera_called = true;
         if self.game_state.player.follower_link.x_page_movement_delta() != 0 {
             if self

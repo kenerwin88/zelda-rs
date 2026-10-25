@@ -6803,6 +6803,12 @@ impl ZeldaState {
 
     /// ROM: `Overworld_OperateCameraScroll`
     pub(super) fn overworld_operate_camera_scroll(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_bb90));
+        let lag_free = self.lag_free;
+        let price = |clocks| { if lag_free { crate::cycle_ledger::charge(clocks); } };
+        // $02:BB90..BBBD: bank/Z setup and Y-velocity test.
+        price(166 + if self.game_state.world.transient.allow_scroll_z() == 0 { 6 }
+            else { 72 + if self.game_state.player.follower_link.z() == 0xffff { 24 } else { 6 } } + 308);
         let z = if self.game_state.world.transient.allow_scroll_z() != 0
             && self.game_state.player.follower_link.z() != 0xffff
         {
@@ -6820,6 +6826,8 @@ impl ZeldaState {
 
         let link_y_velocity = self.game_state.player.follower_link.y_velocity();
         if link_y_velocity != 0 {
+            // $BBC2..BC5E: loop entry and actual signed velocity.
+            price(6 + 72 + if (link_y_velocity as i8).is_negative() { 146 } else { 6 } + 64);
             let vy = if (link_y_velocity as i8).is_negative() {
                 -1
             } else {
@@ -6832,6 +6840,7 @@ impl ZeldaState {
             };
             let mut r4 = 0u16;
             while av != 0 {
+                price(96 + 88);
                 if (link_y_velocity as i8).is_negative() {
                     if y <= self
                         .game_state
@@ -6839,8 +6848,9 @@ impl ZeldaState {
                         .camera_boundaries
                         .camera_y_coord_scroll_low()
                     {
+                        price(38 + 62);
                         r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(6, 0, vy, 0) as u16);
-                    }
+                    } else { price(6); }
                 } else if y
                     >= self
                         .game_state
@@ -6848,11 +6858,14 @@ impl ZeldaState {
                         .camera_boundaries
                         .camera_y_coord_scroll_hi()
                 {
+                    price(6 + 16 + 62);
                     r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(6, 2, vy, 0) as u16);
-                }
+                } else { price(6 + 6); }
                 av = av.wrapping_sub(1);
+                price(70 + if av != 0 { 6 } else { 0 });
             }
             self.set_overworld_vertical_scroll_delta(r4);
+            price(self.camera_parallax_self_master(true, r4));
             let oi = self.game_state.world.region.overlay_index();
             if oi != 0x97 && oi != 0x9d && r4 != 0 {
                 let (subp, mut scroll) = if oi == 0xb5 || oi == 0xbe {
@@ -6872,6 +6885,9 @@ impl ZeldaState {
                 self.add_bg1_v_live_subpixel(subp, scroll);
                 if self.game_state.world.location.overworld_screen_index() & 0x3f == 0x1b {
                     let bg1 = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
+                    // $02:BC4E..BC5E: two comparisons; first store affects second.
+                    price(72 + if bg1 <= 0x600 { 32 } else { 6 } + 72
+                        + if bg1.max(0x600) <= 0x6c0 { 6 } else { 32 });
                     if bg1 <= 0x0600 {
                         self.set_bg1_y(0x0600);
                     } else if bg1 >= 0x06c0 {
@@ -6879,11 +6895,15 @@ impl ZeldaState {
                     }
                 }
             }
-        }
+        } else { price(24); }
 
+        // $02:BC60..BC72: X-coordinate/velocity setup.
+        price(230);
         let x = self.game_state.player.follower_link.x().wrapping_add(8);
         let link_x_velocity = self.game_state.player.follower_link.x_velocity();
         if link_x_velocity != 0 {
+            // $BC77..BCF9: loop entry and actual signed velocity.
+            price(6 + 72 + if (link_x_velocity as i8).is_negative() { 146 } else { 6 } + 72);
             let vx = if (link_x_velocity as i8).is_negative() {
                 -1
             } else {
@@ -6896,6 +6916,7 @@ impl ZeldaState {
             };
             let mut r4 = 0u16;
             while ax != 0 {
+                price(96 + 88);
                 if (link_x_velocity as i8).is_negative() {
                     if x <= self
                         .game_state
@@ -6903,8 +6924,9 @@ impl ZeldaState {
                         .camera_boundaries
                         .camera_x_coord_scroll_low()
                     {
+                        price(38 + 62);
                         r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(0, 4, vx, 4) as u16);
-                    }
+                    } else { price(6); }
                 } else if x
                     >= self
                         .game_state
@@ -6912,11 +6934,14 @@ impl ZeldaState {
                         .camera_boundaries
                         .camera_x_coord_scroll_hi()
                 {
+                    price(6 + 16 + 62);
                     r4 = r4.wrapping_add(self.OverworldCameraBoundaryCheck(0, 6, vx, 4) as u16);
-                }
+                } else { price(6 + 6); }
                 ax = ax.wrapping_sub(1);
+                price(70 + if ax != 0 { 6 } else { 0 });
             }
             self.set_overworld_horizontal_scroll_delta(r4);
+            price(self.camera_parallax_self_master(false, r4));
             let oi = self.game_state.world.region.overlay_index();
             if oi != 0x97 && oi != 0x9d && r4 != 0 {
                 let (subp, mut scroll) = if oi == 0x95 || oi == 0x9e {
@@ -6935,8 +6960,15 @@ impl ZeldaState {
                 }
                 self.add_bg1_h_live_subpixel(subp, scroll);
             }
-        }
+        } else { price(24); }
 
+        // $02:BCFB..BD61: overlay drift, special-room stores and return.
+        let oi = self.game_state.world.region.overlay_index();
+        price(56 + if self.game_state.world.location.overworld_screen_index() == 0x47 { 6 }
+            else { 56 + if oi == 0x9c { 6 + 324 }
+                else { 32 + if oi == 0x97 { 6 + 434 }
+                    else { 32 + if oi == 0x9d { 434 } else { 6 } } } });
+        price(72 + if self.game_state.world.location.dungeon_room() != 0x181 { 6 } else { 152 } + 92);
         if self.game_state.world.location.overworld_screen_index() != 0x47 {
             if self.game_state.world.region.overlay_index() == 0x9c {
                 self.subtract_bg1_v_live_subpixel(0x2000);
@@ -6971,6 +7003,7 @@ impl ZeldaState {
         vd: i32,
         r8: i32,
     ) -> i32 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_bd62));
         let ya = (ya >> 1) as usize;
         let r8 = (r8 >> 1) as usize;
         let vertical_axis = xa != 0;
@@ -6981,8 +7014,19 @@ impl ZeldaState {
             .bg2_copy2_for_axis(vertical_axis)
             == self.game_state.world.room_bounds.packed_bound(ya)
         {
+            if self.lag_free {
+                // $02:BD62..BD77: equal bound clears both opposed counters.
+                crate::cycle_ledger::charge(94 + 210);
+            }
             self.clear_opposed_scroll_counters(ya);
             return 0;
+        }
+        if self.lag_free {
+            // $02:BD78..BDBF: one real scroll step, counter rollover and RTS.
+            let value = self.game_state.world.camera_boundaries
+                .overworld_scroll_counter_for_axis(ya).wrapping_add(1);
+            crate::cycle_ledger::charge(94 + 6 + 616
+                + if (value.wrapping_sub(16) as i16) < 0 { 6 } else { 204 } + 166);
         }
         self.add_bg2_copy2_for_axis_signed(vertical_axis, vd as i16);
 
@@ -7001,6 +7045,32 @@ impl ZeldaState {
         }
         self.set_opposed_scroll_counter_pair(ya, value);
         vd
+    }
+
+    // $02:BBFC..BC4C and $BCB3..BCF9: overlay predicates, real scroll
+    // fraction/sign and live-scroll update instructions. Vertical clamping
+    // is priced at its live branch after the add, below this caller.
+    fn camera_parallax_self_master(&self, vertical: bool, delta: u16) -> u64 {
+        let oi = self.game_state.world.region.overlay_index();
+        let mut clocks = 128;
+        if oi == 0x97 { return clocks + 6; }
+        clocks += 32;
+        if oi == 0x9d { return clocks + 6; }
+        clocks += 48;
+        if delta == 0 { return clocks + 6; }
+        clocks += 156;
+        let (first, second) = if vertical { (0xb5, 0xbe) } else { (0x95, 0x9e) };
+        let quarter = oi == first || oi == second;
+        if oi == first { clocks += 6; }
+        else { clocks += 32 + if oi != second { 6 } else { 0 }; }
+        let scroll = delta >> if quarter { 2 } else { 1 };
+        if quarter { clocks += 108 + if scroll < 0x3000 { 6 } else { 46 }; }
+        else { clocks += 40 + if scroll < 0x7000 { 6 } else { 24 }; }
+        clocks += if vertical { 350 } else { 254 };
+        if vertical && self.game_state.world.location.overworld_screen_index() & 0x3f != 0x1b {
+            clocks += 6;
+        }
+        clocks
     }
 
     pub(super) fn OverworldScrollTransition(&mut self) -> i32 {
