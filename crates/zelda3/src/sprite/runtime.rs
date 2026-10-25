@@ -1239,7 +1239,7 @@ impl ZeldaState {
     }
 
     fn sprite_execute_single_after_entry(&mut self,k:usize,st:u8) {
-        let _scope = crate::cycle_ledger::routine(0x06_84e2);
+        let _scope = crate::cycle_ledger::routine_continuation(0x06_84e2);
         if st != 0 {
             // $06:84E7-84EE PHA, JSR Sprite_TimersAndOam, PLA, CMP #$09, BEQ
             // not taken (128; the callee charges its own body).
@@ -1269,6 +1269,11 @@ impl ZeldaState {
                 crate::cycle_ledger::charge(414 - 52);
             }
         }
+        // $06:84F4's state body (or $850C's active tail), after timers and
+        // dispatch. A body may change its slot's type/state; attribute it to
+        // the source selection that entered it, without adding any charge.
+        let _body = crate::cycle_ledger::sprite_body_profile(
+            self.sprite_slot_view(k).sprite_type(), st, k as u8);
         match st {
             0 => self.sprite_inactive_sprite(k),
             1 => self.sprite_module_fall1(k),

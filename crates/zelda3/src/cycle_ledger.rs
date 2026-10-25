@@ -24,6 +24,8 @@ struct RoutineProfile {
     fragment_depth: usize,
     object: Option<u16>,
     object_rows: BTreeMap<(u16, u32), [u64; 3]>,
+    sprite: Option<(u8, u8, u8)>, // entry type, dispatch state, slot
+    sprite_rows: BTreeMap<(u8, u8, u8, u32), [u64; 3]>,
 }
 
 #[derive(Debug, Default)]
@@ -114,6 +116,38 @@ impl Drop for DungeonObjectProfile {
     }
 }
 
+/// Body-only attribution at $06:84E2's state dispatch. Timers and entry
+/// instructions precede this guard; the captured type/state/slot never follow
+/// a body which transforms or replaces its slot. Nested bodies restore their
+/// caller's diagnostic identity, and muted previews do not acquire one.
+pub(crate) struct SpriteBodyProfile(Option<Option<(u8, u8, u8)>>);
+
+pub(crate) fn sprite_body_profile(kind: u8, state: u8, slot: u8) -> SpriteBodyProfile {
+    let previous = if is_muted() { None } else { PROFILE.with(|profile| {
+        profile.borrow_mut().as_mut().filter(|p| p.active).map(|p| {
+            let previous = p.sprite.replace((kind, state, slot));
+            p.sprite_rows.entry((kind, state, slot, 0x06_84e2)).or_default()[0] += 1;
+            previous
+        })
+    }) };
+    SpriteBodyProfile(previous)
+}
+
+impl Drop for SpriteBodyProfile {
+    fn drop(&mut self) {
+        let Some(previous) = self.0 else { return; };
+        PROFILE.with(|profile| {
+            if let Some(p) = profile.borrow_mut().as_mut() { p.sprite = previous; }
+        });
+    }
+}
+
+/// Take body attribution before taking the ordinary routine profile.
+pub fn take_sprite_body_profile() -> BTreeMap<(u8, u8, u8, u32), [u64; 3]> {
+    PROFILE.with(|profile| profile.borrow_mut().as_mut()
+        .map_or_else(BTreeMap::new, |p| std::mem::take(&mut p.sprite_rows)))
+}
+
 /// Master cycles charged so far on this thread.
 #[inline]
 pub fn master() -> u64 {
@@ -136,6 +170,19 @@ pub fn charge(master: u64) {
                         if let Some(depth) = ledger.addresses.iter().position(|&a| a == 0x01893c) {
                             for &routine in &ledger.addresses[depth..] {
                                 profile.object_rows.entry((object, routine)).or_default()[1] += master;
+                            }
+                        }
+                    }
+                    if let Some((kind, state, slot)) = profile.sprite {
+                        // One body owns each charge. Caller/timer work outside
+                        // the guard is deliberately absent from this table.
+                        profile.sprite_rows.entry((kind, state, slot, address)).or_default()[2] += master;
+                        profile.sprite_rows.entry((kind, state, slot, 0x06_84e2)).or_default()[1] += master;
+                        if let Some(depth) = ledger.addresses.iter().position(|&a| a == 0x06_84e2) {
+                            for &routine in &ledger.addresses[depth + 1..] {
+                                if routine != 0x06_84e2 {
+                                    profile.sprite_rows.entry((kind, state, slot, routine)).or_default()[1] += master;
+                                }
                             }
                         }
                     }
@@ -186,6 +233,35 @@ pub struct RoutineScope {
 
 /// Enter an annotated routine at its ROM address.
 pub fn routine(address: u32) -> RoutineScope {
+    enter_routine(address, true)
+}
+
+/// Attribute an existing charge to its source call frame only during a
+/// routine profile. A resumed fragment does not report another call entry;
+/// a fragment already inside that frame does not create recursive ancestry.
+/// With profiling off, neither ordinary ledger records nor annotation counts
+/// change. This helper must never introduce a new instruction price.
+pub(crate) fn profile_routine(address: u32, entered: bool) -> Option<RoutineScope> {
+    if !profiling() || is_muted()
+        || LEDGER.with(|ledger| ledger.borrow().addresses.last().copied()) == Some(address) {
+        return None;
+    }
+    Some(enter_routine(address, entered))
+}
+
+/// A translated helper can continue the current source frame without a
+/// new source call. Preserve the ordinary ledger outside routine profiling.
+pub(crate) fn routine_continuation(address: u32) -> Option<RoutineScope> {
+    if profiling() { profile_routine(address, false) } else { Some(routine(address)) }
+}
+
+/// A branch/JMP tail keeps the real source call frame. Retain the established
+/// body label in ordinary ledger output when routine profiling is disabled.
+pub(crate) fn tail_routine(body: u32, frame: u32) -> Option<RoutineScope> {
+    if profiling() { profile_routine(frame, false) } else { Some(routine(body)) }
+}
+
+fn enter_routine(address: u32, entered: bool) -> RoutineScope {
     let muted = MUTED.with(Cell::get) > 0;
     if !muted {
         LEDGER.with(|ledger| {
@@ -194,10 +270,13 @@ pub fn routine(address: u32) -> RoutineScope {
             ledger.addresses.push(address);
         });
         PROFILE.with(|profile| {
-            if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active && p.fragment_depth == 0) {
+            if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active && p.fragment_depth == 0 && entered) {
                 profile.rows.entry(address).or_default()[0] += 1;
                 if let Some(object) = profile.object {
                     profile.object_rows.entry((object, address)).or_default()[0] += 1;
+                }
+                if let Some((kind, state, slot)) = profile.sprite.filter(|_| address != 0x06_84e2) {
+                    profile.sprite_rows.entry((kind, state, slot, address)).or_default()[0] += 1;
                 }
             }
         });
@@ -425,6 +504,86 @@ mod annotation_probe_tests {
         assert_eq!(rows[&0x00e843], [2, 30, 30]);
         assert_eq!(rows.len(), 4);
         assert_eq!(rows.values().map(|row| row[2]).sum::<u64>(), 80);
+    }
+
+    #[test]
+    fn profile_fragments_keep_one_source_call_and_the_original_ledger() {
+        profile_iteration(false);
+        let opened = SCOPES_OPENED.with(Cell::get);
+        let completed = LEDGER.with(|ledger| ledger.borrow().completed.len());
+        assert!(profile_routine(0x02_fd87, true).is_none());
+        assert_eq!(SCOPES_OPENED.with(Cell::get), opened);
+        assert_eq!(LEDGER.with(|ledger| ledger.borrow().completed.len()), completed);
+
+        profile_iteration(true);
+        profile_main_begin();
+        let before = master();
+        {
+            let _parent = profile_routine(0x02_fd46, true);
+            charge(46);
+        }
+        for _ in 0..2 {
+            let _parent = profile_routine(0x02_fd46, false);
+            {
+                let _child = profile_routine(0x02_fd87, true);
+                charge(224);
+                let _same_frame = profile_routine(0x02_fd87, false);
+                charge(10);
+            }
+            for _ in 0..3 {
+                let _child = profile_routine(0x02_fd87, false);
+                charge(20);
+            }
+            muted(|| {
+                let _preview = profile_routine(0x02_fd87, true);
+                charge(999);
+            });
+        }
+        profile_main_end();
+        let rows = take_routine_profile();
+        assert_eq!(master() - before, 634);
+        assert_eq!(rows[&0x02_fd46], [1, 634, 46]);
+        assert_eq!(rows[&0x02_fd87], [2, 588, 588]);
+        assert_eq!(rows.values().map(|r| r[2]).sum::<u64>(), 634);
+    }
+
+    #[test]
+    fn sprite_bodies_preserve_selection_and_exclude_entry_timers_and_previews() {
+        profile_iteration(true);
+        profile_main_begin();
+        let before = master();
+        {
+            let _single = routine(0x06_84e2);
+            charge(48);
+            let _continuation = routine_continuation(0x06_84e2);
+            charge_routine(0x06_83f2, 128);
+            {
+                let _body = sprite_body_profile(0x41, 9, 3);
+                let _tail = tail_routine(0x06_8510, 0x06_84e2);
+                charge(24);
+                charge_routine(0x06_9000, 80);
+                muted(|| {
+                    let _preview = sprite_body_profile(0x42, 8, 1);
+                    charge_routine(0x06_a000, 999);
+                });
+                {
+                    let _nested = sprite_body_profile(0x42, 8, 1);
+                    charge(12);
+                }
+                charge(6);
+            }
+            charge(2);
+        }
+        profile_main_end();
+        let bodies = take_sprite_body_profile();
+        let rows = take_routine_profile();
+        assert_eq!(master() - before, 300);
+        assert_eq!(rows[&0x06_84e2], [1, 300, 92]);
+        assert_eq!(bodies[&(0x41, 9, 3, 0x06_84e2)], [1, 110, 30]);
+        assert_eq!(bodies[&(0x41, 9, 3, 0x06_9000)], [1, 80, 80]);
+        assert_eq!(bodies[&(0x42, 8, 1, 0x06_84e2)], [1, 12, 12]);
+        assert_eq!(bodies.len(), 3);
+        assert_eq!(bodies.values().map(|r| r[2]).sum::<u64>(), 122);
     }
 
     #[test]

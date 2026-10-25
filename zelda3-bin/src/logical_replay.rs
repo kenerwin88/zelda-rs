@@ -1167,6 +1167,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut pacing_predictor: Option<BufWriter<fs::File>> = None;
     let mut routine_profile: Option<BufWriter<fs::File>> = None;
     let mut object_profile: Option<BufWriter<fs::File>> = None;
+    let mut sprite_profile: Option<BufWriter<fs::File>> = None;
     let mut routine_profile_iterations: Vec<(u64, u64)> = Vec::new();
     let mut audio_pcm: Option<BufWriter<fs::File>> = None;
     let mut audio_map: Option<BufWriter<fs::File>> = None;
@@ -1203,6 +1204,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 let mut file = BufWriter::new(fs::File::create(path).expect("create object profile"));
                 writeln!(file, "iteration,object,routine,calls,inclusive,exclusive").expect("object header");
                 object_profile = Some(file);
+                let path = std::path::Path::new(&value(index)).with_extension("sprites.csv");
+                let mut file = BufWriter::new(fs::File::create(path).expect("create sprite body profile"));
+                writeln!(file, "iteration,type,state,slot,routine,calls,inclusive,exclusive").expect("sprite body header");
+                sprite_profile = Some(file);
             }
             "--windows" => {
                 windows = value(index).split(',').map(|range| {
@@ -1633,6 +1638,14 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     main_master = game.lag_free_main_master();
                     vwf_master = game.lag_free_vwf_master();
                     main_silent = zelda3::cycle_ledger::silent_calls() - silent_before;
+                    let bodies = zelda3::cycle_ledger::take_sprite_body_profile();
+                    if let (Some(file), Some(iteration)) = (sprite_profile.as_mut(), iteration) {
+                        use std::io::Write;
+                        for ((kind, state, slot, address), [calls, inclusive, exclusive]) in bodies {
+                            writeln!(file, "{},{kind:02x},{state:02x},{slot},{address:06x},{calls},{inclusive},{exclusive}", iteration.index)
+                                .expect("sprite body profile");
+                        }
+                    }
                     let objects = zelda3::cycle_ledger::take_dungeon_object_profile();
                     if let (Some(file), Some(iteration)) = (object_profile.as_mut(), iteration) {
                         use std::io::Write;

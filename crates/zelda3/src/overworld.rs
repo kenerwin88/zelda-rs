@@ -5831,12 +5831,15 @@ impl ZeldaState {
     }
 
     fn decompress_bank02_into(dst: &mut [u8], src: &[u8], source: Option<u32>) -> usize {
+        // $02:FEBB's byte reader is a child, not decompressor self work.
+        let _scope = source.is_some().then(|| crate::cycle_ledger::profile_routine(0x02_febb, true));
         // $02:FEBB..FF6D. Preview decodes pass None: only live lagless
         // work charges. Keep the exact CPU's existing ledger unchanged.
         let charge = |n| { if source.is_some() { crate::cycle_ledger::charge(n); } };
         fn octet(src: &[u8], pos: &mut usize, source: Option<u32>) -> u8 {
             let value = src[*pos];
             if let Some(base) = source {
+                let _scope = crate::cycle_ledger::profile_routine(0x02_ff5f, true);
                 // $02:FF5F..FF6D: pointer advance, including LoROM bank wrap.
                 let wraps = ((base & 0xffff) + *pos as u32 + 1) & 0x7fff == 0;
                 crate::cycle_ledger::charge(if wraps { 246 } else { 190 });
@@ -6008,13 +6011,19 @@ impl ZeldaState {
         if self.lag_free { crate::cycle_ledger::charge(1812); }
         self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &hibytes,
             crate::cycle_models::overworld_map_streams::HIGH[screen as usize]);
-        if self.lag_free { crate::cycle_ledger::charge(282 + 64 * 552 + 63 * 6 + 92); }
+        if self.lag_free {
+            let _child = crate::cycle_ledger::profile_routine(0x02_f638, true);
+            crate::cycle_ledger::charge(282 + 64 * 552 + 63 * 6 + 92);
+        }
         self.copy_overworld_map16_scratch_to_source_words_high(256);
 
         let lobytes = self.GetOverworldLobytes(screen);
         self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &lobytes,
             crate::cycle_models::overworld_map_streams::LOW[screen as usize]);
-        if self.lag_free { crate::cycle_ledger::charge(294 + 64 * 552 + 63 * 6 + 92); }
+        if self.lag_free {
+            let _child = crate::cycle_ledger::profile_routine(0x02_f679, true);
+            crate::cycle_ledger::charge(294 + 64 * 552 + 63 * 6 + 92);
+        }
         self.copy_overworld_map16_scratch_to_source_words_low(256);
 
         self.set_overworld_map16_decode_last(0xffff);
@@ -6226,9 +6235,12 @@ impl ZeldaState {
         &mut self, source_page: OverworldMap16SourcePage, upload_base: u16,
         output: usize, header: usize, step: u16, map8: &[u8],
     ) {
+        // $02:FD59/FD6C's JSR belongs to Map16ToMap8, before FD87.
+        if self.lag_free && step == 0 { crate::cycle_ledger::charge(46); }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::profile_routine(0x02_fd87, step == 0));
         if self.lag_free {
-            // $02:FD59/FD6C call + FD87..FDC2: 16 paired stripe copies.
-            if step == 0 { crate::cycle_ledger::charge(46 + 224); }
+            // $02:FD87..FDC2: 16 paired stripe copies.
+            if step == 0 { crate::cycle_ledger::charge(224); }
             if step < 32 {
                 crate::cycle_ledger::charge(if step % 2 == 0 { 262 } else {
                     332 + if step == 31 { 0 } else { 6 }
@@ -6237,6 +6249,10 @@ impl ZeldaState {
                 // $02:FDC4..FDF6: destination setup and first prep call.
                 crate::cycle_ledger::charge(104 + if self.overworld_map16_y_unit() < 16 { 6 } else { 112 } + 438);
             }
+            // $02:FDE8 calls FDF7 for the first half. The second half
+            // falls through FDF3 into the same body in FD87's call frame.
+            let _child = (32..97).contains(&step)
+                .then(|| crate::cycle_ledger::profile_routine(0x02_fdf7, step == 32));
             if step == 32 || step == 97 {
                 // $02:FDF7..FE0C: header + 16-tile loop setup.
                 crate::cycle_ledger::charge(324);

@@ -171,7 +171,10 @@ impl ZeldaState {
         let _scope = crate::cycle_ledger::routine(0x09_c44e);
         if self.lag_free { crate::cycle_ledger::charge(62); } // $09:C44E JSL DisableAll.
         self.sprite_disable_all();
-        self.sprite_reset_all_no_disable();
+        // $09:C452 falls through in C44E's call frame, rather than calling
+        // the separately callable no-disable entry below.
+        self.sprite_reset_all_no_disable_fixed_prefix();
+        self.sprite_reset_all_no_disable_after_fixed_prefix();
     }
 
     // void Sprite_DisableAll() {  // 89c22f
@@ -564,6 +567,7 @@ impl ZeldaState {
     //   memset(dungeon_room_history, 0xff, 8);
     // }
     pub(in crate::zelda_rtl) fn sprite_reset_all_no_disable(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::profile_routine(0x09_c452, true));
         self.sprite_reset_all_no_disable_fixed_prefix();
         self.sprite_reset_all_no_disable_after_fixed_prefix();
     }

@@ -31,7 +31,9 @@ impl ZeldaState {
         // (40), then outdoors $06:8514-851F TXA ASL TAY LDA #$ff STA abs,y
         // STA abs,y RTS (176) or BNE taken (+6) into $06:8520-8525 LDA #$ff
         // STA abs,x RTS (96).
-        let _scope = crate::cycle_ledger::routine(0x06_8510);
+        // $06:84E5 BEQ enters this tail without a new call frame. Keep its
+        // self work in $06:84E2 for source/native routine comparisons.
+        let _scope = crate::cycle_ledger::tail_routine(0x06_8510, 0x06_84e2);
         if self.game_state.world.location.is_outdoors() {
             crate::cycle_ledger::charge(40 + 176);
             self.sprite_slot_view_mut(k).set_n_word(0xffff);
