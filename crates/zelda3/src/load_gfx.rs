@@ -6149,8 +6149,10 @@ impl ZeldaState {
             // (`SPOTLIGHT_VCOUNTER_WAIT_FINAL_PASS_MASTER_CYCLES`): the
             // remaining 178 per extra pass is the raster-dependent residual a
             // timing owner has to supply.
-            // $00:F3A3..F3B2: omitted taken passes wait for V >= 192.
-            self.native_wait_until_line(192, 178);
+            // $00:F3AC AND #$00FF: wait for (V & 255) >= 192, including
+            // the next field when entered during physical lines 256..261.
+            // $00:F3A3 LDA $2137 latches after three 8-clock ROM fetches.
+            self.native_wait_until_line(192, 0xff, 24, 178);
             crate::cycle_ledger::charge(SPOTLIGHT_VCOUNTER_WAIT_FINAL_PASS_MASTER_CYCLES);
             // $F3B4: LDX #$0000.
             crate::cycle_ledger::charge(24);

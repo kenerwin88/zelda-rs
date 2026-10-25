@@ -115,21 +115,19 @@ impl Program {
     }
 
     pub(super) fn compose(&self, main: u64, start: u64, handler: u64,
-        worker: u64, after_irq: bool, barriers: &[(u64, u16, u64)]) -> Option<(u64, u64, u64)> {
+        worker: u64, after_irq: bool, barriers: &[(u64, u16, u16, u64, u64)]) -> Option<(u64, u64, u64)> {
         let (mut wall, mut previous, mut hdma, mut waits) = (start, 0, 0, 0);
         // $00:F3A3..F3B2 polls the V-counter until its target. The barrier's
         // wall interval already includes HDMA and refresh. Only the CPU-work
         // intervals on either side lease bus events; preserve refresh's
         // cumulative work counter when splitting them.
-        for &(end, line, loop_master) in barriers {
+        for &(end, line, mask, sample_master, loop_master) in barriers {
             if end > main { break; }
             let (next, bus) = self.advance_segment(end - previous, wall,
                 handler, worker, after_irq, previous + hdma)?;
             hdma += bus;
             wall = next;
-            let raster = (225 * 1364 + wall) % FIELD;
-            let wait = (u64::from(line) * 1364).saturating_sub(raster)
-                .div_ceil(loop_master) * loop_master;
+            let wait = raster_poll_wait(wall, line, mask, sample_master, loop_master);
             wall += wait;
             waits += wait;
             previous = end;
@@ -323,6 +321,47 @@ mod tests {
     }
 
     #[test]
+    fn masked_vcounter_poll_matches_rom_across_the_physical_field_wrap() {
+        use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+            CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for line in [0u16, 191, 192, 225, 255, 256, 261] {
+          for h in [0u16, 1200, 1320, 1339, 1340, 1363] {
+            let mut machine = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom)
+                .unwrap().machine().snes().clone();
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0);
+            machine.cpu.db = 0;
+            machine.cpu.k = 0;
+            machine.cpu.pc = 0xf3a3;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(line, h),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            // M16 LDA $213F also reads $2140; supply its APU bus owner.
+            let mut apu = snes::apu::ApuState::new();
+            apu.reset_snes9x_coroutine();
+            source.attach_apu_port_owner(snes::ApuHostPortTiming::new(
+                snes::ApuHostPortProbe::from_snes9x_coroutine(apu).unwrap(),
+                snes::Snes9xApuClockCheckpoint::new(source.timeline().clock_master_cycles(), 0, 0).unwrap(),
+            ).unwrap()).unwrap();
+            let mut wall = 0;
+            while source.snes().cpu.pc != 0xf3b4 {
+                let step = source.step().unwrap();
+                assert!(step.accepted_interrupt.is_none());
+                wall += step.ended_at.master_cycles() - step.started_at.master_cycles();
+            }
+            let elapsed = (u64::from(line) + 262 - 225) % 262 * 1364 + u64::from(h);
+            let model = raster_poll_wait(elapsed, 192, 0xff, 24, 178) + 172;
+            assert!(model.abs_diff(wall) <= 178 + 40 + 4,
+                "V={line} H={h} model={model} source={wall}");
+            if line >= 256 { assert!(wall > 192 * 1364); }
+          }
+        }
+    }
+
+    #[test]
     fn raster_barrier_composes_with_executed_rom_without_charging_poll_bus_twice() {
         use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
             CpuRasterPosition, CpuSynchronousTimelineEvent, RomCpuTimingProbe, SourcePpuReadState};
@@ -389,7 +428,7 @@ mod tests {
             game.native_begin_main_cost();
             game.native_pacing.entry_handler = 0;
             crate::cycle_ledger::charge(prefix);
-            game.native_wait_until_line(192, 178);
+            game.native_wait_until_line(192, 0xff, 24, 178);
             // The final untaken polling pass remains ordinary CPU work.
             crate::cycle_ledger::charge(cpu - prefix - poll_cpu + 172);
             game.native_finish_main_cost();
@@ -425,7 +464,7 @@ mod tests {
         game.set_hdma_enable_mask(0xc0);
         assert!(!game.native_bus_lease_valid()); // A restored mask still changed during main.
         game.native_begin_main_cost();
-        game.native_pacing.raster_barriers.push((0, 192, 178));
+        game.native_pacing.raster_barriers.push((0, 192, 0xff, 24, 178));
         assert!(game.native_bus_lease_valid());
         game.native_begin_main_cost();
         game.lag_free_vwf_master = 1;
@@ -442,7 +481,7 @@ mod tests {
         game.native_begin_main_cost();
         game.lag_free_vwf_master = 1;
         game.native_pacing.main_dma = 26;
-        game.native_pacing.raster_barriers.push((0, 192, 178));
+        game.native_pacing.raster_barriers.push((0, 192, 0xff, 24, 178));
         game.clear_hdma_enable_mask();
         game.set_hdma_enable_mask(0xc0);
         assert_eq!(game.native_bus_lease_decline(), 2 | 64);

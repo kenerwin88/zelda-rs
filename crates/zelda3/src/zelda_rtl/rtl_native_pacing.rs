@@ -39,7 +39,7 @@ pub(crate) struct NativePacing {
     bus_admitted: bool,
     bus_decline: u16,
     finished_hdma: u64,
-    raster_barriers: Vec<(u64, u16, u64)>,
+    raster_barriers: Vec<(u64, u16, u16, u64, u64)>,
     finished_raster_wait: u64,
 
 }
@@ -250,19 +250,13 @@ impl ZeldaState {
     /// Generic raster barrier: a V-counter loop exits at or after line L.
     /// Charge elapsed waiting separately from instruction work, since CPU
     /// work excludes NMI/worker ownership and refresh while wall time does not.
-    pub(super) fn native_wait_until_line(&mut self, line: u16, loop_master: u64) {
+    pub(super) fn native_wait_until_line(&mut self, line: u16, mask: u16, sample_master: u64, loop_master: u64) {
         if !self.native_pacing.accounting { return; }
-        const FIELD: u64 = 1364 * 262;
-        const NMI: u64 = 225 * 1364;
         let main = self.native_main_work();
         let elapsed = self.native_cost_elapsed(main);
-        self.native_pacing.raster_barriers.push((main, line, loop_master));
+        self.native_pacing.raster_barriers.push((main, line, mask, sample_master, loop_master));
         for (i, work) in elapsed.into_iter().enumerate() {
-            let raster = (NMI + work) % FIELD;
-            let target = u64::from(line) * 1364;
-            if raster < target {
-                self.native_pacing.wait_wall[i] += (target - raster).div_ceil(loop_master) * loop_master;
-            }
+            self.native_pacing.wait_wall[i] += raster_poll_wait(work, line, mask, sample_master, loop_master);
         }
     }
 
@@ -459,6 +453,22 @@ impl ZeldaState {
 
 }
 
+/// Wall interval to the next satisfying V-counter sample. $00:F3AC masks
+/// the latched counter to eight bits: V256..261 therefore polls as 0..5,
+/// and must wait through the physical field wrap before reaching V192.
+/// Sample at the register bus read, after the opcode and operand fetches,
+/// rather than at instruction entry; these differ across counter wraps.
+fn raster_poll_wait(elapsed: u64, line: u16, mask: u16, sample_master: u64, loop_master: u64) -> u64 {
+    const FIELD: u64 = 1364 * 262;
+    let raster = (225 * 1364 + elapsed + sample_master) % FIELD;
+    let current_line = raster / 1364;
+    if current_line as u16 & mask >= line { return 0; }
+    let next = (1..=262).find(|offset|
+        ((current_line + offset) % 262) as u16 & mask >= line)
+        .expect("raster polling target must be reachable in a physical field");
+    (next * 1364 - raster % 1364).div_ceil(loop_master) * loop_master
+}
+
 /// Wall time through a first field with one ordinary entry handler and any
 /// further fields with lag handlers. Equality accepts the NMI. No update DMA
 /// is repeated just because main takes more than one field to return.
@@ -503,7 +513,7 @@ mod tests {
                 crate::cycle_ledger::charge(main / 2);
                 game.native_checkpoint_worker_ownership();
                 crate::cycle_ledger::charge(main - main / 2);
-                game.native_wait_until_line(192, 178);
+                game.native_wait_until_line(192, 0xff, 24, 178);
                 game.native_finish_main_cost();
                 let prediction = game.native_cost_predictions()[2];
                 assert_eq!(game.native_cost_shortfall(prediction).1, 0);
@@ -735,7 +745,7 @@ mod tests {
         game.native_pacing.entry_handler = 0;
         // Cross V0, wait to V192, then cross the next NMI at V225.
         crate::cycle_ledger::charge(60_000);
-        game.native_wait_until_line(192, 178);
+        game.native_wait_until_line(192, 0xff, 24, 178);
         crate::cycle_ledger::charge(50_000);
         game.native_finish_main_cost();
         assert_eq!(game.native_cost_predictions(), [1, 1, 1]);
