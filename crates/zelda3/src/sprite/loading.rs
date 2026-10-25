@@ -910,8 +910,19 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_activate_when_proximal(&mut self) -> usize {
+        let _scope = crate::cycle_ledger::routine(0x09_c5bb);
+        if self.lag_free {
+            // $09:C5BB..C5C0: LDY, scroll load and BEQ (M8/X8).
+            crate::cycle_ledger::charge(64);
+        }
         if self.overworld_horizontal_scroll_delta_low() == 0 {
+            if self.lag_free { crate::cycle_ledger::charge(6 + 42); } // taken BEQ, $C5F5 RTS
             return 0;
+        }
+        if self.lag_free {
+            // $09:C5C2..C5E1: BPL/optional INY and coordinate/loop setup.
+            // Y=0/1 cannot cross either $C5B7/$C5B9 table's page.
+            crate::cycle_ledger::charge(16 + if sign8(self.overworld_horizontal_scroll_delta_low()) { 14 } else { 6 } + 332);
         }
         let xt: u16 = if self
             .game_state
@@ -939,11 +950,17 @@ impl ZeldaState {
             .bg2_v_copy2()
             .wrapping_sub(0x30);
         let mut in_bounds_proximity_checks = 0usize;
-        for _ in (0..=21).rev() {
+        for row in (0..=21).rev() {
+            if self.lag_free {
+                // $09:C5E3..C5F3: JSR only, Y increment, DEX/BPL.
+                // $C6F5 and its children retain their existing prices.
+                crate::cycle_ledger::charge(222 + if row == 0 { 0 } else { 6 });
+            }
             in_bounds_proximity_checks +=
                 usize::from(self.sprite_overworld_proximity_motivated_load(x, y));
             y = y.wrapping_add(16);
         }
+        if self.lag_free { crate::cycle_ledger::charge(42); } // $09:C5F5 RTS
         in_bounds_proximity_checks
     }
 

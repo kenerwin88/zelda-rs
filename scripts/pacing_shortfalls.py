@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize P2 shortfalls and rank instruction deficits only on missing holds.
+"""Summarize P2 shortfalls and rank routine replacements by missing iterations closed.
 
 The replay CSV records an inverse of the completed native model: the minimum
 extra main clocks appended after its existing ownership checkpoints, with its
@@ -120,6 +120,41 @@ def summarize(rows):
                          total=dict(total), bands=dict(bands), categories=dict(categories))
 
 
+def targeted_ranking(missing, source, native):
+    """Rank single-routine exclusive replacements against the frozen inverse.
+
+    These independent counterfactuals overlap. Tail ancestry, aliases and clocks
+    owned outside the routine profiler still need an ownership audit before any
+    candidate becomes an additive instruction price.
+    """
+    if source.keys() != missing.keys() or native.keys() != missing.keys():
+        raise ValueError('hold-targeted ranking requires every missing iteration on both sides')
+    totals = defaultdict(Counter)
+    attribution = []
+    for index, predictor in missing.items():
+        shortfall = int(predictor['cost_shortfall'])
+        for address in sorted(source[index].keys() | native[index].keys()):
+            if address == 'total':
+                continue
+            s = source[index].get(address, (0, 0, 0))
+            n = native[index].get(address, (0, 0, 0))
+            gap = s[2] - n[2]
+            closes = gap >= shortfall
+            totals[address].update(iterations=1, closes=closes,
+                                   exclusive_difference=gap,
+                                   positive_exclusive_difference=max(0, gap))
+            attribution.append(dict(iteration=index, routine=address,
+                                    shortfall_master=shortfall,
+                                    source_exclusive=s[2], native_exclusive=n[2],
+                                    exclusive_difference=gap, closes=closes))
+    ranking = [dict(routine=address, **values) for address, values in totals.items()]
+    ranking.sort(key=lambda r: (-r['closes'], -r['positive_exclusive_difference'], r['routine']))
+    return dict(within_master={str(limit): sum(int(r['cost_shortfall']) <= limit
+                for r in missing.values()) for limit in (1000, 5000, 20000)},
+                routines=ranking, attribution=attribution,
+                note='Independent frozen-inverse exclusive replacements, not additive prices or predicted runtime outcomes.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('predictor', type=Path)
@@ -146,6 +181,7 @@ def main():
                            'Aliases, differing work and separately owned SPC polling require '
                            'manual resolution; inclusive deficits overlap and are not additive.')
         report['ranking'] = ranking
+        report['hold_targeted'] = targeted_ranking(missing, source, native)
     if args.structural:
         with args.structural.open() as f:
             structural = {int(r['iteration']): {k: int(v) for k, v in r.items()}
@@ -167,9 +203,10 @@ def main():
         report['structural_summary'] = summary
     args.json.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({k: report[k] for k in ('total', 'bands')}, indent=2))
-    if 'ranking' in report:
-        for row in report['ranking']['routines'][:30]:
-            print(row['routine'], row['exclusive_difference'], row['source_calls'], row['native_calls'])
+    if 'hold_targeted' in report:
+        print('routine complete_closures signed_exclusive_difference')
+        for row in report['hold_targeted']['routines'][:30]:
+            print(row['routine'], row['closes'], row['exclusive_difference'])
 
 
 if __name__ == '__main__':

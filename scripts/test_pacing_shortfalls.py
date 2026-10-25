@@ -1,9 +1,23 @@
 import unittest
 
-from pacing_shortfalls import FIELD, band, summarize, structural_costs, structural_summary
+from pacing_shortfalls import FIELD, band, summarize, structural_costs, structural_summary, targeted_ranking
 
 
 class ShortfallsTest(unittest.TestCase):
+    def test_targeted_ranking_counts_closures_not_total_clocks(self):
+        missing = {1: dict(cost_shortfall='1000'), 2: dict(cost_shortfall='5000')}
+        source = {1: {'a': (1, 1000, 1000), 'b': (1, 999, 999)},
+                  2: {'a': (1, 5000, 5000), 'b': (1, 100000, 100000)}}
+        native = {1: {'b': (1, 0, 0)}, 2: {'b': (1, 0, 0)}}
+        report = targeted_ranking(missing, source, native)
+        self.assertEqual([(r['routine'], r['closes']) for r in report['routines']],
+                         [('a', 2), ('b', 1)])
+        self.assertEqual(report['within_master'], {'1000': 1, '5000': 2, '20000': 2})
+        native[1]['a'] = (1, 1, 1)
+        self.assertFalse(targeted_ranking(missing, source, native)['attribution'][0]['closes'])
+        with self.assertRaises(ValueError):
+            targeted_ranking(missing, source, {1: native[1]})
+
     def test_strict_band_boundaries(self):
         self.assertEqual(band(FIELD // 20), 'near-miss')
         self.assertEqual(band(FIELD // 20 + 1), 'moderate')
