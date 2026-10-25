@@ -1,7 +1,31 @@
 use super::*;
 
 #[test]
-fn ordinary_object_tail_prices_match_executed_rom_paths() {
+fn vertical_2x2_calls_keep_their_rom_scope_without_duplicate_tiles_cost() {
+    use crate::cycle_ledger as ledger;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut state = ZeldaState::new();
+    state.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    state.set_lag_free(true);
+    ledger::profile_iteration(true);
+    ledger::profile_main_begin();
+    state.LoadType1ObjectSubtype1(0x60, 0, 0, 0x40);
+    ledger::profile_main_end();
+    let profile = ledger::take_routine_profile();
+    assert_eq!(profile[&0x01_b2af], [32, 32 * 516, 32 * 516]);
+    assert_eq!(profile[&0x01_b0cc], [1, 206, 206]);
+    assert!(!profile.contains_key(&0x01_9895));
+    ledger::profile_iteration(false);
+    let before = ledger::master();
+    ledger::muted(|| state.LoadType1ObjectSubtype1(0x60, 0, 0, 0x40));
+    assert_eq!(ledger::master(), before);
+    state.set_lag_free(false);
+    state.LoadType1ObjectSubtype1(0x60, 0, 0, 0x40);
+    assert_eq!(ledger::master(), before);
+}
+
+#[test]
+fn object_tail_prices_match_executed_rom_paths() {
     use crate::rom_cpu_timing::{lorom_offset, RomCpuCheckpoint, RomCpuTimingRun};
     let rom = dungeon_render_test_rom().expect("object price test requires the ROM");
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -13,59 +37,76 @@ fn ordinary_object_tail_prices_match_executed_rom_paths() {
         0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x33, 0x36, 0x37,
         0x38, 0x39, 0x3a, 0x3b, 0x3d, 0x5e, 0x75, 0x7f, 0x80, 0x81,
         0x82, 0x83, 0x84, 0x87, 0xb2, 0xba, 0xbb, 0xc0, 0xc2,
-        0x49, 0x4a, 0x55, 0x56, 0x61, 0x62, 0x65, 0x66, 0x90, 0x91];
-    for idx in ids {
+        0x49, 0x4a, 0x55, 0x56, 0x61, 0x62, 0x65, 0x66, 0x90, 0x91,
+        0x60, 0x92, 0x93, 0x63, 0x64, 0x67, 0x68, 0x7d,
+        0x78, 0x7b, 0x89, 0x3e, 0x4b, 0x3c, 0x88,
+        0x22, 0x5f, 0x69, 0x8a, 0xc3, 0xd7,
+        0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd1, 0xd2, 0xd9,
+        0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8];
+    for (extended, idx) in ids.into_iter().map(|idx| (false, idx))
+        .chain((0x08..=0x0f).map(|idx| (true, idx))) {
         for width in 0..4u8 {
             for height in 0..4u8 {
                 for plane in [0x2000u16, 0x4000] {
-                    let mut state = template.clone();
-                    let dsto = if (0x09..=0x20).contains(&idx) { 0x640u16 } else { 0x40 };
-                    let src = objects::object_subtype1_param(idx).unwrap() as u16;
-                    // $01:8719 supplies four columns followed by the next
-                    // rows for BG2. The other plane subtracts $2000.
-                    for row in 0..11 {
-                        let base = lorom_offset(0x01_8719 + row * 3).unwrap();
-                        let pointer = u16::from_le_bytes([rom[base], rom[base + 1]])
-                            - 0x4000 + plane;
-                        let address = 0xbf + row as usize * 3;
-                        state.ram[address..address + 2].copy_from_slice(&pointer.to_le_bytes());
-                        state.ram[address + 2] = 0x7e;
-                    }
-                    for (address, value) in [(0xb2, u16::from(width)),
-                        (0xb4, u16::from(height)), (8, dsto * 2)] {
-                        state.ram[address..address + 2].copy_from_slice(&value.to_le_bytes());
-                    }
-                    state.sync_native_game_state_from_ram();
-                    let target = lorom_offset(0x01_8200 + u32::from(idx) * 2).unwrap();
-                    let entry = 0x01_0000 | u32::from(u16::from_le_bytes([rom[target], rom[target + 1]]));
-                    let checkpoint = RomCpuCheckpoint {
-                        entry_pc: entry, stop_pc: 0x01_8036,
-                        a: dsto * 2, x: src, y: dsto * 2, sp: 0x01fc, dp: 0, db: 0,
-                        carry: false, zero: false, overflow: false, negative: false,
-                        interrupt_disable: true, decimal: false,
-                        accumulator_is_8_bit: false, index_is_8_bit: false,
-                        emulation: false, waiting: false,
-                        stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
-                    };
-                    let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
-                        &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
-                    run.enable_cpu_write_trace();
-                    let mut expected = state.wram_image().into_owned();
-                    let (mut cycles, mut instructions) = (0u64, 0);
-                    while !run.is_complete() {
-                        cycles += u64::from(run.step().master_cycles);
-                        for (address, value) in run.take_cpu_wram_writes() { expected[address] = value; }
-                        instructions += 1;
-                        assert!(instructions < 10_000, "object {idx:02x} failed to return");
-                    }
-                    let before = crate::cycle_ledger::master();
-                    state.LoadType1ObjectSubtype1(idx, width, height, dsto);
-                    assert_eq!(crate::cycle_ledger::master() - before, cycles,
-                        "object={idx:02x} width={width} height={height} plane={plane:04x}");
-                    let actual = state.wram_image();
-                    for address in 0x2000..0x6000 {
-                        assert_eq!(actual[address], expected[address],
-                            "object={idx:02x} width={width} height={height} plane={plane:04x} address={address:04x}");
+                    let corners: &[u16] = if !extended && matches!(idx, 0x22 | 0x5f | 0x69 | 0x8a) {
+                        &[0, 0x00e2, 0x00e3]
+                    } else { &[0] };
+                    for &initial_tile in corners {
+                        let mut state = template.clone();
+                        let dsto = if (0x09..=0x20).contains(&idx) { 0x640u16 } else { 0x40 };
+                        let src = if extended { objects::object_subtype2_param(idx) }
+                            else { objects::object_subtype1_param(idx) }.unwrap() as u16;
+                        // $01:8719 supplies four columns followed by the next
+                        // rows for BG2. The other plane subtracts $2000.
+                        for row in 0..11 {
+                            let base = lorom_offset(0x01_8719 + row * 3).unwrap();
+                            let pointer = u16::from_le_bytes([rom[base], rom[base + 1]])
+                                - 0x4000 + plane;
+                            let address = 0xbf + row as usize * 3;
+                            state.ram[address..address + 2].copy_from_slice(&pointer.to_le_bytes());
+                            state.ram[address + 2] = 0x7e;
+                        }
+                        for (address, value) in [(0xb2, u16::from(width)),
+                            (0xb4, u16::from(height)), (8, dsto * 2)] {
+                            state.ram[address..address + 2].copy_from_slice(&value.to_le_bytes());
+                        }
+                        let corner_address = usize::from(plane) + usize::from(dsto) * 2;
+                        state.ram[corner_address..corner_address + 2].copy_from_slice(&initial_tile.to_le_bytes());
+                        state.sync_native_game_state_from_ram();
+                        let target = lorom_offset(0x01_8200 + u32::from(idx) * 2).unwrap();
+                        let entry = if extended { 0x01_9813 } else {
+                            0x01_0000 | u32::from(u16::from_le_bytes([rom[target], rom[target + 1]]))
+                        };
+                        let checkpoint = RomCpuCheckpoint {
+                            entry_pc: entry, stop_pc: 0x01_8036,
+                            a: dsto * 2, x: src, y: dsto * 2, sp: 0x01fc, dp: 0, db: 0,
+                            carry: false, zero: false, overflow: false, negative: false,
+                            interrupt_disable: true, decimal: false,
+                            accumulator_is_8_bit: false, index_is_8_bit: false,
+                            emulation: false, waiting: false,
+                            stack_address: 0x01fd, stack_bytes: &[0x35, 0x80],
+                        };
+                        let mut run = RomCpuTimingRun::new(&rom, &state.wram_image(), &[0; 0x2000],
+                            &snes::PpuState::default(), &snes::DmaState::default(), [0; 4], checkpoint).unwrap();
+                        run.enable_cpu_write_trace();
+                        let mut expected = state.wram_image().into_owned();
+                        let (mut cycles, mut instructions) = (0u64, 0);
+                        while !run.is_complete() {
+                            cycles += u64::from(run.step().master_cycles);
+                            for (address, value) in run.take_cpu_wram_writes() { expected[address] = value; }
+                            instructions += 1;
+                            assert!(instructions < 10_000, "object {idx:02x} failed to return");
+                        }
+                        let before = crate::cycle_ledger::master();
+                        if extended { state.LoadType1ObjectSubtype2(idx, dsto); }
+                        else { state.LoadType1ObjectSubtype1(idx, width, height, dsto); }
+                        assert_eq!(crate::cycle_ledger::master() - before, cycles,
+                            "extended={extended} object={idx:02x} width={width} height={height} plane={plane:04x} corner={initial_tile:04x}");
+                        let actual = state.wram_image();
+                        for address in 0x2000..0x6000 {
+                            assert_eq!(actual[address], expected[address],
+                                "extended={extended} object={idx:02x} width={width} height={height} plane={plane:04x} corner={initial_tile:04x} address={address:04x}");
+                        }
                     }
                 }
             }

@@ -162,7 +162,18 @@ impl ZeldaState {
             }
             0x22 => {
                 let count = size_a_to_a_plus_15(width, height, 2);
-                if self.room_read_current(dsto) & 0x03ff != 0x00e2 {
+                let preserve_corner = self.room_read_current(dsto) & 0x03ff == 0x00e2;
+                if self.lag_free {
+                    // $01:8EF0..8F0B: size/corner calls, actual corner
+                    // branch, line call and tail; child bodies excluded.
+                    crate::cycle_ledger::charge(156 + if preserve_corner { 6 } else { 102 } + 190);
+                    crate::cycle_ledger::charge_routine(0x01_b0af, 262);
+                    crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                    // $01:B2CA..B2E0: advance/setup, stores and RTS.
+                    crate::cycle_ledger::charge_routine(0x01_b2ca,
+                        254 + 154 * u64::from(count) + 6 * u64::from(count - 1));
+                }
+                if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
                 }
                 let tile = self.tile_word(src, 1);
@@ -295,16 +306,30 @@ impl ZeldaState {
             }
             0x3c => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:93B7..93DB: size call, two JSR $B2AF calls,
+                    // pointer steps and actual loop branches; children excluded.
+                    crate::cycle_ledger::charge(46 + 420 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 for i in 0..count {
                     let dst = dsto + i * 4;
-                    self.room_draw_rightwards2x2(src, dst);
-                    self.room_draw_rightwards2x2(src + 8, dst + 6 * 64);
+                    self.room_draw_downwards2x2(src, dst);
+                    self.room_draw_downwards2x2(src + 8, dst + 6 * 64);
                 }
             }
             0x3e | 0x4b => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9456..9465: size call, JSR $B2AF, spacing,
+                    // actual DEC/BNE and RTS; child bodies excluded.
+                    crate::cycle_ledger::charge(46 + 168 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 for i in 0..count {
-                    self.room_draw_rightwards2x2(src, dsto + i * 14);
+                    self.room_draw_downwards2x2(src, dsto + i * 14);
                 }
             }
             0x47 => {
@@ -409,7 +434,18 @@ impl ZeldaState {
             }
             0x5f => {
                 let count = size_a_to_a_plus_15(width, height, 21);
-                if self.room_read_current(dsto) & 0x03ff != 0x00e2 {
+                let preserve_corner = self.room_read_current(dsto) & 0x03ff == 0x00e2;
+                if self.lag_free {
+                    // $01:8EEB -> 8EF3..8F0B: alternate size entry and
+                    // actual corner branch; children own their bodies.
+                    crate::cycle_ledger::charge(178 + if preserve_corner { 6 } else { 102 } + 190);
+                    crate::cycle_ledger::charge_routine(0x01_b0af, 262);
+                    crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                    // $01:B2CA..B2E0: advance/setup, stores and RTS.
+                    crate::cycle_ledger::charge_routine(0x01_b2ca,
+                        254 + 154 * u64::from(count) + 6 * u64::from(count - 1));
+                }
+                if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
                 }
                 let fill = self.tile_word(src, 1);
@@ -420,8 +456,16 @@ impl ZeldaState {
             }
             0x60 | 0x92 | 0x93 => {
                 let count = size_1to15_or(width, height, 32);
+                if self.lag_free {
+                    // $01:8B7E..8B88: size call, JSR $B2AF, actual
+                    // DEC/BNE and RTS; child bodies excluded.
+                    crate::cycle_ledger::charge(46 + 116 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                    crate::cycle_ledger::charge_routine(0x01_b0cc,
+                        if width == 0 && height == 0 { 206 } else { 188 });
+                }
                 for i in 0..count {
-                    self.room_draw_rightwards2x2(src, dsto + i * 64 * 2);
+                    self.room_draw_downwards2x2(src, dsto + i * 64 * 2);
                 }
             }
             0x61 | 0x62 | 0x90 | 0x91 => {
@@ -437,6 +481,13 @@ impl ZeldaState {
             }
             0x63 | 0x64 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:8AA4..8B0C: register setup, eight direct dual-BG
+                    // triples per block, vertical step, actual loop and RTS.
+                    crate::cycle_ledger::charge(88 + 1272 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 for i in 0..count {
                     self.object_draw_4x2_both_bgs(src, dsto + i * 2 * 64);
                 }
@@ -453,8 +504,15 @@ impl ZeldaState {
             }
             0x67 | 0x68 | 0x7d => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:8B74..8B88: size call/BRA, JSR $B2AF,
+                    // actual DEC/BNE and RTS; child bodies excluded.
+                    crate::cycle_ledger::charge(68 + 116 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 for i in 0..count {
-                    self.room_draw_rightwards2x2(src, dsto + i * 2 * 64);
+                    self.room_draw_downwards2x2(src, dsto + i * 2 * 64);
                 }
             }
             0x7c => {
@@ -505,7 +563,16 @@ impl ZeldaState {
             0x69 | 0x71 => {
                 let count = size_a_to_a_plus_15(width, height, if idx == 0x69 { 2 } else { 4 });
                 if idx == 0x69 {
-                    if self.room_read_current(dsto) & 0x03ff != 0x00e3 {
+                    let preserve_corner = self.room_read_current(dsto) & 0x03ff == 0x00e3;
+                    if self.lag_free {
+                        // $01:8EC3..8EEA: size/corner calls, actual corner
+                        // branch, vertical stores/control and final tile/RTS.
+                        crate::cycle_ledger::charge(156 + if preserve_corner { 6 } else { 102 }
+                            + 238 * u64::from(count) + 6 * u64::from(count - 1) + 144);
+                        crate::cycle_ledger::charge_routine(0x01_b0af, 262);
+                        crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                    }
+                    if !preserve_corner {
                         self.room_write_current(dsto, self.tile_word(src, 0));
                     }
                     let tile = self.tile_word(src, 1);
@@ -600,19 +667,42 @@ impl ZeldaState {
             }
             0x78 | 0x7b => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9446..9455: size call, JSR $B2AF, spacing,
+                    // actual DEC/BNE and RTS; child bodies excluded.
+                    crate::cycle_ledger::charge(46 + 168 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 for i in 0..count {
-                    self.room_draw_rightwards2x2(src, dsto + i * 14 * 64);
+                    self.room_draw_downwards2x2(src, dsto + i * 14 * 64);
                 }
             }
             0x89 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:9347..9356: size call, JSR $B2AF, spacing,
+                    // actual DEC/BNE and RTS; child bodies excluded.
+                    crate::cycle_ledger::charge(46 + 168 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 42);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 for i in 0..count {
-                    self.room_draw_rightwards2x2(src, dsto + i * 4 * 64);
+                    self.room_draw_downwards2x2(src, dsto + i * 4 * 64);
                 }
             }
             0x8a => {
                 let count = size_a_to_a_plus_15(width, height, 21);
-                if self.room_read_current(dsto) & 0x03ff != 0x00e3 {
+                let preserve_corner = self.room_read_current(dsto) & 0x03ff == 0x00e3;
+                if self.lag_free {
+                    // $01:8EBE -> 8EC6..8EEA: alternate size entry,
+                    // actual corner branch, vertical stores/control and RTS.
+                    crate::cycle_ledger::charge(178 + if preserve_corner { 6 } else { 102 }
+                        + 238 * u64::from(count) + 6 * u64::from(count - 1) + 144);
+                    crate::cycle_ledger::charge_routine(0x01_b0af, 262);
+                    crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                }
+                if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
                 }
                 let tile = self.tile_word(src, 1);
@@ -623,8 +713,15 @@ impl ZeldaState {
             }
             0x88 => {
                 let mut count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:8F0C..8F2F: size and $B2AF calls, direct paired
+                    // stores and loop, tail JMP $8D80; child bodies excluded.
+                    crate::cycle_ledger::charge(158 + 340 * u64::from(count)
+                        + 6 * u64::from(count - 1) + 104);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 let mut dst = dsto;
-                self.room_draw_rightwards2x2(src, dst);
+                self.room_draw_downwards2x2(src, dst);
                 dst = dst.wrapping_add(2 * 64);
                 let src = src + 8;
                 while count != 0 {
@@ -732,6 +829,13 @@ impl ZeldaState {
             0xc5..=0xca | 0xd1 | 0xd2 | 0xd9 | 0xdf..=0xe8 => {
                 let count_x = width as u16 + 1;
                 let count_y = height as u16 + 1;
+                if self.lag_free {
+                    // $01:8FA5..8FBB: dimension increments, one real
+                    // JSR $8A44 per row, pointer/loop work and RTS.
+                    // The existing $8A44 child owns all block stores.
+                    crate::cycle_ledger::charge(108 + 264 * u64::from(count_y)
+                        + 6 * u64::from(count_y - 1) + 42);
+                }
                 for y in 0..count_y {
                     // Object_Draw4x4_Size1to4 $018FA9: one JSR RoomDraw_A_Many32x32Blocks
                     // per row with A = the block count (the chained n = 1 calls wrote
@@ -742,6 +846,16 @@ impl ZeldaState {
             0xc3 | 0xd7 => {
                 let count_x = width as u16 + 1;
                 let count_y = height as u16 + 1;
+                if self.lag_free {
+                    // $01:8D9E..8DDB: dimensions, per-row setup, nine
+                    // direct stores per 3x3 block, actual branches and RTS.
+                    // room_fill_rect has no child charge.
+                    let columns = u64::from(count_x);
+                    let rows = u64::from(count_y);
+                    crate::cycle_ledger::charge(108
+                        + rows * (64 + 798 * columns + 6 * (columns - 1) + 186)
+                        + 6 * (rows - 1) + 42);
+                }
                 let tile = self.tile_word(src, 0);
                 for y in 0..count_y {
                     for x in 0..count_x {
@@ -1375,7 +1489,15 @@ impl ZeldaState {
                 // RoomDraw_InterRoomFatStairsDown_A/_B $01A483/$01A4B1: JMP RoomDraw_4x4.
                 self.room_draw_4x4_by_jump(0x10a8, dsto);
             }
-            0x08..=0x0f => self.room_data_draw_object_nx4_both_bgs(src, dsto, 4),
+            0x08..=0x0f => {
+                if self.lag_free {
+                    // $01:9813..9853: register/count setup, four dual-BG
+                    // columns (732 each), three taken branches and RTS.
+                    // Direct dispatch/JMP stays in the $893C caller frame.
+                    crate::cycle_ledger::charge(98 + 4 * 732 + 3 * 6 + 42);
+                }
+                self.room_data_draw_object_nx4_both_bgs(src, dsto, 4);
+            }
             0x31 => {
                 let next = self
                     .dungeon_stair_lists_mut()

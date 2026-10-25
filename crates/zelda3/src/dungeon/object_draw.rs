@@ -1284,6 +1284,21 @@ impl ZeldaState {
             // $01:9895..98AD: four load/store pairs, four INYs, RTS.
             crate::cycle_ledger::charge(506);
         }
+        self.room_draw_2x2_tiles(src, dsto);
+    }
+
+    /// ROM: `RoomDraw_Object_2x2_downwards`
+    pub(super) fn room_draw_downwards2x2(&mut self, src: usize, dsto: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_b2af));
+        if self.lag_free {
+            // $01:B2AF..B2C9: four load/store pairs, TYA/CLC/ADC/TAY,
+            // RTS. Its pointer return costs 10 more than $9895's INYs.
+            crate::cycle_ledger::charge(516);
+        }
+        self.room_draw_2x2_tiles(src, dsto);
+    }
+
+    fn room_draw_2x2_tiles(&mut self, src: usize, dsto: u16) {
         self.room_write_current(dsto, self.tile_word(src, 0));
         self.room_write_current(dsto + 64, self.tile_word(src, 1));
         self.room_write_current(dsto + 1, self.tile_word(src, 2));
