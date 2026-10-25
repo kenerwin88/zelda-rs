@@ -1,5 +1,219 @@
 use super::*;
 
+// CPU-only ROM execution; count bus/internal transactions, excluding raster
+// refresh and interrupts. The range selects caller self instructions only.
+fn load_price_rom_work(entry: u32, image: &[u8], y: u16, long_return: bool,
+    self_range: std::ops::RangeInclusive<u32>) -> (u64, u64) {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    let mut machine = Snes::new();
+    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+    machine.ram.copy_from_slice(image);
+    machine.ram[0x1fc..0x200].copy_from_slice(&[0xff, 0x7f, 0, 0]);
+    machine.ppu.forced_blank = true;
+    machine.cpu.e = false;
+    machine.cpu.unpack_flags(0x30);
+    machine.cpu.k = (entry >> 16) as u8;
+    machine.cpu.db = (entry >> 16) as u8;
+    machine.cpu.y = y;
+    machine.cpu.pc = entry as u16;
+    machine.cpu.sp = 0x1fb;
+    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+    let mut source = RomCpuTimingProbe::new(machine, clock,
+        SourcePpuReadState::snes9x_reset()).unwrap();
+    let (mut total, mut own) = (0, 0);
+    for _ in 0..1_000_000 {
+        let cpu = &source.snes().cpu;
+        let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+        let step = source.step().unwrap();
+        let work = step.transactions.iter()
+            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+        total += work;
+        if self_range.contains(&pc) { own += work; }
+        if source.snes().cpu.pc == 0x8000 { break; }
+    }
+    assert_eq!(source.snes().cpu.pc, 0x8000, "entry={entry:06x}");
+    assert_eq!(source.snes().cpu.sp, if long_return { 0x1fe } else { 0x1fd });
+    (total, own)
+}
+
+#[test]
+fn ordinary_load_prices_match_executed_rom_paths() {
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    for entry in [0x00e2d0u32, 0x00e33b, 0x00d337, 0x02c630] {
+        let mut native = ZeldaState::new();
+        native.set_assets(&assets).unwrap();
+        native.set_lag_free(true);
+        let y = if entry == 0xe33b { 0x6a } else { 0x5b };
+        let end = match entry { 0xe2d0 => 0xe33a, 0xe33b => 0xe36c,
+            0xd337 => 0xd393, _ => 0x02c68b };
+        let (total, own) = load_price_rom_work(entry, &native.wram_image(), y,
+            matches!(entry, 0xe2d0 | 0xd337), entry..=end);
+        let before = crate::cycle_ledger::master();
+        let measured = crate::cycle_ledger::measure_routine_self_work(entry, || {
+            match entry {
+                0xe2d0 => native.load_default_graphics(),
+                0xe33b => native.decompress_and_upload_2bpp(0x7000, y as usize),
+                0xd337 => native.decompress_animated_dungeon_tiles(y as usize),
+                _ => native.dungeon_load_palettes_before_cache(),
+            }
+        });
+        assert_eq!(measured, own, "entry={entry:06x}");
+        if matches!(entry, 0xe2d0 | 0xe33b | 0xd337) {
+            assert_eq!(crate::cycle_ledger::master() - before, total, "entry={entry:06x}");
+        }
+    }
+}
+
+#[test]
+fn dungeon_entrance_prices_match_executed_rom_paths() {
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    for (follower, restart, entrance) in [(0u8, 0u8, 0u8), (4, 0, 0),
+        (0, 1, 0), (0, 0, 0x43), (0, 0, 0x84)] {
+        for start in [0u8, 1, 6] {
+            for progress in [0u16, 1, 2, 0x100] {
+                for game_over in [0u8, 1] {
+                    let mut native = ZeldaState::new();
+                    native.set_assets(&assets).unwrap();
+                    native.set_lag_free(true);
+                    let mut image = native.wram_image().into_owned();
+                    image[0x10a] = game_over;
+                    image[0x10e] = entrance;
+                    image[0x4aa] = restart;
+                    image[0xf3cc] = follower;
+                    image[0xf3c8] = start;
+                    image[0xf3c5..0xf3c7].copy_from_slice(&progress.to_le_bytes());
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    let (total, _) = load_price_rom_work(0x02d8b3, &native.wram_image(), 0,
+                        false, 0x02d8b3..=0x02dd87);
+                    let before = crate::cycle_ledger::master();
+                    native.dungeon_load_entrance();
+                    assert_eq!(crate::cycle_ledger::master() - before, total,
+                        "follower={follower} restart={restart} entrance={entrance} start={start} progress={progress} game_over={game_over}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn whirlpool_restoration_prices_match_executed_rom_paths() {
+    for main in [0u16, 1, 0x20, 0x3ff, 0x7fff] {
+        for aux in [0u16, 1, 0x20, 0x3ff, 0x7fff] {
+            for countdown in [0u8, 29, 30, 255] {
+                let mut native = ZeldaState::new();
+                native.set_lag_free(true);
+                native.set_countdown(countdown);
+                for i in 0x20..0x100 {
+                    native.set_main_color(i, main);
+                    native.set_aux_color(i, aux);
+                }
+                let (total, _) = load_price_rom_work(0x00f0c7, &native.wram_image(), 0,
+                    true, 0x00f0c7..=0x00f131);
+                let before = crate::cycle_ledger::master();
+                native.palette_filter_whirlpool_restore_red_green();
+                assert_eq!(crate::cycle_ledger::master() - before, total,
+                    "main={main:04x} aux={aux:04x} countdown={countdown}");
+            }
+        }
+    }
+}
+
+#[test]
+fn desert_iris_calculation_prices_match_executed_rom_paths() {
+    for radius in [0u8, 1, 16, 128, 192] {
+        for y_buffer in [0u8, 1, 8, 16, 128, 255] {
+            for opening in [0u8, 1] {
+                let mut native = ZeldaState::new();
+                native.set_lag_free(true);
+                native.set_spotlight_window_radius_byte(radius);
+                native.set_spotlight_window_y_buffer_byte(y_buffer);
+                native.set_spotlight_window_state_byte(opening);
+                let (total, _) = load_price_rom_work(0x07ecdc, &native.wram_image(), 0,
+                    false, 0x07ecdc..=0x07ed2b);
+                let before = crate::cycle_ledger::master();
+                native.desert_hdma_calculate_iris_shape_line();
+                assert_eq!(crate::cycle_ledger::master() - before, total,
+                    "radius={radius} y_buffer={y_buffer} opening={opening}");
+            }
+        }
+    }
+}
+
+#[test]
+fn desert_iris_builder_prices_match_executed_rom_paths() {
+    for radius in [1u8, 16, 64, 128, 184, 192] {
+        for (x, y) in [(0u16, 0u16), (128, 100), (511, 240)] {
+            for opening in [0u8, 1] {
+                for subsub in [2u8, 4] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    let mut image = native.wram_image().into_owned();
+                    image[0x20..0x22].copy_from_slice(&y.to_le_bytes());
+                    image[0x22..0x24].copy_from_slice(&x.to_le_bytes());
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    native.set_spotlight_window_radius_byte(radius);
+                    native.set_spotlight_window_state_byte(opening);
+                    native.set_subsubmodule(subsub);
+                    let (_, own) = load_price_rom_work(0x07ea27, &native.wram_image(), 0,
+                        true, 0x07ea27..=0x07ebd9);
+                    let measured = crate::cycle_ledger::measure_routine_self_work(0x07ea27, || {
+                        native.desert_prayer_build_complete_iris_hdma_table();
+                    });
+                    assert_eq!(measured, own,
+                        "radius={radius} x={x} y={y} opening={opening} subsub={subsub}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn mode7_transfer_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for lag_free in [false, true] {
+        let mut native = ZeldaState::new();
+        native.set_assets(&assets).unwrap();
+        native.set_lag_free(lag_free);
+        let mut machine = Snes::new();
+        machine.cart.load(CartType::LoRom, &rom, 0x2000);
+        machine.ram[0x1fc..0x1ff].copy_from_slice(&[0xff, 0x7f, 0]);
+        machine.cpu.e = false;
+        machine.cpu.unpack_flags(0x30);
+        machine.cpu.pc = 0xe399;
+        machine.cpu.sp = 0x1fb;
+        let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+        let mut source = RomCpuTimingProbe::new(machine, clock,
+            SourcePpuReadState::snes9x_reset()).unwrap();
+        let mut measured = 0;
+        for _ in 0..100000 {
+            let step = source.step().unwrap();
+            measured += step.transactions.iter()
+                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+            if source.snes().cpu.pc == 0x8000 { break; }
+        }
+        assert_eq!(source.snes().cpu.pc, 0x8000);
+        assert_eq!(measured, 1_696_052);
+        let before = crate::cycle_ledger::master();
+        native.transfer_mode7_characters();
+        assert_eq!(crate::cycle_ledger::master() - before,
+            if lag_free { measured } else { 0 });
+        assert_eq!(&native.ppu.vram[..0x4000], &source.snes().ppu.vram[..0x4000]);
+    }
+}
+
 #[test]
 fn subtractive_palette_prices_match_executed_rom_paths() {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,

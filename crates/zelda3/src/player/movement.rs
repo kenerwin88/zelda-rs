@@ -4,6 +4,72 @@ use super::*;
 use crate::game_state::{CollisionAxis, CollisionDirection, CollisionOrder, MovementProbeKind, PlayerAxis};
 use crate::tile_definition::NativeTile;
 
+#[cfg(test)]
+mod velocity_price_tests {
+    use super::*;
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+
+    #[test]
+    fn velocity_selection_prices_match_executed_rom_paths() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        // Each tuple changes live branch operands, never measured lag.
+        let mut cases = Vec::new();
+        for direction in 0u8..16 {
+            for speed in [0u8, 12, 16, 24] {
+                for water in [0u8, 1] {
+                    cases.push(vec![(0x67, direction), (0x5e, speed), (0x351, water)]);
+                }
+            }
+        }
+        for near in [0u8, 1, 3] {
+            for modifier in [0u8, 1, 2, 15, 16, 47, 48, 255] {
+                for sub in [0u8, 2, 8, 16] {
+                    cases.push(vec![(0x5b, near), (0x57, modifier), (0x11, sub), (0x67, 9)]);
+                }
+            }
+        }
+        for changes in [vec![(0x11, 2), (0x10, 14)], vec![(0xb7b, 1)],
+            vec![(0x5d, 4)], vec![(0x34a, 1)], vec![(0x34a, 1), (0x372, 1), (0x2f1, 32)],
+            vec![(0x372, 1), (0x2f1, 32)], vec![(0x316, 15)], vec![(0x317, 15)]] {
+            cases.push(changes);
+        }
+        for changes in cases {
+            let mut native = ZeldaState::new();
+            native.set_lag_free(true);
+            let mut image = native.wram_image().into_owned();
+            for &(address, value) in &changes { image[address] = value; }
+            native.import_wram_image(&image);
+            native.sync_native_game_state_from_ram();
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.ram.copy_from_slice(&native.wram_image());
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0x30);
+            machine.cpu.k = 7;
+            machine.cpu.pc = 0xe245;
+            machine.cpu.sp = 0x1fc;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut measured = 0;
+            for _ in 0..1000 {
+                let step = source.step().unwrap();
+                measured += step.transactions.iter()
+                    .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                if matches!(source.snes().cpu.pc, 0xe373 | 0xe3e0 | 0xe42a | 0xe545 | 0xe402) { break; }
+            }
+            assert!(matches!(source.snes().cpu.pc, 0xe373 | 0xe3e0 | 0xe42a | 0xe545 | 0xe402));
+            let own = crate::cycle_ledger::measure_routine_self_work(0x07e245, || {
+                native.link_handle_velocity_before_move_position();
+            });
+            assert_eq!(own, measured, "operands={changes:?}");
+        }
+    }
+}
+
 impl ZeldaState {
     pub(in crate::zelda_rtl) fn link_handle_swim_accels(&mut self) {
         let mut mask = 0x0c;
@@ -1663,6 +1729,10 @@ impl ZeldaState {
     /// the ROM returned earlier (safe-return/sand-drag, swim, or the
     /// all-blocked collision exit).
     fn link_handle_velocity_before_move_position(&mut self) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_e245));
+        if self.lag_free {
+            crate::cycle_ledger::charge(self.link_velocity_selection_master());
+        }
         let Some((direction, velocity)) =
             self.link_handle_velocity_before_actual_velocity_resolution()
         else {
@@ -1672,6 +1742,101 @@ impl ZeldaState {
             .set_actual_velocity_from_direction(direction, velocity);
         self.follower_link_state_mut().prime_airborne_z_velocity();
         true
+    }
+
+    /// $07:E245..E372, through speed/direction resolution and the branch to
+    /// MovePosition. Early BRLs price only their instruction, not the swim,
+    /// sand-drag, dash-in-place or common-return tail they enter.
+    fn link_velocity_selection_master(&self) -> u64 {
+        let p = &self.game_state.player.follower_link;
+        let sub = self.game_state.frame.submodule;
+        let mut clocks = 128 + if sub == 2 { 56 } else { 6 };
+        if sub == 2 && self.game_state.frame.main_module == 14 {
+            return clocks + 6 + 318;
+        }
+        clocks += 48;
+        if p.is_prevented_from_moving() { return clocks + 318; }
+        clocks += 6 + 56;
+        if p.handler_state() == 4 { return clocks + 6 + 30; }
+        clocks += 48;
+        let mut modifier = p.speed_modifier();
+        let mut index;
+        if p.flag_moving() != 0 {
+            clocks += 48;
+            if !p.is_running() { return clocks + 6 + 30; }
+            clocks += 62;
+            index = 24u8;
+        } else {
+            clocks += 6 + 48;
+            if p.is_running() {
+                clocks += 88;
+                if p.dash_counter() < 16 { return clocks + 30; }
+                clocks += 6;
+                modifier = 0;
+            } else { clocks += 6; }
+            clocks += 96;
+            if self.game_state.player.tile_detection.tile_collision_bits_primary()
+                | self.game_state.player.tile_detection.tile_collision_bits_secondary() == 0x0f {
+                return clocks + 30;
+            }
+            clocks += 6 + 96;
+            index = p.speed_setting();
+            if p.water_ripple_or_grass_state() == 0 { clocks += 6; }
+            else {
+                clocks += 56 + 24;
+                if index == 16 { clocks += 38; index = 22; }
+                else {
+                    clocks += 6 + 72;
+                    if index == 12 { clocks += 16; index = 14; }
+                    else { clocks += 6; index = 12; }
+                }
+            }
+        }
+        // $E2CA..E333: diagonal speed, pit acceleration, deceleration,
+        // and the original lookup (including its X8 page crossing).
+        let direction = p.direction();
+        clocks += 182;
+        if direction & 0x0c == 0 { clocks += 6; }
+        else {
+            clocks += 46;
+            if direction & 3 == 0 { clocks += 6; }
+            else { clocks += 16; index = index.wrapping_add(1); }
+        }
+        clocks += 106;
+        let mut table = true;
+        if p.is_near_pit() {
+            clocks += 32;
+            if !p.near_pit_state_is(3) { clocks += 6; }
+            else { clocks += 56 + if modifier >= 0x30 { 6 + 62 } else { 62 }; }
+        } else {
+            clocks += 6 + 40;
+            if modifier == 0 { clocks += 6; }
+            else {
+                clocks += 72;
+                if sub == 8 { clocks += 6; index = 10; }
+                else {
+                    clocks += 32;
+                    if sub == 16 { clocks += 6; index = 10; }
+                    else { clocks += 16; index = 2; }
+                }
+                clocks += 56 + 6 + 56; // AND #0 makes BEQ unconditional.
+                if modifier == 1 { clocks += 6; }
+                else {
+                    clocks += 32;
+                    if modifier >= 16 { clocks += 6 + 48; }
+                    else { clocks += 78; table = false; }
+                }
+            }
+        }
+        if table { clocks += 32 + if u16::from(index) + 0x27 > 0xff { 6 } else { 0 }; }
+        // $E333..E372: scratch setup, two signed component passes, Z setup.
+        clocks += 182 + 6 + 134;
+        for (mask, negative) in [(3, 2), (12, 8)] {
+            clocks += 64 + 182;
+            if direction & mask == 0 { clocks += 6; }
+            else { clocks += 40 + 60 + if direction & negative == 0 { 6 } else { 90 }; }
+        }
+        clocks
     }
 
     /// Run the stateful speed-selection prefix, stopping before either

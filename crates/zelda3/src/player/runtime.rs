@@ -3,6 +3,76 @@
 use super::*;
 use crate::game_state::constants::{BIT9_OF_XCOORD, OAM_PRIORITY_VALUE, OAM_PRIORITY_VALUE_2, SORT_SPRITES_OFFSET_INTO_OAM_BUFFER};
 
+#[cfg(test)]
+mod control_price_tests {
+    use super::*;
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+
+    #[test]
+    fn player_control_prices_match_executed_rom_paths() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut cases = vec![Vec::new()];
+        for health in [0u8, 1, 2, 0xa8, 0xff] {
+            for damage in [0u8, 1, 2, 0xff] {
+                for handler in [0u8, 1, 4, 23] {
+                    cases.push(vec![(0xf36d, health), (0x373, damage), (0x5d, handler)]);
+                }
+            }
+        }
+        for cape in [0u8, 1] {
+            for disabled in [0u8, 1] {
+                for ancilla in [0u8, 5] {
+                    for action in [0u8, 1] {
+                        for spin in [0u8, 1] {
+                            for blink in [0u8, 1] {
+                                cases.push(vec![(0x373, 1), (0xf36d, 16), (0x55, cape),
+                                    (0x37b, disabled), (0xc4a, ancilla), (0x300, action),
+                                    (0x3d, spin), (0x31f, blink)]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for changes in cases {
+            let mut native = ZeldaState::new();
+            let mut image = native.wram_image().into_owned();
+            for &(address, value) in &changes { image[address] = value; }
+            native.import_wram_image(&image);
+            native.sync_native_game_state_from_ram();
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.ram.copy_from_slice(&native.wram_image());
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0x30);
+            machine.cpu.k = 7;
+            machine.cpu.db = 7;
+            machine.cpu.pc = 0x807f;
+            machine.cpu.sp = 0x1fc;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut measured = 0;
+            let mut dispatched = false;
+            for _ in 0..1000 {
+                let cpu = &source.snes().cpu;
+                let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+                let step = source.step().unwrap();
+                if (0x07807f..=0x078106).contains(&pc) {
+                    measured += step.transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                }
+                if pc == 0x078106 { dispatched = true; break; }
+            }
+            assert!(dispatched);
+            assert_eq!(native.link_control_self_master(), measured, "operands={changes:?}");
+        }
+    }
+}
+
 impl ZeldaState {
     pub(crate) fn native_player_animation_table_byte(address: u32) -> Option<u8> {
         let (table, base): (&[u8], u32) = match address {
@@ -414,6 +484,7 @@ impl ZeldaState {
 
     pub(super) fn link_control_handler(&mut self) {
         let _scope = crate::cycle_ledger::routine(0x07_807f);
+        if self.lag_free { crate::cycle_ledger::charge(self.link_control_self_master()); }
         if self.game_state.player.follower_link.given_damage() != 0 {
             if self.game_state.player.follower_link.is_cape_active() {
                 self.follower_link_state_mut().clear_given_damage();
@@ -503,6 +574,39 @@ impl ZeldaState {
             29 => self.link_state_tree_pull(),
             _ => {}
         }
+    }
+
+    /// $07:807F..8106: damage/cape/health branches and handler dispatch.
+    /// The SFX call instruction is included; its body and the selected
+    /// player's tail handler retain their own owners.
+    fn link_control_self_master(&self) -> u64 {
+        let p = &self.game_state.player.follower_link;
+        let mut clocks = 48;
+        if p.given_damage() == 0 { clocks += 6; }
+        else {
+            clocks += 40;
+            if p.is_cape_active() { clocks += 102; }
+            else {
+                clocks += 6 + 48;
+                if p.sprite_damage_disable_timer() != 0 { clocks += 6; }
+                else {
+                    clocks += 152;
+                    if self.ancilla_slot_view(0).ancilla_type() != 5 { clocks += 6; }
+                    else {
+                        clocks += 48;
+                        if p.action_handler_timer() != 0 { clocks += 6; }
+                        else { clocks += 40 + if p.spin_attack_delay_timer() == 0 { 6 } else { 64 }; }
+                    }
+                    clocks += 48 + if p.blink_countdown() != 0 { 6 } else { 48 };
+                    let health = self.game_state.inventory.player_resources.current_health()
+                        .wrapping_sub(p.given_damage());
+                    clocks += 218 + if health == 0 { 6 + 352 } else {
+                        32 + if health < 0xa8 { 6 } else { 352 }
+                    } + 40;
+                }
+            }
+        }
+        clocks + 40 + if p.handler_state() == 0 { 6 } else { 46 } + 98
     }
 
     pub(in crate::zelda_rtl) fn link_state_default(&mut self) {

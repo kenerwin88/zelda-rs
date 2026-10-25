@@ -57,6 +57,44 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_LoadEntrance`
     pub(in crate::zelda_rtl) fn dungeon_load_entrance(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_d8b3));
+        if self.lag_free {
+            // $02:D8B3..DB6D, with DC55..DD87's spawn tail: actual
+            // backup/selector/entrance branches and the two fixed copy loops.
+            // This routine has no called child bodies; tail jumps stay here.
+            let progress = self.game_state.inventory.save_progress.progress_indicator_word();
+            let follower = self.game_state.sprites.follower_runtime.indicator_word();
+            let restart = self.game_state.system_signals.restart_check_flag();
+            let mut clocks = 160 + if self.game_state.system_signals.game_over_check_flag() != 0 {
+                56
+            } else { 6 + 2276 };
+            clocks += 230;
+            let starting = follower == 4 || restart != 0;
+            clocks += if follower == 4 { 6 + 24 } else {
+                56 + if restart != 0 { 24 } else { 6 }
+            };
+            clocks += if starting {
+                let i = self.game_state.inventory.save_progress.which_starting_point() as usize;
+                // $DC55..DD87: spawn fields, progress and first-start music.
+                790 + if progress == 0 { 6 } else { 156 } + 2618
+                    + if i != 0 { 6 } else { 56 + if progress as u8 != 0 { 6 } else { 48 } }
+                    + 56
+            } else {
+                let i = self.game_state.world.region.which_entrance() as usize;
+                let room = self.asset_u16(ENTRANCE_DATA_ASSETS.rooms, i);
+                let music = self.asset_u8(27, i);
+                // $D998..DADA: ordinary fields and their actual branches.
+                696 + if progress == 0 { 6 } else { 156 } + 1734
+                    + if i == 0 { 6 } else { 40 + if i == 0x43 { 6 } else { 16 } }
+                    + 196 + if music != 3 { 6 } else {
+                        72 + if (progress as u8) < 2 { 6 } else { 48 }
+                    } + 862 + if room < 0x100 { 6 } else { 24 }
+            };
+            // $DADB..DB6D: seven 64-word copies and fourteen 32-word clears,
+            // actual loop branches, shared setup and return.
+            clocks += 368 + 64 * 718 + 63 * 6 + 40 + 32 * 688 + 31 * 6 + 180;
+            crate::cycle_ledger::charge(clocks);
+        }
         let selection = self.dungeon_load_entrance_before_fields();
         self.dungeon_load_entrance_after_selection(selection, false);
     }

@@ -1746,6 +1746,12 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_load_palettes_before_cache(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_c630));
+        if self.lag_free {
+            // $02:C630..C68B: caller stores, eleven JSLs and shared backup
+            // setup. $C769's cache loop and every palette child own their work.
+            crate::cycle_ledger::charge(1192);
+        }
         self.clear_overworld_aux_or_main_offset();
         self.palette_bg_and_fixed_color_black();
         self.palette_load_sp0l();
@@ -2397,10 +2403,21 @@ impl ZeldaState {
     }
 
     pub(super) fn load_default_graphics(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_e2d0));
         let Some(source) = self.asset_bytes(64, 0).map(Vec::from) else {
             return;
         };
-        self.do3_to_4_high_to_vram(0x4000, &source, chr_source::CHR_KIND_SPRITE, 0);
+        if self.lag_free {
+            // $00:E2D0..E33A uses its own raw-plane CPU copy, not E5AF's
+            // generic conversion. Replace that child price, never add both.
+            // 64 tiles: eight paired-plane and eight opaque-plane stores.
+            crate::cycle_ledger::charge(384 + 64 * (16 + 8 * 382 + 7 * 6
+                + 16 + 8 * 336 + 7 * 6 + 30) + 63 * 6 + 340);
+            crate::cycle_ledger::muted(|| self.do3_to_4_high_to_vram(
+                0x4000, &source, chr_source::CHR_KIND_SPRITE, 0));
+        } else {
+            self.do3_to_4_high_to_vram(0x4000, &source, chr_source::CHR_KIND_SPRITE, 0);
+        }
         if crate::debug_env::var_os!("ZELDA3_DEBUG_DEFAULT_GFX").is_some() {
             eprintln!(
                 "default_gfx source_len={} vram40b0={:04x} vram40b1={:04x} vram40b2={:04x} vram40b3={:04x}",
@@ -2427,9 +2444,20 @@ impl ZeldaState {
     }
 
     pub(super) fn decompress_and_upload_2bpp(&mut self, dst: usize, pack: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_e33b));
         let Some(data) = self.decompressed_sprite_graphics_data(pack) else {
             return;
         };
+        if self.lag_free {
+            // $00:E33B..E36C: JSR, width/index setup, 256 four-word CPU
+            // stores and pointer increments, taken BPLs and return.
+            crate::cycle_ledger::charge(92 + 256 * 830 + 255 * 6 + 64);
+            let _child = crate::cycle_ledger::routine(0x00_e766);
+            // $00:E766..E770 destination setup; E772 decoder owns its bytes.
+            crate::cycle_ledger::charge(128);
+            self.charge_sheet_decompression(DecompressEntry::Sprite, 64, pack,
+                GraphicsDecompressionScratch::primary_buffer_offset());
+        }
         self.copy_to_primary_decompression_buffer(&data);
         for i in 0..0x400 {
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
@@ -2765,13 +2793,22 @@ impl ZeldaState {
     }
 
     pub(super) fn decompress_animated_dungeon_tiles(&mut self, pack: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_d337));
+        if self.lag_free {
+            // $00:D337..D393: caller instructions plus 256 four-way plane
+            // rotations. E783 decompression and D5CE conversion are children.
+            crate::cycle_ledger::charge(522 + 256 * 518 + 255 * 6 + 158);
+        }
         if let Some(mut work) = self.native_pre_dungeon_animated_graphics.take() {
             self.advance_animated_dungeon_graphics(pack, &mut work, AnimatedDungeonGraphicsProgress::Returned);
             // Publication advances are unpriced; retain the ordinary caller's
             // aggregate charge without replaying its completed stores.
             for sheet in [pack, 0x5c] {
+                let _decomp = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_e783));
+                if self.lag_free { crate::cycle_ledger::charge(128); } // $00:E783..E78D.
                 self.charge_sheet_decompression(DecompressEntry::BackgroundTables, 65, sheet,
                     GraphicsDecompressionScratch::primary_buffer_offset());
+                drop(_decomp);
                 let _scope = crate::cycle_ledger::routine(if self.lag_free { 0x00_d5ce } else { 0x00_dfb8 });
                 crate::cycle_ledger::charge(32 + 48 * if self.lag_free { 3808 } else { 3736 } + 47 * 6 + 42);
             }
@@ -4526,6 +4563,21 @@ impl ZeldaState {
 
     /// ROM: `PaletteFilter_WhirlpoolRestoreRedGreen`
     pub(super) fn palette_filter_whirlpool_restore_red_green(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_f0c7));
+        if self.lag_free {
+            // $00:F0C7..F131: actual two channel comparisons/updates for
+            // each of 224 colors, loop branches and countdown completion.
+            let palette = &self.game_state.display.palette_buffer;
+            let mut clocks = 118 + 223 * 6 + 272 + 104;
+            for i in 0x20..0x100 {
+                clocks += 342 + 86 + 130;
+                for mask in [0x03e0, 0x001f] {
+                    clocks += if palette.main_color(i) & mask == palette.aux_color(i) & mask { 6 } else { 66 };
+                }
+            }
+            clocks += if self.game_state.display.palette_filter.countdown().wrapping_add(1) == 31 { 94 } else { 6 };
+            crate::cycle_ledger::charge(clocks);
+        }
         // Green then red, both stepped toward aux; disjoint channels, so two
         // passes equal the original single loop.
         self.transform_main_range(
