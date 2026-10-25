@@ -35,6 +35,13 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_setup_hit_box(&self, k: usize, hb: &mut SpriteHitBox) {
+        if self.lag_free {
+            // $06:F7EF..F835, M8/X8: the airborne early exit or the full
+            // coordinate/size path. Slots <= 15 and hitbox indices <= 31
+            // cannot cross any of these absolute-indexed table pages.
+            crate::cycle_ledger::charge_routine(0x06_f7ef,
+                if (self.sprite_slot_view(k).z() as i8).is_negative() { 48 + 6 + 82 } else { 48 + 758 });
+        }
         if (self.sprite_slot_view(k).z() as i8).is_negative() {
             hb.r10_spr_xhi = 0x80;
             return;
@@ -374,6 +381,32 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn check_if_hit_boxes_overlap(&self, hb: &SpriteHitBox) -> bool {
+        if self.lag_free {
+            // $06:F836..F863, M8/X8: PHX/LDX, then the actual Y/X
+            // subtract/high-byte and extent branches, PLX/RTS. Preserve
+            // the source path even when the semantic sentinel guard below
+            // can reject the same box without doing its byte arithmetic.
+            let mut clocks = 38 + 70;
+            for (axis, (low, high, size, spr_low, spr_high, spr_size)) in [
+                (hb.r1_ylo, hb.r9_yhi, hb.r3, hb.r5_spr_ylo, hb.r11_spr_yhi, hb.r7_spr_ysize),
+                (hb.r0_xlo, hb.r8_xhi, hb.r2, hb.r4_spr_xlo, hb.r10_spr_xhi, hb.r6_spr_xsize),
+            ].into_iter().enumerate() {
+                clocks += 412;
+                let delta = spr_low.wrapping_sub(low);
+                let high_delta = spr_high.wrapping_sub(high).wrapping_sub(u8::from(spr_low < low));
+                if high_delta.wrapping_add(u8::from(delta >= 0x80)) != 0 {
+                    clocks += 6;
+                    break;
+                }
+                clocks += 114;
+                if size.wrapping_add(spr_size) < delta.wrapping_add(spr_size) {
+                    clocks += 6;
+                    break;
+                }
+                clocks += 30 + if axis == 0 { 6 } else { 0 };
+            }
+            crate::cycle_ledger::charge_routine(0x06_f836, clocks);
+        }
         if hb.r8_xhi == 0x80 || hb.r10_spr_xhi == 0x80 {
             return false;
         }
@@ -1030,6 +1063,13 @@ impl ZeldaState {
     //   return Sprite_CheckTileProperty(k, yy);
     // }
     pub(in crate::zelda_rtl) fn sprite_check_tile_in_direction(&mut self, k: usize, yy: i32) -> bool {
+        if self.lag_free {
+            // $06:E72F..E73E, M8/X8: save direction, flags-derived table
+            // index and indoor branch. The shared tile-property body after
+            // E740/E773 is not included in this prefix price.
+            crate::cycle_ledger::charge_routine(0x06_e72f,
+                192 + if self.game_state.world.location.is_indoors() { 0 } else { 6 });
+        }
         let t = i32::from(self.sprite_slot_view(k).flags() & 0xf0);
         self.sprite_check_tile_property(k, 2 * ((t >> 2) + yy))
     }
@@ -1984,6 +2024,14 @@ impl ZeldaState {
     //   return GetTileAttribute(sprite_floor[k], x, y);
     // }
     pub(in crate::zelda_rtl) fn sprite_get_tile_attribute(&mut self, k: usize, x: u16, y: u16) -> (NativeTile, u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e883));
+        if self.lag_free {
+            // $06:E883..E8D5: floor, indoor lookup or outdoor wrapper,
+            // and scratch publication/return. $00:882E owns its own body.
+            crate::cycle_ledger::charge(118
+                + if self.sprite_slot_view(k).floor() >= 1 { 56 } else { 6 }
+                + 72 + if self.game_state.world.location.is_indoors() { 544 } else { 6 + 386 });
+        }
         self.probe_entity_tile(self.sprite_slot_view(k).floor(), x, y)
     }
 }

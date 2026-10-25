@@ -7682,6 +7682,21 @@ impl ZeldaState {
 
     /// ROM: `Overworld_SetSongList`
     pub(super) fn overworld_set_song_list(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_c463));
+        if self.lag_free {
+            // $02:C463..C4BF, M8/X8 -> M8/X16: actual progress/sword
+            // selection, 64 primary and 96 secondary byte-copy iterations,
+            // with taken loop branches and the final music byte/return.
+            let selection = if self.game_state.inventory.save_progress.progress_indicator() >= 3 {
+                6
+            } else if self.game_state.inventory.items.sword_type() >= 2 {
+                96 + 6
+            } else {
+                96 + 136 + if self.game_state.inventory.save_progress.progress_indicator() >= 2 { 6 } else { 24 }
+            };
+            crate::cycle_ledger::charge(254 + selection + 64 * 146 + 63 * 6
+                + 24 + 96 * 146 + 95 * 6 + 158);
+        }
         let mut r0 = 2;
         let mut y = 0xc0usize;
         if self.game_state.inventory.save_progress.progress_indicator() < 3 {

@@ -267,14 +267,31 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_detect_reset_state(&mut self) {
+        if self.lag_free {
+            // $07:D798..D7D7, M16/X16: 23 word clears and RTS.
+            crate::cycle_ledger::charge_routine(0x07_d798, 914);
+        }
         self.tile_detect_position_mut().reset_probe_results();
         self.dungeon_environment_mut()
             .clear_moving_floor_check_flags();
     }
 
     pub(super) fn tile_detection_execute(&mut self, x: u16, y: u16, bits: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_d9d8));
         let mut offset = 0usize;
         let is_indoors = self.game_state.world.location.is_indoors();
+        if self.lag_free {
+            // $07:D9D8..DA27 / DC2A..DC47: lookup and indirect effect
+            // dispatch only. The outdoor $00:882E child is separately priced;
+            // the selected effect handler's body remains separate work.
+            let cheat = self.game_state.player.follower_link.cheat_walk_through_walls() != 0;
+            let lookup = if is_indoors {
+                6 + 382
+                    + if self.game_state.player.follower_link.lower_level_state() == 0 { 6 } else { 38 }
+                    + 194 + 202
+            } else { 30 + 194 + 130 };
+            crate::cycle_ledger::charge(62 + lookup + if cheat { 82 } else { 6 + 36 });
+        }
         let tile = if is_indoors {
             self.follower_link_state_mut().clear_force_move_high_byte();
             offset = ((y & !7) as usize) * 8

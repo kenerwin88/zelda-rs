@@ -325,6 +325,11 @@ impl ZeldaState {
         replay_input_override: Option<u16>,
     ) -> bool {
         self.native_begin_callback();
+        if self.lag_free && self.native_upload_prefix_pending() {
+            let replay = self.state_recorder.replay_mode;
+            self.run_native_upload_prefix_frame(Self::sanitize_frame_inputs(inputs));
+            return replay;
+        }
         if self.lag_free && self.native_pacing.song_upload {
             let replay = self.state_recorder.replay_mode;
             self.run_native_song_upload_frame(Self::sanitize_frame_inputs(inputs));

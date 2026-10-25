@@ -1976,6 +1976,13 @@ impl ZeldaState {
         dst: usize,
         x_ents: usize,
     ) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ef7b));
+        if self.lag_free {
+            // $1B:EF7B..EF95, M16/X16: setup, paired palette stores,
+            // actual DEY/BPL passes, RTS. This entry has no callees.
+            crate::cycle_ledger::charge(84 + (x_ents as u64 + 1) * 318
+                + x_ents as u64 * 6 + 42);
+        }
         let dst_index = dst >> 1;
         for i in 0..=x_ents {
             let Some(color) = self.rom_or_asset_word_snes(src + i as u32 * 2) else {
@@ -2021,6 +2028,12 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_single(&mut self, src: u32, dst: usize, x_ents: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ef30));
+        if self.lag_free {
+            // $1B:EF30..EF4A, M16/X16: setup and one auxiliary-bank copy.
+            crate::cycle_ledger::charge(138 + (x_ents as u64 + 1) * 270
+                + x_ents as u64 * 6 + 42);
+        }
         let base_byte = ((dst
             + self
                 .game_state
@@ -2061,6 +2074,12 @@ impl ZeldaState {
         let row_words = x_ents + 1;
         let total_words = row_words * (y_pals + 1);
         assert!(start <= end && end <= total_words);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ef4b));
+        if self.lag_free && start == 0 && end != 0 {
+            // $1B:EF4B..EF54, M16/X16. A partial palette continuation
+            // retains this entry; only the first nonempty slice owns it.
+            crate::cycle_ledger::charge(152);
+        }
         let palette_offset = self
             .game_state
             .display
@@ -2072,6 +2091,15 @@ impl ZeldaState {
             let Some(color) = self.rom_or_asset_word_snes(src + ordinal as u32 * 2) else {
                 return;
             };
+            if self.lag_free {
+                // $1B:EF56..EF7A: row prefix, each actual word's copy and
+                // BPL, row suffix/BPL, and final RTS, each owned once even
+                // when the caller suspends in the middle of a row.
+                crate::cycle_ledger::charge(if column == 0 { 132 } else { 0 }
+                    + 270 + if column + 1 < row_words { 6 } else {
+                        172 + if row < y_pals { 6 } else { 42 }
+                    });
+            }
             let byte_offset = dst + row * 32 + palette_offset + column * 2;
             self.set_aux_color_asset(byte_offset >> 1, color);
         }
@@ -2926,7 +2954,14 @@ impl ZeldaState {
         base: usize,
         num: usize,
     ) {
-        for _ in 0..num {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_d61c));
+        if self.lag_free && num != 0 { crate::cycle_ledger::charge(32); } // $00:D61C STY.
+        for tile in 0..num {
+            if self.lag_free {
+                // $00:D61E..D650, M16/X16: pointer/row setup and eight
+                // three-plane/opaque-plane row copies, seven taken BPLs.
+                crate::cycle_ledger::charge(126 + 8 * 700 + 7 * 6);
+            }
             let src2 = src + 0x10;
             for i in 0..8 {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
@@ -2942,10 +2977,18 @@ impl ZeldaState {
             }
             dst += 16;
             src = src2 + 8;
+            if self.lag_free {
+                // $00:D652..D66B: destination/pointer advance, actual
+                // source-row wrap at D65D, and outer DEC/BNE.
+                crate::cycle_ledger::charge(138
+                    + if (src.wrapping_sub(base) & 0x78) == 0 { 102 } else { 6 }
+                    + 102 + if tile + 1 < num { 6 } else { 0 });
+            }
             if (src.wrapping_sub(base) & 0x78) == 0 {
                 src += 0x180;
             }
         }
+        if self.lag_free && num != 0 { crate::cycle_ledger::charge(42); } // $00:D66D RTS.
     }
 
     /// `Do3To4High16Bit` (`$00:DF4F`, m16 x16). Per tile the ROM runs
@@ -4275,6 +4318,21 @@ impl ZeldaState {
 
     /// ROM: `PaletteFilter_RestoreSubtractive`
     pub(super) fn palette_filter_restore_subtractive(&mut self, from: usize, to: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00_ee21));
+        if self.lag_free && from < to {
+            // $00:EE21..EE77, M16/X16: three original-channel comparisons,
+            // each executed decrement or taken BEQ, the word store/loop,
+            // entry and return. No palette child body is included here.
+            let palette = &self.game_state.display.palette_buffer;
+            let mut clocks = 32 + 42;
+            for i in from >> 1..to >> 1 {
+                clocks += 378 + 120 + 120 + 138 + 6;
+                for mask in [0x001f, 0x03e0, 0x7c00] {
+                    clocks += if palette.main_color(i) & mask == palette.aux_color(i) & mask { 6 } else { 66 };
+                }
+            }
+            crate::cycle_ledger::charge(clocks - 6);
+        }
         self.transform_main_range(from >> 1, to >> 1, PaletteTransform::RestoreSubtractiveStep);
     }
 

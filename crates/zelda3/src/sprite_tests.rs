@@ -1,6 +1,184 @@
 use super::*;
 
 #[test]
+fn tile_direction_prefix_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (Ok(assets), Ok(rom)) = (std::fs::read(root.join("zelda3_assets.dat")),
+        std::fs::read(root.join("saves/zelda3.sfc"))) else { return; };
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    base.set_lag_free(true);
+    for entry in [0x06e72fu32] {
+        for slot in [0usize, 15] {
+            for z in [0u8, 1, 2, 3] {
+                for flags in [0u8, 0x10, 0x70, 0xc0] {
+                    for indoors in [0u8, 1] {
+                        for floor in [0u8, 1] {
+                            let mut native = base.clone();
+                            let mut image = native.wram_image().into_owned();
+                            image[0x1b] = indoors;
+                            image[0xf20 + slot] = floor;
+                            image[0xb6b + slot] = flags;
+                            image[0xf70 + slot] = z;
+                            native.import_wram_image(&image);
+                            native.sync_native_game_state_from_ram();
+                            let mut machine = Snes::new();
+                            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                            machine.ram.copy_from_slice(&native.wram_image());
+                            machine.ram[..4].fill(0);
+                            machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                            machine.cpu.e = false;
+                            machine.cpu.unpack_flags(0x30);
+                            machine.cpu.k = 6;
+                            machine.cpu.db = 6;
+                            machine.cpu.x = slot as u16;
+                            machine.cpu.y = u16::from(z);
+                            machine.cpu.pc = entry as u16;
+                            machine.cpu.sp = 0x1fc;
+                            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                            let mut source = RomCpuTimingProbe::new(machine, clock,
+                                SourcePpuReadState::snes9x_reset()).unwrap();
+                            let mut measured = 0;
+                            for _ in 0..10000 {
+                                let step = source.step().unwrap();
+                                measured += step.transactions.iter()
+                                    .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                                if matches!(source.snes().cpu.pc, 0xe740 | 0xe773) { break; }
+                            }
+                            assert!(matches!(source.snes().cpu.pc, 0xe740 | 0xe773));
+                            let measured_native = crate::cycle_ledger::measure_routine_self_work(entry, || {
+                                native.sprite_check_tile_in_direction(slot, i32::from(z));
+                            });
+                            assert_eq!(measured_native, measured,
+                                "entry={entry:06x} slot={slot} z={z} flags={flags} indoors={indoors} floor={floor}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn overlap_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let Ok(rom) = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")) else { return; };
+    let mut native = ZeldaState::new();
+    native.set_lag_free(true);
+    for dx in [-256i16, -129, -128, -1, 0, 1, 127, 128, 255, 256] {
+        for dy in [-256i16, -129, -128, -1, 0, 1, 127, 128, 255, 256] {
+            for (size, spr_size) in [(0u8, 0u8), (16, 16), (255, 255)] {
+                let x = 0x100u16.wrapping_add(dx as u16);
+                let y = 0x100u16.wrapping_add(dy as u16);
+                let hb = SpriteHitBox {
+                    r0_xlo: 0, r8_xhi: 1, r1_ylo: 0, r9_yhi: 1,
+                    r2: size, r3: size, r4_spr_xlo: x as u8, r10_spr_xhi: (x >> 8) as u8,
+                    r5_spr_ylo: y as u8, r11_spr_yhi: (y >> 8) as u8,
+                    r6_spr_xsize: spr_size, r7_spr_ysize: spr_size,
+                };
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.ram[..12].copy_from_slice(&[hb.r0_xlo, hb.r1_ylo, hb.r2, hb.r3,
+                    hb.r4_spr_xlo, hb.r5_spr_ylo, hb.r6_spr_xsize, hb.r7_spr_ysize,
+                    hb.r8_xhi, hb.r9_yhi, hb.r10_spr_xhi, hb.r11_spr_yhi]);
+                machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = 6;
+                machine.cpu.db = 6;
+                machine.cpu.pc = 0xf836;
+                machine.cpu.sp = 0x1fc;
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                let mut measured = 0;
+                for _ in 0..1000 {
+                    let step = source.step().unwrap();
+                    measured += step.transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                    if source.snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.snes().cpu.pc, 0x8000);
+                let before = crate::cycle_ledger::master();
+                native.check_if_hit_boxes_overlap(&hb);
+                assert_eq!(crate::cycle_ledger::master() - before, measured,
+                    "dx={dx} dy={dy} size={size} spr_size={spr_size}");
+            }
+        }
+    }
+}
+
+#[test]
+fn hitbox_and_attribute_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (Ok(assets), Ok(rom)) = (std::fs::read(root.join("zelda3_assets.dat")),
+        std::fs::read(root.join("saves/zelda3.sfc"))) else { return; };
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    base.set_lag_free(true);
+    for entry in [0x06f7efu32, 0x06e883] {
+        for slot in [0usize, 15] {
+            for z in [0u8, 127, 128, 255] {
+                for flags in [0u8, 15, 31] {
+                    for indoors in [0u8, 1] {
+                        for floor in [0u8, 1] {
+                            let mut native = base.clone();
+                            let mut image = native.wram_image().into_owned();
+                            image[0x1b] = indoors;
+                            image[0xf20 + slot] = floor;
+                            image[0xf60 + slot] = flags;
+                            image[0xf70 + slot] = z;
+                            native.import_wram_image(&image);
+                            native.sync_native_game_state_from_ram();
+                            let mut machine = Snes::new();
+                            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                            machine.ram.copy_from_slice(&native.wram_image());
+                            machine.ram[..4].fill(0);
+                            machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                            machine.cpu.e = false;
+                            machine.cpu.unpack_flags(0x30);
+                            machine.cpu.k = 6;
+                            machine.cpu.db = 6;
+                            machine.cpu.x = slot as u16;
+                            machine.cpu.pc = entry as u16;
+                            machine.cpu.sp = 0x1fc;
+                            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                            let mut source = RomCpuTimingProbe::new(machine, clock,
+                                SourcePpuReadState::snes9x_reset()).unwrap();
+                            let mut measured = 0;
+                            for _ in 0..10000 {
+                                let step = source.step().unwrap();
+                                measured += step.transactions.iter()
+                                    .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                                if source.snes().cpu.pc == 0x8000 { break; }
+                            }
+                            assert_eq!(source.snes().cpu.pc, 0x8000);
+                            let before = crate::cycle_ledger::master();
+                            if entry == 0x06f7ef {
+                                native.sprite_setup_hit_box(slot, &mut empty_sprite_hit_box());
+                            } else {
+                                native.sprite_get_tile_attribute(slot, 0, 0);
+                            }
+                            assert_eq!(crate::cycle_ledger::master() - before, measured,
+                                "entry={entry:06x} slot={slot} z={z} flags={flags} indoors={indoors} floor={floor}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn large_draw_retains_coordinate_prep_and_kill_self_at_each_source_instruction() {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)

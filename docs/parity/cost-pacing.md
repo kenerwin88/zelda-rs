@@ -2280,3 +2280,394 @@ bug was found. The final binaries and all final checks were rebuilt and rerun;
 `v1-superseded/` retains the earlier diagnostics. Final profile collection
 matches the unprofiled group-3 census on all 1,473,123 main/VWF/hold/masked/P2
 rows (`profile-execution-agreement.json`).
+
+## Continuation on `codex/cost-pacing7` (main `4ba8a61d`)
+
+Evidence is retained in `target/cost-pacing7/`. This is a verified partial
+instruction-coverage stopping point. The properties overshoot is corrected,
+and the first occurrence-weighted gameplay group is priced. Four requested
+gameplay targets and individual sprite/garnish/effect bodies remain open;
+the load-category pass separates owners and retains rankings, but adds no
+load-only runtime group in this batch. No price uses observed lag counts.
+
+### Properties: instruction work versus masked-upload ownership
+
+The per-iteration profiler does not show an excess ordinary-instruction sum
+in the original properties calls. It shows missing ordinary work alongside
+long masked presentation time. Source `$00:8888` polling belongs to the
+existing SPC transfer owner; it is not another main-work price. Fresh cold
+source rows and before/final native rows are retained for all 27 selected
+iterations in `properties-per-iteration.json`. The before cartridge probe
+work counters match the retained prior full census on every selected index.
+
+| Source iteration | Source upload polling | Source ordinary | Before native ordinary | Final native ordinary | Remaining signed gap |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 95127 | 8,173,754 | 13,934,920 | 13,785,428 | 13,880,010 | 54,910 |
+| 95229 | 8,729,604 | 13,935,328 | 13,785,428 | 13,880,010 | 55,318 |
+| 383631 | 8,354,452 | 13,928,050 | 13,791,640 | 13,885,990 | 42,060 |
+| 465811 | 8,182,780 | 13,893,212 | 13,750,896 | 13,845,246 | 47,966 |
+| 629840 | 8,556,068 | 15,261,190 | 15,100,066 | 15,218,632 | 42,558 |
+| 738183 | 8,191,712 | 14,005,638 | 13,866,764 | 13,961,114 | 44,524 |
+| 884322 | 8,186,462 | 13,989,524 | 13,847,918 | 13,942,268 | 47,256 |
+| 1066958 | 8,109,584 | 13,976,402 | 13,842,012 | 13,936,362 | 40,040 |
+| 1320895 | 8,592,834 | 13,779,826 | 13,644,982 | 13,739,332 | 40,494 |
+
+The runtime previously began the SPC transfer and drained its masked
+callbacks before presenting the holds for the ordinary work that preceded
+the upload command. The ROM reaches `$02:855D` after that work. Lagless
+uploads now retain the native work position at the command, present only
+that prefix's accepted holds, and then start the same receiver protocol.
+Any ordinary suffix remains after the transfer. Prefix NMIs cannot replace
+the main's ordinary closing-handler receipt. The clock uses the existing
+P2 work/refresh/interrupt calculation; it reads no source iteration, lag count,
+scene threshold or duration table. Default and ROM-timing paths retain their
+previous charges and scheduling.
+
+Prefix NMIs retain the source $12 latch, so they cannot consume pending
+graphics updates early. The saved completed-main latch is restored only
+at the post-upload closing NMI. The regression retains pending graphics
+through every prefix callback and proves that the closing NMI consumes them.
+
+The ordering-only full cartridge control changes masked time while retaining
+92,778 holds and 9,899 missing holds, with excess/FP zero. An initial
+instruction-interleaving trial did not change the probes and was reverted.
+The final correction also prices actual missing properties work: song-list
+selection/copies and palette copies. The later gameplay high-plane conversion
+charge is independently derived as well.
+
+### Source-derived additions and ownership boundaries
+
+| Work | ROM instruction derivation | Boundary |
+| --- | --- | --- |
+| Song list `$02:C463..C4BF` | Actual progress/sword branches; 64 primary and 96 secondary byte-copy passes, loop branches, final music byte and return. | No upload polling. |
+| Palette copies `$1B:EF30/EF4B`, EF7B helper | Actual words/rows, 270-clock single-bank or 318-clock paired-store passes, row setup and actual loop branches. | Partial EF4B ranges own each instruction once; empty/final-empty slices do not repeat entry/return. Direct gear-copy implementations bypass EF7B and remain open. |
+| Tile reset `$07:D798..D7D7` | 23 M16 word clears and RTS, 914 clocks. | No collision/classification parent charge. |
+| Tile lookup `$07:D9D8..DA27`, `$DC2A..DC47` | Actual indoor/floor/cheat branches and indirect dispatch. | Outdoor `$00:882E` stays a child; selected tile effects remain partially unpriced. |
+| Sprite hitbox `$06:F7EF..F835`, overlap `$F836..F863` | Actual negative-Z exit, coordinate/extent stores, Y-then-X high-byte and extent exits. | No collision parent deficit is absorbed. |
+| Sprite tile lookup `$06:E883..E8D5`; direction prefix `$E72F..E73E` | Actual floor/indoor lookup or outdoor wrapper; flags/direction and indoor branch at the direction entry. | `$00882E` is separate; shared tile-property work after E740/E773 remains open. |
+| High expansion `$00:D61C..D66D` | Actual tiles, eight row-copy passes per tile, source pointer-wrap and loop branches. | The existing E19B/DF4F conversions are separate owners. |
+| Subtractive palette `$00:EE21..EE77` | Original channel comparisons, actual decrement/taken branches, word stores and range loop. | No palette child or restore parent duplicate. |
+| HUD `$0D:FA70/FA85` | Classic FA70 template: 330 MVN bytes at 52 each plus caller self work, 17,574; standalone FA85 wrapper 270. | FB91 scopes existing children. Rebuild does not charge the standalone FA85 entry; enhanced non-ROM template variants stay outside the new FA70 price. |
+
+`scripts/rom_block_costs.py` independently re-sums 60 shipped basic blocks
+in `source-price-blocks.json`; listings are in `source-costs/`. Twelve
+executed-ROM price-test families pass in both configurations, including
+partial palette-row cuts, pointer wraps, negative Z, overlap exits,
+indoor/floor/cheat branches, all song-list selections and HUD caller self
+work excluding its actual callees. The sample work audit is addition-only: 25,426,870 new clocks over 4,450 joined iterations.
+Negative per-iteration work deltas: zero. Raw ancestry and executed-work
+mismatches remain visible in `price-routine-agreement.json`.
+
+The D61C raw excess on twelve sample iterations is an entry alias: source
+D619 loads Y=6 and falls through to the same body. After excluding that
+still-unpriced 24-clock LDY per source entry, source D61C plus D619 body
+work matches native D61C exactly on all twelve iterations; see
+`high-expansion-alias-proof.json`. No high-expansion price was adjusted.
+The overlap row is exact except iteration 620430: four calls on both sides,
+2,218 source / 2,918 native clocks. The totals imply one native full two-axis
+path instead of a source early Y exit. Its 700-clock operand/work difference
+is retained, not fitted away; this is not an exact source-behavior claim.
+
+EF7B's shared helper is priced, but all 108 sampled source EF7B rows still
+bypass it through direct gear-copy implementations. Their 802,632 clocks
+remain explicitly unpriced in this sample. The helper's executed-ROM test
+is not claimed as route-wide integration of those direct-copy callers.
+
+### Requested gameplay rows: resolution and occurrence weighting
+
+The same whole-route source-lagged quantiles are reused: 32 calls each in
+07/00 and 09/00. Occurrences below are exact within those samples; population
+weighting by their 2,960 / 1,192 lagged-call populations is a prioritization
+heuristic, not an unbiased full-route routine-frequency census. Large
+clock totals on one rare call do not outrank repeated gameplay work solely
+on their aggregate clocks.
+
+| Target | Sample occurrences 07/00; 09/00 | Resolution |
+| --- | ---: | --- |
+| `0684e2` | 32; 32 | already-scoped; residual open: Existing entry/timers/state dispatch and 068510 inactive tail already own clocks. Source tail-dispatched actor bodies can remain in 0684e2; price those individual bodies, not this aggregate deficit. |
+| `07d9d8` | 31; 30 | priced partial: Lookup and indirect dispatch only. Outdoor 00882e child retains its own price; selected effect bodies remain open. |
+| `07d798` | 31; 30 | priced: All 23 M16 word clears plus RTS, 914 clocks; independently executed ROM. |
+| `07e245` | 29; 26 | open: Speed selection, direction resolution and movement continuation still need source-instruction pricing. Do not absorb the child movement/sand-drag deficit in a parent scalar. |
+| `09b0b6` | 25; 19 | already-scoped; residual open: Slot/countdown/OAM allocation/RTS dispatch already priced. Source tail garnish handlers remain inside this frame; price missing handler bodies individually. |
+| `06f7ef` | 18; 29 | priced: Negative-Z early exit and complete hitbox coordinate/extent path; actual operand branch, no callees. |
+| `06f836` | 18; 29 | priced: Actual Y-then-X high-byte and extent exits; arithmetic prices include source path even when native sentinel guard rejects early. |
+| `06e883` | 16; 26 | priced: Floor/indoor branch, actual indoor lookup or outdoor call wrapper, scratch/return. 00882e child excluded. |
+| `06dc10` | 16; 23 | owned elsewhere: DC10 call instruction is already priced. DC13 draw instructions, E41E coordinate preparation and DC66 shadows have separate native scopes. Raw source tail ancestry is not another draw price. |
+| `06e72f` | 13; 24 | priced partial: E72F..E73E prefix only. Shared E740/E773 property body remains open; its E883 child is separately priced. |
+| `1e8b19` | 18; 4 | already-scoped; residual open: 290-clock RTS dispatch already charged, with 8B11 long wrapper separate. Source tail actor bodies remain inside this scope; their per-type bodies still need prices. |
+| `02bb90` | 0; 32 | open: Camera per-axis/per-pixel branch and boundary-check work remain open. New price requires actual signed velocity, bounds and overlay branches. |
+| `08a7ab` | 5; 2 | open: ancilla_draw_explosion and safe OAM publication remain unpriced; no parent aggregate charge added. |
+| `00d61c` | 4; 2 | priced: High-plane expansion counts actual tile/row passes and pointer-wrap branch. E19B/DF4F conversion owner is separate. |
+| `0dfa70` | 4; 1 | priced: ROM HUD template path: 330 MVN bytes and caller self work. FB91 owns existing child work; FA85 standalone entry is separately priced, never added to FA70. |
+| `02f3b9` | 0; 6 | open: buffer_and_build_map16_stripes_x / write_overworld_scroll_stripe_step has no new price. ROM row/column control and copy work still need audited ownership and executed-ROM tests. |
+| `00ee21` | 0; 1 | priced: All color comparisons, actual per-channel subtract/taken branches, stores and loop control; no callees. |
+
+The native whole-route sample was rerun with the final binary. Every source
+and native exclusive sum reconciles to its independent total; all negative
+rows remain in the JSON rankings. Native DC13/E41E/DC66 drawing ownership
+and existing sprite/garnish dispatchers are not repriced from parent gaps.
+The next repeated unpriced targets include velocity and camera work;
+striping, explosion drawing and individual actor/garnish/effect handlers
+also remain open.
+
+Final whole-route `07/00` ranking, exclusive clocks:
+
+| Target | Source | Native | Difference | Source-lagged sample occurrences |
+| --- | ---: | ---: | ---: | ---: |
+| `06e72f` | 149,816 | 23,040 | +126,776 | 13 |
+| `07e245` | 125,664 | 0 | +125,664 | 29 |
+| `0080b5` | 101,164 | 7,680 | +93,484 | 32 |
+| `09b0b6` | 251,386 | 169,818 | +81,568 | 25 |
+| `1e8b19` | 110,082 | 28,950 | +81,132 | 18 |
+| `07807f` | 77,530 | 0 | +77,530 | 31 |
+| `08a7ab` | 68,608 | 0 | +68,608 | 5 |
+| `0684e2` | 234,276 | 165,940 | +68,336 | 32 |
+| `07d077` | 66,740 | 0 | +66,740 | 31 |
+| `1dc222` | 73,850 | 15,220 | +58,630 | 13 |
+| `0ed7fe` | 58,224 | 0 | +58,224 | 1 |
+| `05a64a` | 57,772 | 0 | +57,772 | 1 |
+
+Final whole-route `09/00` ranking, exclusive clocks:
+
+| Target | Source | Native | Difference | Source-lagged sample occurrences |
+| --- | ---: | ---: | ---: | ---: |
+| `0684e2` | 315,646 | 151,158 | +164,488 | 32 |
+| `06dc10` | 153,120 | 6,578 | +146,542 | 23 |
+| `02f3b9` | 130,652 | 0 | +130,652 | 6 |
+| `08a7ab` | 129,996 | 0 | +129,996 | 2 |
+| `07e245` | 117,700 | 0 | +117,700 | 26 |
+| `02bb90` | 107,316 | 0 | +107,316 | 32 |
+| `06f228` | 83,296 | 0 | +83,296 | 5 |
+| `06e72f` | 99,476 | 16,632 | +82,844 | 24 |
+| `1d9f64` | 77,220 | 0 | +77,220 | 4 |
+| `07807f` | 74,746 | 0 | +74,746 | 30 |
+| `09c5fa` | 71,742 | 0 | +71,742 | 18 |
+| `09c5bb` | 71,278 | 0 | +71,278 | 14 |
+
+### Load categories: transfer owner and ordinary remainder
+
+| Entry | Samples | Source total | Source SPC polling owner | Final native work | Signed ordinary difference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `05/00` | 11 | 218,198,060 | 0 | 180,612,226 | +37,585,834 |
+| `0E/07` | 32 | 206,744,352 | 0 | 178,864,202 | +27,880,150 |
+| `0E/0A` | 32 | 172,351,410 | 0 | 144,056,772 | +28,294,638 |
+| `09/2E` | 32 | 40,620,584 | 0 | 33,675,448 | +6,945,136 |
+| `0E/05` | 32 | 15,015,754 | 0 | 6,376,370 | +8,639,384 |
+| `08/00` | 32 | 644,830,344 | 196,437,512 | 446,928,578 | +1,464,254 |
+| `06/00` | 32 | 805,621,926 | 170,801,370 | 615,017,632 | +19,802,924 |
+
+The ordinary column is source total minus the `$008888` polling owner
+minus native work. It is a signed remainder, not a wholly missing-price
+sum: scope aliases, other owners and changed executed work can offset gaps.
+`whole-upload-owners.json` retains every selected source host boundary and
+separates bank-transfer intervals from non-upload wall/endpoint intervals.
+The 08/00 sample has 566 transfer-owned hidden host intervals plus two
+non-upload intervals; 06/00 has 485 transfer-owned intervals. These wall
+intervals are not additional instruction charges or an equality claim with
+native bank-1 `native_elapsed`.
+
+No load-only price group was shipped. Leading ordinary rows remain:
+05/00 default/manual graphics, 0E/07 and 0E/0A mode-7 character transfer,
+09/2E red/green restoration, 0E/05 desert-iris builder/calculation, and
+06/00 object/header/control work. Child-inclusive deficits must not be added
+together. The CPU VRAM stores at `$00:E399` are ordinary instructions, not
+SPC masked-upload work: `unshipped-mode7-price.json` derives 1,696,052 clocks
+and matches every sampled source call in both map categories. This is an
+unshipped price candidate, not a new runtime or census result.
+
+### Full cartridge progression
+
+| Stage | Held | Missing | Excess | Zero-lag FP |
+| --- | ---: | ---: | ---: | ---: |
+| Main / prior batch | 92,778 | 9,899 | 0 | 0 |
+| Ordering-only control | 92,778 | 9,899 | 0 | 0 |
+| Properties instruction group | 92,893 | 9,784 | 0 | 0 |
+| Final gameplay group / command-position prefix | 93,078 | 9,599 | 0 | 0 |
+
+Both final full gates PASS, complete=True, unexplained zero, with 1,473,123
+iterations each. Every runtime hold equals P2 on every row. Cartridge
+production excess and zero-lag FP remain zero. Live-SPC executes different
+work and is reported separately. Intermediate ordering trials are retained
+as controls; final receipts bind the actual command-position prefix capture
+and final source/binary hashes.
+
+| Mode | Held | Exact lagged | Within one | Missing | Excess | FP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| rom | 93,078 | 31,014 | 38,971 | 9,599 | 0 | 0 |
+| live | 92,965 | 30,907 | 38,863 | 10,244 | 532 | 104 |
+
+### Complete category table
+
+Paired cells are cartridge / live.
+
+| Entry | Source lag | Missing C / L | Excess C / L | FP C / L |
+| --- | ---: | ---: | ---: | ---: |
+| `0E/02` | 12,964 | 892 / 1,161 | 0 / 175 | 0 / 71 |
+| `07/02` | 8,770 | 968 / 968 | 0 / 0 | 0 / 0 |
+| `06/00` | 8,196 | 315 / 315 | 0 / 0 | 0 / 0 |
+| `07/0E` | 7,979 | 302 / 302 | 0 / 0 | 0 / 0 |
+| `08/00` | 6,466 | 19 / 253 | 0 / 0 | 0 / 0 |
+| `09/23` | 6,054 | 533 / 533 | 0 / 0 | 0 / 0 |
+| `0F/01` | 5,432 | 255 / 255 | 0 / 0 | 0 / 0 |
+| `09/03` | 4,372 | 296 / 296 | 0 / 0 | 0 / 0 |
+| `07/07` | 4,060 | 735 / 735 | 0 / 0 | 0 / 0 |
+| `07/00` | 3,679 | 1,721 / 1,721 | 0 / 93 | 0 / 16 |
+| `09/01` | 3,479 | 53 / 53 | 0 / 0 | 0 / 0 |
+| `07/0F` | 2,992 | 192 / 192 | 0 / 0 | 0 / 0 |
+| `0E/03` | 2,672 | 79 / 79 | 0 / 0 | 0 / 0 |
+| `10/01` | 2,672 | 3 / 4 | 0 / 5 | 0 / 0 |
+| `08/02` | 2,576 | 2 / 90 | 0 / 0 | 0 / 0 |
+| `07/15` | 2,333 | 168 / 168 | 0 / 0 | 0 / 0 |
+| `19/02` | 2,001 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/0A` | 1,845 | 191 / 191 | 0 / 0 | 0 / 0 |
+| `09/00` | 1,253 | 1,164 / 1,164 | 0 / 0 | 0 / 0 |
+| `0E/07` | 1,065 | 168 / 168 | 0 / 0 | 0 / 0 |
+| `07/06` | 984 | 41 / 41 | 0 / 0 | 0 / 0 |
+| `11/00` | 973 | 39 / 39 | 0 / 0 | 0 / 0 |
+| `07/01` | 928 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `08/01` | 706 | 0 / 17 | 0 / 53 | 0 / 0 |
+| `05/00` | 639 | 118 / 118 | 0 / 0 | 0 / 0 |
+| `09/04` | 508 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `12/03` | 472 | 43 / 43 | 0 / 0 | 0 / 0 |
+| `0F/00` | 449 | 55 / 55 | 0 / 0 | 0 / 0 |
+| `07/12` | 391 | 64 / 64 | 0 / 0 | 0 / 0 |
+| `09/2E` | 363 | 92 / 92 | 0 / 0 | 0 / 0 |
+| `07/16` | 303 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/11` | 274 | 20 / 20 | 0 / 0 | 0 / 0 |
+| `09/16` | 265 | 181 / 181 | 0 / 0 | 0 / 0 |
+| `09/0D` | 247 | 159 / 159 | 0 / 0 | 0 / 0 |
+| `0E/0B` | 243 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `09/0F` | 242 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `01/00` | 235 | 84 / 84 | 0 / 0 | 0 / 0 |
+| `09/2C` | 228 | 12 / 12 | 0 / 0 | 0 / 0 |
+| `10/00` | 157 | 0 / 1 | 0 / 81 | 0 / 0 |
+| `17/01` | 141 | 32 / 32 | 0 / 0 | 0 / 0 |
+| `1B/02` | 139 | 5 / 5 | 0 / 0 | 0 / 0 |
+| `09/20` | 138 | 18 / 18 | 0 / 0 | 0 / 0 |
+| `0E/05` | 138 | 134 / 134 | 0 / 0 | 0 / 0 |
+| `00/01` | 114 | 16 / 16 | 0 / 0 | 0 / 0 |
+| `0B/24` | 103 | 85 / 85 | 0 / 0 | 0 / 0 |
+| `09/21` | 84 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0E` | 83 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `15/07` | 83 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `19/00` | 72 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/13` | 71 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/17` | 68 | 59 / 59 | 0 / 0 | 0 / 0 |
+| `0B/28` | 68 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `0B/2B` | 66 | 42 / 42 | 0 / 0 | 0 / 0 |
+| `0B/19` | 64 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `15/03` | 64 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `00/05` | 62 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/26` | 61 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/1A` | 60 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/12` | 60 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/29` | 59 | 45 / 45 | 0 / 0 | 0 / 0 |
+| `18/00` | 59 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/00` | 59 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/1A` | 59 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/1C` | 59 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/04` | 58 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/08` | 58 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/0A` | 58 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/18` | 58 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/0E` | 57 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/10` | 56 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/06` | 55 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/03` | 53 | 53 / 53 | 0 / 0 | 0 / 0 |
+| `1A/0C` | 53 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `11/07` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/05` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1E` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/1C` | 48 | 29 / 29 | 0 / 0 | 0 / 0 |
+| `1A/14` | 47 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `1A/02` | 46 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `1A/16` | 45 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `07/18` | 41 | 6 / 41 | 0 / 35 | 0 / 14 |
+| `1A/20` | 41 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `09/12` | 32 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/08` | 32 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/25` | 30 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/00` | 29 | 9 / 9 | 0 / 0 | 0 / 0 |
+| `0B/18` | 24 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/02` | 23 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/05` | 19 | 19 / 19 | 0 / 0 | 0 / 0 |
+| `00/07` | 14 | 12 / 12 | 0 / 0 | 0 / 0 |
+| `15/05` | 14 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/02` | 7 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `00/0A` | 6 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/09` | 4 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/04` | 3 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/02` | 2 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/06` | 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `04/01` | 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `00/00` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `03/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/0B` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `09/06` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0E/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `19/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `16/04` | 0 | 0 / 0 | 0 / 90 | 0 / 3 |
+
+### Crystal / pendant phases, exceptions and rupee gaps
+
+Cells are source / final presentation frames. Every properties phase is
+within one of source. Overlay/build/iris/stabilize values retain the prior
+batch, and all eight stable room/Link-XY/whole-save outcomes match source.
+
+| Seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 94000 | 65 / 66 | 5 / 5 | 17 / 17 | 2 / 2 | 35 / 34 | 16 / 16 |
+| 380000 | 84 / 85 | 7 / 7 | 24 / 23 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 460000 | 84 / 84 | 7 / 7 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 626000 | 91 / 90 | 9 / 9 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 734000 | 84 / 85 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 880000 | 84 / 85 | 7 / 7 | 26 / 26 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1064000 | 84 / 85 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1316000 | 84 / 83 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+
+| Mode | Classified WRAM differences | $0CFD-only exceptions |
+| --- | --- | ---: |
+| rom | `{"lag": 14}` | 10 |
+| live | `{"lag": 14, "polygon": 14735, "song-end-poll": 636}` | 10 |
+
+The 162000–163000 probe has 0 $0CFD-only exceptions. The same 27 requests
+retain gaps `[23, 8, 8, 8, 8, 10, 24, 15, 8, 8, 8, 8, 8, 14, 27, 12, 8, 8, 8, 8, 8, 14, 11, 8, 8, 8]`. The unchanged PCM detector
+retains its 23.002-frame onset gap and all measured intervals. These are CPU/PCM
+diagnostics, not exact A/V acceptance. Preceding extra work can shift the
+concatenated probe's absolute frame indices without changing the intervals.
+
+### Verification and stopping point
+
+| Check | Result |
+| --- | --- |
+| Default / reduced ordinary builds | PASS, both warning-free |
+| Fresh main-default 200k state ledger versus final default | PASS, 200,000 records and EOF |
+| Two control/group cartridge gates; both final full gates | PASS, complete=True, unexplained zero |
+| Zelda lib, default | 2,483 pass; 1 failure; 3 ignored |
+| Zelda lib, reduced | 2,018 pass; 0 failure; 2 ignored |
+| SNES lib, both configurations | 504 pass, no failures, 7 ignored each |
+| Pacing / profile regressions, both configurations | 13 / 3 pass |
+| Executed-ROM price families, both configurations | 12 pass |
+| ROM basic-block audit | 60 independently checked shipped blocks |
+| Diagnostic join tests | 4 pass |
+| Stable crystal/pendant outcomes | 8 source matches |
+| `git diff --check` | PASS |
+
+The sole default lib failure remains the known
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+Library cases form complete disjoint shard unions. Lib-test fixture warnings
+are separate from warning-free ordinary builds.
+
+This stopping point does not establish complete instruction coverage, an
+exact unseeded route, exact raster scheduling or exact A/V. Requested
+remaining gameplay bodies and load-only pricing are explicitly open above.
+The supplied ledgers and oracle cache were read-only. No GPU, `--video`,
+cached-A/V, external Snes9x, cargo GPU tests, `cargo fmt`, commit or push
+was used. Scratch drivers remain in `/tmp`; failed initial baseline launches
+and the out-of-domain synthetic direction fixture are superseded diagnostics,
+not gate receipts. The first final validation is superseded after the prefix update-latch
+issue was found. Corrected binaries and complete final checks were rebuilt
+and rerun; `v1-superseded/` retains the earlier diagnostics. All final
+receipts use the corrected frozen source. `verification.json`, artifact hashes, full predictor CSVs, rankings,
+per-iteration profiles, source-cost listings, phase/PCM/stable receipts and
+library manifest retain the evidence.

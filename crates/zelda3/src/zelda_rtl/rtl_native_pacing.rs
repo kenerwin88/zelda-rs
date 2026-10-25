@@ -6,6 +6,9 @@ use super::*;
 pub(crate) struct NativePacing {
     pending: u32,
     pub(super) song_upload: bool,
+    deferred_song: Option<(u8, Vec<u8>)>,
+    upload_prefix_holds: u32,
+    upload_return_latch: Option<bool>,
     masked_callback: bool,
     accounting: bool,
     entry_handler: u64,
@@ -71,6 +74,7 @@ impl ZeldaState {
     }
 
     pub(super) fn native_record_closing_handler(&mut self) {
+        if self.native_pacing.song_upload { return; }
         if self.native_pacing.record_closing_handler {
             self.native_pacing.closing_handler = self.last_nmi_handler_master_cycles().map(u64::from);
             self.native_pacing.closing_lag_handler = Some(self.native_pacing.last_lag_handler);
@@ -249,6 +253,23 @@ impl ZeldaState {
 
     pub(crate) fn native_mask_song_upload_nmi(&mut self) -> bool {
         if self.lag_free && self.native_pacing.song_upload {
+            if self.native_upload_prefix_pending() {
+                // $02:855D is reached after the caller's ordinary work and
+                // its accepted lag NMIs, before $4200-masked upload time.
+                if self.native_pacing.upload_return_latch.is_none() {
+                    self.native_pacing.upload_return_latch =
+                        Some(self.game_state.display.nmi_update_is_latched());
+                    // Main has not reached $00:805A's STZ $12 yet. Its
+                    // prefix interruptions must take $00:813A's latched
+                    // branch, not publish the completed atomic main early.
+                    self.latch_nmi_update();
+                }
+                self.native_pacing.pending -= 1;
+                self.native_pacing.upload_prefix_holds -= 1;
+                if self.native_pacing.upload_prefix_holds == 0 { self.native_start_deferred_song(); }
+                return false;
+            }
+            self.native_start_deferred_song();
             self.native_pacing.masked_callback = true;
             true
         } else { false }
@@ -256,6 +277,41 @@ impl ZeldaState {
 
     pub(super) fn native_begin_callback(&mut self) {
         self.native_pacing.masked_callback = false;
+    }
+
+    pub(crate) fn native_defer_song_upload(&mut self, bank: u8, stream: &[u8]) -> bool {
+        if !self.native_pacing.accounting || !self.native_pacing.song_upload { return false; }
+        let main = crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
+            + self.lag_free_vwf_master;
+        // Capture at the command, not at main's return: any later ordinary
+        // instruction work belongs after the masked transfer.
+        self.native_pacing.upload_prefix_holds =
+            ((self.native_cost_elapsed(main)[2] + self.native_pacing.wait_wall[2]) / (1364 * 262)) as u32;
+        self.native_pacing.deferred_song = Some((bank, stream.to_vec()));
+        true
+    }
+
+    fn native_start_deferred_song(&mut self) {
+        if let Some((bank, stream)) = self.native_pacing.deferred_song.take() {
+            self.start_deferred_song_bank_transfer(bank, &stream);
+        }
+    }
+
+    pub(super) fn native_upload_prefix_pending(&self) -> bool {
+        self.native_pacing.deferred_song.is_some() && self.native_pacing.upload_prefix_holds != 0
+    }
+
+    pub(super) fn run_native_upload_prefix_frame(&mut self, input: u16) {
+        self.native_pacing.pending -= 1;
+        self.native_pacing.upload_prefix_holds -= 1;
+        self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
+        self.capture_display_snapshot();
+        // $00:80C9 accepts the latched NMI while the main caller is still
+        // before the upload. It is not the main's ordinary closing handler.
+        self.interrupt_nmi_with_animated_bg_operands(input, None, false, None);
+        if self.native_pacing.upload_prefix_holds == 0 { self.native_start_deferred_song(); }
+        self.zelda_push_apu_state();
+        self.poison_owned_wram();
     }
 
     pub(super) fn run_native_song_upload_frame(&mut self, input: u16) {
@@ -268,6 +324,10 @@ impl ZeldaState {
             // The retained receiver has acknowledged the final block and
             // cleared the ports. Restore the closing NMI, exactly once.
             self.native_pacing.song_upload = false;
+            if let Some(latched) = self.native_pacing.upload_return_latch.take() {
+                if latched { self.latch_nmi_update(); }
+                else { self.clear_nmi_update_latch(); }
+            }
             self.interrupt_nmi(input, None, false);
         }
         self.zelda_push_apu_state();
@@ -329,6 +389,57 @@ fn advance_main_cost(main: u64, elapsed: u64, handler: u64, worker: u64, after_i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upload_command_waits_for_the_preceding_instruction_holds() {
+        let Ok(assets) = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../zelda3_assets.dat")) else { return; };
+        let mut game = ZeldaState::new();
+        game.set_assets(&assets).unwrap();
+        game.set_lag_free(true);
+        game.lag_free_intro_schedule = None;
+        game.lag_free_lag_phases_run = true;
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.native_begin_main_cost();
+        crate::cycle_ledger::charge(800_000);
+        game.native_begin_song_upload();
+        assert!(game.native_defer_song_upload(0, &[0, 0]));
+        game.set_pending_nmi_subroutine(7);
+        game.clear_nmi_update_latch();
+        let recorder = game.state_recorder.total_frames;
+        let frame = game.game_state.frame;
+        game.native_finish_main_cost();
+        let holds = game.native_cost_predictions()[2];
+        assert!(holds >= 2);
+        assert!(!game.native_song_bank_transfer_pending());
+        assert!(!game.native_mask_song_upload_nmi());
+        assert!(game.game_state.display.nmi_update_is_latched());
+        assert_eq!(game.native_held_frames_pending(), holds - 1);
+        assert!(!game.native_last_callback_masked_nmi());
+        game.native_record_closing_handler();
+        assert!(game.native_pacing.closing_handler.is_none());
+        for remaining in (0..holds - 1).rev() {
+            game.run_native_upload_prefix_frame(0);
+            assert_eq!(game.native_held_frames_pending(), remaining);
+            assert_eq!(game.native_song_bank_transfer_pending(), remaining == 0);
+            assert!(!game.native_last_callback_masked_nmi());
+            assert!(game.native_pacing.closing_handler.is_none());
+            assert_eq!(game.game_state.display.pending_nmi_subroutine, 7,
+                "prefix NMI must not consume main's pending graphics updates");
+        }
+        assert_eq!(game.native_cost_predictions()[2], holds);
+        assert_eq!(game.state_recorder.total_frames, recorder);
+        assert_eq!(game.game_state.frame, frame);
+        assert!(game.native_mask_song_upload_nmi());
+        assert!(game.native_last_callback_masked_nmi());
+        // Retire the fixture's receiver separately from the ownership test.
+        // Its closing NMI must recover the saved main-return update latch.
+        game.clear_spc_driver_clock();
+        game.run_native_song_upload_frame(0);
+        assert_eq!(game.game_state.display.pending_nmi_subroutine, 0);
+        assert!(game.native_pacing.closing_handler.is_some());
+        assert!(game.native_pacing.upload_return_latch.is_none());
+    }
 
     #[test]
     fn song_restore_and_inactive_seed_do_not_inherit_a_stale_irq_enable() {

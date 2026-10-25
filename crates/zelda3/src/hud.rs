@@ -1755,7 +1755,14 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_rebuild(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0d_fa70));
         if !self.game_state.enhanced_features.has(FEATURE_CARRY_MORE_RUPEES) {
+            if self.lag_free {
+                // $0D:FA70..FA92: 116 entry, MVN's 330 actual bytes at
+                // 52 each, 122 bank setup/branch and 176 caller/return.
+                // Hud_UpdateInternal's children retain their own prices.
+                crate::cycle_ledger::charge(116 + 330 * 52 + 122 + 176);
+            }
             // $FA7C copies all 330 template bytes, including the inventory
             // labels. The standard digit updater leaves those labels intact.
             for i in 0..165 {
@@ -1781,11 +1788,21 @@ impl ZeldaState {
                 5,
             );
         }
-        self.hud_update_only();
+        self.hud_update_internal_components();
     }
 
     /// `$0D:FA85`: Hud_Rebuild's tail without the template copy.
     pub(super) fn hud_update_only(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0d_fa85));
+        if self.lag_free {
+            // $0D:FA85..FA92, excluding the separately called FB91 body.
+            crate::cycle_ledger::charge(270);
+        }
+        self.hud_update_internal_components();
+    }
+
+    fn hud_update_internal_components(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0d_fb91));
         self.hud_update_hearts();
         self.hud_update_magic();
         self.hud_update_inventory();
