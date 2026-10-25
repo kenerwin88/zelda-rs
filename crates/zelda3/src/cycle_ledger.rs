@@ -22,6 +22,8 @@ struct RoutineProfile {
     rows: BTreeMap<u32, [u64; 3]>, // calls, inclusive, exclusive
     fragment_path: Vec<u32>,
     fragment_depth: usize,
+    object: Option<u16>,
+    object_rows: BTreeMap<(u16, u32), [u64; 3]>,
 }
 
 #[derive(Debug, Default)]
@@ -83,6 +85,35 @@ pub fn take_routine_profile() -> BTreeMap<u32, [u64; 3]> {
     PROFILE.with(|profile| profile.borrow_mut().take().map_or_else(BTreeMap::new, |p| p.rows))
 }
 
+/// Take the object breakdown before taking the ordinary routine profile.
+/// The key is (subtype << 8 | object ID, original routine address).
+pub fn take_dungeon_object_profile() -> BTreeMap<(u16, u32), [u64; 3]> {
+    PROFILE.with(|profile| profile.borrow_mut().as_mut()
+        .map_or_else(BTreeMap::new, |p| std::mem::take(&mut p.object_rows)))
+}
+
+/// Diagnostic identity only: charges keep their original routine ownership.
+pub(crate) struct DungeonObjectProfile(bool);
+
+pub(crate) fn dungeon_object_profile(object: u16) -> DungeonObjectProfile {
+    let owns = !is_muted() && PROFILE.with(|profile| {
+        if let Some(p) = profile.borrow_mut().as_mut().filter(|p| p.active) {
+            assert!(p.object.replace(object).is_none());
+            true
+        } else { false }
+    });
+    DungeonObjectProfile(owns)
+}
+
+impl Drop for DungeonObjectProfile {
+    fn drop(&mut self) {
+        if !self.0 { return; }
+        PROFILE.with(|profile| {
+            if let Some(p) = profile.borrow_mut().as_mut() { p.object = None; }
+        });
+    }
+}
+
 /// Master cycles charged so far on this thread.
 #[inline]
 pub fn master() -> u64 {
@@ -100,6 +131,14 @@ pub fn charge(master: u64) {
                     let ledger = ledger.borrow();
                     let address = ledger.addresses.last().copied().unwrap_or(0);
                     profile.rows.entry(address).or_default()[2] += master;
+                    if let Some(object) = profile.object {
+                        profile.object_rows.entry((object, address)).or_default()[2] += master;
+                        if let Some(depth) = ledger.addresses.iter().position(|&a| a == 0x01893c) {
+                            for &routine in &ledger.addresses[depth..] {
+                                profile.object_rows.entry((object, routine)).or_default()[1] += master;
+                            }
+                        }
+                    }
                     if ledger.addresses.is_empty() {
                         profile.rows.entry(0).or_default()[1] += master;
                     }
@@ -157,6 +196,9 @@ pub fn routine(address: u32) -> RoutineScope {
         PROFILE.with(|profile| {
             if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active && p.fragment_depth == 0) {
                 profile.rows.entry(address).or_default()[0] += 1;
+                if let Some(object) = profile.object {
+                    profile.object_rows.entry((object, address)).or_default()[0] += 1;
+                }
             }
         });
         SCOPES_OPENED.with(|count| count.set(count.get() + 1));
@@ -333,6 +375,34 @@ pub(crate) fn measure_routine_self_work(address: u32, run: impl FnOnce()) -> u64
 #[cfg(test)]
 mod annotation_probe_tests {
     use super::*;
+
+    #[test]
+    fn object_identity_preserves_routine_totals_and_excludes_muted_previews() {
+        profile_iteration(true);
+        profile_main_begin();
+        {
+            let _object = dungeon_object_profile(0x123);
+            let _dispatch = routine(0x01893c);
+            charge(880);
+            charge(100);
+            charge_routine(0x019895, 506);
+            muted(|| {
+                let _preview = dungeon_object_profile(0x234);
+                charge_routine(0x019895, 9000);
+            });
+            charge(42);
+        }
+        charge_routine(0x01893c, 7);
+        profile_main_end();
+        let objects = take_dungeon_object_profile();
+        let routines = take_routine_profile();
+        assert_eq!(objects[&(0x123, 0x01893c)], [1, 1528, 1022]);
+        assert_eq!(objects[&(0x123, 0x019895)], [1, 506, 506]);
+        assert_eq!(objects.len(), 2);
+        assert_eq!(routines[&0x01893c], [2, 1535, 1029]);
+        assert_eq!(routines[&0x019895], [1, 506, 506]);
+        assert_eq!(objects.values().map(|r| r[2]).sum::<u64>(), 1528);
+    }
 
     #[test]
     fn flattened_call_paths_count_entries_and_conserve_instruction_work() {

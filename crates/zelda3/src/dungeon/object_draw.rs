@@ -177,6 +177,14 @@ impl ZeldaState {
             self.active_dungeon_object_4x2 = Some(work);
             return;
         }
+        if self.lag_free {
+            // $01:B220..B253: spacing store, eight load/store pairs per
+            // actual block, pointer/counter control, taken BNEs and RTS.
+            // A retained source boundary returned above; its staged owner
+            // does not enter this completed eager-body charge.
+            crate::cycle_ledger::charge(32 + 960 * u64::from(count)
+                + 6 * u64::from(count.saturating_sub(1)) + 42);
+        }
         self.advance_dungeon_4x2_draw_words(&mut work, count * 8);
         self.dungeon_room_load_mut().set_draw_width_indicator(0);
     }

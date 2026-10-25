@@ -36,6 +36,9 @@
 //! `ZELDA3_LEDGER_PROFILE=<lo>-<hi>[,...]` writes inclusive/exclusive main
 //! instruction clocks to `routine-profile.csv`. `ZELDA3_LEDGER_PROFILE_ONLY=1`
 //! suppresses the ordinary image/iteration streams; use a fresh output dir.
+//! The same selection writes object-profile.csv, partitioning $01:893C and
+//! its real JSR/JSL children by (subtype << 8 | jump-table index). JMP tails
+//! keep their original call frame; interrupts and bus stalls remain excluded.
 
 use sha2::{Digest, Sha256};
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
@@ -278,6 +281,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         writeln!(writer, "iteration,routine,calls,inclusive,exclusive")?;
         Ok::<_, std::io::Error>(writer)
     }).transpose()?;
+    // Object JMP tails retain the $01:893C call frame.
+    let mut object_identity = None;
+    let mut object_work = std::collections::BTreeMap::<u32, [u64; 3]>::new();
+    let mut object_profile = std::collections::BTreeMap::<(u64, u16, u32), [u64; 3]>::new();
     let mut profile_stack: Vec<(u32, u16)> = Vec::new();
     let mut profile_depth = 0usize;
     let mut profile_main_active = false;
@@ -515,6 +522,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                             // An interrupt-entry refresh may be observed by
                             // this step although its clocks follow `end`.
                             row[5] += u64::from(step.accepted_interrupt.is_some() && refresh_events != 0);
+                            if let Some(depth) = profile_stack.iter().position(|frame| frame.0 == 0x01893c) {
+                                let routine = profile_stack.last().unwrap().0;
+                                object_work.entry(routine).or_default()[2] += cycles;
+                                for (routine, _) in &profile_stack[depth..] {
+                                    object_work.entry(*routine).or_default()[1] += cycles;
+                                }
+                                // ASL produces the actual jump-table index.
+                                match step.origin_pc & 0x7fffff {
+                                    0x01896c => object_identity = Some(0x100 | (cpu.a >> 1)),
+                                    0x0189a6 => object_identity = Some(0x200 | (cpu.a >> 1)),
+                                    0x0189ca => object_identity = Some(0x300 | (cpu.a >> 1)),
+                                    _ => {},
+                                }
+                            }
                             let routine = profile_stack.last().map_or(0x008034, |frame| frame.0);
                             profile.entry((index, routine)).or_default()[2] += cycles;
                             profile.entry((index, 0x008034)).or_default()[1] += cycles;
@@ -530,11 +551,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                         };
                         if matches!(step.opcode, 0x20 | 0xfc | 0x22) {
                             let target = next_pc & 0x7fffff;
+                            if selected.is_some() {
+                                if target == 0x01893c {
+                                    assert!(object_work.is_empty());
+                                    object_identity = None;
+                                    object_work.entry(target).or_default()[0] += 1;
+                                } else if profile_stack.iter().any(|frame| frame.0 == 0x01893c) {
+                                    object_work.entry(target).or_default()[0] += 1;
+                                }
+                            }
                             profile_stack.push((target, next_sp));
                             if let Some(index) = selected { profile.entry((index, target)).or_default()[0] += 1; }
                         }
                         while profile_stack.last().is_some_and(|frame| next_sp > frame.1) {
-                            profile_stack.pop();
+                            let popped = profile_stack.pop().unwrap();
+                            if popped.0 == 0x01893c && let Some(index) = selected {
+                                let object = object_identity.take().expect("object dispatch identity");
+                                for (routine, values) in std::mem::take(&mut object_work) {
+                                    let row = object_profile.entry((index, object, routine)).or_default();
+                                    for i in 0..3 { row[i] += values[i]; }
+                                }
+                            }
                         }
                     }
                     if step.origin_pc == 0x00_805d {
@@ -838,6 +875,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("ledger-nmi-profile host={host} routine={routine:06x} master={master} wall={wall}");
     }
     if let Some(writer) = profile_output.as_mut() {
+        let mut objects = BufWriter::new(fs::File::create(out_dir.join("object-profile.csv"))?);
+        writeln!(objects, "iteration,object,routine,calls,inclusive,exclusive")?;
+        for ((index, object, routine), [calls, inclusive, exclusive]) in object_profile {
+            if profile_complete.contains(&index) {
+                writeln!(objects, "{index},{object:03x},{routine:06x},{calls},{inclusive},{exclusive}")?;
+            }
+        }
         let mut wall = BufWriter::new(fs::File::create(out_dir.join("structural-profile.csv"))?);
         writeln!(wall, "iteration,main_wall,instructions,refresh_master,dma_master,vcounter_reads,interrupt_refresh_edges")?;
         for (index, row) in &structural {

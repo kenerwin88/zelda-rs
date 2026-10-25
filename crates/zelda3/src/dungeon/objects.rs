@@ -331,6 +331,12 @@ impl ZeldaState {
             }
             0x49 | 0x4a => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:94B4: JSR $B0AC, spacing and JMP $B220.
+                    // The real size-helper child retains its own call frame.
+                    crate::cycle_ledger::charge(94);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 self.room_draw_downwards4x2_variable_spacing(4, src, dsto, count);
             }
             0x4c => {
@@ -370,6 +376,12 @@ impl ZeldaState {
             }
             0x55 | 0x56 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:96F9: JSR $B0AC, spacing and JMP $B220.
+                    // The real size-helper child retains its own call frame.
+                    crate::cycle_ledger::charge(94);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 self.room_draw_downwards4x2_variable_spacing(12, src, dsto, count);
             }
             0x5d => {
@@ -414,6 +426,13 @@ impl ZeldaState {
             }
             0x61 | 0x62 | 0x90 | 0x91 => {
                 let count = size_1to15_or(width, height, 26);
+                if self.lag_free {
+                    // $01:8A89..8A91: JSR size, spacing and JMP $B220.
+                    // $01:B0BE owns its actual size-helper branch and RTS.
+                    crate::cycle_ledger::charge(94);
+                    crate::cycle_ledger::charge_routine(0x01_b0be,
+                        if width == 0 && height == 0 { 206 } else { 188 });
+                }
                 self.room_draw_downwards4x2_variable_spacing(2 * 64, src, dsto, count);
             }
             0x63 | 0x64 => {
@@ -424,6 +443,12 @@ impl ZeldaState {
             }
             0x65 | 0x66 => {
                 let count = size_1to16(width, height);
+                if self.lag_free {
+                    // $01:8C4F: JSR $B0AC, spacing and JMP $B220.
+                    // The real size-helper child retains its own call frame.
+                    crate::cycle_ledger::charge(94);
+                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                }
                 self.room_draw_downwards4x2_variable_spacing(6 * 64, src, dsto, count);
             }
             0x67 | 0x68 | 0x7d => {
@@ -820,6 +845,16 @@ impl ZeldaState {
                 }
             }
             0xc0 | 0xc2 => {
+                if self.lag_free {
+                    // $01:8B94..8BDF: INC dimensions, sixteen direct stores
+                    // per 4x4 block, actual column/row branches and RTS.
+                    // room_fill_rect is unpriced; there is no child charge.
+                    let columns = u64::from(width) + 1;
+                    let rows = u64::from(height) + 1;
+                    crate::cycle_ledger::charge(108
+                        + rows * (64 + columns * 1190 + (columns - 1) * 6 + 186)
+                        + (rows - 1) * 6 + 42);
+                }
                 let tile = self.tile_word(src, 0);
                 for y in 0..=height as u16 {
                     for x in 0..=width as u16 {

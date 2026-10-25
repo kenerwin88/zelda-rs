@@ -1364,6 +1364,11 @@ impl ZeldaState {
         // the block) into the object drawer, whose own RTS returns to
         // RoomDraw_DrawAllObjects; the drawers charge themselves, so this
         // routine's scope covers exactly the decode plus the dispatch.
+        let object = if raw & 0xfc == 0xfc { 0x200 | u16::from(idx & 0x3f) }
+            else if idx < 0xf8 { 0x100 | u16::from(idx) }
+            else { 0x300 | u16::from(((idx & 7) << 4)
+                | (((raw >> 8) as u8 & 3) << 2) | (raw as u8 & 3)) };
+        let _object_profile = crate::cycle_ledger::dungeon_object_profile(object);
         let _scope = crate::cycle_ledger::routine(0x01_893c);
         if raw & 0xfc != 0xfc {
             // $01893C-$018942: SEP #$20, AND #$FC, CMP #$FC, BEQ not taken (70),
