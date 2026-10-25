@@ -1213,7 +1213,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             "--pacing-predictor" => {
                 use std::io::Write;
                 let mut file = BufWriter::new(fs::File::create(value(index)).expect("create pacing predictor"));
-                writeln!(file, "iteration,module,submodule,lag_nmis,native_held,native_elapsed,main_master,vwf_master,preceding_nmi_master,silent_calls,predicted,predicted_interrupts,predicted_refresh,cost_p0,cost_p1,cost_p2,cost_entry_handler,cost_lag_handler,cost_elapsed_p2,cost_shortfall,cost_main_dma,cost_refresh_main,cost_raster_wait,cost_main_hdma,cost_hdma_lease").expect("write predictor header");
+                writeln!(file, "iteration,module,submodule,lag_nmis,native_held,native_elapsed,main_master,vwf_master,preceding_nmi_master,silent_calls,predicted,predicted_interrupts,predicted_refresh,cost_p0,cost_p1,cost_p2,cost_entry_handler,cost_lag_handler,cost_elapsed_p2,cost_shortfall,cost_main_dma,cost_refresh_main,cost_raster_wait,cost_main_hdma,cost_hdma_lease,cost_hdma_decline").expect("write predictor header");
                 pacing_predictor = Some(file);
             }
             "--audio-pcm" => {
@@ -1561,6 +1561,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let mut cost_main_dma = 0;
         let mut cost_bus_waits = (0, 0);
         let mut cost_main_hdma = (0, false);
+        let mut cost_hdma_decline = 0;
         let mut main_master = 0;
         let mut vwf_master = 0;
         let mut main_silent = 0;
@@ -1583,6 +1584,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                         cost_main_dma = game.native_cost_main_dma();
                         cost_bus_waits = game.native_cost_bus_waits();
                         cost_main_hdma = game.native_cost_main_hdma();
+                        cost_hdma_decline = game.native_cost_main_hdma_decline();
                     }
                     main_master = game.lag_free_main_master();
                     vwf_master = game.lag_free_vwf_master();
@@ -1674,7 +1676,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             let (cost_refresh_main, cost_raster_wait) = cost_bus_waits;
             let (cost_hdma_master, cost_hdma_lease) = cost_main_hdma;
             let cost_hdma_lease = u8::from(cost_hdma_lease);
-            writeln!(trace, "{},{:02X},{:02X},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{cost_refresh_main},{cost_raster_wait},{cost_hdma_master},{cost_hdma_lease}",
+            writeln!(trace, "{},{:02X},{:02X},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{cost_refresh_main},{cost_raster_wait},{cost_hdma_master},{cost_hdma_lease},{cost_hdma_decline}",
                 iteration.index, images.image[0x10], images.image[0x11],
                 iteration.lag_nmis, native_held, native_elapsed, main_master,
                 vwf_master, preceding_nmi_master, main_silent, predicted,

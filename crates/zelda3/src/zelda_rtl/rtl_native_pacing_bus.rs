@@ -111,15 +111,27 @@ impl ZeldaState {
     }
 
     pub(super) fn native_bus_lease_valid(&self) -> bool {
+        self.native_bus_lease_decline() == 0
+    }
+
+    /// Diagnostic reasons only. Bits may overlap: one iteration can have
+    /// mutable descriptors, a program write and a separate timed owner.
+    /// No source lag count or structural residual participates in admission.
+    pub(super) fn native_bus_lease_decline(&self) -> u16 {
         // Mixed timed owners and program changes decline the new term. The
         // original pacing model remains authoritative for those calls.
-        self.lag_free_vwf_master == 0 && self.native_pacing.main_dma == 0
-            && !self.native_pacing.song_upload && !self.native_pacing.raster_wait_seen
-            && self.native_pacing.worker_segments.is_empty()
-            && self.game_execution_scheduler.current_work().is_none()
-            && self.native_pacing.bus_epoch == crate::cycle_ledger::hdma_program_epoch()
-            && self.native_pacing.bus_program.as_ref().is_some_and(|program|
-                program.programming == Programming::read(self))
+        let programming = Programming::read(self);
+        u16::from(self.lag_free_vwf_master != 0)
+            | (u16::from(self.native_pacing.main_dma != 0) << 1)
+            | (u16::from(self.native_pacing.song_upload) << 2)
+            | (u16::from(self.native_pacing.raster_wait_seen) << 3)
+            | (u16::from(!self.native_pacing.worker_segments.is_empty()) << 4)
+            | (u16::from(self.game_execution_scheduler.current_work().is_some()) << 5)
+            | (u16::from(self.native_pacing.bus_epoch != crate::cycle_ledger::hdma_program_epoch()) << 6)
+            | (u16::from(self.native_pacing.bus_program.is_none() && programming.mask != 0) << 7)
+            | (u16::from(self.native_pacing.bus_program.as_ref().is_some_and(|program|
+                program.programming != programming)) << 8)
+            | (u16::from(programming.mask == 0 && self.native_pacing.bus_program.is_none()) << 9)
     }
 }
 
@@ -215,5 +227,25 @@ mod tests {
         game.dma.channel[6].a_bank = 0x7e; // Mutable descriptors are unsupported.
         game.native_begin_main_cost();
         assert!(!game.native_bus_lease_valid());
+    }
+
+    #[test]
+    fn decline_reasons_overlap_and_freeze_before_the_closing_nmi() {
+        let mut game = game();
+        game.native_begin_main_cost();
+        game.lag_free_vwf_master = 1;
+        game.native_pacing.main_dma = 26;
+        game.native_pacing.raster_wait_seen = true;
+        game.clear_hdma_enable_mask();
+        game.set_hdma_enable_mask(0xc0);
+        assert_eq!(game.native_bus_lease_decline(), 1 | 2 | 8 | 64);
+        game.native_finish_main_cost();
+        assert_eq!(game.native_cost_main_hdma_decline(), 1 | 2 | 8 | 64);
+        game.lag_free_vwf_master = 0;
+        game.native_pacing.main_dma = 0;
+        game.native_pacing.raster_wait_seen = false;
+        game.clear_hdma_enable_mask();
+        assert_ne!(game.native_bus_lease_decline(), game.native_cost_main_hdma_decline());
+        assert_eq!(game.native_cost_main_hdma_decline(), 1 | 2 | 8 | 64);
     }
 }

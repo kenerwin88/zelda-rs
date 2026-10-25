@@ -37,6 +37,7 @@ pub(crate) struct NativePacing {
     bus_program: Option<bus::Program>,
     bus_epoch: u64,
     bus_admitted: bool,
+    bus_decline: u16,
     finished_hdma: u64,
     raster_wait_seen: bool,
 
@@ -188,6 +189,12 @@ impl ZeldaState {
         (self.native_pacing.finished_hdma, self.native_pacing.bus_admitted)
     }
 
+    /// Completed-call admission reasons, frozen before the closing NMI can
+    /// reprogram HDMA or replace another timing owner.
+    pub fn native_cost_main_hdma_decline(&self) -> u16 {
+        self.native_pacing.bus_decline
+    }
+
     fn native_cost_elapsed(&self, main: u64) -> [u64; 3] {
         self.native_cost_elapsed_with_worker(main,
             self.native_pacing_worker_share(self.native_pacing.entry_lag_handler))
@@ -298,6 +305,7 @@ impl ZeldaState {
     pub(super) fn native_finish_main_cost(&mut self) {
         if !self.native_pacing.accounting { return; }
         self.native_pacing.bus_admitted = self.native_bus_lease_valid();
+        self.native_pacing.bus_decline = self.native_bus_lease_decline();
         self.native_pacing.accounting = false;
         self.native_pacing.record_closing_handler = true;
         let main = self.native_main_work();
