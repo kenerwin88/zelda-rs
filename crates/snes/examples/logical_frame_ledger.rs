@@ -39,6 +39,8 @@
 //! The same selection writes object-profile.csv, partitioning $01:893C and
 //! its real JSR/JSL children by (subtype << 8 | jump-table index). JMP tails
 //! keep their original call frame; interrupts and bus stalls remain excluded.
+//! `sprite-profile.csv` partitions state bodies by entry type/state/slot,
+//! matching the native profiler. Entry, timers and tail dispatch are excluded.
 
 use sha2::{Digest, Sha256};
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
@@ -286,6 +288,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut object_work = std::collections::BTreeMap::<u32, [u64; 3]>::new();
     let mut object_profile = std::collections::BTreeMap::<(u64, u16, u32), [u64; 3]>::new();
     let mut profile_stack: Vec<(u32, u16)> = Vec::new();
+    // Each real $06:84E2 call owns its selection, including nested calls.
+    // Capture state before timers; capture type when the selected tail begins.
+    let mut sprite_frames = std::collections::BTreeMap::<usize, (u8, u8, u8, bool)>::new();
+    let mut sprite_profile = std::collections::BTreeMap::<(u64, u8, u8, u8, u32), [u64; 3]>::new();
+    let sprite_tails: Vec<u32> = (0..12).map(|state| {
+        let offset = 6 * 0x8000 + 0x4f4 + state * 2;
+        0x06_0000 | u32::from(u16::from_le_bytes([rom[offset], rom[offset + 1]]))
+    }).collect();
     let mut profile_depth = 0usize;
     let mut profile_main_active = false;
     let mut profile: std::collections::BTreeMap<(u64, u32), [u64; 3]> = Default::default();
@@ -498,6 +508,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         profile_main_active = true;
                         profile_depth = 0;
                         profile_stack.clear();
+                        sprite_frames.clear();
                         if let Some(index) = selected { profile.entry((index, 0x008034)).or_default()[0] += 1; }
                     }
                     if profile_depth == 0 && main_stack && profile_main_active {
@@ -512,6 +523,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let cycles: u64 = step.transactions.iter()
                                 .filter(|transaction| transaction.started_at < end)
                                 .map(|transaction| u64::from(transaction.duration_master_cycles)).sum();
+                            if let Some((&depth, selection)) = sprite_frames.last_key_value() {
+                                let (mut kind, state, slot, mut active) = *selection;
+                                if !active && sprite_tails.get(usize::from(state)).copied()
+                                    == Some(step.origin_pc & 0x7fffff) {
+                                    kind = exec.machine().snes().ram[0xe20 + usize::from(slot)];
+                                    active = true;
+                                    sprite_frames.insert(depth, (kind, state, slot, active));
+                                    sprite_profile.entry((index, kind, state, slot, 0x06_84e2)).or_default()[0] += 1;
+                                }
+                                if active {
+                                    let routine = profile_stack.last().unwrap().0;
+                                    sprite_profile.entry((index, kind, state, slot, routine)).or_default()[2] += cycles;
+                                    for (routine, _) in &profile_stack[depth..] {
+                                        sprite_profile.entry((index, kind, state, slot, *routine)).or_default()[1] += cycles;
+                                    }
+                                }
+                            }
                             let row = structural.entry(index).or_default();
                             row[0] += end.master_cycles() - step.started_at.master_cycles();
                             row[1] += cycles;
@@ -561,9 +589,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
                             profile_stack.push((target, next_sp));
+                            if selected.is_some() {
+                                if target == 0x06_84e2 {
+                                    let slot = cpu.x as u8;
+                                    let state = exec.machine().snes().ram[0xdd0 + usize::from(slot)];
+                                    sprite_frames.insert(profile_stack.len() - 1, (0, state, slot, false));
+                                } else if let Some((&_, &(kind, state, slot, true))) = sprite_frames.last_key_value() {
+                                    if let Some(index) = selected {
+                                        sprite_profile.entry((index, kind, state, slot, target)).or_default()[0] += 1;
+                                    }
+                                }
+                            }
                             if let Some(index) = selected { profile.entry((index, target)).or_default()[0] += 1; }
                         }
                         while profile_stack.last().is_some_and(|frame| next_sp > frame.1) {
+                            sprite_frames.remove(&(profile_stack.len() - 1));
                             let popped = profile_stack.pop().unwrap();
                             if popped.0 == 0x01893c && let Some(index) = selected {
                                 let object = object_identity.take().expect("object dispatch identity");
@@ -875,6 +915,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("ledger-nmi-profile host={host} routine={routine:06x} master={master} wall={wall}");
     }
     if let Some(writer) = profile_output.as_mut() {
+        let mut sprites = BufWriter::new(fs::File::create(out_dir.join("sprite-profile.csv"))?);
+        writeln!(sprites, "iteration,type,state,slot,routine,calls,inclusive,exclusive")?;
+        for ((index, kind, state, slot, routine), [calls, inclusive, exclusive]) in sprite_profile {
+            if profile_complete.contains(&index) {
+                writeln!(sprites, "{index},{kind:02x},{state:02x},{slot},{routine:06x},{calls},{inclusive},{exclusive}")?;
+            }
+        }
         let mut objects = BufWriter::new(fs::File::create(out_dir.join("object-profile.csv"))?);
         writeln!(objects, "iteration,object,routine,calls,inclusive,exclusive")?;
         for ((index, object, routine), [calls, inclusive, exclusive]) in object_profile {

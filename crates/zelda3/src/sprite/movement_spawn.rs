@@ -672,36 +672,63 @@ impl ZeldaState {
 
     // bool Sprite_ReturnIfLifted(int k) — sprite.c:2602
     pub(in crate::zelda_rtl) fn sprite_return_if_lifted(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f228));
+        // $06:F228..F22F: three loads/ORs and the first branch.
+        if self.lag_free { crate::cycle_ledger::charge(96); }
         if self.game_state.frame.submodule != 0
             || self.game_state.player.follower_link.button_b_frames() != 0
             || self.game_state.frame.modal_pause_flag != 0
-            || self.sprite_slot_view(k).floor()
-                != self.game_state.player.follower_link.lower_level_state()
         {
+            if self.lag_free { crate::cycle_ledger::charge(6 + 42); }
             return false;
         }
+        // $06:F231..F236: floor comparison, then the actual descending scan.
+        if self.lag_free { crate::cycle_ledger::charge(72); }
+        if self.sprite_slot_view(k).floor()
+            != self.game_state.player.follower_link.lower_level_state() {
+            if self.lag_free { crate::cycle_ledger::charge(6 + 42); }
+            return false;
+        }
+        if self.lag_free { crate::cycle_ledger::charge(16); } // $F238 LDY.
         for j in (0..=15usize).rev() {
+            // $06:F23A..F242; the hit returns without executing DEY/BPL.
+            if self.lag_free { crate::cycle_ledger::charge(64); }
             if self.sprite_slot_view(j).state() == 10 {
+                if self.lag_free { crate::cycle_ledger::charge(6 + 42); }
                 return false;
             }
+            if self.lag_free { crate::cycle_ledger::charge(30 + if j != 0 { 6 } else { 0 }); }
+        }
+        // $06:F244..F255: the two exempt types skip the velocity test.
+        if self.lag_free {
+            let kind = self.sprite_slot_view(k).sprite_type();
+            crate::cycle_ledger::charge(if kind == 0x0b { 64 + 6 }
+                else if kind == 0x4a { 64 + 32 + 6 } else { 64 + 32 + 80 });
         }
         if self.sprite_slot_view(k).sprite_type() != 0xb
             && self.sprite_slot_view(k).sprite_type() != 0x4a
             && (self.sprite_slot_view(k).x_velocity() | self.sprite_slot_view(k).y_velocity()) != 0
         {
+            if self.lag_free { crate::cycle_ledger::charge(6 + 42); }
             return false;
         }
-        if self.game_state.player.follower_link.is_running() {
-            return false;
-        }
-        self.sprite_return_if_lifted_permissive(k)
+        self.sprite_return_if_lifted_body(k)
     }
 
     // bool Sprite_ReturnIfLiftedPermissive(int k) — sprite.c:2615
     pub(in crate::zelda_rtl) fn sprite_return_if_lifted_permissive(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f257));
+        self.sprite_return_if_lifted_body(k)
+    }
+
+    fn sprite_return_if_lifted_body(&mut self, k: usize) -> bool {
+        // $06:F257..F263 is a fallthrough of F228, or a direct F257 call.
+        if self.lag_free { crate::cycle_ledger::charge(48); }
         if self.game_state.player.follower_link.is_running() {
+            if self.lag_free { crate::cycle_ledger::charge(6 + 42); }
             return false;
         }
+        if self.lag_free { crate::cycle_ledger::charge(94); }
         if self
             .game_state
             .player
@@ -710,6 +737,8 @@ impl ZeldaState {
             .wrapping_sub(1)
             != self.game_state.sprites.system.cur_object_index()
         {
+            // $06:F265..F26E: three JSRs and BCC; children own their bodies.
+            if self.lag_free { crate::cycle_ledger::charge(154); }
             let mut hb = SpriteHitBox {
                 r0_xlo: 0,
                 r8_xhi: 0,
@@ -727,12 +756,18 @@ impl ZeldaState {
             self.link_setup_hit_box_conditional(&mut hb);
             self.sprite_setup_hit_box(k, &mut hb);
             if self.check_if_hit_boxes_overlap(&hb) {
+                if self.lag_free { crate::cycle_ledger::charge(134); } // $F270..F278.
                 let v = (k as u8).wrapping_add(1);
                 self.sprite_workspace_mut().set_pickup_slot_cache(v);
                 self.follower_link_state_mut().set_sprite_pickup_flag(v);
+            } else if self.lag_free {
+                crate::cycle_ledger::charge(6 + 42); // $F26E taken, $F2A9 RTS.
             }
             false
         } else {
+            // $06:F279..F2A9, including BEQ taken and both call opcodes.
+            // The two PLAs discard the caller's return before the final RTS.
+            if self.lag_free { crate::cycle_ledger::charge(6 + 574 + 42); }
             self.follower_link_state_mut().set_filtered_joypad_l(0);
             let value = 0;
             self.sprite_slot_view_mut(k).set_e(value);

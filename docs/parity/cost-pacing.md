@@ -7734,3 +7734,299 @@ All 8,339 original missing rows stay at or below their source HDMA bounds, and t
 The only default failure is the known spotlight caller-return test; reduced passes completely. Both SNES library suites and the Python routine-coverage tests pass. Lib-test fixture warnings remain separate from the warning-free ordinary builds. Library results are the checked disjoint union of completed original prefixes and newly executed tails; in-flight tests finish before their original workers stop. `library-shards.json` retains every test name/status and binary hash. After the environment denied individual signals, tail completion is established by complete Rust test footers and exhaustive named statuses; unreaped child exit codes are not inferred. The repaired test-only bus fixture is bound separately in `source-binding.json`; every production source and ordinary binary stays fixed across the final censuses.
 
 This is the verified stopping point for the caller-pricing group. The all-bank elapsed-field owner, individual attribution of the remaining gate-trial errors, retained CPU phase/restores and real NMI-enable edges, the remaining raster lead, and source-derived sprite bodies remain open. No GPU runs, --video, cached-av, external Snes9x execution, cargo GPU tests, oracle-cache writes, cargo fmt, commit or push were used. Scratch drivers stayed in `/tmp`; supplied ledgers/cache remained read-only. `git diff --check` passes.
+
+## Continuation on `codex/cost-pacing21` (main `7f792f88`)
+
+Evidence is retained in `target/cost-pacing21/group1/`, with fresh main controls in `target/cost-pacing21/`. This first verified group prices `Sprite_ReturnIfLifted`; it does not complete the remaining gameplay or masked-field owners. The latter stays with `codex/masked-fields`; no audio/upload source was edited.
+
+### Restricted ranking and ROM-derived lift checks
+
+The before population is exactly the **2,832 missing iterations** in `07/00` (1,673) and `09/00` (1,159). `initial-ranking.json` retains each iteration’s shortfall and signed source-minus-native exclusive gap for every routine, using the corrected child scopes from batch 19. Independent replacements overlap and are diagnostic, not additive instruction prices.
+
+| Routine | Independent closures | Signed exclusive gap |
+| --- | ---: | ---: |
+| `$06:f228` | 7 | 3,624,854 |
+| `$06:dc10` | 5 | 10,956,776 |
+| `$06:84e2` | 2 | 5,957,890 |
+| `$06:fb2a` | 2 | 1,223,848 |
+| `$08:8eed` | 2 | 247,970 |
+| `$00:80b5` | 1 | 6,778,904 |
+| `$07:d077` | 1 | 6,451,452 |
+| `$07:807f` | 1 | 6,090,466 |
+| `$07:e245` | 1 | 5,926,830 |
+| `$07:b7c7` | 1 | 3,638,476 |
+| `$07:cdcb` | 1 | 3,134,950 |
+| `$07:9873` | 1 | 2,020,302 |
+| `$07:cf12` | 1 | 1,126,666 |
+| `$05:a64a` | 1 | 1,036,260 |
+| `$1d:af84` | 1 | 310,970 |
+| `$00:d619` | 1 | 72,616 |
+| `$07:8ad1` | 1 | 41,756 |
+
+The first candidate, `$06:F228`, is the unpriced lift check. Its seven independent raw closures all belong to `09/00`. Prices come from `scripts/rom_block_costs.py` (`source-06f228.txt`): actual modal/floor branches, actual descending slot scan with early exit, type/velocity exclusions, running test, cached-pickup comparison, hitbox-call opcodes and the selected hit/miss/pickup suffix. `$06:F257` is a separate direct entry; the `$F228` fallthrough shares its body without inventing another call. Children retain their own prices. New charges and scopes are lagless-only. No count, scene threshold, multiplier or residual supplies a price.
+
+The CPU-only `lift_check_self_prices_match_executed_rom_paths` test compares native work with the actual ROM address-range instructions in all **116** entry × slot × branch fixtures. It covers every scan stop and the pickup double return. The ordinary runtime state layout is unchanged. On the pickup double return, the source call frame closes at the first PLA; the native routine scope retains the following 70 clocks (second PLA and RTS). This is a known exclusive-attribution difference, not missing instruction work or authority for another price.
+
+The next raw candidate, `$06:DC10`, also contains drawing work already charged under `$06:DC13`; its five raw closures are not authority for an additional draw charge. The next actionable candidates still need their source-call ancestry reconciled. `before-category-ranking.json` retains separate rankings for both categories. `after-targeted-ranking.json` re-evaluates the original frozen population after this group.
+
+### Full CPU-only verification
+
+Both final full census gates PASS, 1,473,123 iterations each, unexplained zero. Both fresh main controls also pass. Runtime holds equal P2 on every row. These seeded logical CPU checks do not establish continuous physical-field or exact A/V parity.
+
+| Capture | Held | Masked | Missing | Excess | FP | Exact lagged | Within one lagged |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| main / rom | 97,642 | 2,729 | 5,035 | 0 | 0 | 34,594 | 39,561 |
+| main / live | 97,535 | 2,697 | 5,731 | 589 | 131 | 34,460 | 39,429 |
+| final / rom | 97,649 | 2,726 | 5,028 | 0 | 0 | 34,601 | 39,561 |
+| final / live | 97,542 | 2,703 | 5,728 | 593 | 132 | 34,467 | 39,428 |
+
+The cartridge census closes **7** previously missing iterations and introduces 0 newly missing iterations. `verification.json` lists the actual closures separately from the independent counterfactuals.
+
+Live SPC retains all seven targeted recoveries but moves its first unmatched song-end poll from iteration 229030 to **229029** (`engine=[0]`, source `[(0,19)]`). The existing song-end-poll classification records the resulting earlier module/message progression. A five-hold workload moves 229031 → 229030; a four-hold workload moves 229036 → 229033. The latter moves from a source-lagged iteration onto a source-zero-lag iteration: **four additional missing holds, four additional excess holds, and one additional false-positive iteration**. All other hold changes are the seven targeted recoveries. `live-hold-deltas.json` and `live-229000-classifications.json` retain the rows and work counters. This is changed live execution/placement following the poll mismatch; it is not authority to reduce a ROM instruction price. No audio/upload fix or exception widening is included.
+
+Each category cell below is **before → after**, with cartridge/live values on each side. Exact and within-one counts use lagged iterations only.
+
+| Category | Source lag | Missing rom/live | Excess rom/live | FP rom/live | Exact lagged rom/live | Within one rom/live |
+| --- | ---: | --- | --- | --- | --- | --- |
+| `0E/02` | 12,964 | 49 / 369 → 49 / 373 | 0 / 223 → 0 / 223 | 0 / 96 → 0 / 96 | 4,369 / 4,259 → 4,369 / 4,259 | 4,418 / 4,308 → 4,418 / 4,307 |
+| `07/02` | 8,770 | 341 / 341 → 341 / 341 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1,635 / 1,635 → 1,635 / 1,635 | 1,976 / 1,976 → 1,976 / 1,976 |
+| `06/00` | 8,196 | 89 / 89 → 89 / 89 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 60 / 60 → 60 / 60 | 135 / 135 → 135 / 135 |
+| `07/0E` | 7,979 | 121 / 121 → 121 / 121 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4,831 / 4,831 → 4,831 / 4,831 | 4,952 / 4,952 → 4,952 / 4,952 |
+| `08/00` | 6,466 | 19 / 253 → 19 / 253 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 138 / 134 → 138 / 134 | 157 / 153 → 157 / 153 |
+| `09/23` | 6,054 | 365 / 365 → 365 / 365 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 814 / 814 → 814 / 814 | 1,179 / 1,179 → 1,179 / 1,179 |
+| `0F/01` | 5,432 | 84 / 84 → 84 / 84 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4,795 / 4,795 → 4,795 / 4,795 | 4,879 / 4,879 → 4,879 / 4,879 |
+| `09/03` | 4,372 | 9 / 9 → 9 / 9 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 242 / 242 → 242 / 242 | 251 / 251 → 251 / 251 |
+| `07/07` | 4,060 | 264 / 264 → 264 / 264 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2,655 / 2,655 → 2,655 / 2,655 | 2,919 / 2,919 → 2,919 / 2,919 |
+| `07/00` | 3,679 | 1,673 / 1,673 → 1,673 / 1,673 | 0 / 102 → 0 / 106 | 0 / 18 → 0 / 19 | 1,287 / 1,287 → 1,287 / 1,287 | 2,960 / 2,960 → 2,960 / 2,960 |
+| `09/01` | 3,479 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 249 / 249 → 249 / 249 | 251 / 251 → 251 / 251 |
+| `07/0F` | 2,992 | 71 / 71 → 71 / 71 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2,647 / 2,647 → 2,647 / 2,647 | 2,718 / 2,718 → 2,718 / 2,718 |
+| `0E/03` | 2,672 | 37 / 37 → 37 / 37 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 78 / 78 → 78 / 78 | 115 / 115 → 115 / 115 |
+| `10/01` | 2,672 | 1 / 2 → 1 / 2 | 0 / 5 → 0 / 5 | 0 / 0 → 0 / 0 | 2,668 / 2,666 → 2,668 / 2,666 | 2,669 / 2,668 → 2,669 / 2,668 |
+| `08/02` | 2,576 | 2 / 90 → 2 / 90 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 155 / 152 → 155 / 152 | 157 / 153 → 157 / 153 |
+| `07/15` | 2,333 | 76 / 76 → 76 / 76 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1,659 / 1,659 → 1,659 / 1,659 | 1,735 / 1,735 → 1,735 / 1,735 |
+| `19/02` | 2,001 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1,855 / 1,855 → 1,855 / 1,855 | 1,855 / 1,855 → 1,855 / 1,855 |
+| `0E/0A` | 1,845 | 20 / 20 → 20 / 20 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 70 / 70 → 70 / 70 | 90 / 90 → 90 / 90 |
+| `09/00` | 1,253 | 1,159 / 1,159 → 1,152 / 1,152 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 33 / 33 → 40 / 40 | 1,192 / 1,192 → 1,192 / 1,192 |
+| `0E/07` | 1,065 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 56 / 56 → 56 / 56 | 56 / 56 → 56 / 56 |
+| `07/06` | 984 | 23 / 23 → 23 / 23 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 580 / 580 → 580 / 580 | 603 / 603 → 603 / 603 |
+| `11/00` | 973 | 7 / 7 → 7 / 7 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 10 / 10 → 10 / 10 | 17 / 17 → 17 / 17 |
+| `07/01` | 928 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 927 / 927 → 927 / 927 | 928 / 928 → 928 / 928 |
+| `08/01` | 706 | 0 / 17 → 0 / 17 | 0 / 53 → 0 / 53 | 0 / 0 → 0 / 0 | 157 / 153 → 157 / 153 | 157 / 153 → 157 / 153 |
+| `05/00` | 639 | 6 / 6 → 6 / 6 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 5 / 5 → 5 / 5 | 11 / 11 → 11 / 11 |
+| `09/04` | 508 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 250 / 250 → 250 / 250 | 251 / 251 → 251 / 251 |
+| `12/03` | 472 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 389 / 389 → 389 / 389 | 391 / 391 → 391 / 391 |
+| `0F/00` | 449 | 24 / 24 → 24 / 24 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 263 / 263 → 263 / 263 | 287 / 287 → 287 / 287 |
+| `07/12` | 391 | 18 / 18 → 18 / 18 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 221 / 221 → 221 / 221 | 239 / 239 → 239 / 239 |
+| `09/2E` | 363 | 10 / 10 → 10 / 10 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 90 / 90 → 90 / 90 | 100 / 100 → 100 / 100 |
+| `07/16` | 303 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 101 / 101 → 101 / 101 | 101 / 101 → 101 / 101 |
+| `09/11` | 274 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 15 / 15 → 15 / 15 | 16 / 16 → 16 / 16 |
+| `09/16` | 265 | 88 / 88 → 88 / 88 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 145 / 145 → 145 / 145 | 233 / 233 → 233 / 233 |
+| `09/0D` | 247 | 89 / 89 → 89 / 89 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 134 / 134 → 134 / 134 | 223 / 223 → 223 / 223 |
+| `0E/0B` | 243 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 81 / 81 → 81 / 81 | 81 / 81 → 81 / 81 |
+| `09/0F` | 242 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 14 / 14 → 14 / 14 | 16 / 16 → 16 / 16 |
+| `01/00` | 235 | 48 / 48 → 48 / 48 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/2C` | 228 | 4 / 4 → 4 / 4 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 32 / 32 → 32 / 32 | 36 / 36 → 36 / 36 |
+| `10/00` | 157 | 0 / 1 → 0 / 1 | 0 / 81 → 0 / 81 | 0 / 0 → 0 / 0 | 157 / 154 → 157 / 154 | 157 / 155 → 157 / 155 |
+| `17/01` | 141 | 3 / 3 → 3 / 3 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 | 2 / 2 → 2 / 2 |
+| `1B/02` | 139 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 7 / 7 → 7 / 7 | 9 / 9 → 9 / 9 |
+| `09/20` | 138 | 5 / 5 → 5 / 5 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 23 / 23 → 23 / 23 | 28 / 28 → 28 / 28 |
+| `0E/05` | 138 | 36 / 36 → 36 / 36 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 83 / 83 → 83 / 83 | 119 / 119 → 119 / 119 |
+| `00/01` | 114 | 7 / 7 → 7 / 7 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4 / 4 → 4 / 4 | 11 / 11 → 11 / 11 |
+| `0B/24` | 103 | 61 / 61 → 61 / 61 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 32 / 32 → 32 / 32 | 93 / 93 → 93 / 93 |
+| `09/21` | 84 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 28 / 28 → 28 / 28 | 28 / 28 → 28 / 28 |
+| `09/0E` | 83 | 5 / 5 → 5 / 5 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 11 / 11 → 11 / 11 | 16 / 16 → 16 / 16 |
+| `15/07` | 83 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 79 / 79 → 79 / 79 | 79 / 79 → 79 / 79 |
+| `19/00` | 72 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 4 / 4 → 4 / 4 |
+| `07/13` | 71 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 47 / 47 → 47 / 47 | 47 / 47 → 47 / 47 |
+| `0B/17` | 68 | 32 / 32 → 32 / 32 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 33 / 33 → 33 / 33 | 65 / 65 → 65 / 65 |
+| `0B/28` | 68 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4 / 4 → 4 / 4 | 4 / 4 → 4 / 4 |
+| `0B/2B` | 66 | 23 / 23 → 23 / 23 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 43 / 43 → 43 / 43 | 66 / 66 → 66 / 66 |
+| `0B/19` | 64 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 4 / 4 → 4 / 4 |
+| `15/03` | 64 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 11 / 11 → 11 / 11 | 12 / 12 → 12 / 12 |
+| `00/05` | 62 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 62 / 62 → 62 / 62 | 62 / 62 → 62 / 62 |
+| `0B/26` | 61 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 4 / 4 → 4 / 4 |
+| `0B/1A` | 60 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 4 / 4 → 4 / 4 |
+| `1A/12` | 60 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 3 / 3 → 3 / 3 |
+| `0B/29` | 59 | 33 / 33 → 33 / 33 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 18 / 18 → 18 / 18 | 51 / 51 → 51 / 51 |
+| `18/00` | 59 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 2 / 2 → 2 / 2 |
+| `1A/00` | 59 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 2 / 2 → 2 / 2 |
+| `1A/1A` | 59 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `1A/1C` | 59 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 3 / 3 → 3 / 3 |
+| `1A/04` | 58 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `1A/08` | 58 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `1A/0A` | 58 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `1A/18` | 58 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `1A/0E` | 57 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `1A/10` | 56 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `1A/06` | 55 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `07/03` | 53 | 53 / 53 → 53 / 53 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 53 / 53 → 53 / 53 |
+| `1A/0C` | 53 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 2 / 2 → 2 / 2 |
+| `11/07` | 51 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 17 / 17 → 17 / 17 | 17 / 17 → 17 / 17 |
+| `13/05` | 51 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 51 / 51 → 51 / 51 | 51 / 51 → 51 / 51 |
+| `1A/1E` | 51 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 2 / 2 → 2 / 2 |
+| `0B/1C` | 48 | 11 / 11 → 11 / 11 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 29 / 29 → 29 / 29 | 40 / 40 → 40 / 40 |
+| `1A/14` | 47 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 | 1 / 1 → 1 / 1 |
+| `1A/02` | 46 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 | 1 / 1 → 1 / 1 |
+| `1A/16` | 45 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 |
+| `07/18` | 41 | 6 / 41 → 6 / 41 | 0 / 35 → 0 / 35 | 0 / 14 → 0 / 14 | 8 / 0 → 8 / 0 | 14 / 7 → 14 / 7 |
+| `1A/20` | 41 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/12` | 32 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 16 / 16 → 16 / 16 | 16 / 16 → 16 / 16 |
+| `12/08` | 32 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4 / 4 → 4 / 4 | 4 / 4 → 4 / 4 |
+| `0B/25` | 30 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4 / 4 → 4 / 4 | 4 / 4 → 4 / 4 |
+| `0B/00` | 29 | 9 / 9 → 9 / 9 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4 / 4 → 4 / 4 | 13 / 13 → 13 / 13 |
+| `0B/18` | 24 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4 / 4 → 4 / 4 | 4 / 4 → 4 / 4 |
+| `12/02` | 23 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 23 / 23 → 23 / 23 | 23 / 23 → 23 / 23 |
+| `12/05` | 19 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 19 / 19 → 19 / 19 | 19 / 19 → 19 / 19 |
+| `00/07` | 14 | 12 / 12 → 12 / 12 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 | 14 / 14 → 14 / 14 |
+| `15/05` | 14 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 | 1 / 1 → 1 / 1 |
+| `01/02` | 7 | 7 / 7 → 7 / 7 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 7 / 7 → 7 / 7 |
+| `00/0A` | 6 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `12/09` | 4 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 4 / 4 → 4 / 4 | 4 / 4 → 4 / 4 |
+| `13/04` | 3 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 3 / 3 → 3 / 3 | 3 / 3 → 3 / 3 |
+| `00/02` | 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 | 1 / 1 → 1 / 1 |
+| `00/06` | 2 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 |
+| `04/01` | 2 | 2 / 2 → 2 / 2 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 2 / 2 → 2 / 2 |
+| `00/00` | 1 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 |
+| `03/01` | 1 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 |
+| `07/0B` | 1 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 |
+| `09/06` | 1 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 |
+| `0E/01` | 1 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 |
+| `19/01` | 1 | 1 / 1 → 1 / 1 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 1 / 1 → 1 / 1 |
+| `00/03` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `00/04` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `00/0B` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `01/01` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `01/03` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `01/04` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `01/05` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `03/00` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `03/02` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `03/03` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `03/04` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `04/00` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `04/02` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `04/03` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/04` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/05` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/08` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/09` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/0A` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/0C` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/0D` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/10` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/14` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/17` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/19` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `07/1A` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/02` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/05` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/07` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/08` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/09` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/0A` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/0B` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/0C` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/10` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/13` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/14` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/15` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/1F` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/22` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/2D` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `09/2F` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `0B/08` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `0B/1B` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `0B/27` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `0B/2A` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `0E/04` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `0E/08` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `0E/09` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/01` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/04` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/06` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/07` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/0A` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/0B` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/0C` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/0D` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/0E` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `12/0F` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `13/00` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `13/01` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `13/02` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `13/03` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/00` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/01` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/02` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/04` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/06` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/09` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/0A` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/0B` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `15/0C` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `16/00` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `16/01` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `16/02` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `16/03` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `16/04` | 0 | 0 / 0 → 0 / 0 | 0 / 90 → 0 / 90 | 0 / 3 → 0 / 3 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/01` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/03` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/05` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/07` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/09` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/0B` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/0D` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/0F` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/11` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/13` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/15` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/17` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/19` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/1B` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/1D` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/1F` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/21` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+| `1A/22` | 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 | 0 / 0 → 0 / 0 |
+
+Shortfall is the minimum extra main work in the frozen completed P2 inverse, with worker share and raster wait held fixed. It is not a source instruction deficit. Bands are <5%, 5–<50%, and ≥50% of a 357,368-clock field. Counts below are missing iterations, with missing holds in parentheses.
+
+| Population | Before near / moderate / large | After near / moderate / large |
+| --- | --- | --- |
+| `all` | 1188 / 3565 / 228 (5035) | 1224 / 3522 / 228 (5028) |
+| `07/00` | 8 / 1665 / 0 (1673) | 8 / 1665 / 0 (1673) |
+| `09/00` | 5 / 1154 / 0 (1159) | 41 / 1111 / 0 (1152) |
+| `09/23` | 197 / 168 / 0 (365) | 197 / 168 / 0 (365) |
+| `07/02` | 151 / 177 / 13 (341) | 151 / 177 / 13 (341) |
+| `07/07` | 238 / 26 / 0 (264) | 238 / 26 / 0 (264) |
+| `07/0E` | 43 / 78 / 0 (121) | 43 / 78 / 0 (121) |
+
+| Seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
+| ---: | --- | --- | --- | --- | --- | --- |
+| 94000 | 65 / 65 | 5 / 5 | 17 / 17 | 2 / 2 | 35 / 35 | 16 / 16 |
+| 380000 | 84 / 85 | 7 / 7 | 24 / 23 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 460000 | 84 / 85 | 7 / 7 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 626000 | 91 / 91 | 9 / 9 | 24 / 24 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 734000 | 84 / 85 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 880000 | 84 / 84 | 7 / 7 | 26 / 26 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1064000 | 84 / 84 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+| 1316000 | 84 / 84 | 7 / 7 | 25 / 25 | 2 / 2 | 34 / 34 | 16 / 16 |
+
+Phase counts are source/native; all remain within one. All eight stable room/Link-XY/whole-save outcomes have source matches. All 27 rupee requests and every request/PCM-onset gap in 162000–163000 match fresh main; the PCM-gap median remains 8.253745 frames.
+
+| Capture | Classified differences | $0CFD-only |
+| --- | --- | ---: |
+| main / rom | `{"lag": 14}` | 10 |
+| main / live | `{"lag": 14, "polygon": 14742, "song-end-poll": 638}` | 10 |
+| main / probes | `{}` | 0 |
+| final / rom | `{"lag": 14}` | 10 |
+| final / live | `{"lag": 14, "polygon": 14742, "song-end-poll": 639}` | 10 |
+| final / probes | `{}` | 0 |
+
+The final default binary matches every record and EOF of the fresh main default 200k state/display/SRAM/PCM/input/context ledger. Default/ROM-timing ledgers retain their existing charges. Both ordinary builds are warning-free. All 8,339 original missing rows remain within their source HDMA bounds, and the same 47 masked-init leases are declined.
+
+| Library configuration | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,520 | 1 | 3 |
+| reduced | 2,055 | 0 | 2 |
+
+The sole default library failure is the known spotlight caller-return fixture; reduced passes completely. Both SNES library suites and the Python routine-coverage tests pass. No GPU runs, `--video`, cached-av, external Snes9x execution, cargo GPU tests, oracle-cache writes, cargo fmt, commit or push were used. Scratch drivers remain in `/tmp`; supplied ledger/cache files were read-only. This is the verified stopping point for the first price group; remaining prices and the later category cohort are still open.

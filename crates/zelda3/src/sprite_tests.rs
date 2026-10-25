@@ -121,6 +121,82 @@ fn tile_direction_prefix_prices_match_executed_rom_paths() {
 }
 
 #[test]
+fn lift_check_self_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (Ok(assets), Ok(rom)) = (std::fs::read(root.join("zelda3_assets.dat")),
+        std::fs::read(root.join("saves/zelda3.sfc"))) else { return; };
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    for entry in [0x06f228u32, 0x06f257] {
+        for slot in [0usize, 15] {
+            // Modal/B/freeze, floor, every carried-slot scan stop, exempt
+            // types, velocity, running, hit/miss and actual pickup paths.
+            for path in 0..29 {
+                let mut native = base.clone();
+                let mut image = native.wram_image().into_owned();
+                image[0xdd0..0xde0].fill(0);
+                image[0xdd0 + slot] = 9;
+                image[0xe20 + slot] = if path == 23 { 0x0b } else if path == 24 { 0x4a } else { 0x41 };
+                image[0x11] = u8::from(path == 0);
+                image[0x3c] = u8::from(path == 1);
+                image[0xfc1] = u8::from(path == 2);
+                image[0xee] = 0;
+                image[0xf20 + slot] = u8::from(path == 3);
+                if (4..20).contains(&path) { image[0xdd0 + path - 4] = 10; }
+                image[0xd50 + slot] = u8::from((20..25).contains(&path));
+                image[0xd40 + slot] = u8::from(path == 21);
+                image[0x372] = u8::from(path == 25);
+                image[0xfa0] = slot as u8;
+                image[0x2f4] = if path == 28 { slot as u8 + 1 } else { 0 };
+                image[0x20..0x24].copy_from_slice(&[0, 1, 0, 1]);
+                image[0xd00 + slot] = if path == 26 { 0x80 } else { 0 };
+                image[0xd20 + slot] = 1;
+                image[0xd10 + slot] = 0;
+                image[0xd30 + slot] = 1;
+                native.import_wram_image(&image);
+                native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                // Pickup pops its caller's return as well as its own.
+                machine.ram[0x1fd..0x201].copy_from_slice(&[0xff, 0x7f, 0xff, 0x7f]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = 6;
+                machine.cpu.db = 6;
+                machine.cpu.x = slot as u16;
+                machine.cpu.pc = entry as u16;
+                machine.cpu.sp = 0x1fc;
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                let mut measured = 0;
+                for _ in 0..10000 {
+                    let step = source.step().unwrap();
+                    if (0x06f228..=0x06f2a9).contains(&step.origin_pc) {
+                        measured += step.transactions.iter()
+                            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                    }
+                    if source.snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.snes().cpu.pc, 0x8000);
+                crate::cycle_ledger::profile_iteration(true);
+                crate::cycle_ledger::profile_main_begin();
+                if entry == 0x06f228 { native.sprite_return_if_lifted(slot); }
+                else { native.sprite_return_if_lifted_permissive(slot); }
+                crate::cycle_ledger::profile_main_end();
+                let rows = crate::cycle_ledger::take_routine_profile();
+                assert_eq!(rows[&entry][2], measured, "entry={entry:06x} slot={slot} path={path}");
+            }
+        }
+    }
+}
+
+#[test]
 fn overlap_prices_match_executed_rom_paths() {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
