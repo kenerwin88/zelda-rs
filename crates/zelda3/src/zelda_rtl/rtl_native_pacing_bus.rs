@@ -6,6 +6,16 @@ const FIELD: u64 = 1364 * 262;
 const NMI: u64 = 225 * 1364 + 86;
 type ChannelProgram = (u8, u8, u16, u8, bool, u8, bool);
 
+fn leading_handler_may_miss_init(handler: u64) -> bool {
+    // $00:8135 disables HDMA until $00:8222 (or $82C4). If that interval
+    // reaches V0's initialization, enabling later retains the old cursor;
+    // it cannot use this composer's freshly initialized per-field program.
+    // Ceil refresh is a conservative placement envelope; the full handler
+    // includes its short post-$420C return suffix, so ambiguous edges decline.
+    let init = FIELD - NMI + u64::from(snes::cpu_timeline::HDMA_INIT_CYCLE);
+    handler + handler.div_ceil(1324) * 40 >= init
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Programming {
     mask: u8,
@@ -149,11 +159,11 @@ impl ZeldaState {
     /// mutable descriptors, a program write and a separate timed owner.
     /// No source lag count or structural residual participates in admission.
     pub(super) fn native_bus_lease_decline(&self) -> u16 {
-        // VWF, DMA, uploads, worker changes and program changes still decline.
+        // VWF's $0E:C9FD instruction work already enters native_main_work once.
+        // DMA, uploads, worker changes and program changes still decline.
         // Retained raster barriers compose with the immutable lease.
         let programming = Programming::read(self);
-        u16::from(self.lag_free_vwf_master != 0)
-            | (u16::from(self.native_pacing.main_dma != 0) << 1)
+        (u16::from(self.native_pacing.main_dma != 0) << 1)
             | (u16::from(self.native_pacing.song_upload) << 2)
             | (u16::from(!self.native_pacing.worker_segments.is_empty()) << 4)
             | (u16::from(self.game_execution_scheduler.current_work().is_some()) << 5)
@@ -162,6 +172,7 @@ impl ZeldaState {
             | (u16::from(self.native_pacing.bus_program.as_ref().is_some_and(|program|
                 program.programming != programming)) << 8)
             | (u16::from(programming.mask == 0 && self.native_pacing.bus_program.is_none()) << 9)
+            | (u16::from(leading_handler_may_miss_init(self.native_pacing.entry_handler)) << 10)
     }
 }
 
@@ -175,6 +186,78 @@ mod tests {
         game.hdma_setup(0x00f2fb, 0x00f2fb, 0x42, 0x26, 0x28, 0x7e);
         game.set_hdma_enable_mask(0xc0);
         game
+    }
+
+    #[test]
+    fn leading_nmi_must_establish_the_field_initialization() {
+        let mut game = game();
+        game.native_begin_main_cost();
+        game.native_pacing.entry_handler = 94_000;
+        assert_eq!(game.native_bus_lease_decline(), 1 << 10);
+        // Even an instruction-only handler ending before V0 can span init
+        // once refresh is included. The guard follows the hardware event.
+        game.native_pacing.entry_handler = 49_500;
+        assert_eq!(game.native_bus_lease_decline(), 1 << 10);
+        game.native_pacing.entry_handler = 28_520;
+        assert_eq!(game.native_bus_lease_decline(), 0);
+        // Replay the actual DMA device's disable/init/late-enable sequence.
+        // No descriptors are fetched at the disabled init; late HDMAEN does
+        // not reset A2A/NTRL/DAS or perform the missing first transfer.
+        let mut late = game.dma_with_native_hdma_enable();
+        for c in &mut late.channel { c.hdma_active = false; }
+        assert_eq!(late.run_synchronous_hdma(snes::CpuBusEvent::HdmaInit,
+            |_| panic!("disabled initialization fetched a descriptor")), 0);
+        for i in [6, 7] { late.channel[i].hdma_active = true; late.channel[i].rep_count = 73; }
+        assert_eq!(late.run_synchronous_hdma(snes::CpuBusEvent::HdmaStart,
+            |_| panic!("late enable unexpectedly reset the descriptor cursor")), 34);
+        for i in [6, 7] { assert_eq!(late.channel[i].rep_count, 72); }
+        let mut fresh = game.dma_with_native_hdma_enable();
+        let read = |access| match access {
+            snes::dma::HdmaBusAccess::Read(address) => ZeldaState::native_hdma_descriptor_byte(address).unwrap_or(0),
+            snes::dma::HdmaBusAccess::Write(_, _) => 0,
+        };
+        assert_eq!(fresh.run_synchronous_hdma(snes::CpuBusEvent::HdmaInit, read), 66);
+        assert_eq!(fresh.run_synchronous_hdma(snes::CpuBusEvent::HdmaStart, read), 66);
+    }
+
+    #[test]
+    fn window_retarget_preserves_the_executed_rom_descriptor_owner() {
+        use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+            CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for table in [0x0abddd, 0x00f2fb] {
+          for entry in [0xb260, 0x9d5d] {
+            let mut game = game();
+            game.hdma_setup(0, table, 0x42, 0, 0x1e, 0);
+            game.set_hdma_enable_mask(0x80);
+            // Retargeting mid-field must preserve the cursor as well as A1T.
+            game.dma.channel[7].table_adr = table as u16 + 3;
+            game.dma.channel[7].rep_count = 73;
+            game.dma.channel[7].size = 0x1b42;
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.dma = game.dma.clone();
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0x30);
+            machine.cpu.k = 2;
+            machine.cpu.db = 0;
+            machine.cpu.pc = entry;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(230, 0),
+                CpuBusWorkload::with_dynamic_hdma(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            // REP, LDA #$2641, STA $4370 in each real producer.
+            for _ in 0..3 { source.step().unwrap(); }
+            game.hdma_retarget_channel7_window();
+            assert_eq!(game.dma.save_c_saveload(), source.snes().dma.save_c_saveload());
+            let program = Program::read(&game, Programming::read(&game)).unwrap();
+            // F0 descriptors terminate after 224 transfers. F8 descriptors
+            // remain live for line 224: 42 transfer clocks replace an 8-clock
+            // terminal indirect fetch, a net 34 clocks per complete field.
+            assert_eq!(program.total, if table == 0x0abddd { 9474 } else { 9508 });
+          }
+        }
     }
 
     #[test]
@@ -346,7 +429,7 @@ mod tests {
         assert!(game.native_bus_lease_valid());
         game.native_begin_main_cost();
         game.lag_free_vwf_master = 1;
-        assert!(!game.native_bus_lease_valid());
+        assert!(game.native_bus_lease_valid());
         game.lag_free_vwf_master = 0;
         game.dma.channel[6].a_bank = 0x7e; // Mutable descriptors are unsupported.
         game.native_begin_main_cost();
@@ -362,14 +445,14 @@ mod tests {
         game.native_pacing.raster_barriers.push((0, 192, 178));
         game.clear_hdma_enable_mask();
         game.set_hdma_enable_mask(0xc0);
-        assert_eq!(game.native_bus_lease_decline(), 1 | 2 | 64);
+        assert_eq!(game.native_bus_lease_decline(), 2 | 64);
         game.native_finish_main_cost();
-        assert_eq!(game.native_cost_main_hdma_decline(), 1 | 2 | 64);
+        assert_eq!(game.native_cost_main_hdma_decline(), 2 | 64);
         game.lag_free_vwf_master = 0;
         game.native_pacing.main_dma = 0;
         game.native_pacing.raster_barriers.clear();
         game.clear_hdma_enable_mask();
         assert_ne!(game.native_bus_lease_decline(), game.native_cost_main_hdma_decline());
-        assert_eq!(game.native_cost_main_hdma_decline(), 1 | 2 | 64);
+        assert_eq!(game.native_cost_main_hdma_decline(), 2 | 64);
     }
 }

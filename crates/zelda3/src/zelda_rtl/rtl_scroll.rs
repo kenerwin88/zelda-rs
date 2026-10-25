@@ -301,6 +301,10 @@ impl ZeldaState {
     /// Immutable descriptor bytes shared by the translated setup and a
     /// retained CPU's real HDMA bus. Transfer operands still come from WRAM.
     pub(crate) fn native_hdma_descriptor_byte(address: u32) -> Option<u8> {
+        // $0A:BDDD..BDE3 ends in zero. The final active indirect channel's
+        // terminal reload reads that zero as the low byte and $0A:BDE4 as
+        // the high byte. It is immutable ROM even though no payload follows.
+        if address == 0x0abde4 { return Some(0xff); }
         for (base, bytes) in [
             (0x0cfa87, ATTRACT_BG_DMA_SETUP.as_slice()),
             (0x0cfa94, ATTRACT_TILEMAP_DMA_SETUP.as_slice()),
@@ -717,6 +721,18 @@ impl ZeldaState {
             ch.indirect = transfer_unit & 0x40 != 0;
             ch.from_b = transfer_unit & 0x80 != 0;
             ch.b_adr = reg;
+        }
+    }
+
+    pub(super) fn hdma_retarget_channel7_window(&mut self) {
+        if self.lag_free {
+            // $02:B260..B265 and $02:9D5D..9D62 write only DMAP7/BBAD7.
+            // A1T7/A1B7/DASB7 and the live descriptor cursor keep their owner.
+            crate::cycle_ledger::note_hdma_program_write();
+            self.dma.write_register(0x4370, 0x41);
+            self.dma.write_register(0x4371, 0x26);
+        } else {
+            self.hdma_setup(0, 0xf2fb, 0x41, 0, 0x26, 0);
         }
     }
 

@@ -501,7 +501,7 @@ impl ZeldaState {
     }
 
     fn kill_aghanim_func5(&mut self) {
-        self.hdma_setup(0, 0xf2fb, 0x41, 0, 0x26, 0);
+        self.hdma_retarget_channel7_window();
         for i in 0..240 {
             self.set_spotlight_hdma_table_dynamic_entry(i, 0xff00);
         }

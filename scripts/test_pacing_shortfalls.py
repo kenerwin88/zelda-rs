@@ -51,6 +51,9 @@ class ShortfallsTest(unittest.TestCase):
         self.assertEqual(summary['hdma_decline_signatures']['vwf+program-write']['iterations'], 1)
         self.assertEqual(set(summary['hdma_decline_reasons']), {'vwf', 'program-write'})
         predictor['cost_hdma_decline'] = str(1 << 10)
+        summary = structural_summary({2: row}, {2: predictor})
+        self.assertEqual(summary['hdma_decline_signatures']['nmi-over-hdma-init']['iterations'], 1)
+        predictor['cost_hdma_decline'] = str(1 << 11)
         with self.assertRaises(ValueError):
             structural_summary({2: row}, {2: predictor})
 

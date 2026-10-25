@@ -19,6 +19,7 @@ FIELD = 1364 * 262
 HDMA_DECLINE_REASONS = (
     'vwf', 'main-dma', 'song-upload', 'raster-wait', 'worker-change',
     'timed-work', 'program-write', 'no-entry-program', 'program-mismatch', 'disabled',
+    'nmi-over-hdma-init',
 )
 
 

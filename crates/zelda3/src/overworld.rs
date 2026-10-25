@@ -3039,7 +3039,7 @@ impl ZeldaState {
 
     /// ROM: `MirrorWarp_FinalizeAndLoadDestination`
     pub(super) fn mirror_warp_finalize_and_load_destination(&mut self) {
-        self.hdma_setup(0, 0xf2fb, 0x41, 0, 0x26, 0);
+        self.hdma_retarget_channel7_window();
         self.iris_spotlight_reset_table();
         self.set_countdown_word(0);
         self.set_darkening_or_lightening_screen_word(0);
