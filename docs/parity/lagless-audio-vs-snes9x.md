@@ -752,3 +752,224 @@ most windows have no reliable match. The remaining unfinished analysis is a
 validated catalogue of actual sound-event onset identities and isolation of
 any SPC/DSP arithmetic/emulation defect under identical input and state.
 No emulation fix or gameplay/pacing change is claimed.
+
+## Lagless port transport experiment on main 8e15ac9d (2026-10-25)
+
+The before binary was built from a clean `codex/spc-port-transport` checkout
+at `8e15ac9df65d2e25d6870d5a7bca3c99492e6297`, before any edits.
+New evidence is under `target/spc-port-proof/`; the older measurements above
+remain evidence for their original binary, not this experiment's baseline.
+In particular, current-main iteration 134,700 begins at native pair
+78,260,904 / callback 146,556, versus 78,252,894 / callback 146,541 in the
+older capture. Both map to source host 147,293. No pacing source was edited.
+
+### Clock ownership and candidate mapping
+
+`HostPortTransport::frame_writes` reconstructs the nominal NMI's conditional
+music/ambient branches and unconditional effect stores. These stores do not
+carry a retained native CPU-bus timestamp. Their existing offsets come from
+`host_port_master_clock_offsets`, in CPU master clocks relative to nominal
+NMI entry. `host_port_target_cycles` previously assigned their *epoch* from
+physical NTSC fields, even though lagless output advances 534 pairs per
+callback. That mismatch eventually puts the entire batch behind execution.
+The instruction-step/return scheduler then coalesces overdue events.
+
+Other owners are separate. Native `cpu_port_at` / `cpu_main_port_at` use
+`ApuHostPortTiming` and its retained master-clock conversion/credit. Main
+semantic writes without a raster timestamp retain their end-window boundary.
+`SongBankHostTransfer` owns the upload command, ready/ack polls, headers,
+bytes and clears, with its own master-clock cursor; upload-return NMIs retain
+their existing timestamped owner. The candidate leaves all these paths alone,
+and uses the old complete path for any callback with an active bank transfer.
+
+For a nominal lagless NMI batch, let `M` be the existing nominal NMI entry,
+`d[p]` its CPU-path offset, `C(m)=floor(m*15664/328125)`, and
+`E=max(output_window_start, executed_SPC_cursor)`. The candidate maps:
+
+`T[p] = E + C(M + d[p]) - C(M)`.
+
+This is one translation of the batch, not per-port deadline clamping or
+stretching CPU instruction durations. It preserves each CPU-derived cycle
+difference and the existing fractional conversion phase. The callback epoch
+follows the deliberate 534-pair clock, so physical-field drift cannot put the
+batch in the past. Events enter the APU's existing cycle-level input queue
+before any new SPC execution, where they latch before a same-cycle bus read.
+They are not rounded again to an opcode/pseudo-op return. Queued events survive
+output-window boundaries and the 32-bit local-cycle rebase. No new serialized
+state, output sample budget, SPC/DSP arithmetic, instruction price, gameplay
+hold rule, source value injection or route-specific rule is introduced. The runtime
+entry point is selected only by `lag_free`; ordinary `advance` is unchanged.
+
+The CPU master gaps and Snes9x's synchronized delivery gaps are distinct.
+Fresh renderless trace-core runs reproduce all 24 first-window and 26
+worst-window PCM buffers from the previous independently cache-verified
+captures. The core hash is
+`6f112667f7b590c3f789630171ce9af79b1793245ad2e14080522146ffd6d498`.
+Source music stores have relative CPU master times 0/324/408/470, but
+synchronized SPC times 0/15/21/23. Worst-window clears have CPU master times
+0/178/262/324 and synchronized SPC times 0/10/19/19. Synchronization may finish
+an SPC pseudo-op and carry positive credit; its receipt times therefore need
+not equal a direct rational conversion of CPU bus gaps. The candidate fixes
+the nominal transport; it does not claim equal initial state or identical
+Snes9x coroutine synchronization.
+
+### Fresh chip-input probes
+
+| Probe | Before native relative SPC cycles | Candidate | Source synchronized cycles |
+| --- | --- | --- | --- |
+| First music, callback 302 / source 392 | 0/0/0/0 | 0/15/19/22 | 0/15/21/23 |
+| Iteration 134,700, callback 146,556 / source 147,293 | 0/0/0/0 | 0/9/13/16 | 0/10/19/19 |
+
+Music port0 moves from cycle 5,160,601 to 5,160,619. Both before and after
+match the same first ten CPU store tokens and diverge at the 11th: native
+clears port0 at callback 305 while source writes port1 at host 395. The first
+relative timing disagreement moves from token1 (-15 cycles) to token2
+(-2 cycles). Thus independent delivery improves without repairing the older
+acknowledgement/history difference.
+
+First voice-1 key-on remains in iteration 199, at native absolute cycle
+5,266,692 before and 5,266,688 after. Both match 65 subsequent DSP address/value
+stores; the first relative timing error remains token7, -32 cycles, and
+register order diverges at token65. Timing-error ranges are -392..354 before
+and -384..362 after. This is not an equal-input arithmetic comparison.
+
+The worst probe remains command-unresolved in both captures: all CPU stores
+are repeated zeros. In the fresh current-main baseline and candidate, the
+source's nearby `$4C=$40` does not occur inside native callback 146,556, so
+the older note pairing cannot be carried forward to this binary. All 102
+native DSP stores in this callback are identical before/after, including
+relative timing. No repaired pitch input or newly resolved note is claimed.
+`source-bus-spacing.json`, `chip-probes.json`, the command alignment JSON,
+raw source traces and native event/snapshot files retain these boundaries.
+
+### Full-route cartridge-answer audio comparison
+
+Both fresh captures contain all 1,473,123 contiguous iterations and zero
+actual reseeds, so their audio execution is continuous despite allowing
+`--seed-every 2000`. The source stream and comparison method above are
+unchanged. The current-main before column replaces neither the older binary's
+results nor their provenance; it is a new baseline.
+
+| Measure | Clean main before | Candidate |
+| --- | ---: | ---: |
+| Sample-exact iterations | 657 | 658 |
+| Nonzero sample-exact iterations | 606 | 607 |
+| Resolved waveform windows / attempts | 3,826 / 25,384 | 3,805 / 25,384 |
+| Sample-identical after alignment, usable windows | 18 | 21 |
+| Identical at a best shift, including ambiguous windows | 32 | 29 |
+| Native callbacks | 1,573,272 | 1,573,266 |
+| Held callbacks | 97,421 | 97,421 |
+| Masked callbacks | 2,728 | 2,722 |
+| Native stereo pairs | 840,127,248 | 840,124,044 |
+| Source stereo pairs | 842,864,820 | 842,864,820 |
+| Final native-minus-source pairs | -2,737,572 | -2,740,776 |
+
+The six-callback reduction comes from different SPC execution entering the
+unchanged bank handshake, not a new hold/field rule. The first callback-count
+difference is one *additional* masked callback at iteration 306,911;
+later transfers yield the net reduction. Every callback still emits 534 pairs.
+The net 3,204-pair shortening is 100.125 nominal milliseconds and is not a
+source-pacing repair. Equal-length exact iterations increase by one and usable
+identical windows by three, while resolved coverage decreases by 21 windows.
+These mixed finite-search results do not establish equal chip input, corrected
+DSP arithmetic, or full-route audio equivalence. Summary and per-window files
+are `before-rom-summary.json[.windows.jsonl]` and
+`after-rom-summary.json[.windows.jsonl]`.
+
+### Census, gameplay and default-mode regression
+
+Both cartridge and `--live-apu-reads` gates pass, before and after, over all
+1,473,123 iterations: `PASS (unexplained=0, complete=True)`. Cartridge has
+737 WRAM-clean segments and live has 742, with no panics, ordinary RNG/APU-read
+mismatches, or unmatched ordinary APU commands. Cartridge engine/source command
+totals remain 67,990 / 67,290; live remains 67,939 / 67,287.
+
+| Live-SPC census measure | Before | Candidate |
+| --- | ---: | ---: |
+| Held callbacks | 97,314 | 97,314 |
+| Missing holds | 5,956 | 5,956 |
+| Excess holds | 593 | 593 |
+| Zero-source-lag calls with a native hold (FP) | 133 | 133 |
+| Masked callbacks | 2,701 | 2,693 |
+| Actual reseeds | 14 | 14 |
+| Classified song-poll WRAM differences | 640 | 640 |
+
+The 14 live reseeds occur at identical iteration positions. Both modes retain
+14 classified lag-state differences; live also retains 14,741 classified
+polygon-state differences and seven classified song-poll command differences.
+These remain distinct from zero *unexplained* mismatches. The live census is
+seeded and is not an uninterrupted same-quest or same-audio proof. The fresh
+before live run with predictor output and the separate run without it have
+identical 2,462 census records (`before-live-observer-check.json`). No census
+classification or matching rule was changed to obtain these results.
+
+The default/ROM-timing nominal entry point remains ordinary `advance`; lagless dispatch
+comes after the retained real-CPU audio-boundary path. The capture binary and
+final rebuilt default binary both match every record and EOF of the independent
+clean-main 200k v2 ledger. That baseline's metadata records the requested
+`8e15ac9d` head, `git_dirty=false`, and the actual clean-main binary hash.
+`after-default-ledger.log` and `final-default-ledger.log` retain the two checks.
+The final rebuilt binary additionally reproduces the capture's first 210
+lagless iterations byte for byte in PCM and mapping (`final-prefix-check.json`).
+Only a scheduler comment/diagnostic source position and test bodies changed
+after full capture; no runtime function body changed. The measured full-route
+binary and the final build have separate hashes in the manifest, and no new
+full-route execution of the latter is claimed.
+
+The complete live predictor comparison finds 12 iterations with different held
+counts and 16 with different masked counts. Module/submodule contexts agree on
+every row. The changed SPC/upload phase also changes some downstream raster,
+HDMA and cost receipts; identical aggregate holds must not be advertised as
+identical per-call timing. `live-row-comparison.json` retains changed-column
+counts and first examples. No instruction prices or pacing implementation were
+edited, and neither the requested census gates nor aggregate excess/FP/missing
+metrics worsened. The candidate is retained on that bounded evidence.
+
+### Tests, artifacts and reproduction
+
+Both final ordinary parity builds are warning-free. Default Zelda library:
+2,515 passed, only the known
+`spotlight_caller_return::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`
+failure, three ignored. Reduced: 2,050 passed, zero failed, two ignored.
+Both SNES suites: 504 passed, zero failed, seven ignored. Final focused
+transport/upload suites pass all 35 tests in each feature mode. The default
+library-test compilation retains the 24 pre-existing warnings; no new warning
+or ordinary binary-build warning is hidden by that distinction.
+
+The four new tests check CPU-derived spacing/fractional phase and monotone
+adjacent callbacks; before/at/after ordering against actual SPC input reads;
+independent latching, pending events across output boundaries and a local-cycle
+rebase; and byte-identical bank-owner state through ready/ack, payload and
+terminal clear phases under an identical controlled receiver. That receiver
+is a unit fixture, not a replacement cartridge workload or parity proof.
+The complete Zelda suites ran with four test threads from the final test
+executables. The SNES results and final focused suites have separate logs.
+
+`verification-summary.json` collects exact counts and gates;
+`artifact-manifest.json` binds the clean-main, capture and rebuilt binaries,
+the candidate patch, measurement PCM/maps, source and native probes, source
+inputs, build/test/ledger/gate logs and this report. The capture default binary
+is `after-zelda3`; the final rebuild is `final-default-zelda3`. Source and test
+bodies are retained in `candidate.patch`. Scratch orchestration stayed in
+`/tmp`. The superseded serial library attempts are not acceptance evidence;
+the sandbox rejected attempts to stop those processes, and their logs are
+separate from the completed four-thread suites.
+
+Reproduction uses the cache/ledger paths defined above. Run the before and
+candidate binaries with `--logical-replay "$L" "$C/initial.srm"
+--seed-every 2000 --report 0 --audio-pcm PCM --audio-map MAP`; use separate
+outputs and `--live-apu-reads --pacing-predictor CSV` for live gameplay metrics.
+Compare each cartridge capture with
+`scripts/lagless_audio_compare.py compare ORACLE PCM MAP SUMMARY
+--expect-iterations 1473123`, and gate each census with
+`scripts/logical_census_summary.py LOG --gate --expect-iterations 1473123`.
+Probe port traces use the existing `ZELDA3_DEBUG_SPC_PORT_TRACE_FRAMES` gate,
+with repeated `--audio-state-at` captures as above. Fresh source probes use
+`--run-snes9x-script`, the pinned trace core, saved before-host source states,
+`--input-frame-offset`, and `--audio-trace-dir`, serially and renderless.
+
+No GPU runs, video flag, cached A/V runs, cargo GPU tests, oracle-cache writes,
+formatting, commits or pushes were performed. The 534-pair budget is unchanged.
+This removes nominal lagless port coalescing while preserving CPU-derived
+spacing; it does not repair the first command-history mismatch or establish
+source-equivalent chip input/audio.

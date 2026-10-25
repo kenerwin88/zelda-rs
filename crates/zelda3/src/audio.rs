@@ -1041,6 +1041,8 @@ impl ZeldaState {
             let window = if let Some(master) = boundary {
                 clock.advance_at_cpu_boundary(driver_commands, native_samples,
                     vwf_glyph_tone_crossed_vblank, master).expect("native CPU owns the audio boundary")
+            } else if self.lag_free {
+                clock.advance_lagless(driver_commands, native_samples, vwf_glyph_tone_crossed_vblank)
             } else {
                 clock.advance(driver_commands, native_samples, vwf_glyph_tone_crossed_vblank)
             };

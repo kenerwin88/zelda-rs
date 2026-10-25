@@ -149,6 +149,95 @@ fn clock_at_first_host_boundary() -> AbsoluteDspEventClock {
 }
 
 #[test]
+fn lagless_nmi_translation_keeps_cpu_spacing_and_fractional_phase() {
+    for host in [1, 302, 146541, 251820, 1_573_135] {
+        for writes in [
+            HostPortWrites { writes: [Some(1), Some(0), Some(0), Some(0)] },
+            HostPortWrites { writes: [Some(0); 4] },
+            HostPortWrites { writes: [None, Some(3), Some(0), Some(0)] },
+        ] {
+            let physical = host_port_target_cycles(host, writes);
+            let execution = host * 534 * 32 + 25;
+            let mapped = lagless_host_port_target_cycles(host, writes, execution);
+            for p in 0..4 {
+                assert!(mapped[p] >= execution);
+                assert_eq!(mapped[p] - mapped[0], physical[p] - physical[0]);
+            }
+            let active: Vec<_> = (0..4).filter(|&p| writes.writes[p].is_some())
+                .map(|p| mapped[p]).collect();
+            assert!(active.windows(2).all(|w| w[0] < w[1]));
+            let next = lagless_host_port_target_cycles(host + 1, writes, execution + 534 * 32);
+            assert!(next.iter().all(|at| *at > *active.last().unwrap()));
+        }
+    }
+}
+
+#[test]
+fn lagless_stores_are_visible_in_cycle_order_against_spc_port_reads() {
+    // Read the same port repeatedly across its deadline. These instructions
+    // have bus reads inside the instruction, not at its return boundary.
+    for relative in [22, 23, 24] {
+        let mut clock = cpu_port_clock_fixture(&[0xe4, 0xf4, 0x2f, 0xfc]);
+        clock.apu.debug_spc_instruction_trace = Some(Vec::new());
+        clock.apu.schedule_input_port_event(relative, 0, 0x51);
+        for _ in 0..16 { clock.apu.run_cycle_sequenced_instruction_without_dsp(); }
+        let reads: Vec<_> = clock.apu.debug_spc_instruction_trace.as_ref().unwrap().iter()
+            .filter(|e| e.pc == 0x2002).collect();
+        assert!(reads.iter().any(|e| e.a == 0));
+        assert!(reads.iter().any(|e| e.a == 0x51));
+        for read in reads {
+            assert_eq!(read.a, if read.cycle - 1 >= relative { 0x51 } else { 0 });
+        }
+    }
+}
+
+#[test]
+fn lagless_nmi_stores_survive_output_boundary_and_cycle_rebase() {
+    let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+    clock.apu.in_ports[..4].fill(0x55);
+    // A one-pair test callback ends before the last stores. The scheduler's
+    // lookahead may execute them, but neither the next callback nor rebasing
+    // may drop or duplicate them.
+    clock.absolute_apu_cycle = (1 << 30) + 9;
+    clock.apu.cycles = (clock.absolute_apu_cycle + 20) as u32;
+    clock.host_frame_index = 302;
+    clock.apu.debug_spc_instruction_trace = Some(Vec::new());
+    clock.advance_lagless(Default::default(), 1, 0);
+    assert!(clock.apu_cycle_origin >= 1 << 30);
+    assert_eq!(clock.apu.in_ports[0], 0);
+    assert_eq!(&clock.apu.in_ports[1..4], &[0x55; 3]);
+    clock.advance_lagless(Default::default(), 1, 0);
+    assert_eq!(&clock.apu.in_ports[..4], &[0; 4]);
+    let snapshots = clock.apu.debug_spc_instruction_trace.as_ref().unwrap();
+    assert!(snapshots.iter().any(|s| s.input_ports[0] == 0 && s.input_ports[1] == 0x55));
+    assert!(snapshots.iter().any(|s| s.input_ports[2] == 0 && s.input_ports[3] == 0x55));
+}
+
+#[test]
+fn lagless_transport_does_not_change_the_song_bank_owner() {
+    // A protocol receiver: wait for $ff, publish ready, wait for the first
+    // header token, then echo counters. Exercise payload and terminal clears,
+    // not just a stalled ready poll. This is a transport fixture, not a model
+    // of the cartridge receiver's instruction workload.
+    let mut clock = cpu_port_clock_fixture(&[
+        0xe4, 0xf4, 0x68, 0xff, 0xd0, 0xfa,
+        0x8f, 0xaa, 0xf4, 0x8f, 0xbb, 0xf5,
+        0xe4, 0xf4, 0x68, 0xff, 0xf0, 0xfa, 0xc4, 0xf4,
+        0xe4, 0xf4, 0xc4, 0xf4, 0x2f, 0xfa,
+    ]);
+    clock.begin_song_bank_transfer(1, &[2, 0, 0, 0x20, 0x11, 0x22, 0, 0], true);
+    let mut baseline = clock.clone();
+    for _ in 0..4 {
+        clock.advance_lagless(Default::default(), 534, 0);
+        baseline.advance(Default::default(), 534, 0);
+        assert_eq!(bincode::serialize(&clock).unwrap(), bincode::serialize(&baseline).unwrap());
+        if clock.song_bank_transfer.is_none() { break; }
+    }
+    assert_eq!(clock.completed_song_bank_id, Some(1));
+    assert_eq!(&clock.apu.in_ports[..4], &[0; 4]);
+}
+
+#[test]
 fn native_upload_polls_cannot_observe_future_stores_in_the_same_spc_instruction() {
     let mut clock = clock_at_first_host_boundary();
     // MOVW $f4,YA publishes the receiver-ready bytes separately, then BRA

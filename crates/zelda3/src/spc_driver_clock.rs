@@ -33,8 +33,9 @@ const SNES_SHORT_SCANLINE: u64 = 240;
 const SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS: u64 = 40;
 const NMI_AUDIO_VCOUNTER: u64 = 225;
 // Normal NTSC NMI entry jitters with the interrupted CPU instruction. H=84 is
-// the route-stable nominal entry used by the absolute clock; the SPC scheduler
-// below still rounds each write to the real SPC opcode boundary.
+// the route-stable nominal entry used by the absolute clock. The ordinary
+// scheduler rounds stores to SPC pseudo-op boundaries; lagless retains the
+// CPU-derived cycle gaps on the output callback clock.
 const NMI_AUDIO_NOMINAL_ENTRY_HCLOCK: u64 = 84;
 // Snes9x 1.63's NTSC main-CPU-to-APU conversion ratio.
 const SNES9X_APU_RATIO_NUMERATOR: u64 = 15_664;
@@ -595,6 +596,25 @@ impl AbsoluteDspEventClock {
         samples_per_channel: u32,
         vwf_glyph_tone_boundary_policy: u8,
     ) -> DspClockWindow {
+        self.advance_window(commands, samples_per_channel, vwf_glyph_tone_boundary_policy, false)
+    }
+
+    pub(crate) fn advance_lagless(
+        &mut self,
+        commands: EngineAudioCommandBatch,
+        samples_per_channel: u32,
+        vwf_glyph_tone_boundary_policy: u8,
+    ) -> DspClockWindow {
+        self.advance_window(commands, samples_per_channel, vwf_glyph_tone_boundary_policy, true)
+    }
+
+    fn advance_window(
+        &mut self,
+        commands: EngineAudioCommandBatch,
+        samples_per_channel: u32,
+        vwf_glyph_tone_boundary_policy: u8,
+        lagless: bool,
+    ) -> DspClockWindow {
         self.resume_cpu_ports_for_audio_window(
             self.absolute_apu_cycle + u64::from(samples_per_channel) * APU_CYCLES_PER_DSP_SAMPLE
                 + SMP_CPU_LOOKAHEAD_CYCLES);
@@ -638,7 +658,13 @@ impl AbsoluteDspEventClock {
         }
         // Later nominal ports inherit the actual native branch's duration,
         // even though its own store must be excluded from delivery below.
-        let host_port_targets = host_port_target_cycles(self.host_frame_index, host_writes);
+        let lagless_nominal = lagless && self.song_bank_transfer.is_none();
+        let host_port_targets = if lagless_nominal {
+            lagless_host_port_target_cycles(self.host_frame_index, host_writes,
+                frame_start_cycle.max(self.apu_cycle_origin + u64::from(self.apu.cycles)))
+        } else {
+            host_port_target_cycles(self.host_frame_index, host_writes)
+        };
         for (port, write) in host_writes.writes.iter_mut().enumerate() {
             if handled[port].is_some() { *write = None; }
         }
@@ -670,6 +696,20 @@ impl AbsoluteDspEventClock {
                 value.map(|value| (host_port_targets[port], port as u8, value))
             })
             .collect();
+        if lagless_nominal {
+            // Nominal NMI time belongs to the output callback in lagless,
+            // not to an accumulating physical NTSC-field count. Publish the
+            // batch to the cycle-level bus queue before executing any SPC
+            // instruction. Rounding individual stores to pseudo-op returns
+            // would lose both their spacing and their order against reads.
+            // Timed CPU accesses and the upload coroutine retain their owners.
+            for (target, port, value) in host_port_events.drain(..) {
+                self.apu.schedule_input_port_event(
+                    target.checked_sub(self.apu_cycle_origin).unwrap().try_into().unwrap(),
+                    port, value);
+                self.debug_host_port_write(target, port, value, "lagless-cycle");
+            }
+        }
         // Main-CPU port writes occur after the frame's NMI audio handler. The
         // translated engine executes main work as one semantic slice, so the
         // end of the current host window is its hardware-ordering boundary.
@@ -1346,6 +1386,18 @@ fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4]
 
     host_port_master_clock_offsets(writes)
         .map(|offset| snes_master_clock_to_apu_cycle(nmi_entry_master_clock + offset))
+}
+
+fn lagless_host_port_target_cycles(frame_index: u64, writes: HostPortWrites, entry: u64) -> [u64; 4] {
+    // Keep the CPU path and the fractional CPU->SPC conversion phase. Only
+    // translate the batch's epoch: one accepted lagless NMI belongs to this
+    // callback's output clock (534 pairs), regardless of physical field drift.
+    // `entry` is at or ahead of execution; no individual store is clamped.
+    let master = snes_frame_start_master_clock(frame_index.saturating_sub(1))
+        + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE
+        + NMI_AUDIO_NOMINAL_ENTRY_HCLOCK;
+    let origin = snes_master_clock_to_apu_cycle(master);
+    host_port_target_cycles(frame_index, writes).map(|at| entry + (at - origin))
 }
 
 fn host_port_target_cycles_at_nmi_entry(master: u64, writes: HostPortWrites) -> [u64; 4] {
