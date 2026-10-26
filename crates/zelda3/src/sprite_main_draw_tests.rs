@@ -6,6 +6,90 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn zoro_caller_price_matches_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut cases = 0;
+    for slot in [0usize, 15] {
+        for subtype in [0u8, 2, 3, 255] {
+            for free in [-1i32, 0, 14, 29] {
+                for (c, delay, below) in [(1, 1, false), (1, 0, false),
+                    (0, 1, false), (0, 1, true)] {
+                    let mut native = fresh_state();
+                    let mut image = native.wram_image().into_owned();
+                    image[0x11] = 0;
+                    image[0xfa0] = slot as u8;
+                    image[0xdd0 + slot] = 9;
+                    image[0xe20 + slot] = 0x9d;
+                    image[0xe90 + slot] = 1;
+                    image[0xdb0 + slot] = c;
+                    image[0xe80 + slot] = subtype;
+                    image[0xdf0 + slot] = delay;
+                    image[0xd10 + slot] = 0x40;
+                    image[0xd00 + slot] = 0x40;
+                    image[0x20..0x22].copy_from_slice(&(if below { 0u16 } else { 0x80 }).to_le_bytes());
+                    image[0x22..0x24].copy_from_slice(&0x200u16.to_le_bytes());
+                    image[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
+                    image[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
+                    image[0x1f800..0x1f81e].fill(1);
+                    if free >= 0 { image[0x1f800 + free as usize] = 0; }
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    native.set_lag_free(true);
+                    let mut machine = Snes::new();
+                    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                    machine.ram.copy_from_slice(&native.wram_image());
+                    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0x30);
+                    machine.cpu.k = 0x1e;
+                    machine.cpu.db = 0x1e;
+                    machine.cpu.pc = 0x9bc8;
+                    machine.cpu.sp = 0x1fc;
+                    machine.cpu.x = slot as u16;
+                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                    let mut source = RomCpuTimingProbe::new(machine, clock,
+                        SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut owned = 0;
+                    for _ in 0..10000 {
+                        let cpu = &source.snes().cpu;
+                        // PHX temporarily lowers SP in the inlined garnish search.
+                        let parent = cpu.k == 0x1e && (0x9bc8..=0x9c6a).contains(&cpu.pc);
+                        let step = source.step().unwrap();
+                        if parent { owned += step.transactions.iter()
+                            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>(); }
+                        if source.snes().cpu.pc == 0x8000 { break; }
+                    }
+                    assert_eq!(source.snes().cpu.pc, 0x8000);
+                    let mut default = native.clone();
+                    let actual = crate::cycle_ledger::measure_routine_self_work(0x1e_8b19, || {
+                        let _parent = crate::cycle_ledger::routine(0x1e_8b19);
+                        native.sprite_9_c_zoro(slot);
+                    });
+                    assert_eq!(actual, owned, "slot={slot} subtype={subtype} free={free} c={c} delay={delay} below={below}");
+                    for a in [0xdd0, 0xdb0, 0xe80, 0xdc0, 0xd50] {
+                        assert_eq!(native.read_wram_byte(a + slot), source.snes().ram[a + slot]);
+                    }
+                    assert_eq!(&native.wram_image()[0x1f800..0x1f986],
+                        &source.snes().ram[0x1f800..0x1f986]);
+                    default.set_lag_free(false);
+                    let actual = crate::cycle_ledger::measure_routine_self_work(0x1e_8b19, || {
+                        let _parent = crate::cycle_ledger::routine(0x1e_8b19);
+                        default.sprite_9_c_zoro(slot);
+                    });
+                    assert_eq!(actual, 0);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("Zoro caller: {cases} executed-ROM cases");
+}
+
+#[test]
 fn paused_rat_animation_and_double_return_cost_match_source() {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
