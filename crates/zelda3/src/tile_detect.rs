@@ -91,6 +91,21 @@ impl ZeldaState {
         direction: CollisionDirection,
         kind: MovementProbeKind,
     ) {
+        let priced = match (axis, kind) {
+            // $07:CDCB..CE29 / CE2A..CE84 / CE85..CEC8, M8/X8 on
+            // entry: coordinate setup, actual JSR opcodes and width/RTS tail.
+            // These tables cannot cross a page at any direction's byte index.
+            // ResetState and each Execute child retain their own work.
+            (CollisionAxis::Vertical, MovementProbeKind::Cardinal) => Some((0x07_cdcb, 1378)),
+            (CollisionAxis::Horizontal, MovementProbeKind::Cardinal) => Some((0x07_ce2a, 1326)),
+            (CollisionAxis::Vertical, MovementProbeKind::Slope) => Some((0x07_ce85, 988)),
+            (CollisionAxis::Horizontal, MovementProbeKind::Slope) => None,
+        };
+        let _scope = self.lag_free.then(|| priced.map(|(address, clocks)| {
+            let scope = crate::cycle_ledger::routine(address);
+            crate::cycle_ledger::charge(clocks);
+            scope
+        }));
         self.tile_detect_reset_state();
         self.tile_detect_position_mut().clear_pit_tile();
         let mask = self.game_state.player.tile_detection.location_calc_mask();

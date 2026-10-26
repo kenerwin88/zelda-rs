@@ -52,6 +52,53 @@ fn load_price_rom_work_on_bus(entry: u32, image: &[u8], y: u16, long_return: boo
 }
 
 #[test]
+fn player_probe_and_acceleration_self_prices_match_executed_rom() {
+    use crate::game_state::{CollisionAxis, CollisionDirection, MovementProbeKind};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let Ok(assets) = std::fs::read(root.join("zelda3_assets.dat")) else { return; };
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    for (entry, end, axis, kind) in [
+        (0x07_cdcb, 0x07_ce29, CollisionAxis::Vertical, MovementProbeKind::Cardinal),
+        (0x07_ce2a, 0x07_ce84, CollisionAxis::Horizontal, MovementProbeKind::Cardinal),
+        (0x07_ce85, 0x07_cec8, CollisionAxis::Vertical, MovementProbeKind::Slope),
+        (0x07_9873, 0x07_9895, CollisionAxis::Vertical, MovementProbeKind::Cardinal),
+    ] {
+        for direction in 0..4 {
+            for floor in [0u8, 1] {
+                for mask in [0x01ffu16, 0x01f8] {
+                    for position in [0u16, 0x007f, 0x01ff, 0xffff] {
+                        let mut native = base.clone();
+                        let mut image = native.wram_image().into_owned();
+                        image[0x1b] = 1;
+                        image[0xee] = floor;
+                        image[0x20..0x22].copy_from_slice(&position.to_le_bytes());
+                        image[0x22..0x24].copy_from_slice(&position.rotate_left(3).to_le_bytes());
+                        image[0xec..0xee].copy_from_slice(&mask.to_le_bytes());
+                        image[0x326..0x340].fill(0xa5);
+                        native.import_wram_image(&image);
+                        native.sync_native_game_state_from_ram();
+                        let (_, source_self) = load_price_rom_work(entry, &image,
+                            direction * 2, false, entry..=end);
+                        for lagless in [false, true] {
+                            let mut state = native.clone();
+                            state.set_lag_free(lagless);
+                            let own = crate::cycle_ledger::measure_routine_self_work(entry, || {
+                                if entry == 0x07_9873 { state.reset_all_acceleration(); }
+                                else { state.detect_player_movement(axis,
+                                    CollisionDirection::from_legacy(direction as u8), kind); }
+                            });
+                            assert_eq!(own, if lagless { source_self } else { 0 },
+                                "entry={entry:06x} dir={direction} floor={floor} mask={mask:04x} pos={position:04x} lagless={lagless}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn camera_prices_match_executed_rom_paths() {
     let mut cases = Vec::new();
     for overlay in [0u8, 0x95, 0x97, 0x9c, 0x9d, 0x9e, 0xb5, 0xbe] {

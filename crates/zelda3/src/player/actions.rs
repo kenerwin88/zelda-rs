@@ -142,6 +142,10 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn reset_all_acceleration(&mut self) {
+        if self.lag_free {
+            // $07:9873..9895: REP, ten word clears, SEP and RTS.
+            crate::cycle_ledger::charge_routine(0x07_9873, 486);
+        }
         let mut acceleration = self.swim_acceleration_mut();
         acceleration.clear_axis_motion(0);
         acceleration.clear_axis_motion(2);
