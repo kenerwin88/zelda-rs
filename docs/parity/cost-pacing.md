@@ -8889,6 +8889,79 @@ Both candidate full census gates and both fresh main controls PASS: 1,473,123 it
 | rom | 5,011 / 4,998 | 0 / 0 | 0 / 0 | 34,618 / 34,631 | 39,561 / 39,561 |
 | live | 5,708 / 5,695 | 590 / 590 | 132 / 132 | 34,484 / 34,497 | 39,429 / 39,429 |
 
+## Continuation on `codex/cost-pacing24b` (main `dc86c1ef`)
+
+Evidence is retained in `target/cost-pacing24b/`, with the completed group in `corrected/`. This short batch stops after one verified group: `$09:B5DE` garnish coordinate preparation and `$0E:D7FE` per-color whitening. The remaining requested bodies are assessed below; no second actor-body group was added. No Link-bank-07 routine or shared ledger helper was edited.
+
+### Executed ROM work
+
+`scripts/rom_block_costs.py` produced all twelve source listings; whitening uses M16/X8, the other entries M8/X8. New prices are lagless-only and include source-address comments. No lag count or fitted residual supplies a price.
+
+`$09:B5DE..B612` prices the actual X-first/Y-second coordinate subtraction, branches, saved-byte pop and double-return exits: 366 total for X rejection, 568 total for Y rejection after X succeeds, or 518 for success. On rejection its source frame owns 296/498; the final 70 clocks are attributed to the dispatcher. Its existing native coordinate helper now owns the real source call frame. The caller’s JSR and drawing body are not included. The superseded `group1/` trial kept the correct total work but put the final PLA/RTS in the helper frame; `corrected/` fixes that ownership without changing any total instruction charge.
+
+`$0E:D7FE..D839` prices each actual auxiliary palette input: 572 straight-line clocks plus, for each channel, 6 for the taken unclamped BCC or 24 for the executed immediate clamp. The existing 96-color whitening operation supplies the call count. The optional dim-flashes output remains unchanged; prices follow the cartridge’s +14 branches. No wrapper, caller, iteration threshold or per-scene price was added.
+
+The CPU-only executed-ROM tests pass 288 garnish fixtures and 125 whitening fixtures. They exercise both garnish slot extremes, independent X/Y rejection, scroll wrap, all clamp boundary combinations including equality, and auxiliary colors different from main colors. They compare actual ROM instruction transactions with native self work, check whitening output, and verify default calls add zero price.
+
+### Frozen 2,825-row cohort
+
+This is batch 22’s fixed `07/00` + `09/00` missing cohort, including any iterations this group closes. Calls below are source / fresh main / candidate. Per-call clocks are aggregate exclusive clocks divided by each lane’s own calls, not individually paired calls. A missing native scope is reported as unscoped. `routine-cohort-before-after.json` retains equal-call row counts and row-mean gap ranges.
+
+| Routine | Calls source / before / after | Source clocks/call | Native before / after clocks/call | Signed gap before | Signed gap after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `$06:dc10` | 11,899 / 11,951 / 11,951 | 954.712 | 46.000 / 46.000 | 10,810,378 | 10,810,378 |
+| `$09:b0b6` | 68,085 / 68,085 / 68,085 | 364.315 | 231.725 / 231.755 | 9,027,408 | 9,025,378 |
+| `$1e:8b19` | 9,306 / 9,306 / 9,306 | 1,231.806 | 302.381 / 302.381 | 8,649,224 | 8,649,224 |
+| `$06:84e2` | 45,200 / 45,200 / 45,200 | 560.855 | 431.116 / 431.116 | 5,864,200 | 5,864,200 |
+| `$0e:d7fe` | 9,504 / 0 / 9,504 | 606.468 | unscoped / 606.468 | 5,763,870 | 0 |
+| `$08:833c` | 2,551 / 2,551 / 2,551 | 2,595.067 | 550.841 / 550.841 | 5,214,820 | 5,214,820 |
+| `$1d:c222` | 4,874 / 4,874 / 4,874 | 1,326.640 | 293.059 / 293.059 | 5,037,674 | 5,037,674 |
+| `$06:d22f` | 1,268 / 0 / 0 | 3,607.391 | unscoped / unscoped | 4,574,172 | 4,574,172 |
+| `$09:b5de` | 8,564 / 0 / 8,564 | 517.862 | unscoped / 517.862 | 4,434,966 | 0 |
+| `$06:e991` | 1,310 / 0 / 0 | 3,358.147 | unscoped / unscoped | 4,399,172 | 4,399,172 |
+| `$05:b5d3` | 4,399 / 4,399 / 4,399 | 1,552.964 | 554.872 / 554.872 | 4,390,606 | 4,390,606 |
+| `$08:a7ab` | 871 / 0 / 0 | 4,751.830 | unscoped / unscoped | 4,138,844 | 4,138,844 |
+
+**Summed exclusive gap closed: 10,200,866 master clocks.** Both newly priced routines match source calls and exclusive clocks on every cohort row; no negative row is hidden by aggregate cancellation. The dispatcher additionally gains the real double-return tail, explained below; the other nine raw routine gaps remain unchanged.
+
+`$06:DC10` is skipped as the established attribution case: native drawing/shadow continuations use `$06:DC13/$DC66`, while source retains `$DC10`; its call counts also differ. No raw alias deficit was priced. `$06:D22F` similarly includes drawing JMP tails and an unannotated absorbable-dispatch prefix; it remains open rather than pricing that whole raw deficit.
+
+`$09:B0B6` already prices its empty/countdown/allocation/RTS dispatch; selected garnish drawing bodies remain unpriced. The new `$09:B5DE` child is separate. On rejection, `$09:B608` unwinds its source frame; `$B609..B60A` (PLA/RTS, 70 clocks) then belongs to this dispatcher. That real tail reduces the dispatcher’s exclusive gap; it is not removed from the work total. `$1E:8B19`, `$1D:C222` and `$05:B5D3` already price their 290-clock RTS dispatches; their selected actor bodies retain the remaining mixed ownership/unpriced work. `$06:84E2` already prices entry, timer-call and state dispatch instructions, with remaining state/actor bodies in its source frame. `$08:833C` already prices OAM allocation, timer and indirect dispatch instructions; selected ancilla bodies remain open. Those five parent gaps are not new constant prices.
+
+`$06:E991..EA03` remains unpriced: zero-speed exit, sign/swap branches, the actual byte-accumulator projection loop and output signs need their own annotations, separate from `$EAE8/$EAD1` children. `$08:A7AB..A80C` remains unpriced: the actual explosion-tile skip/draw loop, indexed table crossings and caller setup need annotation, separate from `$08:F702` OAM work. This group does not claim complete instruction/ancestry reconciliation for the unpriced targets.
+
+### Full-route comparison boundary
+
+Both ROM censuses collected all native routine clocks, checking the sum of exclusive rows on every one of 1,473,123 iterations. Their aggregate native calls and exclusive clocks/call follow.
+
+| Routine | Native calls before / after | Native clocks/call before / after |
+| --- | ---: | ---: |
+| `$06:dc10` | 2,350,894 / 2,350,894 | 46.000 / 46.000 |
+| `$09:b0b6` | 23,398,320 / 23,398,320 | 152.746 / 152.764 |
+| `$1e:8b19` | 2,487,531 / 2,487,531 | 338.889 / 338.889 |
+| `$06:84e2` | 22,612,952 / 22,612,952 | 324.869 / 324.869 |
+| `$0e:d7fe` | 0 / 99,264 | unscoped / 604.927 |
+| `$08:833c` | 384,393 / 384,393 | 568.539 / 568.539 |
+| `$1d:c222` | 843,363 / 843,363 | 317.098 / 317.098 |
+| `$06:d22f` | 0 / 0 | unscoped / unscoped |
+| `$09:b5de` | 0 / 569,935 | unscoped / 516.672 |
+| `$06:e991` | 0 / 0 | unscoped / unscoped |
+| `$05:b5d3` | 1,245,791 / 1,245,791 | 568.909 / 568.909 |
+| `$08:a7ab` | 0 / 0 | unscoped / unscoped |
+
+**Full-route source/native per-call reconciliation remains unfinished.** Retained source routine evidence covers the frozen missing cohort, not all route iterations. This batch did not repeat batch 23’s incomplete expensive source-route attempt. Full-route source totals, full-route source gaps and individually paired-call equivalence are not claimed; the native route-wide table cannot substitute for them.
+
+### Full CPU-only checks
+
+The ownership repair leaves every work/hold/predictor column identical to the superseded trial on both complete censuses. Corrected runs below were nevertheless executed fresh. Fresh main controls and candidate full gates PASS in both cartridge-answer and live-SPC modes: 1,473,123 iterations each, unexplained zero, every runtime hold equal to P2. These periodically seeded logical checks do not establish continuous physical-field or exact A/V parity. Missing/excess below count lag NMIs; false positives count iterations.
+
+| Census | Missing before / after | Excess before / after | FP before / after | Exact lagged before / after | Within one before / after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| rom | 5,011 / 5,003 | 0 / 0 | 0 / 0 | 34,618 / 34,626 | 39,561 / 39,561 |
+| live | 5,708 / 5,700 | 590 / 590 | 132 / 132 | 34,484 / 34,492 | 39,429 / 39,429 |
+
+The cartridge census closes 8 previously missing iterations and introduces 0 newly missing iterations. The main metric for this long tail remains the 10,200,866 source instruction clocks closed on the fixed cohort.
+
 | Category | Source lag | Missing rom/live | Excess rom/live | FP rom/live | Exact lagged rom/live | Within one rom/live |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `0E/02` | 12,964 | 49 / 370 | 0 / 223 | 0 / 96 | 4,369 / 4,259 | 4,418 / 4,308 |
@@ -8901,6 +8974,11 @@ Both candidate full census gates and both fresh main controls PASS: 1,473,123 it
 | `09/03` | 4,372 | 9 / 9 | 0 / 0 | 0 / 0 | 242 / 242 | 251 / 251 |
 | `07/07` | 4,060 | 263 / 263 | 0 / 0 | 0 / 0 | 2,656 / 2,656 | 2,919 / 2,919 |
 | `07/00` | 3,679 | 1,672 / 1,672 | 0 / 103 | 0 / 19 | 1,288 / 1,288 | 2,960 / 2,960 |
+
+| `0F/01` | 5,432 | 79 / 79 | 0 / 0 | 0 / 0 | 4,800 / 4,800 | 4,879 / 4,879 |
+| `09/03` | 4,372 | 9 / 9 | 0 / 0 | 0 / 0 | 242 / 242 | 251 / 251 |
+| `07/07` | 4,060 | 263 / 263 | 0 / 0 | 0 / 0 | 2,656 / 2,656 | 2,919 / 2,919 |
+| `07/00` | 3,679 | 1,670 / 1,670 | 0 / 103 | 0 / 19 | 1,290 / 1,290 | 2,960 / 2,960 |
 | `09/01` | 3,479 | 2 / 2 | 0 / 0 | 0 / 0 | 249 / 249 | 251 / 251 |
 | `07/0F` | 2,992 | 71 / 71 | 0 / 0 | 0 / 0 | 2,647 / 2,647 | 2,718 / 2,718 |
 | `0E/03` | 2,672 | 37 / 37 | 0 / 0 | 0 / 0 | 78 / 78 | 115 / 115 |
@@ -8910,6 +8988,8 @@ Both candidate full census gates and both fresh main controls PASS: 1,473,123 it
 | `19/02` | 2,001 | 0 / 0 | 0 / 0 | 0 / 0 | 1,855 / 1,855 | 1,855 / 1,855 |
 | `0E/0A` | 1,845 | 20 / 20 | 0 / 0 | 0 / 0 | 70 / 70 | 90 / 90 |
 | `09/00` | 1,253 | 1,137 / 1,137 | 0 / 0 | 0 / 0 | 55 / 55 | 1,192 / 1,192 |
+
+| `09/00` | 1,253 | 1,149 / 1,149 | 0 / 0 | 0 / 0 | 43 / 43 | 1,192 / 1,192 |
 | `0E/07` | 1,065 | 0 / 0 | 0 / 0 | 0 / 0 | 56 / 56 | 56 / 56 |
 | `07/06` | 984 | 23 / 23 | 0 / 0 | 0 / 0 | 580 / 580 | 603 / 603 |
 | `11/00` | 973 | 7 / 7 | 0 / 0 | 0 / 0 | 10 / 10 | 17 / 17 |
@@ -9120,3 +9200,27 @@ Both ordinary builds are warning-free. The candidate default binary matches ever
 | reduced | 2,060 | 0 | 2 |
 
 The only default failure is the known spotlight caller-return fixture; reduced passes completely. Default lib-test compilation retains the same 24 dead-code warnings as batch 23, separate from the warning-free ordinary builds. Both SNES suites and Python routine-coverage tests pass. The library manifest verifies complete disjoint test unions. No GPU run, `--video`, cached-av, external Snes9x execution, cargo GPU tests, oracle-cache writes, cargo fmt, commit or push was used. All supplied ledger/cache paths stayed read-only. `git diff --check` passes. Stopped after this one verified pricing group; the remaining eight routines and full-route source-call reconciliation are unfinished.
+
+All eight phase sweeps remain within one. All eight stable room, Link XY and whole-save outcomes match source. Fresh main and candidate probe metrics and stable outcomes are retained separately. The 162000–163000 rupee probe retains all 27 requests and every request/PCM onset gap against fresh main, with PCM-gap median 8.25374531835206 frames.
+
+| Stage / capture | Classified differences | $0CFD-only |
+| --- | --- | ---: |
+| main / rom | `{"lag": 14}` | 10 |
+| main / live | `{"lag": 14, "polygon": 14740, "song-end-poll": 639}` | 10 |
+| main / probes | `{}` | 0 |
+| final / rom | `{"lag": 14}` | 10 |
+| final / live | `{"lag": 14, "polygon": 14741, "song-end-poll": 639}` | 10 |
+| final / probes | `{}` | 0 |
+
+The original 8,339 missing rows gain 10,561,412 main instruction clocks, with no negative row. HDMA upper-bound excursions remain zero; the same 47 masked-init leases remain declined.
+
+Both ordinary candidate builds and the fresh main default build are warning-free. The candidate default binary matches every state/display/SRAM/PCM/input/context record and EOF of a freshly recorded main 200k ledger. New scopes and prices are gated by lagless mode; default/ROM-timing accounting remains unchanged.
+
+| Zelda library | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,526 | 1 | 3 |
+| reduced | 2,061 | 0 | 2 |
+
+The only default library failure is the known spotlight caller-return fixture; reduced passes completely. The original default shards 1 and 4 were interrupted after 520 and 380 completed tests. Their 113- and 252-test tails were rerun from the bound test binary; the manifest verifies the complete, disjoint named union. Completed original statuses are retained separately from recovery logs. Both SNES library suites and Python routine-coverage checks pass. `git diff --check` passes.
+
+No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Scratch drivers stayed in `/tmp`; supplied ledger/cache and the other checkout’s evidence stayed read-only. This stops at the verified two-routine group; the remaining pricing and full-route source reconciliation are open.

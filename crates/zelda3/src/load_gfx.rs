@@ -1662,6 +1662,21 @@ impl ZeldaState {
     }
 
     pub(super) fn filter_majorly_whiten_bg(&mut self) {
+        if self.lag_free {
+            // $0E:D7FE..D839, M16/X8: 572 clocks of straight-line self
+            // work per color. Each channel takes BCC (+6) when below its
+            // saturation value, otherwise executes LDA #clamp (24).
+            // Price the ROM's +14 branches from each input color; the
+            // optional dim-flashes output transform does not change them.
+            for i in 32..128 {
+                let color = self.game_state.display.palette_buffer.aux_color(i);
+                let mut cost = 572;
+                for shift in [0, 5, 10] {
+                    cost += if ((color >> shift) & 31) + 14 < 31 { 6 } else { 24 };
+                }
+                crate::cycle_ledger::charge_routine(0x0e_d7fe, cost);
+            }
+        }
         let amount = if self
             .game_state
             .enhanced_features

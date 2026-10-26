@@ -30,13 +30,33 @@ impl ZeldaState {
     //   return false;
     // }
     pub(in crate::zelda_rtl) fn garnish_return_if_prep_fails(&mut self, k: usize, pt: &mut Point16U) -> bool {
+        let scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09_b5de));
         let x = self
             .garnish_get_x(k)
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         let y = self
             .garnish_get_y(k)
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
+        if self.lag_free {
+            // $09:B5DE..B5EF: X subtraction and BNE (206). The X reject
+            // takes BNE (+6) to $B602..B608 (84, through the first PLA).
+            // Otherwise $B5F1..B5FF costs 180; Y reject pops its saved low
+            // byte at $B601 (28) before that same exit. Success takes BEQ
+            // (+6) to $B60B..B612 (126). The ROM checks X before Y.
+            crate::cycle_ledger::charge(if x >= 256 {
+                206 + 6 + 84
+            } else if y >= 256 {
+                206 + 180 + 28 + 84
+            } else {
+                206 + 180 + 6 + 126
+            });
+        }
         if x >= 256 || y >= 256 {
+            // $09:B608's first PLA unwinds this source call frame. The
+            // second PLA and RTS at $B609..B60A (28 + 42) belong to its
+            // caller, but still execute and remain in the main work total.
+            drop(scope);
+            if self.lag_free { crate::cycle_ledger::charge(28 + 42); }
             let value = 0;
             self.garnish_slot_view_mut(k).set_garnish_type(value);
             return true;
