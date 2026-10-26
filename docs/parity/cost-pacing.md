@@ -12415,3 +12415,47 @@ All **48 crystal/pendant phases** remain within one frame; stable outcomes match
 The complete library runs exposed an old setup-only assertion that now includes the response suffix. Its test-only correction compares full handler self work with the ROM; both affected helper users pass targeted rechecks in both modes. The manifests preserve the original complete runs and record these replacements; production sources stayed frozen throughout the censuses.
 
 Complete library manifests, ROM/source/binary hashes, call-site audit and per-routine clock/line summaries bind this point. All **1,512** supplied ledger/cache files retain size and mtime. Raw predictors/profiles were deleted after their summaries; pruning hashes and compressed traces remain. Evidence is below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used.
+
+## Load/transition batch 1
+
+**Verified partial stop on `codex/load-pacing1`, main `31633b01`.** Five complete bodies add **16,040,244 marker clocks** on the affected frozen cohort, exactly matching their retained source-exclusive work. ROM missing/excess/FP changes **4,433 / 0 / 0 → 4,346 / 0 / 0**; live changes **5,129 / 589 / 131 → 5,046 / 593 / 132**. Supplied main controls were reused. Evidence: `target/load-pacing1/`.
+
+The worklist ranks independent exclusive gaps against each iteration's P2 inverse, by closures rather than clocks. It contains **1,499** missing iterations from forced-seed window profiling. Those windows add **228 diagnostic missing frames in `06/00` and 13 in `09/23`** relative to the supplied census; the other eleven category deficits agree. This is a bounded candidate worklist, not a recapture of the canonical missing-iteration set. ROM/assets/SRAM/input hashes match the retained cartridge-profile receipt.
+
+The generator adds **63 blocks / 404 instructions**; all **930** existing rows remain identical. Eleven decoded ROM call sites bind the admitted bodies. The header and its two adjacent-door children own separate scopes, including the shared RTS exits exactly once per call. Markers retire at the executing body/prefix, with lagless and preview-muting guards. Five unmodified-ROM fixtures pass; selected call counts and exclusive clocks also match source on every frozen iteration in both the matched-window and canonical ROM profiles. No scalar conversion, fitted price, scene threshold/multiplier/table, or classifier change was introduced.
+
+| Complete source body | New cohort marker clocks | Predicted closures | Observed joint gained frames on its calls |
+| --- | ---: | ---: | ---: |
+| `$01:B564` Room header | 2,105,584 | 8 | 73 |
+| `$01:B759` Adjacent-door merge | 3,722,140 | 12 | 73 |
+| `$01:B7EF` Adjacent-door loader | 2,241,262 | 9 | 73 |
+| `$01:FE41` Overlay attributes | 6,438,816 | 8 | 8 |
+| `$0E:942A` Custom attribute copy | 1,532,442 | 11 | 40 |
+
+Matched-window replay observes **81 gained frames across 81 iterations**, with 0 losing holds. Per-body observed counts overlap and are not isolated marginal effects. New prices account for 16,040,244 clocks; the signed total-counter change is 16,040,244. `routine-cohort-before-after.json` keeps every existing-work/attribution delta separate. The superseded broad-window comparison used different window boundaries; its larger delta is retained separately and excluded from pricing credit. Whole-route gain is measured by the final censuses above.
+
+Highest unresolved leaders remain open: mirror-table padding/loop mapping, the room/door dispatch trees, and excluded sprite loader/cache/disable/proximity owners. `$02:F7CB` reaches the existing priced quadrant decoder through a native alias; palette-cache and lamp-cone aliases receive no second price. No sprite, player, ancilla or garnish file was edited.
+
+The live totals also regress outside the priced loader bodies: `0E/02` missing **360 → 364**, and excluded `07/00` excess **102 → 106**, FP **18 → 19**. These remain open; no price or classifier was fitted to suppress them. The targeted load gains reproduce in both lanes.
+
+Both final full census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero and all holds equal P2. These are periodically seeded CPU logical gates.
+
+| Entry | ROM missing before → after | Live missing before → after | Final excess ROM / live | Final FP ROM / live |
+| --- | ---: | ---: | ---: | ---: |
+| `09/23` | 338 → 338 | 338 → 338 | 0 / 0 | 0 / 0 |
+| `07/02` | 284 → 251 | 284 → 251 | 0 / 0 | 0 / 0 |
+| `07/07` | 239 → 233 | 239 → 233 | 0 / 0 | 0 / 0 |
+| `07/0E` | 118 → 101 | 118 → 101 | 0 / 0 | 0 / 0 |
+| `06/00` | 89 → 74 | 89 → 74 | 0 / 0 | 0 / 0 |
+| `09/0D` | 81 → 81 | 81 → 81 | 0 / 0 | 0 / 0 |
+| `09/16` | 71 → 71 | 71 → 71 | 0 / 0 | 0 / 0 |
+| `07/15` | 64 → 62 | 64 → 62 | 0 / 0 | 0 / 0 |
+| `07/0F` | 56 → 56 | 56 → 56 | 0 / 0 | 0 / 0 |
+| `0F/01` | 55 → 55 | 55 → 55 | 0 / 0 | 0 / 0 |
+| `07/03` | 53 → 45 | 53 → 45 | 0 / 0 | 0 / 0 |
+| `0B/24` | 50 → 50 | 50 → 50 | 0 / 0 | 0 / 0 |
+| `01/00` | 48 → 48 | 48 → 48 | 0 / 0 | 0 / 0 |
+
+All **48 crystal/pendant phases** remain within one frame and stable outcomes match. The retained **default 200k ledger matches all records and EOF**; default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; existing lib-test warnings remain separate. Default library: **2,650 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,185 pass / 0 fail / 2 ignored**. Both CPU SNES suites: **504 / 0 / 7**. Generator/worklist, routine-coverage and inverse tests, exact regeneration and `git diff --check` pass.
+
+All **1,512** supplied ledger/cache files retain size and mtime. Hashes, commands, disjoint suite manifests and `verification.json` bind this stop. Raw predictors/profiles were deleted after summaries; evidence is **210.0 MB**, below 3 GB. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, cache write, cargo fmt, commit/push or one-off repository script was used. The remaining owner worklist and independent per-routine causal isolation are unfinished.

@@ -1668,17 +1668,35 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_DrawRoomOverlay_Apply`
     pub(super) fn dungeon_draw_room_overlay_apply(&mut self, mut p: usize) {
-        for _ in 0..4 {
+        // $01:B892 JSR $FE41, M16/X16: four rows of four attribute
+        // classifications and stores. Overlay drawing is a separate owner.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01fe41));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01fe41);
+        for row in 0..4 {
+            b.block(0x01fe48);
             for i in 0..4 {
+                b.block(0x01fe65);
                 let t = self.game_state.dungeon.room_tilemaps.bg2_tile(p + i) & 0x03fe;
+                if t == 0x00ee { b.taken(0x01fe6f); }
+                else {
+                    b.block(0x01fe71);
+                    if t == 0x00fe { b.taken(0x01fe74); }
+                    else { b.block(0x01fe76); }
+                }
                 let attr = if t == 0x00ee || t == 0x00fe {
                     NativeTile::GROUND
                 } else {
                     NativeTile::PIT
                 };
                 self.dungeon_bg2_attributes_mut().set_bg2_tile(p + i, attr);
+                b.block(0x01fe7b);
+                if i != 3 { b.taken(0x01fe7d); }
             }
+            b.block(0x01fe7f);
+            if row != 3 { b.taken(0x01fea9); }
             p += 64;
         }
+        b.block(0x01feab);
     }
 }

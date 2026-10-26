@@ -255,6 +255,16 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_LoadCustomTileAttr`
     pub(in crate::zelda_rtl) fn dungeon_load_custom_tile_attr(&mut self) {
+        // $02:826D/8CF1/9413/9B85 JSL $0E:942A. The complete body copies
+        // two 64-byte columns; no decompression or attribute child is included.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0e942a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0e942a);
+        for i in 0..32 {
+            b.block(0x0e943e);
+            if i != 31 { b.taken(0x0e9453); }
+        }
+        b.block(0x0e9455);
         let offset = self.asset_u16(
             51,
             self.game_state.world.palette_theme.aux_tile_theme_index() as usize,
@@ -840,6 +850,11 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_LoadHeader`
     pub(super) fn dungeon_load_header(&mut self) {
+        // $01:873A JSR $B564. The whole header body owns its stores, door
+        // list scan and call opcodes; adjacent-room children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b564));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b564);
         self.dungeon_environment_mut()
             .clear_water_puzzle_state_changed();
         self.dungeon_environment_mut()
@@ -852,13 +867,25 @@ impl ZeldaState {
         let bg_v = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let direction = self.game_state.player.follower_link.direction() & 0x0f;
         let (load_h, load_v) = if submodule == 0 {
+            b.block(0x01b576);
             (bg_h & !0x01ff, bg_v & !0x01ff)
         } else if submodule == 21 || (6..18).contains(&submodule) {
+            b.taken(0x01b574);
+            b.block(0x01b582);
+            if submodule == 21 { b.taken(0x01b585); }
+            else { b.block(0x01b587); b.block(0x01b58c); }
+            b.block(0x01b591);
+            b.block(0x01b5ad);
             (
                 bg_h.wrapping_add(0x20) & !0x01ff,
                 bg_v.wrapping_add(0x20) & !0x01ff,
             )
         } else if (direction >> 1) < 2 {
+            b.taken(0x01b574);
+            b.block(0x01b582); b.block(0x01b587);
+            if submodule >= 18 { b.taken(0x01b58a); }
+            else { b.block(0x01b58c); b.taken(0x01b58f); }
+            b.block(0x01b599); b.block(0x01b5a4); b.block(0x01b5ad);
             (
                 bg_h.wrapping_add(
                     DUNGEON_LOAD_HEADER_ADJUSTMENTS[(direction >> 1) as usize] as u16,
@@ -866,6 +893,11 @@ impl ZeldaState {
                 bg_v.wrapping_add(0x20) & !0x01ff,
             )
         } else {
+            b.taken(0x01b574);
+            b.block(0x01b582); b.block(0x01b587);
+            if submodule >= 18 { b.taken(0x01b58a); }
+            else { b.block(0x01b58c); b.taken(0x01b58f); }
+            b.block(0x01b599); b.taken(0x01b5a2); b.block(0x01b5bb);
             (
                 bg_h.wrapping_add(0x20) & !0x01ff,
                 bg_v.wrapping_add(
@@ -875,6 +907,7 @@ impl ZeldaState {
         };
         self.dungeon_room_load_mut()
             .set_loading_bg_offsets(load_h, load_v);
+        b.block(0x01b5d2);
 
         let room = self.game_state.world.location.dungeon_room() as usize;
         let header = self
@@ -924,18 +957,27 @@ impl ZeldaState {
             .set_quadrants_visited(saved & 0x000f);
 
         self.load_current_room_door_tilemap_addresses(room);
+        b.block(0x01b714);
         if (room.wrapping_sub(1) & 0x0f) != 0x0f {
+            b.block(0x01b720);
             self.dungeon_check_adjacent_rooms_for_open_doors(18, room.wrapping_sub(1));
-        }
+        } else { b.taken(0x01b71e); }
+        b.block(0x01b726);
         if (room.wrapping_add(1) & 0x0f) != 0 {
+            b.block(0x01b72f);
             self.dungeon_check_adjacent_rooms_for_open_doors(12, room.wrapping_add(1));
-        }
+        } else { b.taken(0x01b72d); }
+        b.block(0x01b735);
         if room >= 16 {
+            b.block(0x01b73e);
             self.dungeon_check_adjacent_rooms_for_open_doors(6, room - 16);
-        }
+        } else { b.taken(0x01b73c); }
+        b.block(0x01b744);
         if room + 16 < 0x140 {
+            b.block(0x01b750);
             self.dungeon_check_adjacent_rooms_for_open_doors(0, room + 16);
-        }
+        } else { b.taken(0x01b74e); }
+        b.block(0x01b756); b.block(0x01b758);
     }
 
     fn load_current_room_door_tilemap_addresses(&mut self, room: usize) {
@@ -943,43 +985,82 @@ impl ZeldaState {
             .GetRoomDoorInfo(room)
             .expect("dungeon room must have door info")
             .to_vec();
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $01:B701..B712: one clearing/probe pass per record and a final
+        // sentinel pass. This helper is only entered by the header above.
+        for record in doors.chunks_exact(2) {
+            b.block(0x01b701);
+            if u16::from_le_bytes([record[0], record[1]]) == 0xffff {
+                b.taken(0x01b709);
+                break;
+            }
+            b.block(0x01b70b);
+        }
         self.dungeon_doors_mut()
             .load_room_door_tilemap_addresses_from_info(&doors);
     }
 
     /// ROM: `Dungeon_CheckAdjacentRoomsForOpenDoors`
     fn dungeon_check_adjacent_rooms_for_open_doors(&mut self, idx: usize, room: usize) {
+        // $01:B723/B732/B741/B753 JSR $B759, M16/X16. Only this body's
+        // instructions are marked; $B75B's loader remains a separate child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b759));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b759);
         self.load_adjacent_room_doors(room);
+        b.block(0x01b75e);
         for i in 0..8 {
+            b.block(0x01b761);
             let mut a = self.game_state.dungeon.door_setup.adjacent_door(i);
             if a == 0xffff {
+                b.taken(0x01b767); b.block(0x01b758);
                 break;
             }
+            b.block(0x01b769);
             a &= 0x00ff;
             let mut j = idx;
             while j < idx + 6 {
+                if j > idx {
+                    b.block([0x01b775, 0x01b77c, 0x01b783, 0x01b78a, 0x01b791][j - idx - 1]);
+                }
                 if a == DUNGEON_CHECK_ADJACENT_ROOMS_FOR_OPEN_DOORS_LOOKUP_TABLE[j] {
+                    if j - idx < 5 {
+                        b.taken([0x01b773, 0x01b77a, 0x01b781, 0x01b788, 0x01b78f][j - idx]);
+                    }
+                    b.block(0x01b798);
                     let rev = DUNGEON_CHECK_ADJACENT_ROOMS_FOR_OPEN_DOORS_LOOKUP_TABLE2[j] as u8;
                     for door in 0..8 {
+                        b.block(0x01b7a0);
                         let cur = self.game_state.dungeon.doors.door_tilemap_address(door);
                         if cur as u8 == rev {
+                            b.taken(0x01b7a8); b.block(0x01b7b3);
                             let kind = (cur >> 8) as u8;
                             if kind == 0x30 {
+                                b.taken(0x01b7bc);
                                 break;
                             }
+                            b.block(0x01b7be);
+                            if kind == 0x44 { b.taken(0x01b7c1); }
+                            else { b.block(0x01b7c3); }
                             if kind == 0x44 || kind == 0x18 {
+                                b.block(0x01b7c8);
                                 if room
                                     != self.game_state.dungeon.room_tracking.previous_room_index()
                                 {
+                                    b.taken(0x01b7cc);
                                     break;
                                 }
+                                b.block(0x01b7ce);
                                 self.dungeon_environment_mut().clear_trapdoors_down();
-                            } else if self.game_state.dungeon.door_setup.adjacent_door_flags()
-                                & upper_bitmask(i)
-                                == 0
-                            {
-                                break;
+                            } else {
+                                b.taken(0x01b7c6); b.block(0x01b7d3);
+                                if self.game_state.dungeon.door_setup.adjacent_door_flags()
+                                    & upper_bitmask(i) == 0 {
+                                    b.taken(0x01b7d9);
+                                    break;
+                                }
                             }
+                            b.block(0x01b7db);
                             let opened = self
                                 .game_state
                                 .dungeon
@@ -990,21 +1071,50 @@ impl ZeldaState {
                                 .set_opened_doors_including_adjacent(opened);
                             break;
                         }
+                        b.block(0x01b7aa);
+                        if door != 7 { b.taken(0x01b7af); }
+                        else { b.block(0x01b7b1); }
                     }
                     break;
                 }
                 j += 1;
             }
+            if j == idx + 6 { b.taken(0x01b796); }
+            b.block(0x01b7e4);
+            if i == 7 { b.taken(0x01b7e9); b.block(0x01b7ee); }
+            else { b.block(0x01b7eb); }
         }
     }
 
     fn load_adjacent_room_doors(&mut self, room: usize) {
+        // $01:B75B JSR $B7EF, M16/X16. Its sentinel exits through the
+        // shared RTS at $B7EE; no parent loop or door-merge work is included.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b7ef));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b7ef);
         let flags = (self.saved_room_flags(room) & 0xf000) | 0x0f00;
         self.dungeon_room_doors_mut().set_adjacent_door_flags(flags);
         let Some(doors) = self.GetRoomDoorInfo(room).map(Vec::from) else {
             self.dungeon_room_doors_mut().mark_no_adjacent_doors();
             return;
         };
+        for record in doors.chunks_exact(2) {
+            let value = u16::from_le_bytes([record[0], record[1]]);
+            b.block(0x01b818);
+            if value == 0xffff {
+                b.taken(0x01b820); b.block(0x01b7ee);
+                break;
+            }
+            b.block(0x01b822);
+            if value >> 8 == 0x40 {
+                b.taken(0x01b828); b.block(0x01b82f);
+            } else {
+                b.block(0x01b82a);
+                if value >> 8 >= 2 { b.taken(0x01b82d); }
+                else { b.block(0x01b82f); }
+            }
+            b.block(0x01b838);
+        }
         self.dungeon_room_doors_mut()
             .load_adjacent_doors_from_room_info(&doors);
     }
@@ -1658,5 +1768,117 @@ impl ZeldaState {
             self.dungeon_load_and_draw_room_after_early_header(hdma);
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod load_pacing1_tests {
+    use super::*;
+
+    fn native() -> ZeldaState {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut state = ZeldaState::new();
+        state.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+        state.set_lag_free(true);
+        state
+    }
+
+    fn source(state: &ZeldaState, entry: u32, flags: u8) -> snes::Snes {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&state.wram_image());
+        s.cpu.e = false; s.cpu.unpack_flags(flags);
+        s.cpu.k = (entry >> 16) as u8; s.cpu.db = 0;
+        s.cpu.pc = entry as u16;
+        s.cpu.sp = if entry >> 16 == 1 { 0x1fd } else { 0x1fc };
+        s.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+        if entry >> 16 != 1 {
+            s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+        }
+        s
+    }
+
+    #[test]
+    fn custom_attributes_match_rom_markers_all_tilesets() {
+        let mut n = native();
+        for theme in 0..n.asset_raw(51).unwrap().len() / 2 {
+            n.world_palette_theme_mut().set_aux_tile_theme_index(theme as u8);
+            let s = source(&n, 0x0e942a, 0x30);
+            crate::cycle_ledger::assert_rom_marker_work(0x0e942a, s,
+                |s| s.cpu.k == 0x0e && (0x942a..0x9459).contains(&s.cpu.pc),
+                || n.dungeon_load_custom_tile_attr());
+        }
+    }
+
+    #[test]
+    fn overlay_attributes_match_rom_markers_all_tile_branches() {
+        for pattern in [[0x00ee; 4], [0x00fe; 4], [0x0020; 4],
+            [0xc0ef, 0x80ff, 0x43ff, 0x4000]] {
+            let mut n = native();
+            let p = 0x410usize;
+            for row in 0..4 {
+                for col in 0..4 { n.room_write_bg2((p + row * 64 + col) as u16, pattern[col]); }
+            }
+            let mut s = source(&n, 0x01fe41, 0);
+            s.cpu.a = (p * 2) as u16;
+            crate::cycle_ledger::assert_rom_marker_work(0x01fe41, s,
+                |s| s.cpu.k == 1 && (0xfe41..0xfeac).contains(&s.cpu.pc),
+                || n.dungeon_draw_room_overlay_apply(p));
+        }
+    }
+
+    #[test]
+    fn header_matches_rom_markers_scroll_branches_and_room_edges() {
+        for (room, sub, dir) in [(0, 0, 0), (1, 2, 0), (15, 2, 2),
+            (16, 2, 4), (17, 2, 8), (32, 6, 6), (64, 17, 0),
+            (0x10f, 18, 4), (0x13f, 21, 0)] {
+            let mut n = native();
+            n.write_wram_byte(0x11, sub); n.write_wram_byte(0x67, dir);
+            n.write_wram_word(0xa0, room);
+            n.write_wram_word(0xe2, 0x1f8); n.write_wram_word(0xe8, 0x3f8);
+            n.sync_native_game_state_from_ram();
+            let s = source(&n, 0x01b564, 0x30);
+            crate::cycle_ledger::assert_rom_marker_work(0x01b564, s,
+                |s| s.cpu.k == 1 && (0xb564..0xb759).contains(&s.cpu.pc)
+                    && (s.cpu.pc != 0xb758 || s.cpu.sp == 0x1fd),
+                || n.dungeon_load_header());
+        }
+    }
+
+    #[test]
+    fn adjacent_merge_matches_rom_markers_room_door_lists() {
+        for room in [0u16, 1, 15, 16, 17, 32, 64, 0x10f, 0x13f] {
+            for idx in [0usize, 6, 12, 18] {
+                let mut n = native();
+                n.write_wram_word(0xa0, room); n.sync_native_game_state_from_ram();
+                n.dungeon_load_header();
+                let mut s = source(&n, 0x01b759, 0);
+                s.cpu.a = (idx * 2) as u16; s.cpu.x = room;
+                crate::cycle_ledger::assert_rom_marker_work(0x01b759, s,
+                    |s| s.cpu.k == 1 && ((0xb759..0xb7ef).contains(&s.cpu.pc)
+                        && (s.cpu.pc != 0xb7ee || s.cpu.sp == 0x1fd)
+                        || s.cpu.pc == 0xb758),
+                    || n.dungeon_check_adjacent_rooms_for_open_doors(idx, room as usize));
+            }
+        }
+    }
+
+    #[test]
+    fn adjacent_loader_matches_rom_markers_room_edges_and_saved_flags() {
+        for room in [0u16, 1, 15, 16, 17, 32, 64, 0x10f, 0x13f] {
+            for saved in [0u16, 0xf000] {
+                let mut n = native();
+                n.write_wram_word(0xf000 + usize::from(room) * 2, saved);
+                n.sync_native_game_state_from_ram();
+                let mut s = source(&n, 0x01b7ef, 0);
+                s.cpu.x = room;
+                crate::cycle_ledger::assert_rom_marker_work(0x01b7ef, s,
+                    |s| s.cpu.k == 1 && ((0xb7ef..0xb83e).contains(&s.cpu.pc)
+                        || s.cpu.pc == 0xb7ee),
+                    || n.load_adjacent_room_doors(room as usize));
+            }
+        }
     }
 }

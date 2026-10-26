@@ -156,5 +156,11 @@
   {"entry": "1e919f", "end": "1e9225"},
   {"entry": "1e922b", "end": "1e9254"},
   {"entry": "1e925c", "end": "1e92e4"},
-  {"entry": "1e92d2", "end": "1e92e4"}
+  {"entry": "1e92d2", "end": "1e92e4"},
+  {"entry": "0e942a", "end": "0e9459"},
+  {"entry": "01b564", "end": "01b759"},
+  {"entry": "01b758", "end": "01b759"},
+  {"entry": "01b759", "end": "01b7ef", "m8": false, "x8": false},
+  {"entry": "01b7ef", "end": "01b83e", "m8": false, "x8": false},
+  {"entry": "01fe41", "end": "01feac", "m8": false, "x8": false}
 ]
