@@ -9589,6 +9589,74 @@ Fresh main controls and candidate full gates PASS in both cartridge-answer and l
 
 The cartridge census closes 3 previously missing iterations and introduces 0 newly missing iterations. The main metric for this long tail remains the 8,538,016 source instruction clocks closed on the fixed cohort.
 
+## Continuation on `codex/cost-pacing26a` (main `d7096adc`)
+
+Evidence is in `target/cost-pacing26a/`; scratch drivers are `/tmp/cost26a-*.py`. This short batch stops after one verified partial response group for `$07:BA0A/$C4D4`. No sprite, ancilla, overworld, shared ledger or cycle-model production code was edited.
+
+### Fresh main joint baseline
+
+These fresh complete controls census merged batches 24a, 24b and 25a together, with the masked elapsed-field owner included. The main default binary was rebuilt while production sources were clean, then reproduced byte for byte in a second clean build. `main-clean-confirmed` binds its SHA-256; `main-joint-baseline.json` retains both controls.
+
+| Main census | Missing | Excess | FP | Exact lagged | Within one lagged |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| rom | 4,988 | 0 | 0 | 34,641 | 39,561 |
+| live | 5,685 | 590 | 132 | 34,507 | 39,429 |
+
+### Instruction work and ownership
+
+`scripts/rom_block_costs.py` supplies the retained M8/X8 listings. The new indoor range is `$07:BA35..BAF3` / `$07:C4FF..C59D`: carrying/incapacitation short circuits, doorway/orthogonal/layer selection, collision bits and force-direction selection, doorway response, optional X alignment and lock clears. Only selected call/jump opcodes are charged; called and jumped-to bodies outside these ranges receive no new charge. JMP/BRL tails retain their existing source-frame attribution. Early RTS instructions are priced only on paths that execute them. Ordinary clear-floor indoor setup costs 482 clocks for either axis. The later slope/tile response beginning at `$BAF4/$C59E` is still open.
+
+The new outdoor range is `$07:BEAF..BEF7` / `$07:C8E9..C92E`: axis-specific speed setup, pit tests and inline falling return, or liftable-tile selection/store. The ordinary non-dash, non-pit, non-liftable Y path costs 226 clocks; the X path costs 290 clocks without an orthogonal direction or 210 clocks with one. The later water/ledge/movement response starting at `$BEF8/$C92F` is still open.
+
+All charges are lagless-only and carry ROM address comments. The minimal shared `start_movement_collision_checks` change invokes pricing after the real movement probe and before its actual response. Direct continuation/response consumers receive no additional charge. No native behavior, scene threshold, multiplier, residual, lag count, default charge or ROM-timing model was changed.
+
+The CPU-only executed-ROM fixture covers 1,440 response cases across both axes, including carrying, incapacitation, doorway/orthogonal/layer branches, collision masks, locks, pit handler returns, speed and liftable setup. It executes real child instructions and counts only the priced source ranges. The expanded 240-case wrapper fixture executes through the full response and checks the selected source ranges against native exclusive work, with default and lagless controls. All 37 focused instruction-price tests pass.
+
+`CalculateSnapScratch_Y` at `$07:C1FF..C23C` changes X before `$BABE` reads it. The final price follows this actual child result; the `$24` collision fixture exercises the post-call alignment branch. The initial build and focused results are retained under `initial-build/`; all final builds, suites and censuses use the corrected source binding.
+
+### Frozen 2,825-row cohort
+
+Calls are source / native-before / native-after; each mean uses its own lane's call count. Unscoped is not an observed zero-cost call. Source means cover each entire source routine; the two changed native means cover the accumulated entry and partial response work.
+
+| Routine | Calls source / before / after | Source clocks/call | Native clocks/call before / after | Gap before | Gap after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `$07:d077` | 3,249 / 0 / 0 | 1,980.903 | unscoped / unscoped | 6,435,954 | 6,435,954 |
+| `$07:807f` | 2,784 / 2,784 / 2,784 | 2,395.971 | 214.132 / 214.132 | 6,074,240 | 6,074,240 |
+| `$07:e245` | 2,353 / 2,353 / 2,353 | 4,430.403 | 1,918.673 / 1,918.673 | 5,910,100 | 5,910,100 |
+| `$07:ba0a` | 2,754 / 2,754 / 2,754 | 1,988.130 | 277.481 / 581.081 | 4,711,126 | 3,875,012 |
+| `$07:c4d4` | 2,757 / 2,757 / 2,757 | 1,433.880 | 239.765 / 469.001 | 3,292,176 | 2,660,172 |
+| `$07:b7c7` | 2,707 / 0 / 0 | 1,340.590 | unscoped / unscoped | 3,628,976 | 3,628,976 |
+| `$07:d9d8` | 28,295 / 28,295 / 28,295 | 841.864 | 725.157 / 725.157 | 3,302,216 | 3,302,216 |
+| `$07:b64f` | 2,677 / 0 / 0 | 1,164.770 | unscoped / unscoped | 3,118,090 | 3,118,090 |
+
+Summed gap closed: **1,468,118 instruction clocks**. On every cohort row the main-instruction increase equals the BA0A/C4D4 exclusive-clock increase. Existing child clocks were not reassigned.
+
+The six unchanged routines remain open: `$D077` has unpriced item-dependent coordinate/dispatch and response work; `$B7C7/$B64F` have unpriced layer/direction/response work in their atomic paths, distinct from retained instruction continuations. `$807F` handler labels divide source-inherited control work; `$E245` excludes separately owned `$E373/$E3E0/$E42A/$E4D3` movement tails; `$D9D8` prices lookup/indirect dispatch while selected JMP effect bodies inherit its source frame. Those last three raw gaps mix attribution and potentially missing work. No pure alias-only conclusion, fitted residual price or completion claim is made. Fresh listings for all eight are retained.
+
+### Route-wide native exclusive clocks per call
+
+Fresh native profiles cover every one of 1,473,123 iterations. Exclusive routine sums reconcile with their main counters on every row. The retained source profile covers only the frozen missing cohort: full-route source call counts and empirical source clocks/call are unavailable. No partial source sample is substituted.
+
+| Routine | Route-wide source clocks/call | Native calls before / after | Native clocks/call before / after |
+| --- | ---: | ---: | ---: |
+| `$07:d077` | unavailable | 0 / 0 | unscoped / unscoped |
+| `$07:807f` | unavailable | 1,051,125 / 1,051,125 | 205.201 / 205.201 |
+| `$07:e245` | unavailable | 976,645 / 976,645 | 1,853.645 / 1,853.645 |
+| `$07:ba0a` | unavailable | 748,936 / 748,936 | 227.390 / 474.080 |
+| `$07:c4d4` | unavailable | 748,917 / 748,917 | 220.985 / 454.403 |
+| `$07:b7c7` | unavailable | 0 / 0 | unscoped / unscoped |
+| `$07:d9d8` | unavailable | 6,713,923 / 6,713,923 | 767.095 / 767.095 |
+| `$07:b64f` | unavailable | 0 / 0 | unscoped / unscoped |
+
+### CPU-only verification
+
+Both candidate full census gates and both fresh main controls PASS: 1,473,123 iterations each, unexplained zero. Runtime holds equal P2 on every candidate ROM row. Every category retains the same missing/excess/FP and exact/within-one hold metrics as fresh main. These periodically seeded logical CPU checks do not establish continuous physical-field or exact A/V parity. Missing/excess count lag NMIs; FP counts iterations.
+
+| Census | Missing before / after | Excess before / after | FP before / after | Exact lagged before / after | Within one before / after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| rom | 4,988 / 4,988 | 0 / 0 | 0 / 0 | 34,641 / 34,641 | 39,561 / 39,561 |
+| live | 5,685 / 5,685 | 590 / 590 | 132 / 132 | 34,507 / 34,507 | 39,429 / 39,429 |
+
 | Category | Source lag | Missing rom/live | Excess rom/live | FP rom/live | Exact lagged rom/live | Within one rom/live |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `0E/02` | 12,964 | 49 / 370 | 0 / 223 | 0 / 96 | 4,369 / 4,259 | 4,418 / 4,308 |
@@ -9597,6 +9665,8 @@ The cartridge census closes 3 previously missing iterations and introduces 0 new
 | `07/0E` | 7,979 | 121 / 121 | 0 / 0 | 0 / 0 | 4,831 / 4,831 | 4,952 / 4,952 |
 | `08/00` | 6,466 | 19 / 253 | 0 / 0 | 0 / 0 | 138 / 134 | 157 / 153 |
 | `09/23` | 6,054 | 363 / 363 | 0 / 0 | 0 / 0 | 816 / 816 | 1,179 / 1,179 |
+
+| `09/23` | 6,054 | 365 / 365 | 0 / 0 | 0 / 0 | 814 / 814 | 1,179 / 1,179 |
 | `0F/01` | 5,432 | 79 / 79 | 0 / 0 | 0 / 0 | 4,800 / 4,800 | 4,879 / 4,879 |
 | `09/03` | 4,372 | 9 / 9 | 0 / 0 | 0 / 0 | 242 / 242 | 251 / 251 |
 | `07/07` | 4,060 | 263 / 263 | 0 / 0 | 0 / 0 | 2,656 / 2,656 | 2,919 / 2,919 |
@@ -9792,6 +9862,8 @@ The cartridge census closes 3 previously missing iterations and introduces 0 new
 | `1A/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
 
 | Seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
+
+| Crystal/pendant seed | Properties | Overlays | Build | Iris init | Iris opening | Stabilize |
 | ---: | --- | --- | --- | --- | --- | --- |
 | 94000 | 65 / 64 | 5 / 5 | 17 / 17 | 2 / 2 | 35 / 35 | 16 / 16 |
 | 380000 | 84 / 84 | 7 / 7 | 24 / 23 | 2 / 2 | 34 / 34 | 16 / 16 |
@@ -9820,6 +9892,20 @@ Both ordinary candidate builds and the fresh main default build are warning-free
 Default lib-test compilation retains the same 24 fixture dead-code warnings as the prior batch, separate from the warning-free ordinary builds.
 
 | Zelda library | Pass | Fail | Ignored |
+
+All phase counts remain within one; all eight stable room/Link-XY/whole-save checks match. The 162000–163000 rupee window retains the same 27 requests, request gaps and PCM onset gaps as batch 23; median PCM gap is 8.253745 frames. `final-probe-metrics.json` retains every request and gap.
+
+| Capture | Classified differences | $0CFD-only |
+| --- | --- | ---: |
+| rom | `{"lag": 14}` | 10 |
+| live | `{"lag": 14, "polygon": 14740, "song-end-poll": 639}` | 10 |
+| probes (162000–163000) | `{}` | 0 |
+
+The frozen 8,339 original missing rows gain 1,481,986 main instruction clocks, with no negative row and 0 HDMA upper-bound excursions. The same 63 original missing rows retain the masked-init decline flag.
+
+Both final ordinary builds are warning-free. The final default binary matches every state/display/SRAM/PCM/input/context record and EOF against the fresh clean-main default 200k ledger. Default and ROM-timing behavior and charges remain unchanged over this check.
+
+| Library | Pass | Fail | Ignored |
 | --- | ---: | ---: | ---: |
 | default | 2,529 | 1 | 3 |
 | reduced | 2,064 | 0 | 2 |
@@ -9827,3 +9913,7 @@ Default lib-test compilation retains the same 24 fixture dead-code warnings as t
 The only default library failure is the known spotlight caller-return fixture; reduced passes completely. The library manifest verifies complete, disjoint named test unions. Both SNES library suites and Python routine-coverage checks pass. `git diff --check` passes.
 
 No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Scratch drivers stayed in `/tmp`; supplied ledgers/cache and the other checkout’s evidence remained read-only. This stops at one verified two-routine group. Remaining body prices and full-route source reconciliation are unfinished.
+
+The sole default failure is the known spotlight caller-return fixture; reduced passes completely. Both SNES library suites and Python routine-coverage tests pass. The library manifest verifies complete disjoint named unions and binary identities. Lib-test fixture dead-code warnings are separate from the warning-free ordinary builds. `git diff --check` passes.
+
+No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Supplied ledger/cache paths and the other checkout stayed read-only. Scratch drivers stayed in `/tmp`. This stops after one verified partial response group; later BA0A/C4D4 response work, the six other routines and full-route source reconciliation remain open.

@@ -62,8 +62,8 @@ fn cardinal_selection_self_prices_match_executed_rom() {
     let mut base = ZeldaState::new();
     base.set_assets(&assets).unwrap();
     for (entry, end, indoor_tail, outdoor_tail, axis, velocity_address, position_address) in [
-        (0x07_ba0a, 0x07_ba34, 0xba35, 0xbeaf, CollisionAxis::Vertical, 0x30, 0x20),
-        (0x07_c4d4, 0x07_c4fe, 0xc4ff, 0xc8e9, CollisionAxis::Horizontal, 0x31, 0x22),
+        (0x07_ba0a, 0x07_ba34, 0xba35u16, 0xbeafu16, CollisionAxis::Vertical, 0x30, 0x20),
+        (0x07_c4d4, 0x07_c4fe, 0xc4ffu16, 0xc8e9u16, CollisionAxis::Horizontal, 0x31, 0x22),
     ] {
         for indoors in [0u8, 1] {
             for doorway in [0u8, 1, 2] {
@@ -97,13 +97,17 @@ fn cardinal_selection_self_prices_match_executed_rom() {
                         let mut completed = false;
                         for _ in 0..100_000 {
                             let cpu = &source.snes().cpu;
-                            if cpu.k == 7 && [indoor_tail, outdoor_tail, 0x8000].contains(&cpu.pc) {
+                            if cpu.k == 7 && cpu.pc == 0x8000 {
                                 completed = true;
                                 break;
                             }
                             let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
                             let step = source.step().unwrap();
-                            if (entry..=end).contains(&pc) {
+                            let response_end = if matches!(axis, CollisionAxis::Vertical) { 0xbaf3 } else { 0xc59d };
+                            let outdoor_end = if matches!(axis, CollisionAxis::Vertical) { 0xbef7 } else { 0xc92e };
+                            if (entry..=end).contains(&pc)
+                                || ((0x07_0000 | u32::from(indoor_tail))..=(0x07_0000 | response_end)).contains(&pc)
+                                || ((0x07_0000 | u32::from(outdoor_tail))..=(0x07_0000 | outdoor_end)).contains(&pc) {
                                 own += step.transactions.iter()
                                     .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
                             }

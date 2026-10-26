@@ -740,8 +740,15 @@ impl ZeldaState {
         self.detect_player_movement(axis, direction, MovementProbeKind::Cardinal);
         if self.lag_free {
             // $07:BA2E..BA34 / C4F8..C4FE: LDA $1B, BNE and
-            // the outdoor BRL when selected. Response tails remain unpriced.
+            // the outdoor BRL when selected. The response setup below owns its additional self work.
             crate::cycle_ledger::charge(if self.game_state.world.location.is_indoors() { 46 } else { 70 });
+        }
+        if self.lag_free {
+            if self.game_state.world.location.is_indoors() {
+                self.price_indoor_collision_setup(axis);
+            } else {
+                self.price_outdoor_collision_setup(axis);
+            }
         }
         self.finish_movement_collision_response(axis);
     }
@@ -950,6 +957,165 @@ impl ZeldaState {
         } else {
             self.finish_movement_collision_response(CollisionAxis::Vertical);
         }
+    }
+
+    fn price_indoor_collision_setup(&self, axis: CollisionAxis) {
+        let player = &self.game_state.player.follower_link;
+        let tiles = &self.game_state.player.tile_detection;
+        let vertical = matches!(axis, CollisionAxis::Vertical);
+        let locked = player.tile_coll_flag() & 2 != 0;
+        // $07:BADA..BAF3 / C58B..C59D: doorway and direction-lock
+        // clears before the separately unpriced slope/tile response.
+        let clear_locks = if vertical {
+            64 + if locked { 6 } else { 112 }
+        } else {
+            0
+        };
+        let common = if vertical {
+            64 + if locked { 6 } else { 24 } + clear_locks
+        } else {
+            64 + if locked { 6 } else { 136 }
+        };
+        // $07:BA35..BA48 / C4FF..C512: BMI short-circuits LDA $46;
+        // four LSRs, TSB and BRL fold collision bits while carrying/hurt.
+        let mut work = 48;
+        if player.is_lifting_or_carrying() {
+            crate::cycle_ledger::charge(work + 6 + 148 + common);
+            return;
+        }
+        work += 40;
+        if player.incapacitated_timer() != 0 {
+            crate::cycle_ledger::charge(work + 148 + common);
+            return;
+        }
+        work += 6;
+        let orthogonal = player.num_orthogonal_directions() != 0;
+        if !vertical {
+            // $07:C513..C518: orthogonal-axis test and speed clear.
+            work += 40 + if orthogonal { 6 } else { 24 };
+        }
+        // $07:BA49..BA6F / C519..C539: doorway selection, layer test,
+        // and only the call/jump opcodes of separately owned children.
+        work += 56;
+        if player.doorway_state() == if vertical { 2 } else { 1 } {
+            work += 40;
+            if !orthogonal {
+                work += 64;
+                let pass = if self.game_state.dungeon.room_load.header_collision() != 3 {
+                    work += 6;
+                    false
+                } else {
+                    work += 40;
+                    if player.is_on_lower_level() { true } else { work += 6; false }
+                };
+                crate::cycle_ledger::charge(work + if pass { 30 } else if vertical { 76 } else { 122 });
+                return;
+            }
+            work += 6;
+            if vertical {
+                work += 40;
+                if tiles.door_direction_flags() != 0 {
+                    crate::cycle_ledger::charge(work + 68 + clear_locks);
+                    return;
+                }
+                work += 6;
+            }
+        } else {
+            work += 6;
+        }
+        // $07:BA70..BAD9 / C53A..C58A: doorway collision response.
+        let bits = tiles.collision_bits();
+        work += 56;
+        if bits & 0x70 == 0 {
+            crate::cycle_ledger::charge(work + 6 + common);
+            return;
+        }
+        work += 80;
+        if (bits >> 8) & 7 == 0 {
+            work += 6;
+        } else {
+            let velocity = if vertical { player.y_velocity() } else { player.x_velocity() };
+            // LDY/LDA/BMI, optional LDY, indexed table read (no crossing), STA.
+            work += 56 + if (velocity as i8).is_negative() { 6 } else { 16 } + 56;
+        }
+        work += 144;
+        if bits & 0x70 == 0x70 {
+            work += 6;
+        } else {
+            work += 56;
+            if bits & if vertical { 5 } else { 7 } != 0 {
+                work += 6;
+                if !vertical {
+                    // $07:C572..C579: clears, JSR SnapOnX, JML scratch.
+                    crate::cycle_ledger::charge(work + 126);
+                    return;
+                }
+                // $07:BAA8..BACB: falling/snap calls and optional X align.
+                work += 196;
+                if bits & 0x20 == 0 {
+                    work += 6;
+                } else {
+                    work += 56;
+                    if bits & 1 != 0 {
+                        work += 6;
+                    } else {
+                        // $07:C1FF..C23C changes X before $07:BABE reads it.
+                        let mut velocity = player.y_velocity() as i8;
+                        if (bits & 4 != 0 && velocity >= 0) || (bits & 4 == 0 && velocity < 0) {
+                            velocity = velocity.wrapping_neg();
+                        }
+                        let x = player.x().wrapping_add(if velocity < 0 { u16::MAX } else { 1 });
+                        work += 72 + if x & 7 != 1 { 6 } else { 64 };
+                    }
+                }
+            } else {
+                work += 56;
+                if bits & if vertical { 0x20 } else { 0x70 } != 0 {
+                    work += 6;
+                } else {
+                    crate::cycle_ledger::charge(work + 22 + common);
+                    return;
+                }
+            }
+        }
+        // $07:BACC..BAD9 / C57D..C58A: optional unlock and actual RTS.
+        crate::cycle_ledger::charge(work + 64 + if locked { 6 } else { 64 } + 42);
+    }
+
+    fn price_outdoor_collision_setup(&self, axis: CollisionAxis) {
+        let player = &self.game_state.player.follower_link;
+        let tiles = &self.game_state.player.tile_detection;
+        // $07:BEAF..BEBF / C8E9..C8F6: axis-specific speed setup.
+        let mut work = if matches!(axis, CollisionAxis::Vertical) {
+            56 + if player.speed_setting() != 2 { 6 } else {
+                64 + if player.running_state() != 0 { 6 } else { 16 } + 24
+            }
+        } else {
+            40 + if player.num_orthogonal_directions() != 0 { 6 } else {
+                80 + if player.speed_setting() != 2 { 6 } else { 24 }
+            }
+        };
+        // $07:BEC0..BEE4 / C8F7..C91B: pit tests; when falling, the
+        // inline handler checks/stores and RTS replace the liftable setup.
+        work += 56;
+        if tiles.pit_tile() & 5 == 0 {
+            work += 6;
+        } else {
+            work += 56;
+            if tiles.collision_bits() & 2 != 0 {
+                work += 6;
+            } else {
+                work += 56;
+                work += if player.handler_state() == 5 { 6 } else {
+                    32 + if player.handler_state() == 2 { 6 } else { 144 }
+                };
+                crate::cycle_ledger::charge(work + 42);
+                return;
+            }
+        }
+        // $07:BEE5..BEF7 / C91C..C92E: liftable selection and store.
+        work += 64 + if tiles.read_something() & 2 == 0 { 6 + 32 } else { 100 };
+        crate::cycle_ledger::charge(work);
     }
 
     pub(super) fn start_movement_collision_checks_y_handle_indoors(&mut self) {
@@ -2665,6 +2831,122 @@ impl ZeldaState {
                 self.follower_link_state_mut().clear_direction_flags(2);
             } else {
                 self.follower_link_state_mut().clear_direction_flags(1);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod response_price_tests {
+    use super::*;
+
+    #[test]
+    fn collision_response_setup_prices_match_executed_rom() {
+        use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+            CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        let mut base = ZeldaState::new();
+        base.set_assets(&assets).unwrap();
+        let mut cases = Vec::new();
+        // Indoor doorway, collision and early-exit paths, including the
+        // asymmetric Y-only bit masks and the lower-floor special doorway.
+        for doorway in [0u8, 1, 2] {
+            for orthogonal in [0u8, 1] {
+                for bits in [0u16, 2, 0x10, 0x20, 0x21, 0x24, 0x25, 0x70, 0x171] {
+                    for variant in 0..8 {
+                        let mut image = base.wram_image().into_owned();
+                        image[0x1b] = 1;
+                        image[0x6c] = doorway;
+                        image[0x6a] = orthogonal;
+                        image[0x0e..0x10].copy_from_slice(&bits.to_le_bytes());
+                        image[0x308] = if variant == 1 { 0x80 } else { 0 };
+                        image[0x46] = u8::from(variant == 2);
+                        image[0x315] = if variant == 3 { 2 } else { 0 };
+                        image[0x46c] = if variant == 4 || variant == 5 { 3 } else { 0 };
+                        image[0xee] = u8::from(variant == 5);
+                        image[0x62] = u8::from(variant == 6);
+                        image[0x30] = if variant == 7 { 0xff } else { 1 };
+                        image[0x31] = image[0x30];
+                        image[0x22] = if variant == 7 { 1 } else { 2 };
+                        cases.push((true, image));
+                    }
+                }
+            }
+        }
+        // Outdoor speed, pit short circuits and liftable selection. Every
+        // handler branch is exercised, independently of the movement probe.
+        for speed in [0u8, 2, 16] {
+            for orthogonal in [0u8, 1] {
+                for running in [0u8, 1] {
+                    for pit in [0u8, 1] {
+                        for bits in [0u8, 2] {
+                            for handler in [0u8, 2, 5] {
+                                for liftable in [0u8, 2] {
+                                    let mut image = base.wram_image().into_owned();
+                                    image[0x5e] = speed;
+                                    image[0x6a] = orthogonal;
+                                    image[0x372] = running;
+                                    image[0x59] = pit;
+                                    image[0x0e] = bits;
+                                    image[0x5d] = handler;
+                                    image[0x366] = liftable;
+                                    cases.push((false, image));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for axis in [CollisionAxis::Vertical, CollisionAxis::Horizontal] {
+            for (index, (indoors, image)) in cases.iter().enumerate() {
+                let (entry, end, frontier): (u32, u32, &[u16]) = match (axis, indoors) {
+                    (CollisionAxis::Vertical, true) => (0x07_ba35, 0x07_baf3, &[0xbaf4, 0xc23d]),
+                    (CollisionAxis::Horizontal, true) => (0x07_c4ff, 0x07_c59d, &[0xc59e, 0xd667, 0xcb9f]),
+                    (CollisionAxis::Vertical, false) => (0x07_beaf, 0x07_bef7, &[0xbef8]),
+                    (CollisionAxis::Horizontal, false) => (0x07_c8e9, 0x07_c92e, &[0xc92f]),
+                };
+                let mut machine = snes::Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(image);
+                machine.ram[0x1fc..0x200].copy_from_slice(&[0xff, 0x7f, 0, 0]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = 7;
+                machine.cpu.db = 7;
+                machine.cpu.pc = entry as u16;
+                machine.cpu.sp = 0x1fb;
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                let mut own = 0;
+                let mut done = false;
+                for _ in 0..10_000 {
+                    let cpu = &source.snes().cpu;
+                    if cpu.k == 7 && (frontier.contains(&cpu.pc) || cpu.pc == 0x8000) {
+                        done = true;
+                        break;
+                    }
+                    let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+                    let step = source.step().unwrap();
+                    if (entry..=end).contains(&pc) {
+                        own += step.transactions.iter().map(|t|
+                            u64::from(t.duration_master_cycles)).sum::<u64>();
+                    }
+                }
+                assert!(done, "entry={entry:06x} case={index}");
+                let mut native = base.clone();
+                native.import_wram_image(image);
+                native.sync_native_game_state_from_ram();
+                let actual = crate::cycle_ledger::measure_routine_self_work(entry, || {
+                    let _scope = crate::cycle_ledger::routine(entry);
+                    if *indoors { native.price_indoor_collision_setup(axis); }
+                    else { native.price_outdoor_collision_setup(axis); }
+                });
+                assert_eq!(actual, own, "entry={entry:06x} case={index}");
             }
         }
     }
