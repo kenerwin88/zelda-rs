@@ -4019,24 +4019,36 @@ impl ZeldaState {
     }
 
     fn link_oam_set_weapon_vram_offsets(&mut self, r2: usize, sr: &mut SwordResult) -> bool {
+        // $0D:A635 JSR $AB6E: the caller charges only its call opcode.
+        // $0D:AB6E..ABC9 is the complete m16/x16 table-selection body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dab6e));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x0dab6e);
         let j = kPlayerOam_Main_SwordStuff_array1[r2];
         if j < 0 {
+            blocks.taken(0x0dab7b); blocks.block(0x0dabc8);
             sr.r6 = 0xff;
             return true;
         }
+        blocks.block(0x0dab7d);
         let j = j as usize;
         sr.r6 = j;
         sr.r12 = kPlayerOam_Main_SwordStuff_array2[j];
         let mut y = kPlayerOam_Main_SwordStuff_array3[j];
         if j < 29 {
+            blocks.taken(0x0dab8f); blocks.block(0x0dabb5);
             self.follower_link_state_mut()
                 .set_sword_dma_graphics_index(y);
         } else {
+            blocks.block(0x0dab91);
             if self.game_state.player.follower_link.item_in_hand_has(5) {
+                blocks.block(0x0dab99);
                 y = kPlayerOam_Main_SwordStuff_array4[j - 29];
-            }
+            } else { blocks.taken(0x0dab97); }
+            blocks.block(0x0daba2);
             self.follower_link_state_mut().set_link_dma_staging_index(y);
         }
+        blocks.block(0x0dabc6);
         false
     }
 
@@ -4077,27 +4089,56 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     fn link_oam_calculate_sword_sparkle_position(&mut self, oam_pos: usize, oam_x: u8, oam_y: u8) -> usize {
+        // $0D:A6DD JSR $ACD5; the parent owns the call opcode, and $0D:AFC0
+        // keeps its existing separate scalar price. All remaining body work
+        // is $0D:ACD5..AD81, entered m16/x16.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dacd5));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x0dacd5);
         if self.game_state.player.follower_link.handler_state() | self.game_state.player.follower_link.speed_setting() != 0 {
+            blocks.block(0x0dacdd); blocks.block(0x0dad7b);
             return oam_pos;
         }
+        blocks.taken(0x0dacdb); blocks.block(0x0dace0);
         let sword_type = self.game_state.inventory.items.sword_type();
-        if sword_type == 0
-            || sword_type == 1
-            || sword_type == 0xff
-            || self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0
-            || self.game_state.player.follower_link.button_b_frames() >= 9
-        {
+        if sword_type == 0 {
+            blocks.taken(0x0dace7); blocks.block(0x0dacdd); blocks.block(0x0dad7b);
             return oam_pos;
         }
+        blocks.block(0x0dace9);
+        if sword_type == 0xff {
+            blocks.taken(0x0dacec); blocks.block(0x0dacdd); blocks.block(0x0dad7b);
+            return oam_pos;
+        }
+        blocks.block(0x0dacee);
+        if sword_type == 1 {
+            blocks.taken(0x0dacf1); blocks.block(0x0dacdd); blocks.block(0x0dad7b);
+            return oam_pos;
+        }
+        blocks.block(0x0dacf3);
+        if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
+            blocks.taken(0x0dacf8); blocks.block(0x0dacdd); blocks.block(0x0dad7b);
+            return oam_pos;
+        }
+        blocks.block(0x0dacfa);
+        if self.game_state.player.follower_link.button_b_frames() >= 9 {
+            blocks.taken(0x0dad02); blocks.block(0x0dacdd); blocks.block(0x0dad7b);
+            return oam_pos;
+        }
+        blocks.block(0x0dad04);
         let i = self.game_state.player.follower_link.facing_index() * 9 + self.game_state.player.follower_link.button_b_frames_index();
         let mut td = kSwordTipSomething[i];
         if td == 0xffff {
+            blocks.taken(0x0dad20); blocks.block(0x0dad7b);
             return oam_pos;
         }
+        blocks.block(0x0dad22);
         td = (td & !0x3000) | self.game_state.oam.priority_word();
         if self.game_state.player.follower_link.palette_bits_of_oam_word() == 0 {
+            blocks.block(0x0dad2f);
             td = (td & !0x0e00) | 0x0600;
-        }
+        } else { blocks.taken(0x0dad2d); }
+        blocks.block(0x0dad3b);
         self.set_oam_charnum(oam_pos, td);
         self.follower_link_state_mut().set_oam_x_offset(kSwordOamXOffs_Good[i] as u8);
         self.follower_link_state_mut().set_oam_y_offset(kSwordOamYOffs_Good[i] as u8);
@@ -4106,8 +4147,10 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_entry_xy(oam_addr(oam_pos), x, y);
         self.link_oam_calculate_x_offset_relative_link(self.game_state.player.follower_link.oam_x_offset());
+        blocks.block(0x0dad5d);
         let value = self.game_state.player.follower_link.bit9_of_xcoord();
             self.oam_state_mut().set_extended_byte(oam_pos, value);
+        blocks.block(0x0dad7b);
         oam_pos + 1
     }
 
@@ -4340,6 +4383,76 @@ impl ZeldaState {
 mod equipment_cycle_tests {
     use super::*;
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+
+    #[test]
+    fn marker36_sword_sparkle_matches_rom() {
+        let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+        let rom = std::fs::read(path).expect("development ROM for marker validation");
+        for sword in [0, 1, 2, 4, 0xff] {
+            for (handler, speed, mask, frames) in [(1, 0, 0x80, 0), (0, 1, 0x80, 0),
+                (0, 0, 0, 0), (0, 0, 0x80, 9), (0, 0, 0x80, 0),
+                (0, 0, 0x80, 1), (0, 0, 0x80, 4), (0, 0, 0x80, 8)] {
+                for facing in [0, 2, 4, 6] {
+                    for palette in [0, 0x200] {
+                        let mut native = ZeldaState::new();
+                        native.write_wram_byte(0xf359, sword);
+                        native.write_wram_byte(0x5d, handler); native.write_wram_byte(0x5e, speed);
+                        native.write_wram_byte(0x3a, mask); native.write_wram_byte(0x3c, frames);
+                        native.write_wram_byte(0x2f, facing); native.write_wram_word(0x346, palette);
+                        native.write_wram_byte(0, 0xff); native.write_wram_byte(1, 0x80);
+                        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+                        let mut machine = snes::Snes::new();
+                        machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                        machine.ram.copy_from_slice(&native.wram_image());
+                        // Save inventory is bank $7E WRAM in this body.
+                        machine.ram[0xf359] = sword;
+                        machine.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+                        machine.cpu.e = false; machine.cpu.unpack_flags(0);
+                        machine.cpu.k = 0x0d; machine.cpu.db = 0x0d;
+                        machine.cpu.pc = 0xacd5; machine.cpu.sp = 0x1fd;
+                        machine.cpu.x = 0x80;
+                        crate::cycle_ledger::assert_rom_marker_work(0x0dacd5, machine,
+                            |s| s.cpu.k == 0x0d && (0xacd5..0xad82).contains(&s.cpu.pc), || {
+                                native.link_oam_calculate_sword_sparkle_position(0x20, 0xff, 0x80);
+                            });
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn marker36_weapon_vram_offsets_match_rom() {
+        let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"));
+        let rom = std::fs::read(path).expect("development ROM for marker validation");
+        for index in 0..kPlayerOam_Main_SwordStuff_array1.len() {
+            for hand in [0, 1, 4, 5] {
+                // Exercise every pose; pair the alternate held-item table
+                // only with indices inside that ten-entry table.
+                let pose = kPlayerOam_Main_SwordStuff_array1[index];
+                if hand & 5 != 0 && pose >= 39 { continue; }
+                let mut native = ZeldaState::new();
+                native.write_wram_word(2, index as u16);
+                native.write_wram_byte(0x301, hand);
+                native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                machine.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0);
+                machine.cpu.k = 0x0d; machine.cpu.db = 0x0d;
+                machine.cpu.pc = 0xab6e; machine.cpu.sp = 0x1fd;
+                crate::cycle_ledger::assert_rom_marker_work(0x0dab6e, machine,
+                    |s| s.cpu.k == 0x0d && (0xab6e..0xabca).contains(&s.cpu.pc), || {
+                        native.link_oam_set_weapon_vram_offsets(index, &mut SwordResult { r6: 0, r12: 0 });
+                    });
+            }
+        }
+    }
 
     #[test]
     fn lower_body_resume_preserves_upper_stores_and_total_cpu_work() {

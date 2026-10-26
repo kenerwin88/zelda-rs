@@ -4,6 +4,63 @@ use crate::game_state::constants::{
     LINK_IS_BUNNY_MIRROR, LINK_IS_IN_DEEP_WATER,
 };
 
+fn marker36_player_machine(native: &ZeldaState, entry: u32) -> Option<snes::Snes> {
+    let rom = player_caller_test_rom()?;
+    let mut machine = snes::Snes::new();
+    machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+    machine.ram.copy_from_slice(&native.wram_image());
+    machine.ram[0x1fb..0x200].copy_from_slice(&[0xff, 0x7f, 0xff, 0x7f, 0]);
+    machine.cpu.e = false;
+    machine.cpu.unpack_flags(0x30);
+    machine.cpu.k = (entry >> 16) as u8;
+    machine.cpu.db = (entry >> 16) as u8;
+    machine.cpu.pc = entry as u16;
+    machine.cpu.sp = 0x1fa;
+    Some(machine)
+}
+
+#[test]
+fn marker36_moving_background_velocity_matches_rom() {
+    for collision in [0u8, 1, 2] {
+        for direction in [0u8, 1, 15] {
+            for (x, y) in [(0u16, 0xffffu16), (0xff, 0x100), (0x1234, 0x5678)] {
+                let mut native = ZeldaState::new();
+                native.write_wram_byte(0x46c, collision);
+                native.write_wram_byte(0x67, direction);
+                native.write_wram_word(0x22, x); native.write_wram_word(0x20, y);
+                native.write_wram_word(0x31a, 0xff); native.write_wram_word(0x318, 0x100);
+                native.write_wram_word(0xe0, 0xfff0); native.write_wram_word(0xe2, 0x100);
+                native.write_wram_word(0xe6, 0x7fff); native.write_wram_word(0xe8, 0x8000);
+                native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+                let Some(machine) = marker36_player_machine(&native, 0x07b9b3) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x07b9b3, machine,
+                    |s| s.cpu.k == 7 && (0xb9b3..0xb9f7).contains(&s.cpu.pc), || {
+                        native.create_velocity_from_moving_background_marked();
+                    });
+            }
+        }
+    }
+}
+
+#[test]
+fn marker36_sword_cooldown_matches_rom() {
+    for timer in [0u8, 1, 0x7f, 0x80, 0xff] {
+        for (item, position, frames, running) in [(0u8, 0u8, 0u8, 0u8),
+            (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 8, 1), (0, 0, 9, 0)] {
+            let mut native = ZeldaState::new();
+            native.write_wram_byte(0x2e3, timer);
+            native.write_wram_byte(0x301, item); native.write_wram_byte(0x37a, position);
+            native.write_wram_byte(0x3c, frames); native.write_wram_byte(0x372, running);
+            native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+            let Some(machine) = marker36_player_machine(&native, 0x079ac2) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x079ac2, machine,
+                |s| s.cpu.k == 7 && (0x9ac2..0x9ae6).contains(&s.cpu.pc), || {
+                    native.link_handle_sword_cooldown_marked();
+                });
+        }
+    }
+}
+
 fn player_caller_test_rom() -> Option<Vec<u8>> {
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

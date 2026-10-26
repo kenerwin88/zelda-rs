@@ -12222,3 +12222,54 @@ Every state/display/SRAM/PCM/input/context record and EOF of the fresh-main **de
 The complete, disjoint shard manifests bind the tested binaries and expected failure. Both CPU-only SNES suites pass (**504 / 0 / 7** each); all eight block-generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass. All **1,512** supplied ledger/cache files retain their size and mtime. `verification.json`, source/binary hashes, command receipts, full census predictors/classifications and `artifact-sha256.json` bind the final point.
 
 No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit/push or one-off repository script was used. Branch/HEAD remain `codex/cost-pacing32` / `50c43d34`. This stops at the verified CPU-only pricing point above.
+
+## Verified partial continuation on `codex/cost-pacing36` (main `8b0f4ee2`)
+
+Main's joint baseline is ROM **4,584 / 0 / 0**, live **5,284 / 593 / 133** (missing / excess / FP). Fresh pinned-main controls reproduce it. This is a **verified partial stop: the 15M frozen-cohort target remains unfinished**. The four selected bodies add **3,263,068 new marker clocks**; the independently measured signed cohort gap closes by **3,263,068 clocks**. Evidence is in `target/cost-pacing36/`; scratch orchestration stays in `/tmp`.
+
+### Fresh ranking and recovered work
+
+The interrupted run's two player-body edits were retained after instruction/caller review and rebuilt ROM fixtures. Its retained executable could not start (signal 9), so ordinary controls were rebuilt from a pinned `git archive 8b0f4ee2`; the default control recorded a fresh 200k ledger. The final worklist was recomputed with `scripts/rom_block_worklist.py` against the fresh main cohort block receipts and the unchanged frozen batch-22/source inputs. The cohort sets agree exactly: **2,825 iterations**. `ranked-owners.json` ranks **positive signed exclusive owner gaps**, not individual blocks. Fresh main's signed gap is **139,800,230 clocks**.
+
+The leading `$06:DC64` shadow and `$1E:FE78` / `$1D:E8A2` inactive rows alias existing shared scalar owners, so no second body price was added. The selected owners were all zero-native in the fresh control. Larger uncompleted owners remain open. The two player bodies execute at their complete native call sites; no claim of exact physical NMI placement is made from a completed hold count.
+
+### Whole executed bodies
+
+The generator supplies **33 new blocks / 181 ROM instructions**; all **625** existing generated rows remain byte-identical. Runtime changes are lagless-only markers with source-address comments. The actual branches and table choices select instruction work. No scalar conversion, fitted lag residual, threshold, multiplier, scene table, checkpoint-rule change or classifier change was introduced.
+
+- `$07:81CF JSR $9AC2`: sword cooldown owns its complete `$07:9AC2..9AE5` body; sword-swing/control children retain their ownership. Resumed children bypass this new complete-body entry.
+- `$07:B657` and `$07:B848 JSR $B9B3`: moving-background velocity owns `$07:B9B3..B9F6`. Parent markers already own only the call opcode. Partial continuations keep the unmarked semantic entry.
+- `$0D:A635 JSR $AB6E`: complete weapon-VRAM selection at `$0D:AB6E..ABC9`, with m16/x16 entry. The parent's existing scalar price includes only its call instruction.
+- `$0D:A6DD JSR $ACD5`: complete sword-sparkle body at `$0D:ACD5..AD81`, m16/x16 entry. The separately priced `$0D:AFC0` child remains unchanged. The post-call `$0D:AD5D` suffix is included in full.
+
+Four `assert_rom_marker_work` fixtures pass **2,275 unmodified-ROM cases** on the in-repo CPU: signed cooldown branches; collision/direction and coordinate boundaries; all 511 weapon poses, with held-item combinations inside the alternate table's ten-entry domain; and sword, handler/speed, facing, palette and sparkle branches. The first expanded fixture pass caught the omitted sparkle post-call block and an invalid alternate-table test combination; `marker36-tests-rebuilt.log` is superseded by `marker36-tests-final.log` and the final complete suites. No ROM bytes were patched.
+
+| Source owner / body | Frozen-cohort new marker clocks | Native lines added |
+| --- | ---: | ---: |
+| `$07:B9B3` moving-background velocity | 975,264 | 21 |
+| `$0D:ACD5` sword sparkle | 840,604 | 38 |
+| `$07:9AC2` sword cooldown | 750,660 | 20 |
+| `$0D:AB6E` weapon VRAM selection | 696,540 | 13 |
+| **Total** | **3,263,068** | **92** |
+
+Lines are gross native additions including source comments and caller rewiring, excluding **127 fixture lines**, **66 generated-table lines**, the manifest and documentation. `lines-added.json` records every counted native line. Cohort exclusive sums reconcile on every profiled iteration. Both bounded profile replays retain the same raw first WRAM divergence at 884327 (`$0674`, module `10/01`); they are diagnostics, not acceptance gates. Full-route acceptance comes from the separate complete census gates below. The source/native signed gap changes from **139,800,230** to **136,537,162**. `routine-cohort-before-after.json` separates the new markers from every existing-work or attribution delta; those deltas are not new instruction prices. The native new-marker amounts exceed the selected source-exclusive totals by 388 cooldown clocks and 2,446 sparkle clocks; the other two totals match. `selected-source-comparison.json` preserves these differences. These are executed native-work receipts, not proof of equivalent call sequences or exact interruption placement. No whole-route per-owner aggregation is claimed.
+
+### Verification
+
+Both fresh main controls and both final full census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero. Every predictor row has runtime holds equal to P2. Missing/excess count lag NMIs; FP counts zero-source-lag iterations. These are periodically seeded CPU logical gates, not continuous-route or exact A/V proof.
+
+| Lane | Main missing / excess / FP | Final missing / excess / FP |
+| --- | ---: | ---: |
+| ROM | 4,584 / 0 / 0 | **4,558 / 0 / 0** |
+| Live SPC | 5,284 / 593 / 133 | **5,258 / 593 / 133** |
+
+All **48 crystal/pendant phases** remain within one frame of source; stable outcomes match fresh main. Every state/display/SRAM/PCM/input/context record and EOF of the fresh-main **default 200k** ledger matches. Default/ROM-timing accounting is unchanged. Both final ordinary builds are warning-free; existing lib-test-only dead-code warnings remain separate.
+
+| Zelda library | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| Default | 2,616 | 1 known spotlight caller-return failure | 3 |
+| Reduced | 2,151 | 0 | 2 |
+
+Complete, disjoint shard manifests bind the test binaries and observed results. Both CPU-only SNES suites pass **504 / 0 / 7**; all eight block-generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass. All **1,512** supplied ledger/cache files retain size and mtime. `verification.json`, source/binary hashes, command receipts and `artifact-sha256.json` bind this stop. Verified full predictors and raw profiles were deleted after summaries; `pruned-artifacts.json` retains their hashes. Compressed classifications and phase traces remain, with batch evidence below 3 GB.
+
+One accidental `--help` probe entered interactive GPU initialization and failed with no suitable adapter; no rendering completed (`rebuilt-help.log`, `recovery.json`). All verification above uses CPU entry points. No `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Branch/HEAD remain `codex/cost-pacing36` / `8b0f4ee2`. The **15M pricing target is still open**.

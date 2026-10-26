@@ -1293,7 +1293,8 @@ impl ZeldaState {
                 match native_sword_cape_tail {
                     Some(GroundSwordCapeTail::CheckSwordSwing | GroundSwordCapeTail::SwordSwingActive) => self.link_check_for_sword_swing(),
                     Some(GroundSwordCapeTail::SwordControls) => self.handle_sword_controls(),
-                    None => self.link_handle_sword_cooldown(),
+                    // $07:81CF JSR $9AC2; no resumed prefix owns this body.
+                    None => self.link_handle_sword_cooldown_marked(),
                     _ => unreachable!(),
                 }
                 if self.game_state.player.follower_link.handler_state() == 3 {

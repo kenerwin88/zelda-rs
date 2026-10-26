@@ -1178,7 +1178,20 @@ impl ZeldaState {
     }
 
     pub(super) fn create_velocity_from_moving_background(&mut self) {
+        self.create_velocity_from_moving_background_body(crate::cycle_ledger::blocks(false));
+    }
+
+    pub(super) fn create_velocity_from_moving_background_marked(&mut self) {
+        // $07:B9B3..B9F6; full body, excluding no callees. Partial resumes
+        // retain the raw entry because their source cursor already owns work.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07b9b3));
+        self.create_velocity_from_moving_background_body(crate::cycle_ledger::blocks(self.lag_free));
+    }
+
+    fn create_velocity_from_moving_background_body(&mut self, blocks: crate::cycle_ledger::BlockMarkers) {
+        blocks.block(0x07b9b3);
         if self.game_state.dungeon.room_load.header_collision() != 1 {
+            blocks.block(0x07b9ba);
             let x = self
                 .game_state
                 .player
@@ -1208,10 +1221,12 @@ impl ZeldaState {
             self.follower_link_state_mut().set_y(new_y);
             self.follower_link_state_mut().set_x(new_x);
             if self.game_state.player.follower_link.direction() != 0 {
+                blocks.block(0x07b9e6);
                 self.follower_link_state_mut()
                     .add_movement_velocity_delta(x, y);
-            }
-        }
+            } else { blocks.taken(0x07b9e4); }
+        } else { blocks.taken(0x07b9b8); }
+        blocks.block(0x07b9f4);
         self.follower_link_state_mut().clear_lower_level();
     }
 

@@ -87,5 +87,9 @@
   {"entry": "06d051", "end": "06d0ed"},
   {"entry": "06e4db", "end": "06e5b8"},
   {"entry": "06e5b8", "end": "06e5ee"},
-  {"entry": "06e5ee", "end": "06e624"}
+  {"entry": "06e5ee", "end": "06e624"},
+  {"entry": "07b9b3", "end": "07b9f7"},
+  {"entry": "079ac2", "end": "079ae6"},
+  {"entry": "0dab6e", "end": "0dabca", "m8": false, "x8": false},
+  {"entry": "0dacd5", "end": "0dad82", "m8": false, "x8": false}
 ]

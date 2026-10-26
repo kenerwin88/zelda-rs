@@ -2447,7 +2447,8 @@ impl ZeldaState {
                 self.player_limit_directions_inner();
             }
             blocks.block(0x07b657);
-            self.create_velocity_from_moving_background();
+            // $07:B657 JSR $B9B3; parent markers own only the call opcode.
+            self.create_velocity_from_moving_background_marked();
         } else { blocks.taken(0x07b652); }
         blocks.block(0x07b65a);
         self.follower_link_state_mut().mask_direction(0x0f);
@@ -2821,7 +2822,8 @@ impl ZeldaState {
             if double_layer {
                 self.check_primary_collision_layer();
                 blocks.block(0x07b848);
-                self.create_velocity_from_moving_background();
+                // $07:B848 JSR $B9B3; parent markers own only the call opcode.
+                self.create_velocity_from_moving_background_marked();
             } else { blocks.taken(0x07b7de); }
         }
 

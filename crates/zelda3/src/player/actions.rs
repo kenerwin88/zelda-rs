@@ -1217,10 +1217,19 @@ impl ZeldaState {
         self.handle_indoor_camera_and_doors();
     }
 
-    pub(super) fn link_handle_sword_cooldown(&mut self) {
+    pub(super) fn link_handle_sword_cooldown_marked(&mut self) {
+        // $07:9AC2..9AE5; sword-swing/control children own their bodies.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079ac2));
+        self.link_handle_sword_cooldown_body(crate::cycle_ledger::blocks(self.lag_free));
+    }
+
+    fn link_handle_sword_cooldown_body(&mut self, blocks: crate::cycle_ledger::BlockMarkers) {
+        blocks.block(0x079ac2);
         if (self.follower_link_state_mut().decrement_sword_delay_timer() as i8) >= 0 {
+            blocks.taken(0x079ac5); blocks.block(0x079ae5);
             return;
         }
+        blocks.block(0x079ac7);
         self.follower_link_state_mut().clear_sword_delay_timer();
         if self
             .game_state
@@ -1228,15 +1237,22 @@ impl ZeldaState {
             .follower_link
             .has_item_or_position_mode()
         {
+            blocks.taken(0x079ad0); blocks.block(0x079ae5);
             return;
         }
+        blocks.block(0x079ad2);
         if self.game_state.player.follower_link.button_b_frames() < 9 {
+            blocks.block(0x079ad8);
             if !self.game_state.player.follower_link.is_running() {
+                blocks.block(0x079add);
                 self.link_check_for_sword_swing();
-            }
+                blocks.block(0x079ae0);
+            } else { blocks.taken(0x079adb); }
         } else {
+            blocks.taken(0x079ad6); blocks.block(0x079ae2);
             self.handle_sword_controls();
         }
+        blocks.block(0x079ae5);
     }
 
     pub(super) fn handle_sword_sfx_and_beam(&mut self) {
