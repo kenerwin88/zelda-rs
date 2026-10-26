@@ -486,6 +486,8 @@ impl ZeldaState {
             if item!=5 {self.finish_main_tile_response();}
             return;
         }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07_d077));
+        if self.lag_free { crate::cycle_ledger::charge(self.main_tile_probe_setup_master(item)); }
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
 
@@ -527,6 +529,37 @@ impl ZeldaState {
         }
 
         self.finish_main_tile_response();
+    }
+
+    pub(in crate::zelda_rtl) fn main_tile_probe_setup_master(&self, item: u8) -> u64 {
+        // $07:D077..D103: coordinate setup and item dispatch. D798,
+        // D9D8 and DC4A own their bodies; only their JSR opcodes are here.
+        let mut clocks = 148;
+        let index = if item == 8 {
+            let spin = u16::from(self.game_state.player.follower_link.state_for_spin_attack())
+                .wrapping_sub(2);
+            clocks += 108;
+            if spin & 0x8000 != 0 { return clocks + 6 + 22 + 30 + 42; }
+            clocks += 40;
+            if spin >= 8 { return clocks + 6 + 22 + 30 + 42; }
+            clocks += 174;
+            u16::from(TILE_DETECT_MAIN_HANDLER_SPIN_OFFSETS[spin as usize]) + 0x40
+        } else {
+            clocks += 6 + 180;
+            u16::from(item) * 8 + u16::from(self.game_state.player.follower_link.facing())
+        };
+        clocks += 502 + if index + 0x1c > 0xff { 6 } else { 0 }
+            + if index + 0xcc > 0xff { 6 } else { 0 };
+        for (comparison, candidate) in [1, 2, 3, 6, 7, 8].into_iter().enumerate() {
+            if comparison != 0 { clocks += 40; }
+            if item == candidate {
+                // $D0F4..D0FD and $D2C5: selected child call, BRL and RTS.
+                return clocks + 6 + 68 + 22 + 30 + 42;
+            }
+        }
+        clocks += 134 + 54;
+        if item == 5 { clocks += 6 + 30 + 42; }
+        clocks
     }
 
     fn finish_main_tile_response(&mut self) {

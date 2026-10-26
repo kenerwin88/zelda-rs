@@ -337,7 +337,45 @@ impl ZeldaState {
         } else {
             self.overworld_tile_definition_at_location(x, y)
         };
+        if self.lag_free {
+            if let Some(clocks) = self.tile_effect_self_master(tile, is_indoors) {
+                crate::cycle_ledger::charge(clocks);
+            }
+        }
         self.tile_detect_execute_definition(tile, offset as u16, bits, is_indoors);
+    }
+
+    pub(super) fn tile_effect_self_master(&self, tile: NativeTile, indoors: bool) -> Option<u64> {
+        use TileBehavior as B;
+        use TileResult as R;
+        let tile = if self.game_state.player.follower_link.cheat_walk_through_walls() != 0 {
+            NativeTile::GROUND
+        } else { tile };
+        Some(match tile.behavior(indoors) {
+            B::Ignore => 42, // $07:DC54 RTS.
+            B::Solid => 128, // $07:DC50..DC54 LDA/TSB/RTS.
+            // $07:DC98/DC9E/DCA4/DCB6/DCBC/DCC2/DD1B/DE5B/DE61/DEFF:
+            // LDA, optional four ASLs, absolute TSB and RTS. DC86 uses DP.
+            B::Surface { result, shift } =>
+                if result == R::Stair { 128 } else { 136 + 14 * u64::from(shift) },
+            // $07:DC5D..DC71 / DC61..DC71, including the X16 indexed read.
+            B::Slope { diagonal, .. } => if diagonal { 376 } else { 290 },
+            // $07:DC72/DC7D and DD9D/DDA1: single-layer entries also BRA.
+            B::InRoomStaircase { shift } => if shift == 0 {
+                if tile.cartridge_attribute() == 0x1d { 308 } else { 286 }
+            } else if tile.cartridge_attribute() == 0x3d { 332 } else { 310 },
+            // $07:DC8B..DC97: platform test, optional LDA/TSB, RTS.
+            B::Pit => if self.game_state.player.follower_link.has_somaria_platform_state() {
+                128
+            } else { 208 },
+            // $07:DCAE, DDE1 and DDEB. Torch entries reuse A for their
+            // second TSB; hookshottable entries reload it, doors shift it.
+            B::SolidInteractable { misc_shift, cactus: false } => if misc_shift == 4 {
+                246
+            } else if tile.cartridge_attribute() == 0x27 { 222 } else { 190 },
+            B::Aftermath => 198, // $07:DE67..DE6F, LDA/two absolute TSBs/RTS.
+            _ => return None,
+        })
     }
 
     #[cfg(test)]

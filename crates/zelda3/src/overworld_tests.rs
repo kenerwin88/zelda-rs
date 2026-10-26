@@ -619,11 +619,10 @@ fn tile_lookup_prefix_prices_match_executed_rom_paths() {
                         SourcePpuReadState::snes9x_reset()).unwrap();
                     let mut measured = 0;
                     for _ in 0..10000 {
-                        let at = source.snes().cpu.pc;
                         let step = source.step().unwrap();
                         measured += step.transactions.iter()
                             .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
-                        if source.snes().cpu.pc == 0x8000 || at == 0xda27 || at == 0xdc47 { break; }
+                        if source.snes().cpu.pc == 0x8000 { break; }
                     }
                     let before = crate::cycle_ledger::master();
                     if entry == 0x07d798 { native.tile_detect_reset_state(); }
@@ -1468,4 +1467,112 @@ impl ZeldaState {
         }
     }
 
+}
+
+// Execute the real instruction stream, selecting only the requested self PCs.
+fn tile_price_source(entry: u16, image: &[u8], y: u16, flags: u8,
+    stop_at_response: bool) -> u64 {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    let mut machine = snes::Snes::new();
+    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+    machine.ram.copy_from_slice(image);
+    machine.ram[0x1fc..0x200].copy_from_slice(&[0xff, 0x7f, 0, 0]);
+    machine.cpu.e = false;
+    machine.cpu.unpack_flags(flags);
+    machine.cpu.k = 7;
+    machine.cpu.db = 7;
+    machine.cpu.pc = entry;
+    machine.cpu.sp = 0x1fb;
+    machine.cpu.y = y;
+    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+    let mut source = RomCpuTimingProbe::new(machine, clock,
+        SourcePpuReadState::snes9x_reset()).unwrap();
+    let mut measured = 0;
+    for _ in 0..100_000 {
+        let cpu = &source.snes().cpu;
+        let pc = cpu.pc;
+        if cpu.k == 7 && (pc == 0x8000 || (stop_at_response && pc == 0xd104)) {
+            return measured;
+        }
+        let selected = cpu.k == 7 && (!stop_at_response
+            || (0xd077..=0xd103).contains(&pc) || pc == 0xd2c5);
+        let step = source.step().unwrap();
+        if selected { measured += step.transactions.iter()
+            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>(); }
+    }
+    panic!("entry={entry:04x} did not return");
+}
+
+#[test]
+fn main_tile_probe_setup_prices_match_executed_rom() {
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    for item in 0..=8 {
+        for facing in [0u8, 2, 4, 6] {
+            for spin in [0u8, 1, 2, 3, 9, 10, 255] {
+                let mut native = base.clone();
+                let mut image = native.wram_image().into_owned();
+                image[0x1b] = 1;
+                image[0x20..0x24].copy_from_slice(&[0x80, 0, 0x80, 0]);
+                image[0x2f] = facing;
+                image[0x31c] = spin;
+                image[0xec..0xee].copy_from_slice(&0x01ffu16.to_le_bytes());
+                native.import_wram_image(&image);
+                native.sync_native_game_state_from_ram();
+                let source = tile_price_source(0xd077, &image, u16::from(item), 0x30, true);
+                assert_eq!(native.main_tile_probe_setup_master(item), source,
+                    "item={item} facing={facing} spin={spin}");
+                // Ordinary probes exercise placement and the lagless gate;
+                // selected item-action children retain their own accounting.
+                if matches!(item, 0 | 4 | 5) {
+                    for lagless in [false, true] {
+                        let mut state = native.clone();
+                        state.set_lag_free(lagless);
+                        let own = crate::cycle_ledger::measure_routine_self_work(0x07d077,
+                            || state.tile_detect_main_handler(item));
+                        assert_eq!(own, if lagless { source } else { 0 });
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn flat_tile_effect_prices_match_executed_rom() {
+    use crate::tile_definition::NativeTile;
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    let mut count = 0;
+    for indoors in [false, true] {
+        for attribute in 0u8..=255 {
+            for platform in [0u8, 1] {
+                let mut native = ZeldaState::new();
+                let mut image = native.wram_image().into_owned();
+                image[0x1b] = u8::from(indoors);
+                image[0x2f5] = platform;
+                image[6] = attribute;
+                image[0xa..0xc].copy_from_slice(&0x0102u16.to_le_bytes());
+                native.import_wram_image(&image);
+                native.sync_native_game_state_from_ram();
+                let Some(price) = native.tile_effect_self_master(
+                    NativeTile::from_cartridge(attribute), indoors) else { continue; };
+                let pointer = if indoors { 0x7d7d8 } else { 0x7da2a } + u32::from(attribute) * 2;
+                let offset = ((pointer >> 16) as usize & 0x7f) * 0x8000
+                    + (pointer as usize & 0x7fff);
+                let entry = u16::from_le_bytes([rom[offset], rom[offset + 1]]);
+                let measured = tile_price_source(entry, &image, 0, 0, false);
+                assert_eq!(price, measured,
+                    "attribute={attribute:02x} indoors={indoors} platform={platform} entry={entry:04x}");
+                count += 1;
+            }
+        }
+    }
+    assert!(count > 600, "selected flat effect coverage: {count}");
 }
