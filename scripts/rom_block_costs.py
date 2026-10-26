@@ -152,6 +152,7 @@ class Instruction:
         self.length = length
         self.m8 = m8
         self.x8 = x8
+        self.data_bank = None
 
     def price(self, dp_low_nonzero=False):
         """Return (master_cycles, variable_extra, note). variable_extra is the
@@ -189,6 +190,13 @@ class Instruction:
                     note = "+6 if the index crosses a page"
             if mode in ("abs", "abs,x", "abs,y") and self.operand is not None \
                     and 0x2000 <= (self.operand & 0xFFFF) < 0x6000:
+                if self.data_bank is not None and mode == "abs":
+                    # The manifest's caller audit proves DB is fixed in this range.
+                    delta = sum(access_cost((self.data_bank << 16) |
+                                           ((self.operand + byte) & 0xffff)) - 8
+                                for byte in range(data))
+                    if kind == "RMW": delta *= 2
+                    return (cycles - bus) * 6 + bus * 8 + delta, variable, ""
                 # The data bank is unknown statically: with a system bank
                 # this is a register-window access at 6 cycles each.
                 accesses = data * (2 if kind == "RMW" else 1)
@@ -371,6 +379,8 @@ def generated_blocks(rom, entries):
                 continue
             if pc in instructions:
                 old = instructions[pc]
+                if old.data_bank != spec.get('data_bank'):
+                    raise ValueError(f'{pc:06x}: conflicting data banks')
                 if (old.m8, old.x8) != (m8, x8):
                     raise ValueError(f'{pc:06x}: conflicting M/X entry states')
                 if saved_widths[pc] != status:
@@ -381,6 +391,10 @@ def generated_blocks(rom, entries):
                 raise ValueError(f'{pc:06x}: undecodable/truncated instruction')
             if ins.name in ('RTI', 'XCE', 'TCD', 'PLD', 'MVN', 'MVP', 'BRK', 'COP', 'WAI', 'STP'):
                 raise ValueError(f'{pc:06x}: unsupported dynamic state: {ins.name}')
+            bank = spec.get('data_bank')
+            if bank is not None and (not isinstance(bank, int) or not 0 <= bank <= 255):
+                raise ValueError(f'{pc:06x}: invalid data bank')
+            ins.data_bank = bank
             instructions[pc] = ins
             saved_widths[pc] = status
             # A lexically proven PHP/PLP pair restores its actual M/X. Other

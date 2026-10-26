@@ -1798,3 +1798,89 @@ fn marker38_babasu_flash_matches_rom() {
             });
     }
 }
+
+#[test]
+fn marker39_helmasaur_tail_matches_rom() {
+    for (angle, active, start, blink) in [(0u16,0,16,1),(0x80,1,15,1),
+        (0x180,1,0,1),(0x1ff,1,15,0),(0,1,15,0)] {
+        let mut native=marker29_state();
+        for (a,v) in [(0xec0,active),(0xb33,start),(0xb2f,80),(0x31f,blink),
+            (0,0x40),(2,0x40),(5,0x20)] {native.write_wram_byte(a,v);}
+        native.write_wram_word(0xb2d,angle); native.write_wram_word(0xb31,0);
+        native.write_wram_word(0xfd8,0x40); native.write_wram_word(0xfda,0x40);
+        native.sync_native_game_state_from_ram();
+        let Some(machine)=marker29_machine(&native,0x1e8920,0)else{return};
+        let mut info=PrepOamCoordsRet{x:0x40,y:0x40,r4:0,flags:0x20};
+        crate::cycle_ledger::assert_rom_marker_work(0x1e8920,machine,
+            |s|s.cpu.k==0x1e && (0x8920..0x8a85).contains(&s.cpu.pc),
+            ||native.king_helmasaur_operate_tail(0,&mut info));
+    }
+}
+
+#[test]
+fn marker39_helmasaur_multiply_delay_matches_rom() {
+    let native=marker29_state();
+    let Some(machine)=marker29_machine(&native,0x1e8a85,0)else{return};
+    crate::cycle_ledger::assert_rom_marker_work(0x1e8a85,machine,
+        |s|s.cpu.k==0x1e && (0x8a85..0x8a8e).contains(&s.cpu.pc),|| {
+            let _scope=crate::cycle_ledger::routine(0x1e8a85);
+            crate::cycle_ledger::blocks(true).block(0x1e8a85);
+        });
+}
+
+#[test]
+fn marker39_trinexx_head_draw_matches_rom() {
+    for (k,count,angle,sub) in [(1,1,0u8,0),(2,2,0x40,1),(1,5,0x80,0),(2,9,0xff,0)] {
+        let mut native=marker29_state();
+        for (a,v) in [(0xd90,0x40),(0xdb0,0x40),(0xe80,count)] {native.write_wram_byte(a+k,v);}
+        native.write_wram_byte(0x11,sub);
+        for i in 0..count as usize {
+            native.write_wram_byte(0x1d10+k*9+i,angle);
+            native.write_wram_byte(0x1d50+k*9+i,16);
+        }
+        native.sync_native_game_state_from_ram();
+        let Some(machine)=marker29_machine(&native,0x1dbb70,k)else{return};
+        crate::cycle_ledger::assert_rom_marker_work(0x1dbb70,machine,
+            |s|s.cpu.k==0x1d && (0xbb70..0xbc8c).contains(&s.cpu.pc),
+            ||native.trinexx_head_draw(k));
+    }
+}
+
+#[test]
+fn marker39_lanmola_draw_matches_rom() {
+    for (k,n,state,ai,delay,reverse) in [(0,0x80,9,0,0,false),(1,0,8,0,0,false),
+        (2,7,9,5,0,true),(0,2,9,1,24,false),(1,1,9,2,8,false),(2,1,9,2,8,true)] {
+        let mut native=marker29_state();
+        for (a,v) in [(0xdd0,state),(0xd80,ai),(0xe00,delay),(0xdf0,24),
+            (0xd40,if reverse{0xf0}else{0x10}),(0xd50,0x10)] {native.write_wram_byte(a+k,v);}
+        native.write_wram_byte(0x1f81e+k,n);
+        native.sync_native_game_state_from_ram();
+        let Some(machine)=marker29_machine(&native,0x05a64a,k)else{return};
+        crate::cycle_ledger::assert_rom_marker_work(0x05a64a,machine,
+            |s|s.cpu.k==5 && (0xa64a..0xa864).contains(&s.cpu.pc),
+            ||native.lanmola_draw(k));
+    }
+}
+
+#[test]
+fn marker39_zazak_whole_body_matches_rom() {
+    for (state,ai,delay,aux,b) in [(8,0,0,0,0),(9,0,1,0,0),(9,0,0,0,0),
+        (9,1,1,0,0),(9,1,0,0,0),(9,2,0,0,0),(9,2,24,0,0),
+        (9,2,1,0,0),(9,0,1,2,0),(9,0,1,1,0),(9,0,1,0,1)] {
+        let mut native=marker29_state();
+        for (a,v) in [(0xdd0,state),(0xe20,0xa6),(0xd80,ai),(0xdf0,delay),
+            (0xee0,aux),(0xda0,b),(0xd10,0x40),(0xd00,0x40)] {native.write_wram_byte(a,v);}
+        native.write_wram_word(0x20,0x180);native.write_wram_word(0x22,0x180);
+        native.sync_native_game_state_from_ram();
+        let Some(machine)=marker29_machine(&native,0x1e919f,0)else{return};
+        crate::cycle_ledger::assert_rom_marker_work(0x1e8b19,machine,
+            |s|(s.cpu.k==0x1e && ((0x919f..0x9225).contains(&s.cpu.pc)
+                || (0x922b..0x9254).contains(&s.cpu.pc)
+                || ((0x925c..0x92e4).contains(&s.cpu.pc)
+                    && (!(0x92bd..0x92c4).contains(&s.cpu.pc) || s.cpu.sp==0x1fa))))
+                || (s.cpu.k==0 && (0x8784..0x879c).contains(&s.cpu.pc)),|| {
+                let _parent=crate::cycle_ledger::routine(0x1e8b19);
+                native.sprite_zazak_main(0);
+            });
+    }
+}

@@ -528,7 +528,7 @@ impl ZeldaState {
             return;
         }
 
-        self.finish_main_tile_response();
+        self.finish_main_tile_response_body(true);
     }
 
     pub(in crate::zelda_rtl) fn main_tile_probe_setup_master(&self, item: u8) -> u64 {
@@ -563,17 +563,44 @@ impl ZeldaState {
     }
 
     fn finish_main_tile_response(&mut self) {
+        self.finish_main_tile_response_body(false);
+    }
+
+    pub(super) fn finish_main_tile_response_body(&mut self, marked: bool) {
+        // $07:D102 not-taken BEQ enters D104; setup owns through D103 only.
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x07d104);
         if self.game_state.player.tile_detection.thick_grass() & 0x10 != 0 {
+            b.block(0x07d10b);
             let tx = self.game_state.player.follower_link.x() & 0x0f;
             let ty = self.game_state.player.follower_link.y().wrapping_add(8) & 0x0f;
+            if ty < 4 { b.taken(0x07d114); }
+            else { b.block(0x07d116); if ty < 11 { b.taken(0x07d118); } }
+            if !(4..11).contains(&ty) {
+                b.block(0x07d11a);
+                if tx < 4 { b.taken(0x07d120); }
+                else { b.block(0x07d122); if tx < 12 { b.taken(0x07d124); } }
+                if !(4..12).contains(&tx) {
+                    b.block(0x07d126);
+                    if self.game_state.player.follower_link.blink_countdown() != 0 { b.taken(0x07d129); }
+                    else {
+                        b.block(0x07d12b);
+                        if self.game_state.player.follower_link.has_auxiliary_state() { b.taken(0x07d12d); }
+                    }
+                }
+            }
             if !(4..11).contains(&ty)
                 && !(4..12).contains(&tx)
                 && self.game_state.player.follower_link.blink_countdown() == 0
                 && !self.game_state.player.follower_link.has_auxiliary_state()
             {
+                b.block(0x07d12f);
                 if self.game_state.world.location.is_indoors() {
+                    b.block(0x07d133);
                     self.dungeon_flag_room_data_quadrants();
+                    b.block(0x07d137);
                     self.ancilla_sfx2_near(0x33);
+                    b.block(0x07d13c);
                     self.follower_link_state_mut().set_speed_setting(0);
                     self.set_submodule(21);
                     let prev_room = self.game_state.world.location.dungeon_room_index();
@@ -582,63 +609,123 @@ impl ZeldaState {
                     let room = self.game_state.dungeon.header.travel_destination(0);
                     self.set_dungeon_room_index(room);
                     self.handle_layer_of_destination();
-                } else if !self.game_state.player.follower_link.whirlpool_triggered() {
-                    self.do_sword_interaction_with_tiles_mirror();
+                    b.block(0x07d14f);
+                } else {
+                    b.taken(0x07d131); b.block(0x07d151);
+                    if !self.game_state.player.follower_link.whirlpool_triggered() {
+                        b.block(0x07d156);
+                        self.do_sword_interaction_with_tiles_mirror();
+                    } else { b.taken(0x07d154); }
                 }
             }
+            b.block(0x07d159);
         } else {
+            b.taken(0x07d109); b.block(0x07d15c);
             self.follower_link_state_mut().clear_whirlpool_trigger();
             if self.game_state.player.tile_detection.thick_grass() & 1 != 0 {
+                b.block(0x07d166);
                 self.follower_link_state_mut()
                     .set_water_ripple_or_grass_state(2);
-                if !self.link_permission_for_slosh_sounds()
-                    && !self.game_state.player.follower_link.has_auxiliary_state()
-                {
-                    self.ancilla_sfx2_near(26);
+                let slosh = self.link_permission_for_slosh_sounds();
+                b.block(0x07d16e);
+                if slosh { b.taken(0x07d16e); }
+                else {
+                    b.block(0x07d170);
+                    if self.game_state.player.follower_link.has_auxiliary_state() { b.taken(0x07d172); }
+                    else { b.block(0x07d174); self.ancilla_sfx2_near(26); }
                 }
+                b.block(0x07d179); b.block(0x07d2c5);
                 return;
             }
 
+            b.taken(0x07d164); b.block(0x07d17c);
             if self.game_state.player.tile_detection.shallow_water() & 1 != 0 {
+                b.block(0x07d183);
                 self.follower_link_state_mut()
                     .set_water_ripple_or_grass_state(1);
+                if self.game_state.world.location.is_indoors() { b.taken(0x07d18a); }
+                else {
+                    b.block(0x07d18c);
+                    if !self.game_state.player.follower_link.is_in_deep_water() { b.taken(0x07d18f); }
+                    else {
+                        b.block(0x07d191);
+                        if self.game_state.player.follower_link.is_bunny_mirror() { b.taken(0x07d194); }
+                    }
+                }
                 if self.game_state.world.location.is_outdoors()
                     && self.game_state.player.follower_link.is_in_deep_water()
                     && !self.game_state.player.follower_link.is_bunny_mirror()
                 {
+                    b.block(0x07d196);
                     if self.game_state.inventory.items.has_flippers() {
+                        b.block(0x07d19c);
                         self.follower_link_state_mut().clear_deep_water_state();
                         self.follower_link_state_mut()
                             .set_last_direction_from_swim_flags();
                         self.follower_link_state_mut().clear_handler_state();
                     }
-                } else if !self.link_permission_for_slosh_sounds() {
+                    else { b.taken(0x07d19a); b.block(0x07d179); }
+                } else {
+                    b.block(0x07d1ab);
+                    let slosh = self.link_permission_for_slosh_sounds();
+                    b.block(0x07d1ae);
+                    if !slosh {
+                        b.block(0x07d1b0);
                     if self.game_state.world.location.overworld_screen_index() == 0x70 {
+                        b.block(0x07d1b6);
                         self.ancilla_sfx2_near(27);
-                    } else if !self.game_state.player.follower_link.has_auxiliary_state() {
-                        self.ancilla_sfx2_near(28);
+                        b.block(0x07d1bb);
+                    } else {
+                        b.taken(0x07d1b4); b.block(0x07d1bd);
+                        if !self.game_state.player.follower_link.has_auxiliary_state() {
+                            b.block(0x07d1c1); self.ancilla_sfx2_near(28);
+                        } else { b.taken(0x07d1bf); }
                     }
+                    } else { b.taken(0x07d1ae); }
+                    b.block(0x07d1c6);
                 }
+                b.block(0x07d2c5);
                 return;
             }
 
+            b.taken(0x07d181); b.block(0x07d1c9);
+            if self.game_state.world.location.is_indoors() { b.taken(0x07d1cb); }
+            else {
+                b.block(0x07d1cd);
+                if self.game_state.player.follower_link.is_in_deep_water() { b.taken(0x07d1d0); }
+                else {
+                    b.block(0x07d1d2);
+                    if self.game_state.player.tile_detection.deepwater() & 1 == 0 { b.taken(0x07d1d7); }
+                }
+            }
             if self.game_state.world.location.is_outdoors()
                 && !self.game_state.player.follower_link.is_in_deep_water()
                 && self.game_state.player.tile_detection.deepwater() & 1 != 0
             {
+                b.block(0x07d1d9);
                 self.follower_link_state_mut()
                     .set_water_ripple_or_grass_state(1);
-                if !self.link_permission_for_slosh_sounds() {
+                let slosh = self.link_permission_for_slosh_sounds();
+                b.block(0x07d1e1);
+                if !slosh {
+                    b.block(0x07d1e3);
                     if self.game_state.world.location.overworld_screen_index() == 0x70 {
+                        b.block(0x07d1e9);
                         self.ancilla_sfx2_near(27);
-                    } else if !self.game_state.player.follower_link.has_auxiliary_state() {
-                        self.ancilla_sfx2_near(28);
+                        b.block(0x07d1ee);
+                    } else {
+                        b.taken(0x07d1e7); b.block(0x07d1f0);
+                        if !self.game_state.player.follower_link.has_auxiliary_state() {
+                            b.block(0x07d1f4); self.ancilla_sfx2_near(28);
+                        } else { b.taken(0x07d1f2); }
                     }
-                }
+                } else { b.taken(0x07d1e1); }
+                b.block(0x07d1f9); b.block(0x07d2c5);
                 return;
             }
         }
 
+        b.block(0x07d1fc);
         self.follower_link_state_mut()
             .clear_water_ripple_or_grass_state();
         if self
@@ -649,10 +736,12 @@ impl ZeldaState {
             & 1
             != 0
         {
+            b.block(0x07d206); b.block(0x07d2c5);
             self.follower_link_state_mut()
                 .set_item_pickup_in_progress(1);
             return;
         }
+        b.taken(0x07d204); b.block(0x07d20e);
         self.follower_link_state_mut()
             .set_item_pickup_in_progress(0);
 
@@ -664,25 +753,44 @@ impl ZeldaState {
             & 0x10
             != 0
         {
+            b.block(0x07d218);
             self.follower_link_state_mut().clear_given_damage();
-            if !self.game_state.player.follower_link.is_cape_active()
-                && !self.search_for_byrna_spark()
-                && self.game_state.player.follower_link.blink_countdown() == 0
-            {
+            let vulnerable = if self.game_state.player.follower_link.is_cape_active() {
+                b.taken(0x07d21d); false
+            } else {
+                b.block(0x07d21f);
+                let spark = self.search_for_byrna_spark(); b.block(0x07d222);
+                if spark { b.taken(0x07d222); false }
+                else {
+                    b.block(0x07d224);
+                    if self.game_state.player.follower_link.blink_countdown() != 0 {
+                        b.taken(0x07d227); false
+                    } else { true }
+                }
+            };
+            if vulnerable {
+                b.block(0x07d229);
                 self.follower_link_state_mut()
                     .clear_transform_poof_need_and_temp_bunny_timer();
                 if self.game_state.inventory.items.has_moon_pearl() {
+                    b.block(0x07d238);
                     self.follower_link_state_mut()
                         .clear_bunny_transform_after_moon_pearl();
                 }
+                else { b.taken(0x07d236); }
+                b.block(0x07d23d);
                 self.follower_link_state_mut().set_given_damage(8);
                 self.link_cancel_dash();
                 return;
             }
         }
 
+        else { b.taken(0x07d216); }
+        b.block(0x07d24b);
         if self.game_state.player.tile_detection.icy_floor() & 0x11 != 0 {
+            b.block(0x07d252);
             if self.game_state.player.follower_link.flag_moving() != 0 {
+                b.block(0x07d257);
                 if self
                     .game_state
                     .player
@@ -690,42 +798,67 @@ impl ZeldaState {
                     .num_orthogonal_directions()
                     != 0
                 {
+                    b.block(0x07d25b);
                     self.follower_link_state_mut()
                         .set_last_direction_from_swim_flags();
                 }
+                else { b.taken(0x07d259); }
             } else {
+                b.taken(0x07d255); b.block(0x07d263);
                 if self.game_state.player.follower_link.direction() & 0x0c != 0 {
+                    b.block(0x07d269);
                     self.swim_acceleration_mut().set_acceleration(0, 0x0180);
                 }
+                else { b.taken(0x07d267); }
+                b.block(0x07d273);
                 if self.game_state.player.follower_link.direction() & 3 != 0 {
+                    b.block(0x07d279);
                     self.swim_acceleration_mut().set_acceleration(0, 0x0180);
                 }
+                else { b.taken(0x07d277); }
+                b.block(0x07d283);
                 let flag_moving = if self.game_state.player.tile_detection.icy_floor() & 1 != 0 {
-                    1
+                    b.taken(0x07d28a); 1
                 } else {
-                    2
+                    b.block(0x07d28c); 2
                 };
+                b.block(0x07d28e);
                 self.follower_link_state_mut().set_flag_moving(flag_moving);
                 self.follower_link_state_mut()
                     .set_swim_flags_from_last_direction();
-                self.link_reset_swimming_state();
+                self.link_reset_swimming_state_marked();
+                b.block(0x07d29a);
             }
         } else {
+            b.taken(0x07d250); b.block(0x07d29d);
             if self.game_state.player.follower_link.handler_state() != 4 {
+                b.block(0x07d2a3);
                 if self.game_state.player.follower_link.flag_moving() != 0 {
+                    b.block(0x07d2a8);
                     self.follower_link_state_mut()
                         .set_last_direction_from_swim_flags();
                 }
-                self.link_reset_swimming_state();
-            }
+                else { b.taken(0x07d2a6); }
+                b.block(0x07d2ad);
+                self.link_reset_swimming_state_marked();
+            } else { b.taken(0x07d2a1); }
+            b.block(0x07d2b1);
             self.follower_link_state_mut().set_flag_moving(0);
         }
 
+        b.block(0x07d2b4);
+        if self.game_state.player.tile_detection.spike_cactus_tiles() & 0x10 == 0 { b.taken(0x07d2b9); }
+        else {
+            b.block(0x07d2bb);
+            if self.game_state.player.follower_link.blink_countdown() != 0 { b.taken(0x07d2be); }
+        }
         if self.game_state.player.tile_detection.spike_cactus_tiles() & 0x10 != 0
             && self.game_state.player.follower_link.blink_countdown() == 0
         {
+            b.block(0x07d2c0);
             self.follower_link_state_mut().set_blink_countdown(58);
         }
+        b.block(0x07d2c5);
     }
 
     pub(in crate::zelda_rtl) fn start_movement_collision_checks(&mut self, axis: CollisionAxis) {

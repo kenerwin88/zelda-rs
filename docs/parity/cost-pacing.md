@@ -12373,3 +12373,45 @@ All **48 crystal/pendant phases** remain within one frame; stable outcomes match
 - Both CPU-only SNES suites: **504 / 0 / 7**. All eight generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass.
 
 Complete disjoint library manifests, ROM/source/binary hashes, call-site audit, per-routine clock/line summaries and `verification.json` bind this point. All **1,512** supplied ledger/cache files retain size and mtime. Raw profiles/predictors were deleted after summaries; hashes remain in the pruning manifest. Evidence remains below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used.
+
+## Verified batch 39 on `codex/cost-pacing39` (main `31633b01`)
+
+**13,994,280 frozen-cohort clocks closed; the 12M target is met.** New marker work equals the signed-gap reduction: **111,358,208 → 97,363,928**, on the unchanged **2,825 iterations**. The ranking reconciles to batch 38's retained cohort; no main controls were rerun. Evidence is in `target/cost-pacing39/`.
+
+The owner audit preserves already-priced drawing, coordinate, velocity, layer, inactive and dispatch aliases. Selected bodies complete ground control, tile responses, Zazak, class-2 collision and boss drawing. Larger uncompleted owners remain open. Ground-layer ancilla collision's tile-3 upper-layer predicate differs from the ROM and remains unpriced. Complete entries are marked; checkpoint suffixes retain their raw entries. Called bodies keep separate ownership.
+
+The generator adds **300 blocks / 1,179 ROM instructions**; all **930 existing rows remain byte-identical**. Its explicit data-bank option prices proven absolute register accesses in the two hardware-multiply draws; unknown/indexed register-window costs still fail shut. Fixtures cover the I/O bus costs, table crossing, signed quadrants, drawing loops, returns and control branches. Nine `assert_rom_marker_work` fixtures pass **66 unmodified-ROM cases**. Local dispatch retains the source's stack-pop ownership: `$00:8781` belongs to its child; `$8784..879B` belongs to the caller. No scalar conversion, lag fitting, scene threshold/multiplier/table, classifier or checkpoint change was introduced.
+
+| Body / source entry | Frozen clocks closed | Native lines added |
+| --- | ---: | ---: |
+| `$07:81A0` Ground-control body | 3,961,714 | 128 |
+| `$07:D104` Main tile-response suffix | 2,483,630 | 156 |
+| `$1E:8920` Helmasaur tail | 1,600,220 | 60 |
+| `$1E:919F` Zazak complete body | 1,400,988 | 98 |
+| `$1D:BB70` Trinexx head draw | 1,120,784 | 40 |
+| `$05:A64A` Lanmola draw | 1,036,260 | 63 |
+| `$08:8C43` Ancilla class-2 inner | 818,876 | 30 |
+| `$07:983A` Reused swimming reset | 719,004 | 0 |
+| `$08:8BCF` Ancilla class-2 wrapper | 522,880 | 35 |
+| `$1E:8A85` Multiply-delay body | 285,516 | 0 |
+| `$00:8781` Shared local-dispatch entry | 44,408 | 0 |
+| **Total** | **13,994,280** | **610** |
+
+Lines are gross native additions, including comments/rewiring and shared visibility; fixtures, generated rows, manifest, generator and documentation are excluded. Shared-entry and delay marker lines are counted at their enclosing caller. Every cohort iteration's exclusive sum reconciles; there is **no scalar or existing-work attribution delta**. These are new native instruction-work receipts, not equivalent-call-sequence or physical-NMI proof. The bounded replay retains its diagnostic first WRAM divergence at 884327. An initial receipt's local-dispatch attribution was corrected before final census verification; its total clocks were unchanged.
+
+Both final full census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; every runtime hold equals P2. These are periodically seeded CPU logical gates, not continuous-route or exact A/V proof.
+
+| Lane | Retained main missing / excess / FP | Batch 39 missing / excess / FP |
+| --- | ---: | ---: |
+| ROM | 4,433 / 0 / 0 | **4,352 / 0 / 0** |
+| Live SPC | 5,129 / 589 / 131 | **5,052 / 593 / 132** |
+
+All **48 crystal/pendant phases** remain within one frame; stable outcomes match batch 38. The retained **default 200k ledger matches all records and EOF**. Default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; existing lib-test-only warnings remain separate.
+
+- Default Zelda library: **2,654 pass / 1 known spotlight caller-return failure / 3 ignored**.
+- Reduced Zelda library: **2,189 pass / 0 fail / 2 ignored**.
+- Both CPU-only SNES suites: **504 / 0 / 7**. Nine generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass.
+
+The complete library runs exposed an old setup-only assertion that now includes the response suffix. Its test-only correction compares full handler self work with the ROM; both affected helper users pass targeted rechecks in both modes. The manifests preserve the original complete runs and record these replacements; production sources stayed frozen throughout the censuses.
+
+Complete library manifests, ROM/source/binary hashes, call-site audit and per-routine clock/line summaries bind this point. All **1,512** supplied ledger/cache files retain size and mtime. Raw predictors/profiles were deleted after their summaries; pruning hashes and compressed traces remain. Evidence is below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used.

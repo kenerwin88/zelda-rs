@@ -1561,7 +1561,20 @@ impl ZeldaState {
 
     // void KingHelmasaur_OperateTail(int k, PrepOamCoordsRet *info) {  // 9e8920
     pub(in crate::zelda_rtl) fn king_helmasaur_operate_tail(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
+        // $1E:854C JSR $8920: complete tail, DB=$1E (system-bank I/O).
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8920));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let lag_free = self.lag_free;
+        let nop8 = || {
+            let _scope = lag_free.then(|| crate::cycle_ledger::routine(0x1e8a85));
+            b.block(0x1e8a85);
+        };
+        b.block(0x1e8920);
         for (i, &radius_multiplier) in KING_HELMASAUR_OPERATE_TAIL_MULT_B.iter().enumerate() {
+            b.block(0x1e8923);
+            if self.sprite_slot_view(k).anim_clock() == 0 { b.taken(0x1e892a); }
+            else { b.block(0x1e892c); }
+            b.block(0x1e8931);
             let j = i + if self.sprite_slot_view(k).anim_clock() != 0 {
                 16
             } else {
@@ -1572,6 +1585,12 @@ impl ZeldaState {
                 .gen1_word()
                 .wrapping_add(self.overlord_slot_view(1).gen2_word());
             let f = ((rs >> 8) as u8).wrapping_sub(1);
+            if sign8(f) { b.block(0x1e8949); } else { b.taken(0x1e8947); }
+            b.block(0x1e894c);
+            if j >= 16 { b.crossing(0x1e894f); }
+            nop8(); b.block(0x1e8958);
+            if sign8(f) { b.block(0x1e895e); } else { b.taken(0x1e895c); }
+            b.block(0x1e8960); nop8(); b.block(0x1e8976);
             let abs_rs = if sign8(f) { 0u16.wrapping_sub(rs) } else { rs };
             let r6 = ((u16::from(abs_rs as u8)
                 * u16::from(KING_HELMASAUR_OPERATE_TAIL_MULTIPLIERS[j]))
@@ -1585,15 +1604,32 @@ impl ZeldaState {
             let r15 = ((u16::from(self.overlord_slot_view(7).gen1())
                 * u16::from(radius_multiplier))
                 >> 8) as u8;
+            if SHARED_SINE_LOOKUP_TABLE[usize::from(angle as u8)] >> 8 != 0 { b.taken(0x1e89aa); }
+            else { b.block(0x1e89ac); nop8(); b.block(0x1e89b2); }
+            b.block(0x1e89ba);
+            if angle & 0x100 == 0 { b.taken(0x1e89bc); } else { b.block(0x1e89be); }
+            b.block(0x1e89c1);
+            if SHARED_SINE_LOOKUP_TABLE[usize::from(angle.wrapping_add(0x80) as u8)] >> 8 != 0 { b.taken(0x1e89d0); }
+            else { b.block(0x1e89d2); nop8(); b.block(0x1e89d8); }
+            b.block(0x1e89e0);
+            if angle.wrapping_add(0x80) & 0x100 == 0 { b.taken(0x1e89e2); }
+            else { b.block(0x1e89e4); }
+            b.block(0x1e89e7);
+            if i == 15 { b.taken(0x1e89f8); } else { b.block(0x1e89fa); }
             let mut orbit = self.overlord_slot_view_mut(i + 5);
             orbit.set_x_low(helmasaur_sin(angle, r15) as u8);
             orbit.set_y_low(helmasaur_sin(angle.wrapping_add(0x80), r15).wrapping_sub(40) as u8);
         }
 
+        b.block(0x1e89fd);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let start = self.overlord_slot_view(3).gen2() as usize;
         let mut is_hit = false;
+        if start == 16 { b.taken(0x1e8a0a); } else { b.block(0x1e8a0c); }
         for i in start..16usize {
+            b.block(0x1e8a0e);
+            if i == start { b.block(0x1e8a29); } else { b.taken(0x1e8a27); }
+            b.block(0x1e8a2b);
             let orbit = self.overlord_slot_view(i + 5);
             let x = orbit.x_low().wrapping_add(info.x as u8);
             let y = orbit.y_low().wrapping_add(info.y as u8);
@@ -1604,6 +1640,11 @@ impl ZeldaState {
                 if i == start { 0xe4 } else { 0xac },
                 info.flags ^ 0x1b,
             );
+            if self.game_state.player.follower_link.blink_countdown() != 0 { b.taken(0x1e8a3e); }
+            else {
+                b.block(0x1e8a40);
+                if self.sprite_slot_view(k).anim_clock() == 0 { b.taken(0x1e8a42); }
+            }
             if self.game_state.player.follower_link.blink_countdown() == 0
                 && self.sprite_slot_view(k).anim_clock() != 0
             {
@@ -1612,20 +1653,39 @@ impl ZeldaState {
                 let link_y = (self.game_state.player.follower_link.y() as u8)
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low())
                     .wrapping_add(8);
+                b.block(0x1e8a44);
+                if link_x.wrapping_sub(x).wrapping_add(12) >= 24 { b.taken(0x1e8a4e); }
+                else {
+                    b.block(0x1e8a50);
+                    if link_y.wrapping_sub(y).wrapping_add(8) >= 16 { b.taken(0x1e8a5c); }
+                }
                 if link_x.wrapping_sub(x).wrapping_add(12) < 24
                     && link_y.wrapping_sub(y).wrapping_add(8) < 16
                 {
+                    b.block(0x1e8a5e);
                     is_hit = true;
                     self.follower_link_state_mut().set_actual_velocity_xy(0, 56);
                 }
             }
+            b.block(0x1e8a66);
+            if i != 15 { b.taken(0x1e8a69); }
             oam += 4;
         }
+        b.block(0x1e8a6b);
+        if !is_hit { b.taken(0x1e8a6e); }
+        else {
+            b.block(0x1e8a70);
+            if self.game_state.player.follower_link.is_menu_blocked() { b.taken(0x1e8a73); }
+        }
         if is_hit && !self.game_state.player.follower_link.is_menu_blocked() {
+            b.block(0x1e8a75);
             self.sprite_attempt_damage_to_link_plus_recoil(k);
         }
+        b.block(0x1e8a79);
         self.sprite_correct_oam_entries(k, 16, 2);
+        b.block(0x1e8a81);
         if let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) {
+            b.block(0x1e8a84);
             info.x = prepped.0;
             info.y = prepped.1;
             info.r4 = 0;
@@ -2088,8 +2148,19 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Lanmola_Draw(int k) {  // 85a64a
     pub(super) fn lanmola_draw(&mut self, k: usize) {
+        // $05:A3A6 JSR $A64A: complete drawing; prefix checkpoints keep their raw entries.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05a64a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05a64a);
         let continuation = self.lanmola_draw_through_subtype2_increment(k);
-        self.lanmola_draw_after_subtype2_increment(k, continuation);
+        b.block(0x05a66d);
+        if self.sprite_slot_view(k).state() != 9 { b.taken(0x05a6ab); }
+        else {
+            b.block(0x05a6ad);
+            if self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag != 0 { b.taken(0x05a6b2); }
+            else { b.block(0x05a6b4); }
+        }
+        self.lanmola_draw_after_subtype2_increment_body(k, continuation, true);
     }
 
     pub(in crate::zelda_rtl) fn complete_lanmola_after_subtype2_increment(
@@ -2199,20 +2270,28 @@ impl ZeldaState {
         k: usize,
         continuation: LanmolaDrawContinuation,
     ) {
+        self.lanmola_draw_after_subtype2_increment_body(k, continuation, false);
+    }
+
+    fn lanmola_draw_after_subtype2_increment_body(
+        &mut self, k: usize, continuation: LanmolaDrawContinuation, marked: bool,
+    ) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x05a6bd);
         let mut r2 = continuation.r2;
         let mut r5 = continuation.r5;
 
         let r3 = self.sprite_slot_view(k).oam_flags() | self.sprite_slot_view(k).object_priority();
         let n = self.garnish_slot_view(k).y_low();
-        if sign8(n) {
-            return;
-        }
+        if sign8(n) { b.block(0x05a6cb); return; }
+        b.taken(0x05a6c9); b.block(0x05a6cc);
 
         let reverse = sign8(self.sprite_slot_view(k).y_velocity());
         let mut oam = self.game_state.oam.current_pointer_usize() + if reverse { 7 * 4 } else { 0 };
         let oam_step: isize = if reverse { -4 } else { 4 };
         let mut i = n;
         loop {
+            b.block(0x05a6e3);
             let hist = usize::from(r2) + k * 64;
             r2 = r2.wrapping_sub(8) & 63;
             let trail = self.lanmola_flat_trail_entry(hist);
@@ -2221,22 +2300,31 @@ impl ZeldaState {
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
             if !sign8(trail.z_offset()) {
+                b.block(0x05a705);
                 let entry_y = trail
                     .y_low()
                     .wrapping_sub(trail.z_offset())
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
                 self.oam_state_mut().set_entry_y(oam, entry_y);
             }
+            else { b.taken(0x05a703); }
+            b.block(0x05a713);
             let dir = usize::from(trail.direction());
+            if n != 7 { b.taken(0x05a71f); }
+            else { b.block(0x05a721); if i == 0 { b.taken(0x05a723); } }
             let charnum = if n != 7 || i != 0 {
+                b.block(0x05a725);
                 if n == i {
+                    b.block(0x05a72b);
                     LANMOLA_DRAW_CHARS_1[dir]
                 } else {
-                    0xc6
+                    b.taken(0x05a729); 0xc6
                 }
             } else {
+                b.block(0x05a730);
                 LANMOLA_DRAW_CHARS_0[dir]
             };
+            b.block(0x05a733);
             self.oam_state_mut().set_entry_char(oam, charnum);
             self.oam_state_mut()
                 .set_entry_flags(oam, LANMOLA_DRAW_FLAGS[dir] | r3);
@@ -2245,14 +2333,15 @@ impl ZeldaState {
                 .set_extended_byte((oam - OAM_BUF) / 4, value);
             oam = (oam as isize + oam_step) as usize;
             i = i.wrapping_sub(1);
-            if sign8(i) {
-                break;
-            }
+            if sign8(i) { break; }
+            b.taken(0x05a74f);
         }
 
+        b.block(0x05a751);
         oam = self.game_state.oam.current_pointer_usize() + 8 * 4;
         i = n;
         loop {
+            b.block(0x05a755);
             let hist = usize::from(r5) + k * 64;
             r5 = r5.wrapping_sub(8) & 63;
             let trail = self.lanmola_flat_trail_entry(hist);
@@ -2261,12 +2350,15 @@ impl ZeldaState {
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
             if !sign8(trail.z_offset()) {
+                b.block(0x05a775);
                 let entry_y = trail
                     .y_low()
                     .wrapping_add(10)
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
                 self.oam_state_mut().set_entry_y(oam, entry_y);
             }
+            else { b.taken(0x05a773); }
+            b.block(0x05a781);
             self.oam_state_mut().set_entry_char(oam, 0x6c);
             self.oam_state_mut().set_entry_flags(oam, 0x34);
             let value = 2;
@@ -2274,13 +2366,15 @@ impl ZeldaState {
                 .set_extended_byte((oam - OAM_BUF) / 4, value);
             oam += 4;
             i = i.wrapping_sub(1);
-            if sign8(i) {
-                break;
-            }
+            if sign8(i) { break; }
+            b.taken(0x05a798);
         }
 
+        b.block(0x05a79a);
         if self.sprite_slot_view(k).ai_state() == 1 {
+            b.block(0x05a7a2); b.block(0x05a820);
             self.oam_allocate_from_region_b(4);
+            b.block(0x05a826);
             let oam = self.game_state.oam.current_pointer_usize();
             let j = usize::from(
                 LANMOLA_DRAW_BODY_FRAME_INDICES
@@ -2298,18 +2392,30 @@ impl ZeldaState {
                 LANMOLA_DRAW_BODY_FLAGS[j] | 0x31,
                 2,
             );
-        } else if self.sprite_slot_view(k).ai_state() != 5
+        } else {
+            b.taken(0x05a7a0); b.block(0x05a7a5);
+            if self.sprite_slot_view(k).ai_state() == 5 { b.taken(0x05a7a7); }
+            else {
+                b.block(0x05a7a9);
+                if self.sprite_slot_view(k).delay_aux1() == 0 { b.taken(0x05a7ac); }
+            }
+            if self.sprite_slot_view(k).ai_state() != 5
             && self.sprite_slot_view(k).delay_aux1() != 0
         {
+            b.block(0x05a7ae);
             if (((self.sprite_slot_view(k).y_velocity() >> 6)
                 ^ self.sprite_slot_view(k).ai_state())
                 & 2)
                 != 0
             {
+                b.block(0x05a7bc);
                 self.oam_allocate_from_region_b(8);
+                b.block(0x05a7c2);
             } else {
+                b.taken(0x05a7ba); b.block(0x05a7c4);
                 self.oam_allocate_from_region_c(8);
             }
+            b.block(0x05a7ca);
             let mut oam = self.game_state.oam.current_pointer_usize();
             let r6 = usize::from((((self.sprite_slot_view(k).delay_aux1() >> 2) & 3) ^ 3) * 2);
             let x = self
@@ -2321,6 +2427,8 @@ impl ZeldaState {
                 .wall_collision()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
             for i in (0..=1).rev() {
+                b.block(0x05a7e9);
+                if i != 0 { b.taken(0x05a81c); }
                 let j = i + r6;
                 self.set_oam_plain_at(
                     oam,
@@ -2332,6 +2440,9 @@ impl ZeldaState {
                 );
                 oam += 4;
             }
+            b.block(0x05a81e);
+        }
+            b.block(0x05a81f);
         }
     }
 }

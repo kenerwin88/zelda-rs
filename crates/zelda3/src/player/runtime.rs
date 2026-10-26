@@ -1199,12 +1199,18 @@ impl ZeldaState {
     }
 
     pub(super) fn player_handler_00_ground_3(&mut self) {
+        // $07:812E BRL $81A0: full ground body; measured suffix entries stay unmarked.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0781a0);
         self.apply_links_movement_to_camera_called = false;
         self.follower_link_state_mut().set_z(0xffff);
         self.follower_link_state_mut().set_actual_z_velocity(0xff);
         self.follower_link_state_mut().set_recoil_timer(0);
 
-        if !self.link_handle_toss() {
+        let tossed = self.link_handle_toss();
+        b.block(0x0781ae);
+        if !tossed {
+            b.block(0x0781b0);
             self.ground_apress_defers_atomic_item_receipt = true;
             self.link_handle_a_press_marked();
             self.ground_apress_defers_atomic_item_receipt = false;
@@ -1223,9 +1229,10 @@ impl ZeldaState {
                 // joypad latch it holds now.
                 return;
             }
-            self.player_handler_00_ground_3_after_a_press(true);
+            self.player_handler_00_ground_3_after_a_press_body(true, true);
         } else {
-            self.player_handler_00_ground_3_after_a_press(false);
+            b.taken(0x0781ae);
+            self.player_handler_00_ground_3_after_a_press_body(false, true);
         }
     }
 
@@ -1233,6 +1240,11 @@ impl ZeldaState {
     /// out so a chest receipt's completion slice can resume it after the
     /// decompression the ROM blocks on (see the ground_apress_tail receipt).
     pub(in crate::zelda_rtl) fn player_handler_00_ground_3_after_a_press(&mut self, ran_a_press: bool) {
+        self.player_handler_00_ground_3_after_a_press_body(ran_a_press, false);
+    }
+
+    fn player_handler_00_ground_3_after_a_press_body(&mut self, ran_a_press: bool, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
         let mut clear_vel_after = false;
         let native_y_tail = self.early_ground_y_item_tail.take();
         let native_sword_cape_tail = self.early_ground_sword_cape_tail.take();
@@ -1264,6 +1276,19 @@ impl ZeldaState {
         if native_y_tail.is_some() {
             assert!(ran_a_press, "native Y-item continuation requires its A-press caller");
         }
+        if ran_a_press {
+            b.block(0x0781b3);
+            if self.game_state.player.follower_link.has_action_state()
+                || self.game_state.player.follower_link.has_grabbing_wall_state() { b.taken(0x0781b9); }
+            else {
+                b.block(0x0781bb);
+                if self.game_state.player.follower_link.has_pull_action_state() { b.taken(0x0781be); }
+                else {
+                    b.block(0x0781c0);
+                    if self.game_state.player.follower_link.handler_state() == 17 { b.taken(0x0781c4); }
+                }
+            }
+        }
         let run_y_item = match native_y_tail {
             Some(crate::cycle_models::ground_y_item_prefix::GroundYItemTail::SkipYItem) => false,
             Some(_) => true,
@@ -1274,6 +1299,7 @@ impl ZeldaState {
                 && self.game_state.player.follower_link.handler_state() != 17,
         };
         if run_y_item {
+            b.block(0x0781c6);
             use crate::cycle_models::{ground_y_item_prefix::GroundYItemTail, y_item_dispatch::YItemChild};
             match native_y_tail {
                 Some(GroundYItemTail::AfterYItem) => {}
@@ -1297,8 +1323,11 @@ impl ZeldaState {
                 self.finish_ground_movement_clear_vel_tail();
                 return;
             }
+            b.block(0x0781c9);
+            if self.game_state.inventory.save_progress.progress_indicator() == 0 { b.taken(0x0781cd); }
             if self.game_state.inventory.save_progress.progress_indicator() != 0
                 && !matches!(native_sword_cape_tail, Some(GroundSwordCapeTail::Movement | GroundSwordCapeTail::ForceUnequipCape)) {
+                b.block(0x0781cf);
                 match native_sword_cape_tail {
                     Some(GroundSwordCapeTail::CheckSwordSwing | GroundSwordCapeTail::SwordSwingActive) => self.link_check_for_sword_swing(),
                     Some(GroundSwordCapeTail::SwordControls) => self.handle_sword_controls(),
@@ -1306,13 +1335,19 @@ impl ZeldaState {
                     None => self.link_handle_sword_cooldown_marked(),
                     _ => unreachable!(),
                 }
+                b.block(0x0781d2);
                 if self.game_state.player.follower_link.handler_state() == 3 {
+                    b.block(0x0781d8);
+                    b.block(0x0782d2);
+                    b.block(0x0782d8);
                     self.finish_ground_movement_clear_vel_tail();
                     return;
                 }
+                b.taken(0x0781d6);
             }
         }
 
+        b.block(0x0781df);
         let _ = &mut clear_vel_after;
         match native_sword_cape_tail {
             Some(GroundSwordCapeTail::Movement) => {}
@@ -1320,7 +1355,12 @@ impl ZeldaState {
             Some(GroundSwordCapeTail::ClearMovement) => unreachable!(),
             _ => self.link_handle_cape_passive_lift_check(),
         }
+        b.block(0x0781e2);
         if self.game_state.player.follower_link.incapacitated_timer() != 0 {
+            b.block(0x0781e6);
+            if self.game_state.player.follower_link.moving_against_diag_tile() == 0 { b.taken(0x0781e8); }
+            else { b.block(0x0781ea); }
+            b.block(0x0781ec);
             self.follower_link_state_mut()
                 .clear_moving_against_diag_tile();
             self.follower_link_state_mut()
@@ -1330,16 +1370,64 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .clear_state_item_and_grab_flags();
             if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
+                b.block(0x078206);
                 self.follower_link_state_mut().clear_direction_lock_bits(1);
             }
+            else { b.taken(0x078204); }
+            b.block(0x07820c);
             self.link_handle_recoil_and_timer(false);
             return;
         }
 
+        b.taken(0x0781e4); b.block(0x07820f);
         if self.game_state.player.follower_link.has_pull_action_state() {
+            b.block(0x078214);
             self.follower_link_state_mut().set_direction(0);
             clear_vel_after = true;
-        } else if !self.game_state.player.follower_link.is_transforming()
+        } else {
+            b.taken(0x078212); b.block(0x078218);
+            let p = &self.game_state.player.follower_link;
+            if p.is_transforming() { b.taken(0x07821b); }
+            else {
+                b.block(0x07821d);
+                if p.grabbing_wall() & !2 != 0 { b.taken(0x078222); }
+                else {
+                    b.block(0x078224);
+                    if p.state_bits() & 0x7f != 0 { b.taken(0x078229); }
+                    else {
+                        b.block(0x07822b);
+                        let mut skip = false;
+                        if p.state_bits() & 0x80 == 0 { b.taken(0x078230); }
+                        else {
+                            b.block(0x078232);
+                            if p.picking_throw_state() & 1 != 0 { b.taken(0x078237); skip = true; }
+                        }
+                        if !skip {
+                            b.block(0x078239);
+                            if p.item_in_hand() != 0 { b.taken(0x07823c); }
+                            else {
+                                b.block(0x07823e);
+                                if p.position_mode() != 0 { b.taken(0x078241); }
+                                else {
+                                    b.block(0x078243);
+                                    if p.button_b_frames() >= 9 { b.taken(0x078247); }
+                                    else {
+                                        b.block(0x078249);
+                                        if p.button_mask_b_y() & 0x20 != 0 { b.taken(0x07824d); }
+                                        else {
+                                            b.block(0x07824f);
+                                            if p.button_mask_b_y() & 0x80 == 0 { b.taken(0x078253); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !self.game_state.player.follower_link.has_pull_action_state()
+            && !self.game_state.player.follower_link.is_transforming()
             && self
                 .game_state
                 .player
@@ -1349,14 +1437,18 @@ impl ZeldaState {
                 || (self.game_state.player.follower_link.button_mask_b_y() & 0x20) != 0
                 || (self.game_state.player.follower_link.button_mask_b_y() & 0x80) == 0)
         {
+            b.block(0x078257);
             if self.game_state.player.follower_link.flag_moving() != 0 {
+                b.block(0x07825c);
                 self.swim_acceleration_mut().set_max_speed(0, 0x0180);
                 self.swim_acceleration_mut().set_max_speed(2, 0x0180);
                 self.link_handle_swim_movements();
                 return;
             }
 
+            b.taken(0x07825a); b.block(0x07826f);
             self.reset_all_acceleration();
+            b.block(0x078272);
             let mut dir = (self
                 .game_state
                 .player
@@ -1364,13 +1456,19 @@ impl ZeldaState {
                 .force_move_any_direction() as u8)
                 & 0x0f;
             if dir == 0 {
+                b.block(0x078278);
                 if self.game_state.player.follower_link.grabbing_wall_has(2) {
-                    self.finish_ground_movement_tail(clear_vel_after);
+                    b.taken(0x07827d);
+                    self.finish_ground_movement_tail_marked(clear_vel_after, marked);
                     return;
                 }
+                b.block(0x07827f);
                 dir = self.game_state.player.follower_link.joypad1h_last() & 0x0f;
+                if dir != 0 { b.taken(0x078283); }
             }
+            else { b.taken(0x078276); }
             if dir == 0 {
+                b.block(0x078285);
                 self.follower_link_state_mut()
                     .clear_movement_velocity_and_direction();
                 self.follower_link_state_mut().set_last_direction(0);
@@ -1379,8 +1477,10 @@ impl ZeldaState {
                 self.follower_link_state_mut().reset_push_fatigue_timer();
                 self.follower_link_state_mut().reset_jump_ledge_timer();
             } else {
+                b.block(0x0782a1);
                 self.follower_link_state_mut().set_direction(dir);
                 if dir != self.game_state.player.follower_link.last_direction() {
+                    b.block(0x0782a7);
                     self.follower_link_state_mut().set_last_direction(dir);
                     self.follower_link_state_mut().clear_movement_subpixels();
                     self.follower_link_state_mut()
@@ -1388,11 +1488,12 @@ impl ZeldaState {
                     self.follower_link_state_mut().clear_defense_flags();
                     self.follower_link_state_mut().reset_push_fatigue_timer();
                     self.follower_link_state_mut().reset_jump_ledge_timer();
-                }
+                } else { b.taken(0x0782a5); }
+                b.block(0x0782b9);
             }
-        }
+        } else { b.block(0x078255); }
 
-        self.finish_ground_movement_tail(clear_vel_after);
+        self.finish_ground_movement_tail_marked(clear_vel_after, marked);
     }
 
     pub(in crate::zelda_rtl) fn handle_indoor_camera_and_doors(&mut self) {

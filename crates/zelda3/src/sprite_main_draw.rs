@@ -23,7 +23,7 @@ use sprite_main_draw_shared::*;
 
 /// `Lanmola_Draw` prologue stores (see `lanmola_draw_prefix_stores`).
 pub(super) const LANMOLA_DRAW_PREFIX_STORES: u8 = 5;
-pub(super) use sprite_main_draw_shared::{arrgi_sin, trinexx_head_sin};
+pub(super) use sprite_main_draw_shared::{arrgi_sin, trinexx_head_sin, SHARED_SINE_LOOKUP_TABLE};
 
 /// ROM $05:a8f0 calls the RNG, then executes `AND #$7f; ADC #$40`.
 /// `AND` preserves the carry produced by the RNG routine, so the delay is

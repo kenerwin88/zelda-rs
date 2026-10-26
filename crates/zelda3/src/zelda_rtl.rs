@@ -16927,7 +16927,20 @@ impl ZeldaState {
         self.finish_ground_movement_after_diagonal(clear_vel_after);
     }
 
+    fn finish_ground_movement_tail_marked(&mut self, clear_vel_after: bool, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x0782bb);
+        self.link_handle_diagonal_collision();
+        self.finish_ground_movement_after_diagonal_body(clear_vel_after, marked);
+    }
+
     fn finish_ground_movement_after_diagonal(&mut self, clear_vel_after: bool) {
+        self.finish_ground_movement_after_diagonal_body(clear_vel_after, false);
+    }
+
+    fn finish_ground_movement_after_diagonal_body(&mut self, clear_vel_after: bool, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x0782be);
         use crate::cycle_models::ground_velocity::GroundVelocityTail;
         match self.early_ground_velocity_tail.take() {
             None => self.link_handle_velocity(),
@@ -16937,6 +16950,7 @@ impl ZeldaState {
                 self.player_something_with_velocity_tired_or_swim(x, y)
             }
         }
+        b.block(0x0782c2);
         if let Some(tail) = self.early_cardinal_collision_tail.take() {
             self.finish_native_cardinal_collision(tail);
         } else {
@@ -16954,12 +16968,17 @@ impl ZeldaState {
             }
             return;
         }
+        b.block(0x0782c5);
         self.link_handle_moving_animation_full_long_entry();
+        b.block(0x0782c9);
         if clear_vel_after {
+            b.block(0x0782ce); b.block(0x0782d2); b.block(0x0782d8);
             self.finish_ground_movement_clear_vel_tail();
             return;
         }
+        b.taken(0x0782cc); b.block(0x0782d2);
         self.finish_ground_movement_camera_tail();
+        b.block(0x0782d8);
     }
 
     fn finish_ground_movement_clear_vel_tail(&mut self) {

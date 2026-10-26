@@ -878,13 +878,27 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn ancilla_check_tile_collision_class2(&mut self, k: usize) -> bool {
+        self.ancilla_check_tile_collision_class2_body(k, false)
+    }
+
+    pub(super) fn ancilla_check_tile_collision_class2_marked(&mut self, k: usize) -> bool {
+        self.ancilla_check_tile_collision_class2_body(k, true)
+    }
+
+    fn ancilla_check_tile_collision_class2_body(&mut self, k: usize, marked: bool) -> bool {
+        let _scope = (marked && self.lag_free).then(|| crate::cycle_ledger::routine(0x088bcf));
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x088bcf);
         if self.game_state.dungeon.room_load.header_collision() == 0 {
-            return self.ancilla_check_tile_collision_class2_inner(k);
+            b.taken(0x088bd2);
+            return self.ancilla_check_tile_collision_class2_inner(k, marked);
         }
 
+        b.block(0x088bd4);
         let mut x = 0u16;
         let mut y = 0u16;
         if self.game_state.dungeon.room_load.header_collision() < 3 {
+            b.taken(0x088bd8); b.block(0x088be0);
             x = self
                 .game_state
                 .display
@@ -899,19 +913,36 @@ impl ZeldaState {
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         }
 
+        else { b.block(0x088bda); }
+        b.block(0x088bee);
+        if k >= 6 { b.crossing(0x088c03); }
         let oldx = self.ancilla_x(k);
         let oldy = self.ancilla_y(k);
         self.ancilla_set_xy(k, oldx.wrapping_add(x), oldy.wrapping_add(y));
         let value = 1;
         self.ancilla_slot_view_mut(k).set_floor(value);
-        let b = self.ancilla_check_tile_collision_class2_inner(k);
+        let first = {
+            let _child = (marked && self.lag_free).then(|| crate::cycle_ledger::routine(0x088c43));
+            self.ancilla_check_tile_collision_class2_inner(k, marked)
+        };
+        b.block(0x088c1e);
         let value = 0;
         self.ancilla_slot_view_mut(k).set_floor(value);
         self.ancilla_set_xy(k, oldx, oldy);
-        b | self.ancilla_check_tile_collision_class2_inner(k)
+        if !first { b.taken(0x088c33); } else { b.block(0x088c35); }
+        b.block(0x088c36);
+        let second = {
+            let _child = (marked && self.lag_free).then(|| crate::cycle_ledger::routine(0x088c43));
+            self.ancilla_check_tile_collision_class2_inner(k, marked)
+        };
+        b.block(0x088c3b);
+        first | second
     }
 
-    fn ancilla_check_tile_collision_class2_inner(&mut self, k: usize) -> bool {
+    fn ancilla_check_tile_collision_class2_inner(&mut self, k: usize, marked: bool) -> bool {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x088c43);
+        if k >= 6 { b.crossing(0x088c46); }
         let dir = self.ancilla_slot_view(k).direction() as usize;
         let x = self
             .ancilla_x(k)
@@ -920,27 +951,41 @@ impl ZeldaState {
             .ancilla_y(k)
             .wrapping_add(ANCILLA_CHECK_TILE_COLLISION_CLASS2_INNER_Y_OFFSETS[dir] as i16 as u16);
 
-        if y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) >= 224
-            || x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) >= 256
-        {
-            return false;
+        if y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) >= 224 {
+            b.taken(0x088c74); b.block(0x088cd3); return false;
         }
-
+        b.block(0x088c76);
+        if x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) >= 256 {
+            b.taken(0x088c82); b.block(0x088cd3); return false;
+        }
+        b.block(0x088c84);
+        if self.game_state.world.location.is_indoors() { b.taken(0x088c86); b.block(0x088c98); }
+        else { b.block(0x088c88); }
         let (tile, x) = self.ancilla_probe_tile(k, x, y);
+        if self.game_state.world.location.is_outdoors() { b.block(0x088c95); }
+        b.block(0x088c9f);
+        if tile != NativeTile::from_cartridge(3) { b.taken(0x088ca4); }
+        else { b.block(0x088ca6); }
         // Wall identity 3 never stops an ancilla travelling on the upper layer.
         if tile == NativeTile::from_cartridge(3) && self.ancilla_slot_view(k).floor2() != 0 {
-            return false;
+            b.taken(0x088ca9); b.block(0x088cd3); return false;
         }
-
+        b.block(0x088cab);
         match tile.ancilla_collision() {
-            EntityCollision::Passable => false,
-            EntityCollision::Solid => true,
-            EntityCollision::Slope => self.ancilla_sloped_tile_collision(x, y),
-            EntityCollision::LayerBoundary => self.ancilla_slot_view(k).floor2() != 0,
+            EntityCollision::Passable => { b.taken(0x088caf); b.block(0x088cd3); false },
+            EntityCollision::Solid => { b.block(0x088cb1); b.taken(0x088cb3); b.block(0x088cba); b.taken(0x088cbc); b.block(0x088cca); b.taken(0x088ccc); b.block(0x088cd5); true },
+            EntityCollision::Slope => { b.block(0x088cb1); b.block(0x088cb5); let hit=self.ancilla_sloped_tile_collision(x, y); b.block(0x088cb9); hit },
+            EntityCollision::LayerBoundary => {
+                b.block(0x088cb1); b.taken(0x088cb3); b.block(0x088cba); b.taken(0x088cbc); b.block(0x088cca); b.block(0x088cce);
+                let hit=self.ancilla_slot_view(k).floor2()!=0;
+                if hit { b.taken(0x088cd1); b.block(0x088cd5); } else { b.block(0x088cd3); } hit
+            },
             EntityCollision::Ledge => {
+                b.block(0x088cb1); b.taken(0x088cb3); b.block(0x088cba); b.block(0x088cbe);
                 if self.ancilla_slot_view(k).floor2() != 0 {
-                    true
+                    b.taken(0x088cc1); b.block(0x088cd5); true
                 } else {
+                    b.block(0x088cc3); b.block(0x088cd3);
                     let value = 1;
                     self.ancilla_slot_view_mut(k).set_object_priority(value);
                     false
@@ -1578,6 +1623,58 @@ fn marker38_set_oam_xy_matches_rom() {
         crate::cycle_ledger::assert_rom_marker_work(0x08f6e1, machine,
             |s| s.cpu.k == 8 && (0xf6e1..0xf6fe).contains(&s.cpu.pc), || {
                 native.ancilla_set_oam_marked(0x800, x, y, 0, 0, 0);
+            });
+    }
+}
+
+#[cfg(test)]
+fn marker39_ancilla_machine(native: &ZeldaState, pc: u16, slot: usize) -> snes::Snes {
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    let mut machine = snes::Snes::new();
+    machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+    machine.ram.copy_from_slice(&native.wram_image());
+    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+    machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+    machine.cpu.k = 8; machine.cpu.db = 8; machine.cpu.pc = pc;
+    machine.cpu.x = slot as u16; machine.cpu.sp = 0x1fc;
+    machine
+}
+
+#[cfg(test)]
+#[test]
+fn marker39_class2_wrapper_matches_rom() {
+    for (slot, collision, x, y) in [(0,0,0x40,0x40),(9,1,0x40,0x40),
+        (0,3,0x100,0x40),(9,4,0x40,0x100)] {
+        let mut native = ZeldaState::new();
+        native.write_wram_byte(0x1b,1); native.write_wram_byte(0x46c,collision);
+        native.ancilla_set_xy(slot,x,y); native.sync_native_game_state_from_ram();
+        native.set_lag_free(true);
+        let machine = marker39_ancilla_machine(&native,0x8bcf,slot);
+        crate::cycle_ledger::assert_rom_marker_work(0x088bcf,machine,
+            |s|s.cpu.k==8 && ((0x8bcf..0x8c43).contains(&s.cpu.pc)
+                || (s.ram[0x46c]==0 && (0x8c43..0x8cd9).contains(&s.cpu.pc))),
+            ||{native.ancilla_check_tile_collision_class2_marked(slot);});
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn marker39_class2_inner_matches_rom() {
+    for (slot, tile, floor2, x, y) in [(0,0,0,0x40,0x40),(9,1,0,0x40,0x40),
+        (0,3,1,0x40,0x40),(0,0x20,0,0x40,0x40),(9,0x20,1,0x40,0x40),
+        (0,0x10,0,0x40,0x40),(0,0,0,0x100,0x40),(9,0,0,0x40,0x100)] {
+        let mut native = ZeldaState::new();
+        native.write_wram_byte(0x1b,1); native.write_wram_byte(0x028a+slot,floor2);
+        // GetTileAttribute reads the room attribute plane at $7F:2000.
+        for a in 0x12000..0x14000 {native.write_wram_byte(a,tile);}
+        native.ancilla_set_xy(slot,x,y); native.sync_native_game_state_from_ram();
+        native.set_lag_free(true);
+        let machine = marker39_ancilla_machine(&native,0x8c43,slot);
+        crate::cycle_ledger::assert_rom_marker_work(0x088c43,machine,
+            |s|s.cpu.k==8 && (0x8c43..0x8cd9).contains(&s.cpu.pc), || {
+                let _scope=crate::cycle_ledger::routine(0x088c43);
+                native.ancilla_check_tile_collision_class2_inner(slot,true);
             });
     }
 }

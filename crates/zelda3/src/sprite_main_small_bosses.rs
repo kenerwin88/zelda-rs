@@ -1369,10 +1369,19 @@ impl ZeldaState {
 
     // void TrinexxHead_Draw(int k) {  // 9dbb70
     pub(super) fn trinexx_head_draw(&mut self, k: usize) {
+        // $1D:B8DA JSR $BB70: full head drawing; partial checkpoint entries stay unmarked.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dbb70));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dbb70); b.block(0x1dbb8c);
         if let Some(mut draw) = self.begin_trinexx_head_draw(k) {
+            b.block(0x1dbb8f);
             let count = self.sprite_slot_view(k).subtype2();
-            self.trinexx_head_draw_segments(k, &mut draw, count);
+            self.trinexx_head_draw_segments_body(k, &mut draw, count, true);
+            b.block(0x1dbc7f);
+            if self.game_state.frame.submodule == 0 { b.taken(0x1dbc81); }
+            else { b.block(0x1dbc83); }
             self.finish_trinexx_head_draw(k);
+            b.block(0x1dbc8b);
         }
     }
 
@@ -1567,6 +1576,13 @@ impl ZeldaState {
         draw: &mut TrinexxHeadDrawContinuation,
         end: u8,
     ) {
+        self.trinexx_head_draw_segments_body(k, draw, end, false);
+    }
+
+    fn trinexx_head_draw_segments_body(
+        &mut self, k: usize, draw: &mut TrinexxHeadDrawContinuation, end: u8, marked: bool,
+    ) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
         assert!(draw.next_segment <= end && end <= self.sprite_slot_view(k).subtype2());
         let TrinexxHeadDrawContinuation {
             info_x,
@@ -1577,6 +1593,10 @@ impl ZeldaState {
             ..
         } = *draw;
         for i in usize::from(next_segment)..usize::from(end) {
+            b.block(0x1dbb95);
+            if k == 2 { b.taken(0x1dbba0); b.block(0x1dbbb0); }
+            else { b.block(0x1dbba2); }
+            b.block(0x1dbbb7);
             let j = i + k * 9;
             let cached_head = self.cached_sprite_slot(j);
             let angle = if k != 2 {
@@ -1584,6 +1604,17 @@ impl ZeldaState {
             } else {
                 u16::from(cached_head.type_byte())
             };
+            if super::sprite_main_draw::SHARED_SINE_LOOKUP_TABLE[usize::from(angle as u8)] >> 8 != 0 { b.taken(0x1dbbeb); }
+            else { b.block(0x1dbbed); }
+            b.block(0x1dbc00);
+            if angle & 0x100 == 0 { b.taken(0x1dbc02); } else { b.block(0x1dbc04); }
+            b.block(0x1dbc07);
+            if super::sprite_main_draw::SHARED_SINE_LOOKUP_TABLE[usize::from(angle.wrapping_add(0x80) as u8)] >> 8 != 0 { b.taken(0x1dbc13); }
+            else { b.block(0x1dbc15); }
+            b.block(0x1dbc28);
+            if angle.wrapping_add(0x80) & 0x100 == 0 { b.taken(0x1dbc2a); }
+            else { b.block(0x1dbc2c); }
+            b.block(0x1dbc2f);
             let radius = cached_head.y_high();
             let x_delta = trinexx_head_sin(angle, radius) as u8;
             let y_delta = trinexx_head_sin(angle.wrapping_add(0x80), radius) as u8;
@@ -1591,11 +1622,14 @@ impl ZeldaState {
                 .set_low_position(x_delta, y_delta);
 
             if i == 0 {
+                b.block(0x1dbc37);
                 let mut first = *draw;
                 first.oam = oam;
                 self.trinexx_head_first_part_stores(k, &first, x_delta, y_delta, 0, 30);
+                b.block(0x1dbc3a);
                 oam += 20;
             } else {
+                b.taken(0x1dbc35); b.block(0x1dbc3c);
                 let x = info_x.wrapping_add(u16::from(x_delta)) as u8;
                 let y = info_y.wrapping_add(u16::from(y_delta)) as u8;
                 self.sprite_workspace_mut().set_current_sprite_x_low(x);
@@ -1603,6 +1637,9 @@ impl ZeldaState {
                 self.set_oam_plain_at(oam, x, y, 8, info_flags, 2);
                 oam += 4;
             }
+            b.block(0x1dbc71);
+            if i + 1 == usize::from(end) { b.taken(0x1dbc7a); }
+            else { b.block(0x1dbc7c); }
         }
         draw.oam = oam;
         draw.next_segment = end;

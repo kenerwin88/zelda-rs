@@ -50,6 +50,26 @@ class BlockCosts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unbalanced saved status'):
             self.fixture([0x08, 0x60])
 
+    def test_explicit_data_bank_prices_register_bus_and_rejects_conflicts(self):
+        rom = bytearray(0x8000)
+        rom[:4] = bytes([0xad, 0x17, 0x42, 0x60])
+        spec = dict(entry='008000', end='008004')
+        unknown = costs.generated_blocks(rom, [spec])[0][0]
+        self.assertIn('data bank', unknown.price()[2])
+        for bank, clocks in [(0x1e, 30), (0x7e, 32), (0x9e, 30)]:
+            ins = costs.generated_blocks(rom, [dict(spec, data_bank=bank)])[0][0]
+            self.assertEqual(ins.price(), (clocks, 0, ''))
+        # A word straddling $5FFF/$6000 has one register and one RAM access.
+        rom[:4] = bytes([0xad, 0xff, 0x5f, 0x60])
+        wide = dict(spec, m8=False)
+        unknown = costs.generated_blocks(rom, [wide])[0][0].price()[0]
+        known = costs.generated_blocks(rom, [dict(wide, data_bank=0x1e)])[0][0]
+        self.assertEqual(known.price(), (unknown - 2, 0, ''))
+        with self.assertRaisesRegex(ValueError, 'conflicting data banks'):
+            costs.generated_blocks(rom, [dict(spec, data_bank=0x1e), spec])
+        with self.assertRaisesRegex(ValueError, 'invalid data bank'):
+            costs.generated_blocks(rom, [dict(spec, data_bank=256)])
+
     def test_terminal_indirect_dispatch_requires_an_explicit_boundary(self):
         rom=bytearray(0x8000);rom[:3]=bytes([0xdc,0,0])
         spec=dict(entry='008000',end='008003')

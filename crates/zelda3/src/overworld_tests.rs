@@ -1498,8 +1498,11 @@ fn tile_price_source(entry: u16, image: &[u8], y: u16, flags: u8,
         if cpu.k == 7 && (pc == 0x8000 || (stop_at_response && pc == 0xd104)) {
             return measured;
         }
-        let selected = cpu.k == 7 && (!stop_at_response
-            || (0xd077..=0xd103).contains(&pc) || pc == 0xd2c5);
+        let selected = cpu.k == 7 && if stop_at_response {
+            (0xd077..=0xd103).contains(&pc) || pc == 0xd2c5
+        } else {
+            entry != 0xd077 || (0xd077..=0xd2c5).contains(&pc)
+        };
         let step = source.step().unwrap();
         if selected { measured += step.transactions.iter()
             .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>(); }
@@ -1528,15 +1531,18 @@ fn main_tile_probe_setup_prices_match_executed_rom() {
                 let source = tile_price_source(0xd077, &image, u16::from(item), 0x30, true);
                 assert_eq!(native.main_tile_probe_setup_master(item), source,
                     "item={item} facing={facing} spin={spin}");
-                // Ordinary probes exercise placement and the lagless gate;
-                // selected item-action children retain their own accounting.
+                // $07:D077..D2C5 now includes the marked response suffix.
+                // Measure its full self work; classifier/response children
+                // retain their own accounting outside this source range.
                 if matches!(item, 0 | 4 | 5) {
+                    let handler_source = tile_price_source(0xd077, &image,
+                        u16::from(item), 0x30, false);
                     for lagless in [false, true] {
                         let mut state = native.clone();
                         state.set_lag_free(lagless);
                         let own = crate::cycle_ledger::measure_routine_self_work(0x07d077,
                             || state.tile_detect_main_handler(item));
-                        assert_eq!(own, if lagless { source } else { 0 });
+                        assert_eq!(own, if lagless { handler_source } else { 0 });
                     }
                 }
             }

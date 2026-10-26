@@ -140,5 +140,21 @@
   {"entry": "09b49e", "end": "09b4c0"},
   {"entry": "07b956", "end": "07b969"},
   {"entry": "07b969", "end": "07b97c"},
-  {"entry": "07ccab", "end": "07cd7b"}
+  {"entry": "07ccab", "end": "07cd7b"},
+  {"entry": "0781a0", "end": "0782da"},
+  {"entry": "07d104", "end": "07d2c6"},
+  {"entry": "088bcf", "end": "088c3b"},
+  {"entry": "088c3b", "end": "088c43"},
+  {"entry": "088c43", "end": "088c95"},
+  {"entry": "088c95", "end": "088c98"},
+  {"entry": "088c98", "end": "088cd5"},
+  {"entry": "088cd5", "end": "088cd9"},
+  {"entry": "1e8920", "end": "1e8a85", "data_bank": 30},
+  {"entry": "1e8a85", "end": "1e8a8e"},
+  {"entry": "1dbb70", "end": "1dbc8c", "data_bank": 29},
+  {"entry": "05a64a", "end": "05a864"},
+  {"entry": "1e919f", "end": "1e9225"},
+  {"entry": "1e922b", "end": "1e9254"},
+  {"entry": "1e925c", "end": "1e92e4"},
+  {"entry": "1e92d2", "end": "1e92e4"}
 ]

@@ -38,7 +38,7 @@ pub(super) const FEATURE_MISC_BUG_FIXES_DRAW: u32 = 4096;
 // kSinusLookupTable from sprite_main.c:338 — 256-entry sine half-wave used
 // by ChainBallSin / HelmasaurSin. Verbatim from the C source.
 // ---------------------------------------------------------------------------
-pub(super) const SHARED_SINE_LOOKUP_TABLE: [u16; 256] = [
+pub(in crate::zelda_rtl) const SHARED_SINE_LOOKUP_TABLE: [u16; 256] = [
     0, 3, 6, 9, 12, 15, 18, 21, 25, 28, 31, 34, 37, 40, 40, 46, 49, 53, 56, 59, 62, 65, 68, 71, 74,
     77, 80, 83, 86, 89, 92, 95, 97, 100, 103, 106, 109, 112, 115, 117, 120, 123, 126, 128, 131,
     134, 136, 139, 142, 144, 147, 149, 152, 155, 157, 159, 162, 164, 167, 169, 171, 174, 176, 178,

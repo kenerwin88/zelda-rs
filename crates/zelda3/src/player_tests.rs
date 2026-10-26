@@ -363,3 +363,46 @@ fn marker38_diagonal_kickback_matches_rom() {
             |s|s.cpu.k==7 && (0xccab..0xcd7b).contains(&s.cpu.pc),|| {native.link_handle_diagonal_kickback();});
     }
 }
+
+#[test]
+fn marker39_ground_control_body_matches_rom() {
+    // Branch cases: idle/moving, locked action, pulling, item and incapacitation.
+    for changes in [vec![], vec![(0xf0,1)], vec![(0xf0,4),(0x26,4)],
+        vec![(0x308,1)], vec![(0x376,1)], vec![(0x377,1)],
+        vec![(0x2e1,1)], vec![(0x301,1)], vec![(0x37a,1)],
+        vec![(0x308,0x80),(0x309,1)], vec![(0x46,2)],
+        vec![(0x46,2),(0x6b,1),(0x3a,0x80)], vec![(0x49,8)]] {
+        let mut native = ZeldaState::new();
+        native.write_wram_word(0x20,0x80); native.write_wram_word(0x22,0x80);
+        for (a,v) in changes { native.write_wram_byte(a,v); }
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine)=marker36_player_machine(&native,0x0781a0) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x07807f,machine,
+            |s|s.cpu.k==7 && (0x81a0..0x82da).contains(&s.cpu.pc), || {
+                let _parent=crate::cycle_ledger::routine(0x07807f);
+                native.player_handler_00_ground_3();
+            });
+    }
+}
+
+#[test]
+fn marker39_main_tile_response_matches_rom() {
+    for changes in [vec![], vec![(0x357,1)], vec![(0x357,1),(0x4d,1)],
+        vec![(0x357,0x10),(0x31f,1)], vec![(0x359,1)],
+        vec![(0x359,1),(0x345,1),(0x1b,0)],
+        vec![(0x341,1),(0x1b,0)], vec![(0x2ee,1)],
+        vec![(0x2ee,0x10),(0x55,1)], vec![(0x348,1)],
+        vec![(0x348,0x10),(0x67,9)], vec![(0x348,1),(0x34a,1)],
+        vec![(0x348,1),(0x34a,1),(0x6a,1)], vec![(0x2e8,0x10)]] {
+        let mut native = ZeldaState::new();
+        native.write_wram_byte(0x1b,1);
+        for (a,v) in changes { native.write_wram_byte(a,v); }
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine)=marker36_player_machine(&native,0x07d104) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x07d077,machine,
+            |s|s.cpu.k==7 && (0xd104..0xd2c6).contains(&s.cpu.pc), || {
+                let _parent=crate::cycle_ledger::routine(0x07d077);
+                native.finish_main_tile_response_body(true);
+            });
+    }
+}
