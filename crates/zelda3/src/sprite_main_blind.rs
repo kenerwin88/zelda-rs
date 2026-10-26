@@ -152,7 +152,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_main() != 0 {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $1D:A168 JSR $1D:C211: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x1dc211);
         self.sprite_slot_view_mut(k).increment_subtype2();
         let j_ret = self.blind_spit_fireball(k, 0x1f);
         if j_ret >= 0 {
@@ -672,7 +673,8 @@ impl ZeldaState {
     pub(super) fn blind_check_bump_damage(&mut self, k: usize) {
         let sprite = self.sprite_slot_view(k);
         if (sprite.delay_aux4() | sprite.f()) == 0 {
-            self.sprite_check_damage_to_and_from_link(k);
+            // $1D:A6C8 JSR $1D:C211: both complete damage calls.
+            self.sprite_check_damage_both_marked(k, 0x1dc211);
         }
         let link_x = self.game_state.player.follower_link.x();
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();

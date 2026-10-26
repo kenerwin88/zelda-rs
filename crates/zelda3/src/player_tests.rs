@@ -323,3 +323,43 @@ fn marker37_swimming_reset_matches_rom() {
     crate::cycle_ledger::assert_rom_marker_work(0x07983a,machine,
         |s|s.cpu.k==7 && (0x983a..0x984b).contains(&s.cpu.pc),||{native.link_reset_swimming_state_marked();});
 }
+
+#[test]
+fn marker38_slope_wrappers_match_rom() {
+    use crate::game_state::CollisionOrder;
+    let path=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+    let Ok(rom)=std::fs::read(path)else{return};
+    for order in [CollisionOrder::VerticalFirst,CollisionOrder::HorizontalFirst] {
+        for flags in [0u8,0x10,0x20,0x30] {
+            let mut native=ZeldaState::new();
+            for(a,v)in[(0x1b,1),(0x10,7),(0x20,0x40),(0x22,0x40),(0x6b,flags)] {native.write_wram_byte(a,v);}
+            native.sync_native_game_state_from_ram();native.set_lag_free(true);
+            let entry=if order==CollisionOrder::VerticalFirst{0x07b956}else{0x07b969};
+            let mut machine=snes::Snes::new();machine.cart.load(snes::CartType::LoRom,&rom,0x2000);
+            machine.ram.copy_from_slice(&native.wram_image());machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+            machine.cpu.e=false;machine.cpu.unpack_flags(0x30);machine.cpu.k=7;machine.cpu.db=7;machine.cpu.pc=entry as u16;machine.cpu.sp=0x1fc;
+            crate::cycle_ledger::assert_rom_marker_work(entry,machine,
+                |s|s.cpu.k==7 && (entry as u16..entry as u16+19).contains(&s.cpu.pc),|| {
+                    native.run_slope_collision_checks_marked(order);
+                });
+        }
+    }
+}
+
+#[test]
+fn marker38_diagonal_kickback_matches_rom() {
+    let path=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+    let Ok(rom)=std::fs::read(path)else{return};
+    for (tile,vx,vy) in [(0u8,0u8,1u8),(0,1,0),(0,1,1),(0x10,1,1),
+        (0x10,255,255),(0x11,1,255),(0x12,255,1),(0x13,1,1)] {
+        let mut native=ZeldaState::new(); let mut image=native.wram_image().into_owned();
+        image[0x12000..0x14000].fill(tile);
+        for(a,v)in[(0x1b,1),(0x10,7),(0x20,0x40),(0x22,0x40),(0x30,vy),(0x31,vx)] {image[a]=v;}
+        native.import_wram_image(&image);native.sync_native_game_state_from_ram();native.set_lag_free(true);
+        let mut machine=snes::Snes::new();machine.cart.load(snes::CartType::LoRom,&rom,0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+        machine.cpu.e=false;machine.cpu.unpack_flags(0x30);machine.cpu.k=7;machine.cpu.db=7;machine.cpu.pc=0xccab;machine.cpu.sp=0x1fc;
+        crate::cycle_ledger::assert_rom_marker_work(0x07ccab,machine,
+            |s|s.cpu.k==7 && (0xccab..0xcd7b).contains(&s.cpu.pc),|| {native.link_handle_diagonal_kickback();});
+    }
+}

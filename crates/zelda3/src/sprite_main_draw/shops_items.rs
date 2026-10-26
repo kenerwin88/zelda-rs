@@ -273,7 +273,8 @@ impl ZeldaState {
                 self.sprite_show_message_unconditional(0x6f);
             }
         } else {
-            self.sprite_move_xy(k);
+            // $05:EECE JSR $05:F9ED: complete body, caller opcode unchanged.
+            self.sprite_move_xy_marked(k, 0x05fa00);
             self.thrown_sprite_tile_and_sprite_interaction(k);
         }
     }
@@ -1567,7 +1568,8 @@ impl ZeldaState {
             return;
         }
         self.sprite_move_xyz_bank(k, 0x1eff34);
-        if self.sprite_check_damage_to_link(k) {
+        // $1E:F598 JSR $1E:C26B: complete body, caller opcode unchanged.
+        if self.sprite_check_damage_to_link_bank1e(k) {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x0b);
             self.player_resources_mut().increment_heart_filler_by(8);
             let value = 0;

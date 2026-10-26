@@ -826,7 +826,8 @@ impl ZeldaState {
         } else {
             2
         };
-        self.ancilla_set_oam(
+        // $08:AA8F JSR F6E1: complete XY body, once per executed draw.
+        self.ancilla_set_oam_marked(
             self.game_state.oam.current_pointer_usize(),
             x,
             y,

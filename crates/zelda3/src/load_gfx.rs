@@ -1715,11 +1715,63 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_restore_bg_from_flash(&mut self) {
-        for i in 32..128 {
-            self.copy_color((Bank::Aux, i), (Bank::Main, i));
+        // $08:AAD5 and $1D:E9D3 JSL $0E:D83A; neither caller prices this body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ed83a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ed83a);
+        // D83E has twelve word copies at each of eight source X offsets.
+        for offset in 0..8 {
+            b.block(0x0ed83e);
+            for column in 0..12 {
+                let i = 32 + column * 8 + offset;
+                self.copy_color((Bank::Aux, i), (Bank::Main, i));
+            }
+            if offset != 7 { b.taken(0x0ed8a2); }
         }
+        b.block(0x0ed8a4);
         self.copy_color((Bank::Main, 32), (Bank::Main, 0));
+        if self.game_state.world.location.is_indoors() { b.taken(0x0ed8b0); }
+        else {
+            b.block(0x0ed8b2);
+            let screen = self.game_state.world.location.overworld_screen_index();
+            if screen == 0 { b.taken(0x0ed8c6); }
+            else {
+                b.block(0x0ed8c8);
+                if screen == 0x40 { b.taken(0x0ed8ca); }
+                else {
+                    b.block(0x0ed8cc);
+                    if screen == 0x5b { b.taken(0x0ed8ce); b.block(0x0ed8f4); }
+                    else {
+                        b.block(0x0ed8d0);
+                        let matched = if screen == 3 { b.taken(0x0ed8d8); true }
+                        else {
+                            b.block(0x0ed8da);
+                            if screen == 5 { b.taken(0x0ed8dc); true }
+                            else {
+                                b.block(0x0ed8de);
+                                if screen == 7 { b.taken(0x0ed8e0); true }
+                                else {
+                                    b.block(0x0ed8e2);
+                                    if screen == 0x43 { b.taken(0x0ed8ea); true }
+                                    else {
+                                        b.block(0x0ed8ec);
+                                        if screen == 0x45 { b.taken(0x0ed8ee); true }
+                                        else {
+                                            b.block(0x0ed8f0);
+                                            if screen != 0x47 { b.taken(0x0ed8f2); false } else { true }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        if matched { b.block(0x0ed8f4); }
+                    }
+                }
+            }
+        }
         self.palette_restore_coldata();
+        // D8F8 SEP #$10 has width-independent work at either incoming X width.
+        b.block(0x0ed8f8);
     }
 
     /// ROM: `Palette_Restore_BG_And_HUD`
@@ -6590,5 +6642,27 @@ impl ZeldaState {
     /// ROM: `Palette_RevertTranslucencySwap`
     pub(super) fn palette_revert_translucency_swap(&mut self) {
         self.palette_set_translucency_swap(false);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn marker38_palette_restore_flash_matches_rom() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+    let Ok(rom) = std::fs::read(path) else { return };
+    for (indoors, screen) in [(1u8, 0u8), (0, 0), (0, 0x40), (0, 0x5b),
+        (0, 3), (0, 5), (0, 7), (0, 0x43), (0, 0x45), (0, 0x47), (0, 1)] {
+        let mut native = ZeldaState::new();
+        native.write_wram_byte(0x1b, indoors); native.write_wram_byte(0x8a, screen);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let mut machine = snes::Snes::new(); machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());
+        machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+        machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = 0x0e; machine.cpu.db = 0x0e; machine.cpu.pc = 0xd83a; machine.cpu.sp = 0x1fc;
+        crate::cycle_ledger::assert_rom_marker_work(0x0ed83a, machine,
+            |s| s.cpu.k == 0x0e && (0xd83a..0xd8fb).contains(&s.cpu.pc), || {
+                native.palette_restore_bg_from_flash();
+            });
     }
 }

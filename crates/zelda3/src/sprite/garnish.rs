@@ -276,6 +276,10 @@ impl ZeldaState {
     //                sprite_oam_flags[j] | sprite_obj_prio[j], 2);
     // }
     pub(in crate::zelda_rtl) fn garnish02_mothula_beam_trail(&mut self, k: usize) {
+        // $09:B110 RTS-dispatches $09:B6E1; shared B70C executes once.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09b6e1);
+        b.block(0x09b70c);
         let oam = self.game_state.oam.current_pointer_usize();
         let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at(
@@ -637,10 +641,15 @@ impl ZeldaState {
 
     // void Garnish07_BabasuFlash(int k) {  // 89b49e
     pub(in crate::zelda_rtl) fn garnish07_babasu_flash(&mut self, k: usize) {
+        // $09:B110 RTS-dispatches $09:B49E; shared B70C executes once.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09b49e);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        b.block(0x09b4a1);
+        b.block(0x09b70c);
         let j = usize::from(self.garnish_slot_view(k).countdown() >> 3);
         self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),

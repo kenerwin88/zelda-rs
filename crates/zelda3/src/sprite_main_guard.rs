@@ -110,7 +110,8 @@ impl ZeldaState {
             };
             self.sprite_system_mut().set_blind_head_anim_counter(next);
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $05:D5B1 JSR $05:AB93: complete two-call body.
+        self.sprite_check_damage_both_marked(k, 0x05ab93);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 0x1f) == 0 {
             let jbak = self.sprite_slot_view(k).direction();
             let direction = self.sprite_direction_to_face_link(k);
@@ -514,7 +515,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $05:BF57 JSR $05:AB93: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x05ab93);
         let dir = self.sprite_direction_to_face_link(k);
         {
             let mut sprite = self.sprite_slot_view_mut(k);
@@ -1312,7 +1314,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if (self.sprite_check_damage_to_and_from_link(k)
+        // $05:CE26 JSR $05:AB93: both complete damage calls.
+        if (self.sprite_check_damage_both_marked(k, 0x05ab93)
             || self.game_state.sprites.system.alert_flag() != 0)
             && self.sprite_slot_view(k).ai_state() < 3
         {

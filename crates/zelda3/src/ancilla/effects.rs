@@ -127,7 +127,8 @@ impl ZeldaState {
             if ANCILLA1_E_DASH_DUST_DASH_DUST_DRAW_CHAR[t] != 0xff {
                 blocks.block(0x08bd0b);
                 if 0xf4 + 2 * t > 0xff { blocks.crossing(0x08bd13); }
-                self.ancilla_set_oam(
+                // $08:BD25 JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     info_x
                         .wrapping_add(r12 as u16)
@@ -182,7 +183,8 @@ impl ZeldaState {
         let mut oam = self.game_state.oam.current_pointer_usize();
         for _ in (0..=3).rev() {
             if WALL_HIT_DRAW_WALL_HIT_CHAR[t] != 0 {
-                self.ancilla_set_oam(
+                // $08:9519 JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     info_x.wrapping_add(WALL_HIT_DRAW_WALL_HIT_X[t] as i16 as u16),
                     info_y.wrapping_add(WALL_HIT_DRAW_WALL_HIT_Y[t] as i16 as u16),
@@ -227,7 +229,8 @@ impl ZeldaState {
             let t = j * 2 + i;
             let offset = DOOR_DEBRIS_DRAW_DOOR_DEBRIS_OFFSET[t];
             let tile = DOOR_DEBRIS_DRAW_DOOR_DEBRIS_TILE[t];
-            self.ancilla_set_oam(
+            // $08:A0F1 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x.wrapping_add(offset.x),
                 y.wrapping_add(offset.y),
@@ -403,7 +406,8 @@ impl ZeldaState {
         self.oam_allocate_from_region_b(16);
         let mut oam = self.game_state.oam.current_pointer_usize();
         for i in 0..4 {
-            self.ancilla_set_oam(
+            // $08:EE16 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x,
                 y,
@@ -588,7 +592,8 @@ impl ZeldaState {
         let chr = MORPH_POOF_DRAW_MORPH_POOF_CHAR[j];
         for i in 0..4 {
             let offset = MORPH_POOF_DRAW_MORPH_POOF_OFFSET[j * 4 + i];
-            self.ancilla_set_oam(
+            // $08:D46A JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x.wrapping_add(offset.x as i16 as u16),
                 y.wrapping_add(offset.y as i16 as u16),
@@ -640,7 +645,8 @@ impl ZeldaState {
 
         let mut j = self.ancilla_slot_view(k).item_to_link() as usize * 4;
         for _ in 0..4 {
-            self.ancilla_set_oam(
+            // $08:D56A JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x.wrapping_add(ANCILLA3_F_BUSH_POOF_BUSH_POOF_DRAW_X[j] as i16 as u16),
                 y.wrapping_add(ANCILLA3_F_BUSH_POOF_BUSH_POOF_DRAW_Y[j] as i16 as u16),
@@ -950,7 +956,8 @@ impl ZeldaState {
         }
         let oam = self.game_state.oam.current_pointer_usize()
             + ((self.game_state.world.overworld.weather_vane.oam_offset >> 2) as usize) * 4;
-        self.ancilla_set_oam(
+        // $08:D1B3 JSR F6E1: complete XY body, once per executed draw.
+        self.ancilla_set_oam_marked(
             oam,
             x,
             y,
@@ -1113,7 +1120,8 @@ impl ZeldaState {
         let mut x = x;
         let mut flags = 0;
         for _ in (0..=1).rev() {
-            self.ancilla_set_oam(
+            // $08:A967 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x,
                 y,
@@ -1150,7 +1158,8 @@ impl ZeldaState {
         x = x.wrapping_add(ANCILLA17_SHOVEL_DIRT_SHOVEL_DIRT_XY[j * 2 + 1] as i16 as u16);
         y = y.wrapping_add(ANCILLA17_SHOVEL_DIRT_SHOVEL_DIRT_XY[j * 2] as i16 as u16);
         for i in 0..2 {
-            self.ancilla_set_oam(
+            // $08:A9FB JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x.wrapping_add((i * 8) as u16),
                 y,
@@ -1208,7 +1217,8 @@ impl ZeldaState {
         let mut j = self.ancilla_slot_view(k).item_to_link() as usize * 2;
         for _ in 0..2 {
             if ANCILLA41_WATERFALL_SPLASH_WATERFALL_SPLASH_CHAR[j] != 0xff {
-                self.ancilla_set_oam(
+                // $08:ED61 JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     x.wrapping_add(ANCILLA41_WATERFALL_SPLASH_WATERFALL_SPLASH_X[j] as i16 as u16),
                     y.wrapping_add(ANCILLA41_WATERFALL_SPLASH_WATERFALL_SPLASH_Y[j] as i16 as u16),
@@ -1319,7 +1329,8 @@ impl ZeldaState {
         let mut j = self.ancilla_slot_view(k).item_to_link() as usize * 2;
         for _ in 0..2 {
             if OBJECT_SPLASH_DRAW_OBJECT_SPLASH_DRAW_CHAR[j] != 0xff {
-                self.ancilla_set_oam(
+                // $08:CA5B JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     x.wrapping_add(OBJECT_SPLASH_DRAW_OBJECT_SPLASH_DRAW_X[j] as i16 as u16),
                     y.wrapping_add(OBJECT_SPLASH_DRAW_OBJECT_SPLASH_DRAW_Y[j] as i16 as u16),
@@ -1496,25 +1507,39 @@ impl ZeldaState {
     }
 
     fn gt_cutscene_sparkle_a_lot(&mut self, mut oam: usize) -> usize {
+        // $08:CDEA JSR CF35: all 24 actual slots; F6E1 owns each XY child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08cf35));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08cf35);
         for k in (0..=0x17).rev() {
+            b.block(0x08cf37);
             if self.game_state.effects.tower_seal.sparkle(k).is_free() {
+                b.taken(0x08cf3d);
+                b.block(0x08cfa2); if k != 0 { b.taken(0x08cfa3); }
                 continue;
             }
 
+            b.block(0x08cf3f);
             let timer = self.tower_seal_sparkle_mut(k).tick_timer();
             if sign8(timer) {
+                b.block(0x08cf4a);
                 self.tower_seal_sparkle_mut(k).set_timer(4);
                 let phase = self.tower_seal_sparkle_mut(k).advance_phase();
                 if phase == 3 {
                     self.tower_seal_sparkle_mut(k).set_phase(0xff);
+                    b.block(0x08cf5d); b.block(0x08cfa2);
+                    if k != 0 { b.taken(0x08cfa3); }
                     continue;
                 }
-            }
+                b.taken(0x08cf5b);
+            } else { b.taken(0x08cf48); }
 
+            b.block(0x08cf65);
             let x = self.game_state.effects.tower_seal.sparkle(k).x();
             let y = self.game_state.effects.tower_seal.sparkle(k).y();
             let j = self.game_state.effects.tower_seal.sparkle(k).phase() as usize;
-            self.ancilla_set_oam(
+            // $08:CF83 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x,
                 y,
@@ -1522,8 +1547,11 @@ impl ZeldaState {
                 GT_CUTSCENE_SPARKLE_A_LOT_SWORD_CHARGE_SPARK_FLAGS[j] | 0x30,
                 0,
             );
+            b.block(0x08cf86);
             oam += 4;
+            b.block(0x08cfa2); if k != 0 { b.taken(0x08cfa3); }
         }
+        b.block(0x08cfa5);
         oam
     }
 
@@ -1651,4 +1679,34 @@ impl ZeldaState {
         self.ram[crate::game_state::constants::DOOR_DEBRIS_DIRECTION + slot]
     }
 
+}
+
+#[cfg(test)]
+#[test]
+fn marker38_tower_sparkle_matches_rom() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+    let Ok(rom) = std::fs::read(path) else { return };
+    for active in [false, true] {
+        let mut native = ZeldaState::new();
+        for k in 0..24 { native.write_wram_byte(0x15837 + k, 0xff); }
+        if active {
+            for (k, phase, timer) in [(23, 0, 2), (2, 0, 0), (1, 2, 0), (0, 1, 1)] {
+                native.write_wram_byte(0x15837 + k, phase);
+                native.write_wram_byte(0x158af + k, timer);
+                native.write_wram_byte(0x1584f + k, 0x40);
+                native.write_wram_byte(0x1587f + k, 0x40);
+            }
+        }
+        native.write_wram_word(0x90, 0x800); native.write_wram_word(0x92, 0xa20);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let mut machine = snes::Snes::new(); machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());
+        machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+        machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = 8; machine.cpu.db = 8; machine.cpu.pc = 0xcf35; machine.cpu.sp = 0x1fc;
+        crate::cycle_ledger::assert_rom_marker_work(0x08cf35, machine,
+            |s| s.cpu.k == 8 && (0xcf35..0xcfa6).contains(&s.cpu.pc), || {
+                native.gt_cutscene_sparkle_a_lot(0x800);
+            });
+    }
 }

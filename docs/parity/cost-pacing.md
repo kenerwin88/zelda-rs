@@ -12320,3 +12320,56 @@ All **48 crystal/pendant phases** remain within one frame; stable outcomes match
 - Both CPU-only SNES suites: **504 / 0 / 7**. All eight generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass.
 
 Complete disjoint library manifests, source/binary hashes, command receipts, per-routine clock/line summaries and `verification.json` bind this point. All **1,512** supplied ledger/cache files retain size and mtime. Raw predictors/profiles were deleted after summaries; hashes remain in the pruning manifests. Batch evidence remains below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used.
+
+## Verified batch 38 on `codex/cost-pacing38` (main `24af99e1`)
+
+**12,232,874 frozen-cohort clocks closed; the 12M target is met.** New marker work equals the signed-gap reduction: **123,591,082 → 111,358,208**, on the unchanged **2,825 iterations**. Batch 37's retained routine data and baseline were reused; no main controls were rerun. Evidence is in `target/cost-pacing38/`.
+
+The updated positive signed-owner ranking was audited from largest to smallest. Already-priced single-draw, velocity, layer, multi-draw, shadow and inactive/prep aliases receive no second price. Eligible work completes uncharged bodies and statically confirmed callers inside the larger dispatch owners. Small rows below are their required complete wrappers, children and shared tails. The blanket's existing explicit XY scalar charge is preserved; its raw writer is excluded. The spike/statue Y-predicate mismatch and drawing loops needing a data-bank pricing audit remain open.
+
+The generator adds **116 blocks / 495 ROM instructions**; all **814 existing rows remain byte-identical**. Prices are lagless-only markers selected by actual branches and loops, with ROM call-site comments. Existing movement/damage marker bodies are reused. No scalar conversion, fitted lag residual, scene threshold, multiplier, scene table or classifier/checkpoint change was introduced. Complete diagonal entry is marked; checkpoint suffixes remain unmarked. Palette tail `$0E:D8F8` prices only width-independent SEP/RTL work at its two incoming index widths.
+
+Thirteen new `assert_rom_marker_work` fixtures pass **66 unmodified-ROM cases**, covering fourteen entries; reused bodies retain their existing ROM fixtures. Values are **new native marker executions**, not proof of equivalent call sequences or physical NMI placement. Exclusive sums reconcile on every cohort iteration; there is **no scalar or attribution delta**. Lines are gross native additions, including comments/rewiring, excluding fixtures, generated rows, manifest and documentation. Zero lines means an existing marked child; caller lines are counted at the entry. The four damage entries share one implementation, listed once. Horizontal slope entry `$07:B969` is fixture-covered and contributes zero new frozen clocks.
+
+| Body / source entry | Frozen clocks closed | Native lines added |
+| --- | ---: | ---: |
+| `$09:F0CB` Thrown-item debris | 1,827,558 | 30 |
+| `$06:F121` Damage-to-Link far wrapper | 1,739,070 | 22 |
+| `$06:F2AA` Damage-from-Link far wrapper | 1,322,824 | 4 |
+| `$07:CCAB` Diagonal kickback | 920,002 | 46 |
+| `$08:F6E1` Ancilla XY publication | 857,676 | 70 |
+| `$1E:C267` Bank-1E damage pair | 709,484 | 70 |
+| `$1E:D978` Agahnim drawing | 665,424 | 31 |
+| `$05:FA00` Bank-5 axis body | 639,712 | 0 |
+| `$08:CF35` Tower sparkle scan | 619,856 | 19 |
+| `$09:B6E1` Mothula trail | 590,100 | 3 |
+| `$0E:D83A` Palette flash restore | 520,312 | 54 |
+| `$09:B49E` Babusu flash | 315,666 | 4 |
+| `$1D:C211` Bank-1D damage pair | 268,588 | 40 |
+| `$09:B70C` Shared big-OAM finalization | 266,862 | 2 |
+| `$06:E92C` XY movement / Y tail | 197,138 | 12 |
+| `$06:E93E` Y movement body | 172,432 | 0 |
+| `$07:B956` Ordered slope checks | 129,396 | 20 |
+| `$05:F9F4` Bank-5 X wrapper | 112,674 | 0 |
+| `$06:D88B` Bank-6 damage pair | 99,562 | 24 |
+| `$1E:C26B` Bank-1E damage-to-Link wrapper | 86,216 | 15 |
+| `$05:F9ED` Bank-5 XY movement | 84,822 | 12 |
+| `$06:E932` X movement wrapper | 66,750 | 0 |
+| `$05:AB93` Bank-5 damage pair | 20,750 | 46 |
+| Shared four-entry damage implementation | 0 | 21 |
+| **Total** | **12,232,874** | **545** |
+
+Both final full census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; every runtime hold equals P2. Missing/excess count lag NMIs; FP counts zero-source-lag iterations. These are periodically seeded CPU logical gates, not continuous-route or exact A/V proof.
+
+| Lane | Retained main missing / excess / FP | Batch 38 missing / excess / FP |
+| --- | ---: | ---: |
+| ROM | 4,488 / 0 / 0 | **4,433 / 0 / 0** |
+| Live SPC | 5,184 / 589 / 131 | **5,129 / 589 / 131** |
+
+All **48 crystal/pendant phases** remain within one frame; stable outcomes match batch 37. The retained **default 200k ledger matches all records and EOF**. Default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; existing lib-test-only warnings remain separate.
+
+- Default Zelda library: **2,645 pass / 1 known spotlight caller-return failure / 3 ignored**.
+- Reduced Zelda library: **2,180 pass / 0 fail / 2 ignored**.
+- Both CPU-only SNES suites: **504 / 0 / 7**. All eight generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass.
+
+Complete disjoint library manifests, ROM/source/binary hashes, call-site audit, per-routine clock/line summaries and `verification.json` bind this point. All **1,512** supplied ledger/cache files retain size and mtime. Raw profiles/predictors were deleted after summaries; hashes remain in the pruning manifest. Evidence remains below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used.

@@ -1395,7 +1395,8 @@ impl ZeldaState {
                 return;
             }
             self.sprite_slot_view_mut(k).increment_subtype2();
-            self.sprite_move_xy(k);
+            // $06:85F6 JSR $06:E92C: complete body, caller opcode unchanged.
+            self.sprite_move_xy_marked(k, 0x06e93e);
             // ROM $06:85F9
             self.sprite_move_z_marked(k, 0x06e96c);
             let value = self.sprite_slot_view(k).z_velocity().wrapping_sub(2);
@@ -1597,7 +1598,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_y_velocity(value);
         let value = ((self.sprite_slot_view(k).x_recoil() as i8) >> 2) as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
-        self.sprite_move_xy(k);
+        // $06:FCB3 JSR $06:E92C: complete body, caller opcode unchanged.
+        self.sprite_move_xy_marked(k, 0x06e93e);
     }
 
     // bool Sprite_CheckDamageToAndFromLink(int k) {  // 85ab93

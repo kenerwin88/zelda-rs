@@ -646,7 +646,8 @@ impl ZeldaState {
         }
         // ROM $05:CC78 -> $05:B88D -> $06:E496
         self.sprite_check_tile_collision_long(k);
-        self.sprite_check_damage_to_link(k);
+        // $05:CC7B JSL $06:F121: complete body, caller opcode unchanged.
+        self.sprite_check_damage_to_link_long(k);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
             let dir = self.sprite_direction_to_face_link(k);
             let value = dir;
@@ -800,7 +801,8 @@ impl ZeldaState {
             self.sprite_place_rupulse_spark_2(k);
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x05);
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $05:AC05 JSR $05:AB93: complete two-call body.
+        self.sprite_check_damage_both_marked(k, 0x05ab93);
     }
 
     // -----------------------------------------------------------------------
@@ -831,7 +833,8 @@ impl ZeldaState {
         let _ = self.sprite_check_tile_collision_long(k);
         // ROM $05:B04E
         self.sprite_move_xy_marked(k, 0x05fa00);
-        self.sprite_check_damage_to_link(k);
+        // $05:B051 JSL $06:F121: complete body, caller opcode unchanged.
+        self.sprite_check_damage_to_link_long(k);
 
         let mut pt = PointU8 { x: 0, y: 0 };
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 0x0f) == 0 {
@@ -941,7 +944,8 @@ impl ZeldaState {
             }
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $05:B675 JSR $05:AB93: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x05ab93);
         // ROM $05:B67D -> $05:B88D -> $06:E496
         if self.sprite_slot_view(k).delay_aux2() == 0 && self.sprite_check_tile_collision_long(k) != 0 {
             let value = 16;
@@ -988,8 +992,10 @@ impl ZeldaState {
         // $05:BCBB-BCC7 JSR Sprite_CheckDamageToAndFromLink, JSR Sprite_Move_,
         // JSR Sprite_CheckTileCollision, LDA $D80,x, BNE (186; taken +6 into
         // GreenKnifeGuard_Moving).
-        self.sprite_check_damage_to_and_from_link(k);
-        self.sprite_move_xy(k);
+        // $05:BCBB JSR $05:AB93: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x05ab93);
+        // $05:BCBE JSR $05:F9ED: complete body, caller opcode unchanged.
+        self.sprite_move_xy_marked(k, 0x05fa00);
         let _ = self.sprite_check_tile_collision(k);
         if self.sprite_slot_view(k).ai_state() != 0 {
             crate::cycle_ledger::charge(186 + 6);

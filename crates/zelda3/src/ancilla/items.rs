@@ -261,7 +261,8 @@ impl ZeldaState {
 
         let mut j = item.wrapping_sub(1) as usize * 4;
         for _ in 0..4 {
-            self.ancilla_set_oam(
+            // $08:C2B0 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x.wrapping_add(ANCILLA35_MASTER_SWORD_RECEIPT_SWORD_CEREMONY_X[j] as i16 as u16),
                 y.wrapping_add(ANCILLA35_MASTER_SWORD_RECEIPT_SWORD_CEREMONY_Y[j] as i16 as u16),
@@ -314,7 +315,8 @@ impl ZeldaState {
 
         let (x, y) = self.ancilla_prep_adjusted_oam_coord(k);
         let oam = self.game_state.oam.current_pointer_usize();
-        self.ancilla_set_oam(
+        // $08:D01E JSR F6E1: complete XY body, once per executed draw.
+        self.ancilla_set_oam_marked(
             oam,
             x,
             y.wrapping_sub(self.ancilla_slot_view(k).z() as i8 as i16 as u16),
@@ -1389,7 +1391,8 @@ impl ZeldaState {
             } else {
                 t = (self.game_state.frame.frame_counter >> 2) & 1;
             }
-            self.ancilla_set_oam(
+            // $08:F387 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x,
                 y.wrapping_sub(self.ancilla_slot_view(k).z() as i8 as i16 as u16),

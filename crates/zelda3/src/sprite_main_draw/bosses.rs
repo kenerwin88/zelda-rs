@@ -483,13 +483,26 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Agahnim_Draw(int k) {  // 9ed978
     pub(super) fn agahnim_draw(&mut self, k: usize) {
+        // $1E:D330 JSR D978; complete drawing body, all called bodies separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ed978));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ed978);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
+        b.block(0x1ed97b);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics()).min(17);
         for i in (0..=3).rev() {
             let j = g * 4 + i;
+            b.block(0x1ed985);
+            if 0xc7 + j > 255 { b.crossing(0x1ed996); }
+            if j >= 0x44 { b.taken(0x1ed9b3); }
+            else {
+                b.block(0x1ed9b5);
+                if j < 0x40 { b.taken(0x1ed9b7); } else { b.block(0x1ed9b9); }
+            }
+            b.block(0x1ed9bb); if i != 0 { b.taken(0x1ed9c1); }
             self.set_oam_plain_at(
                 oam,
                 info_x.wrapping_add(AGAHNIM_DRAW_X_OFFSETS_0[j] as i16 as u16) as u8,
@@ -500,7 +513,9 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x1ed9c3);
         if g < 12 {
+            b.block(0x1ed9cb);
             let mut shadow_info = PrepOamCoordsRet {
                 x: info_x,
                 y: info_y,
@@ -508,29 +523,41 @@ impl ZeldaState {
                 flags: info_flags,
             };
             self.sprite_draw_shadow_custom(k, &mut shadow_info, 18);
-        }
+        } else { b.taken(0x1ed9c9); }
+        b.block(0x1ed9d1);
         if self.game_state.frame.submodule != 0 {
+            b.block(0x1ed9d5);
             self.sprite_correct_oam_entries(k, 3, 0xff);
-        }
+        } else { b.taken(0x1ed9d3); }
 
+        b.block(0x1ed9dd);
         let Some((info_x, info_y, _info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet)
         else {
             return;
         };
+        b.block(0x1ed9e0);
         if self.sprite_slot_view(k).direction() != 0 {
+            b.block(0x1ed9e7);
             self.oam_allocate_from_region_c(8);
+            b.block(0x1ed9eb);
         } else {
+            b.taken(0x1ed9e5); b.block(0x1ed9ed);
             self.oam_allocate_from_region_b(8);
         }
         let mut oam = self.game_state.oam.current_pointer_usize();
+        b.block(0x1ed9f1);
         if self.sprite_slot_view(k).head_direction() == 0 {
-            return;
+            b.taken(0x1ed9f6); b.block(0x1eda41); return;
         }
+        b.block(0x1ed9f8);
         let g = usize::from(self.sprite_slot_view(k).head_direction().wrapping_sub(1)).min(35);
         let flags =
             (((self.game_state.frame.frame_counter >> 1) & 2).wrapping_add(2)).wrapping_add(0x31);
         for i in (0..=1).rev() {
             let j = g * 2 + i;
+            b.block(0x1eda0c);
+            if 0xe7 + j > 255 { b.crossing(0x1eda1d); }
+            if i != 0 { b.taken(0x1eda3e); }
             self.set_oam_plain_at(
                 oam,
                 info_x.wrapping_add(AGAHNIM_DRAW_X_OFFSETS_1[j] as i16 as u16) as u8,
@@ -541,6 +568,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x1eda40); b.block(0x1eda41);
     }
 
     // -----------------------------------------------------------------------
@@ -605,7 +633,8 @@ impl ZeldaState {
                     };
                     self.AgahnimWarpShadowFilter(filter_k);
                 } else if k == 0 {
-                    self.sprite_check_damage_to_and_from_link(k);
+                    // $1E:D58F JSR $1E:C267: complete two-call body.
+                    self.sprite_check_damage_both_marked(k, 0x1ec267);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ignore_projectile(value);
                 }
@@ -1901,7 +1930,8 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.sprite_check_damage_to_and_from_link(k);
+                // $05:A431 JSR $05:AB93: complete two-call body.
+                self.sprite_check_damage_both_marked(k, 0x05ab93);
                 self.sprite_move_z(k);
                 if self.sprite_slot_view(k).anim_clock() == 0 {
                     self.sprite_slot_view_mut(k).subtract_z_velocity(1);
@@ -1941,7 +1971,8 @@ impl ZeldaState {
                 self.sprite_move_xy(k);
             }
             3 => {
-                self.sprite_check_damage_to_and_from_link(k);
+                // $05:A4CB JSR $05:AB93: complete two-call body.
+                self.sprite_check_damage_both_marked(k, 0x05ab93);
                 self.sprite_move_xy(k);
                 self.sprite_move_z(k);
                 if !sign8(self.sprite_slot_view(k).z_velocity().wrapping_add(20)) {

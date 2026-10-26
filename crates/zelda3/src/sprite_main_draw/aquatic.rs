@@ -91,7 +91,8 @@ impl ZeldaState {
             return false;
         }
         self.fireball_spawn_trail_garnish(k);
-        if self.sprite_check_damage_to_link(k) {
+        // $05:969C JSL $06:F121: complete body, caller opcode unchanged.
+        if self.sprite_check_damage_to_link_long(k) {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             return false;
@@ -114,7 +115,8 @@ impl ZeldaState {
                 return false;
             }
         }
-        self.sprite_move_xy(k);
+        // $05:96A6 JSR $05:F9ED: complete body, caller opcode unchanged.
+        self.sprite_move_xy_marked(k, 0x05fa00);
         true
     }
 
@@ -276,7 +278,8 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.sprite_check_damage_to_and_from_link(k);
+                // $05:97F1 JSR $05:AB93: both complete damage calls.
+                self.sprite_check_damage_both_marked(k, 0x05ab93);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     let value = 23;
@@ -907,7 +910,8 @@ impl ZeldaState {
                 if self.sprite_return_if_inactive(k) {
                     return;
                 }
-                self.sprite_check_damage_to_and_from_link(k);
+                // $05:9DEC JSR $05:AB93: complete two-call body.
+                self.sprite_check_damage_both_marked(k, 0x05ab93);
                 self.sprite_move_z(k);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if sign8(self.sprite_slot_view(k).z().wrapping_sub(1)) {
@@ -1107,7 +1111,8 @@ impl ZeldaState {
             return;
         }
         self.sprite_slot_view_mut(k).add_subtype2(1);
-        self.sprite_check_damage_to_and_from_link(k);
+        // $1D:9CC7 JSR $1D:C211: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x1dc211);
         let old_vel = self.sprite_slot_view(k).y_velocity();
         let value = self
             .sprite_slot_view(k)

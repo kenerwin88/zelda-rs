@@ -1731,3 +1731,70 @@ fn marker37_red_bari_matches_rom() {
             });
     }
 }
+
+#[test]
+fn marker38_agahnim_draw_matches_rom() {
+    for (g, head, direction, submodule, x) in [(0u8,0u8,0u8,0u8,0x40u16),
+        (11,1,1,0,0x40), (12,13,0,1,0x40), (14,14,1,0,0x40),
+        (17,36,0,0,0x40), (0,0,0,0,0x400)] {
+        let mut native = marker29_state();
+        for (a,v) in [(0xdd0,9),(0xe20,0x7a),(0xdc0,g),(0xeb0,head),(0xde0,direction),(0x11,submodule)] {
+            native.write_wram_byte(a,v);
+        }
+        native.write_wram_word(0xfd8,x); native.write_wram_word(0xfda,0x40);
+        native.write_wram_byte(0xd10,x as u8); native.write_wram_byte(0xd30,(x>>8)as u8);
+        native.write_wram_byte(0xd00,0x40); native.sync_native_game_state_from_ram();
+        let Some(machine) = marker29_machine(&native,0x1ed978,0) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x1ed978,machine,
+            |s| s.cpu.k == 0x1e && (0xd978..0xda42).contains(&s.cpu.pc), || { native.agahnim_draw(0); });
+    }
+}
+
+#[test]
+fn marker38_thrown_debris_matches_rom() {
+    for (slot, kind, countdown, indoors, chr, x) in [
+        (0usize,0u8,28u8,0u8,0u8,40u16), (1,2,0,0,0,40),
+        (2,2,31,1,0,40), (29,4,0,1,0,40), (0,0x80,16,0,0,40),
+        (0,3,12,0,0,40), (0,0,12,0,3,40), (0,0,12,0,0,0x400)] {
+        let mut native = marker29_state();
+        for (a,v) in [(0x1f800+slot,22),(0x1f92c+slot,kind),(0x1f90e+slot,countdown),
+            (0x1f83c+slot,x as u8),(0x1f878+slot,(x>>8)as u8),(0x1f81e+slot,48),
+            (0x1b,indoors),(0xfc6,chr)] { native.write_wram_byte(a,v); }
+        native.sync_native_game_state_from_ram();
+        let Some(machine) = marker29_machine(&native,0x09f0cb,slot) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x09b0b6,machine,
+            |s| s.cpu.k==9 && (0xf0cb..0xf15c).contains(&s.cpu.pc), || {
+                let _scope=crate::cycle_ledger::routine(0x09b0b6);
+                native.garnish16_thrown_item_debris(slot);
+            });
+    }
+}
+
+#[test]
+fn marker38_mothula_trail_matches_rom() {
+    for (slot, sprite) in [(0usize,0u8),(29,15)] {
+        let mut native=marker29_state();
+        for(a,v)in[(0x1f83c+slot,40),(0x1f81e+slot,48),(0x1f92c+slot,sprite)] {native.write_wram_byte(a,v);}
+        native.sync_native_game_state_from_ram();
+        let Some(machine)=marker29_machine(&native,0x09b6e1,slot)else{return};
+        crate::cycle_ledger::assert_rom_marker_work(0x09b0b6,machine,
+            |s|s.cpu.k==9 && (0xb6e1..0xb714).contains(&s.cpu.pc),|| {
+                let _scope=crate::cycle_ledger::routine(0x09b0b6);native.garnish02_mothula_beam_trail(slot);
+            });
+    }
+}
+
+#[test]
+fn marker38_babasu_flash_matches_rom() {
+    for(slot,countdown,x)in[(0usize,0u8,40u16),(29,31,40),(0,8,0x400)] {
+        let mut native=marker29_state();
+        for(a,v)in[(0x1f83c+slot,x as u8),(0x1f878+slot,(x>>8)as u8),
+            (0x1f81e+slot,48),(0x1f90e+slot,countdown)] {native.write_wram_byte(a,v);}
+        native.sync_native_game_state_from_ram();
+        let Some(machine)=marker29_machine(&native,0x09b49e,slot)else{return};
+        crate::cycle_ledger::assert_rom_marker_work(0x09b0b6,machine,
+            |s|s.cpu.k==9 && ((0xb49e..0xb4c0).contains(&s.cpu.pc)||(0xb70c..0xb714).contains(&s.cpu.pc)),|| {
+                let _scope=crate::cycle_ledger::routine(0x09b0b6);native.garnish07_babasu_flash(slot);
+            });
+    }
+}

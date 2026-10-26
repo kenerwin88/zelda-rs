@@ -96,7 +96,8 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $1D:DD97 JSR $1D:C211: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x1dc211);
         self.sprite_move_xy_bank(k, 0x1de95d);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -596,7 +597,8 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $1D:DC8B JSR $1D:C211: complete two-call body.
+        self.sprite_check_damage_both_marked(k, 0x1dc211);
         self.sprite_move_xy(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -785,7 +787,8 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $06:9604 JSR $06:D88B: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x06d88b);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -840,7 +843,8 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $06:9E28 JSR $06:D88B: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x06d88b);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let value = (self.sprite_slot_view(k).subtype2() >> 3) & 3;
         self.sprite_slot_view_mut(k).set_graphics(value);
@@ -966,7 +970,8 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $05:94BE JSR $05:AB93: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x05ab93);
         // ROM $05:94C1
         self.sprite_move_xy_marked(k, 0x05fa00);
         // ROM $05:94C4 -> $05:B88D -> $06:E496

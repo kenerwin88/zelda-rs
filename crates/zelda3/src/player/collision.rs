@@ -2456,9 +2456,19 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_diagonal_kickback(&mut self) {
+        // $07:B7D1 JSR CCAB: complete entry; checkpoint suffixes stay unmarked.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07ccab));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07ccab);
+        if self.game_state.player.follower_link.y_velocity() == 0 { b.taken(0x07ccad); }
+        else {
+            b.block(0x07ccaf);
+            if self.game_state.player.follower_link.x_velocity() != 0 { b.taken(0x07ccb1); }
+        }
         if self.game_state.player.follower_link.x_velocity() == 0
             || self.game_state.player.follower_link.y_velocity() == 0
         {
+            b.block(0x07ccb3); b.block(0x07cd76); b.block(0x07cd78);
             self.follower_link_state_mut()
                 .set_moving_against_diag_deadlocked(0);
             self.follower_link_state_mut()
@@ -2466,13 +2476,22 @@ impl ZeldaState {
             return;
         }
 
+        b.block(0x07ccb6);
+        if self.game_state.player.follower_link.x_velocity_signed().is_negative() { b.taken(0x07ccce); }
+        else { b.block(0x07ccd0); }
         self.follower_link_state_mut()
             .cache_copied_position_from_current();
 
-        self.link_handle_diagonal_kickback_after_cache();
+        self.link_handle_diagonal_kickback_after_cache_body(true);
     }
 
     fn link_handle_diagonal_kickback_after_cache(&mut self) {
+        self.link_handle_diagonal_kickback_after_cache_body(false);
+    }
+
+    fn link_handle_diagonal_kickback_after_cache_body(&mut self, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x07ccd2);
         self.detect_player_movement(
             CollisionAxis::Horizontal,
             CollisionDirection::along(
@@ -2485,14 +2504,18 @@ impl ZeldaState {
             ),
             MovementProbeKind::Cardinal,
         );
+        b.block(0x07ccd5);
         if self.game_state.player.tile_detection.slope_collision_bits() & 5 == 0 {
+            b.taken(0x07ccd9); b.block(0x07cce4); b.block(0x07cd76); b.block(0x07cd78);
             self.follower_link_state_mut()
                 .set_moving_against_diag_deadlocked(0);
             self.follower_link_state_mut()
                 .clear_moving_against_diag_tile();
             return;
         }
+        b.block(0x07ccdb);
         self.flag_moving_into_slopes_x();
+        b.block(0x07ccde);
         if self
             .game_state
             .player
@@ -2501,6 +2524,7 @@ impl ZeldaState {
             & 0x0f
             == 0
         {
+            b.block(0x07cce4); b.block(0x07cd76); b.block(0x07cd78);
             self.follower_link_state_mut()
                 .set_moving_against_diag_deadlocked(0);
             self.follower_link_state_mut()
@@ -2508,6 +2532,7 @@ impl ZeldaState {
             return;
         }
 
+        b.taken(0x07cce2); b.block(0x07cce7);
         let xd = self
             .game_state
             .player
@@ -2518,6 +2543,9 @@ impl ZeldaState {
         self.follower_link_state_mut().set_x(copied_x);
         self.follower_link_state_mut().set_x_velocity(xd);
 
+        if self.game_state.player.follower_link.y_velocity_signed().is_negative() { b.taken(0x07cd00); }
+        else { b.block(0x07cd02); }
+        b.block(0x07cd04);
         self.detect_player_movement(
             CollisionAxis::Vertical,
             CollisionDirection::along(
@@ -2530,14 +2558,18 @@ impl ZeldaState {
             ),
             MovementProbeKind::Cardinal,
         );
+        b.block(0x07cd07);
         if self.game_state.player.tile_detection.slope_collision_bits() & 5 == 0 {
+            b.taken(0x07cd0b); b.block(0x07cd76); b.block(0x07cd78);
             self.follower_link_state_mut()
                 .set_moving_against_diag_deadlocked(0);
             self.follower_link_state_mut()
                 .clear_moving_against_diag_tile();
             return;
         }
+        b.block(0x07cd0d);
         self.flag_moving_into_slopes_y();
+        b.block(0x07cd10);
         if self
             .game_state
             .player
@@ -2546,6 +2578,7 @@ impl ZeldaState {
             & 0x0f
             == 0
         {
+            b.taken(0x07cd14); b.block(0x07cd76); b.block(0x07cd78);
             self.follower_link_state_mut()
                 .set_moving_against_diag_deadlocked(0);
             self.follower_link_state_mut()
@@ -2553,6 +2586,7 @@ impl ZeldaState {
             return;
         }
 
+        b.block(0x07cd16);
         let diag_tile = self
             .game_state
             .player
@@ -2570,11 +2604,16 @@ impl ZeldaState {
 
         let x_vel = self.game_state.player.follower_link.x_velocity_signed();
         let x_idx = x_vel.unsigned_abs() as usize;
+        if x_vel < 0 { b.taken(0x07cd2c); b.block(0x07cd33); }
+        else { b.block(0x07cd2e); }
         let x_delta = if x_vel < 0 {
             LINK_HANDLE_DIAGONAL_KICKBACK_X_OFFSETS_1[x_idx]
         } else {
             LINK_HANDLE_DIAGONAL_KICKBACK_X_OFFSETS_0[x_idx]
         };
+        b.block(0x07cd3b);
+        if x_delta >= 0 { b.taken(0x07cd43); } else { b.block(0x07cd45); }
+        b.block(0x07cd48);
         let x = self
             .game_state
             .player
@@ -2585,11 +2624,16 @@ impl ZeldaState {
 
         let y_vel = self.game_state.player.follower_link.y_velocity_signed();
         let y_idx = y_vel.unsigned_abs() as usize;
+        if y_vel < 0 { b.taken(0x07cd51); b.block(0x07cd58); }
+        else { b.block(0x07cd53); }
         let y_delta = if y_vel < 0 {
             LINK_HANDLE_DIAGONAL_KICKBACK_Y_OFFSETS_1[y_idx]
         } else {
             LINK_HANDLE_DIAGONAL_KICKBACK_Y_OFFSETS_0[y_idx]
         };
+        b.block(0x07cd60);
+        if y_delta >= 0 { b.taken(0x07cd68); } else { b.block(0x07cd6a); }
+        b.block(0x07cd6d);
         let y = self
             .game_state
             .player
@@ -2598,6 +2642,7 @@ impl ZeldaState {
             .wrapping_add(y_delta as i16 as u16);
         self.follower_link_state_mut().set_y(y);
 
+        b.block(0x07cd78);
         self.follower_link_state_mut()
             .clear_moving_against_diag_tile();
     }
@@ -2623,7 +2668,7 @@ impl ZeldaState {
             return;
         }
         blocks.block(0x07b840);
-        self.run_slope_collision_checks(order);
+        self.run_slope_collision_checks_marked(order);
         blocks.block(0x07b843);
     }
 
@@ -2708,7 +2753,7 @@ impl ZeldaState {
             if self.lag_free { order = source_order; }
         }
         blocks.block(if order == CollisionOrder::VerticalFirst { 0x07b840 } else { 0x07b845 });
-        self.run_slope_collision_checks(order);
+        self.run_slope_collision_checks_marked(order);
         if order == CollisionOrder::VerticalFirst { blocks.block(0x07b843); }
     }
 

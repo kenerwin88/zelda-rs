@@ -125,5 +125,20 @@
   {"entry": "06c277", "end": "06c2df"},
   {"entry": "06c2df", "end": "06c2e5"},
   {"entry": "0683ea", "end": "0683f2"},
-  {"entry": "06a3dc", "end": "06a3f9"}
+  {"entry": "06a3dc", "end": "06a3f9"},
+  {"entry": "05ab93", "end": "05ab9c"},
+  {"entry": "06d88b", "end": "06d892"},
+  {"entry": "1dc211", "end": "1dc21a"},
+  {"entry": "1ec267", "end": "1ec26b"},
+  {"entry": "08f6e1", "end": "08f6fe"},
+  {"entry": "08cf35", "end": "08cfa6"},
+  {"entry": "0ed83a", "end": "0ed8f8"},
+  {"entry": "0ed8f8", "end": "0ed8fb", "x8": false},
+  {"entry": "1ed978", "end": "1eda42"},
+  {"entry": "09f0cb", "end": "09f15c"},
+  {"entry": "09b6e1", "end": "09b70c"},
+  {"entry": "09b49e", "end": "09b4c0"},
+  {"entry": "07b956", "end": "07b969"},
+  {"entry": "07b969", "end": "07b97c"},
+  {"entry": "07ccab", "end": "07cd7b"}
 ]

@@ -700,6 +700,28 @@ impl ZeldaState {
         CHECK_DAMAGE_FROM_PLAYER_CARRY
     }
 
+    pub(in crate::zelda_rtl) fn sprite_check_damage_both_marked(&mut self, k: usize, entry: u32) -> bool {
+        // $05:AB93, $06:D88B, $1D:C211 and $1E:C267: complete two-call bodies.
+        // Each parent owns only its call opcodes; damage children stay separate.
+        assert!(matches!(entry, 0x05ab93 | 0x06d88b | 0x1dc211 | 0x1ec267));
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(entry);
+        if entry == 0x06d88b {
+            self.sprite_check_damage_from_link(k);
+            b.block(entry + 3);
+            let result = self.sprite_check_damage_to_link(k);
+            b.block(entry + 6);
+            result
+        } else {
+            self.sprite_check_damage_from_link_long(k);
+            b.block(entry + 4);
+            let result = self.sprite_check_damage_to_link_long(k);
+            b.block(entry + 8);
+            result
+        }
+    }
+
     /// $1E:C26B -> $06:F121: bank trampoline and far-call wrapper.
     /// The existing $06:F145 scalar prefix remains owned by that child.
     pub(in crate::zelda_rtl) fn sprite_check_damage_to_link_bank1e(&mut self, k: usize) -> bool {

@@ -1420,6 +1420,24 @@ impl ZeldaState {
         x_bit
     }
 
+    pub(super) fn ancilla_set_oam_marked(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
+        // $08:F6E1..F6FD SetOam_XY; caller owns character/flags/extended stores.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08f6e1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08f6e1);
+        if y >= 256 { b.taken(0x08f6e6); }
+        else {
+            b.block(0x08f6e8);
+            if x >= 256 { b.taken(0x08f6ea); }
+            else {
+                b.block(0x08f6ec);
+                if y >= 0xf0 { b.taken(0x08f6f4); } else { b.block(0x08f6f6); }
+            }
+        }
+        b.block(0x08f6f7);
+        self.ancilla_set_oam(oam, x, y, charnum, flags, big);
+    }
+
     pub(super) fn ancilla_set_oam(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
         let big = big | self.ancilla_write_oam_xy(oam, x, y);
         self.oam_state_mut().set_entry_char(oam, charnum);
@@ -1537,4 +1555,29 @@ fn marker31_ancilla_hitbox_matches_rom() {
         }
     }
 }
+}
+
+#[cfg(test)]
+#[test]
+fn marker38_set_oam_xy_matches_rom() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+    let Ok(rom) = std::fs::read(path) else { return };
+    for (x, y) in [(0x40u16, 0x40u16), (0xff, 0xef), (0x100, 0x40),
+        (0x40, 0x100), (0x40, 0xf0), (0xffff, 0xffff)] {
+        let mut native = ZeldaState::new();
+        for (a, v) in [(0, y), (2, x), (0x90, 0x800)] { native.write_wram_word(a, v); }
+        native.write_wram_word(0x92, 0xa20);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let mut machine = snes::Snes::new();
+        machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());
+        machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+        machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = 8; machine.cpu.db = 8; machine.cpu.pc = 0xf6e1;
+        machine.cpu.sp = 0x1fc;
+        crate::cycle_ledger::assert_rom_marker_work(0x08f6e1, machine,
+            |s| s.cpu.k == 8 && (0xf6e1..0xf6fe).contains(&s.cpu.pc), || {
+                native.ancilla_set_oam_marked(0x800, x, y, 0, 0, 0);
+            });
+    }
 }

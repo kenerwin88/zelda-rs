@@ -1264,7 +1264,8 @@ impl ZeldaState {
     }
 
     fn dash_item_move_and_bounce(&mut self, k: usize, sfx3: bool) {
-        self.sprite_move_xy(k);
+        // $05:FC16 JSR $05:F9ED: complete body, caller opcode unchanged.
+        self.sprite_move_xy_marked(k, 0x05fa00);
         self.sprite_slot_view_mut(k).subtract_z_velocity(1);
         self.sprite_move_z(k);
         if sign8(self.sprite_slot_view(k).z()) {

@@ -795,7 +795,8 @@ impl ZeldaState {
         for _ in (0..=2).rev() {
             let chr = ANCILLA26_SWORD_SWING_SPARKLE_SWORD_SWING_SPARKLE_CHAR[j];
             if chr != 0xff {
-                self.ancilla_set_oam(
+                // $08:D6DD JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     x.wrapping_add(
                         ANCILLA26_SWORD_SWING_SPARKLE_SWORD_SWING_SPARKLE_X[j] as i16 as u16,
@@ -836,7 +837,8 @@ impl ZeldaState {
         let mut j = self.ancilla_slot_view(k).item_to_link() as usize * 4;
         for _ in 0..4 {
             if ANCILLA3_B_SWORD_UP_SPARKLE_ANCILLA_VICTORY_SPARKLE_CHAR[j] != 0xff {
-                self.ancilla_set_oam(
+                // $08:C1BD JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     self.game_state
                         .player
@@ -1327,7 +1329,8 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_oam_index(value);
         let (x, y) = self.ancilla_prep_oam_coord(k);
         let j = self.ancilla_slot_view(k).item_to_link() as usize;
-        self.ancilla_set_oam(
+        // $08:C219 JSR F6E1: complete XY body, once per executed draw.
+        self.ancilla_set_oam_marked(
             self.game_state.oam.current_pointer_usize(),
             x,
             y,
@@ -1598,7 +1601,8 @@ impl ZeldaState {
         };
         for _ in 0..2 {
             if ARROW_DRAW_ARROW_DRAW_CHAR[j] != 0xff {
-                self.ancilla_set_oam(
+                // $08:A417 JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     x.wrapping_add(ARROW_DRAW_ARROW_DRAW_X[j] as i16 as u16),
                     y.wrapping_add(ARROW_DRAW_ARROW_DRAW_Y[j] as i16 as u16),

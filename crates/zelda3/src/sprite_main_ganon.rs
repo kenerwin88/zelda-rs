@@ -373,7 +373,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_check_damage_to_and_from_link(k);
+        // $1D:8ABC JSR $1D:C211: both complete damage calls.
+        self.sprite_check_damage_both_marked(k, 0x1dc211);
         self.swish_every16_frames(k);
         self.sprite_move_xy_bank(k, 0x1de95d);
         self.sprite_slot_view_mut(k).decrement_subtype2();
@@ -441,7 +442,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_check_damage_to_link(k);
+        // $1D:8BDD JSL $06:F121: complete body, caller opcode unchanged.
+        self.sprite_check_damage_to_link_long(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.get_position_relative_to_the_great_overlord_ganon(k);
@@ -521,7 +523,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_aux1() != 0 {
             self.sprite_slot_view_mut(k).set_graphics(15);
             self.ganon_enable_invincibility(k);
-            self.sprite_check_damage_to_and_from_link(k);
+            // $1D:8F03 enters $1D:C211; complete two-call body.
+            self.sprite_check_damage_both_marked(k, 0x1dc211);
             return;
         }
         if self.sprite_return_if_inactive(k) {
@@ -557,7 +560,8 @@ impl ZeldaState {
             == 0
             && self.game_state.dungeon.torch.ganon_torch_count() == 2
         {
-            self.sprite_check_damage_to_and_from_link(k);
+            // $1D:8F55 enters $1D:C211; complete two-call body.
+            self.sprite_check_damage_both_marked(k, 0x1dc211);
         }
         self.sprite_slot_view_mut(k).set_ignore_projectile(0);
 

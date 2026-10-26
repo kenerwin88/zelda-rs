@@ -1275,18 +1275,25 @@ impl ZeldaState {
 
     // void Garnish16_ThrownItemDebris(int k) {  // 89f0cb
     pub(in crate::zelda_rtl) fn garnish16_thrown_item_debris(&mut self, k: usize) {
+        // $09:B110 RTS-dispatch -> F0CB. F198 scatter and prep remain children.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09f0cb);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        b.block(0x09f0ce);
         let r5 = self.garnish_slot_view(k).oam_flags();
         if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
-            return;
+            b.taken(0x09f0d9); b.block(0x09f0e6); return;
         }
+        b.block(0x09f0db);
         if self.garnish_slot_view(k).sprite() == 3 {
+            b.block(0x09f0e3);
             self.scatter_debris_draw(k, pt);
-            return;
+            b.block(0x09f0e6); return;
         }
+        b.taken(0x09f0e1); b.block(0x09f0e7);
         let garnish_sprite = self.garnish_slot_view(k).sprite();
         self.temp_counter_mut().set(garnish_sprite);
         let mut base = ((self.garnish_slot_view(k).countdown() >> 2) ^ 7) << 2;
@@ -1296,9 +1303,29 @@ impl ZeldaState {
         {
             base = base.wrapping_add(0x20);
         }
+        if garnish_sprite == 4 { b.taken(0x09f0f7); b.block(0x09f101); }
+        else {
+            b.block(0x09f0f9);
+            if garnish_sprite != 2 { b.taken(0x09f0fb); }
+            else {
+                b.block(0x09f0fd);
+                if self.game_state.world.location.is_indoors() { b.taken(0x09f0ff); }
+                else { b.block(0x09f101); }
+            }
+        }
+        b.block(0x09f104);
         let mut oam = self.game_state.oam.current_pointer_usize();
         for i in (0..=3usize).rev() {
             let j = usize::from(base) + i;
+            b.block(0x09f10b);
+            if 0x8b + 2 * j > 255 { b.crossing(0x09f118); }
+            if self.game_state.scratch_counter.value() == 0 { b.block(0x09f133); }
+            else {
+                b.taken(0x09f131); b.block(0x09f137);
+                if self.game_state.scratch_counter.value() < 0x80 { b.taken(0x09f13c); }
+                else { b.block(0x09f13e); }
+            }
+            b.block(0x09f140); if i != 0 { b.taken(0x09f158); }
             let chr = if self.game_state.scratch_counter.value() == 0 {
                 0x4e
             } else if self.game_state.scratch_counter.value() >= 0x80 {
@@ -1316,6 +1343,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x09f15a);
     }
 
     // void Oam_AllocateDeferToPlayer(int k) — sprite.c:2920

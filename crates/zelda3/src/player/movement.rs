@@ -1360,6 +1360,24 @@ impl ZeldaState {
         );
     }
 
+    pub(in crate::zelda_rtl) fn run_slope_collision_checks_marked(&mut self, order: CollisionOrder) {
+        // $07:B840 JSR B956 / B845 JSR B969: complete ordered wrappers.
+        let entry = if order == CollisionOrder::VerticalFirst { 0x07b956 } else { 0x07b969 };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        for (index, axis) in order.axes().into_iter().enumerate() {
+            let pc = entry + if index == 0 { 0 } else { 9 };
+            b.block(pc);
+            if axis.blocked_by_slope(self.game_state.player.follower_link.moving_against_diag_tile()) {
+                b.taken(pc + 4);
+            } else {
+                b.block(pc + 6);
+                self.start_movement_collision_checks(axis);
+            }
+        }
+        b.block(entry + 18);
+    }
+
     pub(in crate::zelda_rtl) fn run_slope_collision_checks(&mut self, order: CollisionOrder) {
         for axis in order.axes() {
             // The first axis may change these flags: read again for the second.

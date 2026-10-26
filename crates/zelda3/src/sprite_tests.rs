@@ -3328,3 +3328,32 @@ fn marker32_ancilla_sprite_scan_matches_rom() {
         }
     }
 }
+
+fn marker38_damage_both(entry: u32) {
+    // Exercise the complete wrappers with disabled, staggered and eligible children.
+    for (k, disabled, hit, frame) in [(0usize, 1u8, 0u8, 0u8), (15, 0, 1, 0), (0, 0, 0, 0)] {
+        let mut native = marker31_state();
+        for (a, v) in [(0x37b, disabled), (0xea0 + k, hit), (0x1a, frame)] {
+            native.write_wram_byte(a, v);
+        }
+        native.write_wram_word(0x20, 0x400);
+        native.write_wram_word(0x22, 0x400);
+        native.sync_native_game_state_from_ram();
+        let Some(machine) = marker31_machine(&native, entry, k) else { return };
+        let end = entry + if entry == 0x06d88b { 7 } else { 9 };
+        crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+            |s| {
+                let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                (entry..end).contains(&pc)
+            }, || { native.sprite_check_damage_both_marked(k, entry); });
+    }
+}
+
+#[test]
+fn marker38_bank5_damage_both_matches_rom() { marker38_damage_both(0x05ab93); }
+#[test]
+fn marker38_bank6_damage_both_matches_rom() { marker38_damage_both(0x06d88b); }
+#[test]
+fn marker38_bank1d_damage_both_matches_rom() { marker38_damage_both(0x1dc211); }
+#[test]
+fn marker38_bank1e_damage_both_matches_rom() { marker38_damage_both(0x1ec267); }

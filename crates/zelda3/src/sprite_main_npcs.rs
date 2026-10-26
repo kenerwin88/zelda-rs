@@ -243,7 +243,8 @@ impl ZeldaState {
         let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         if self.sprite_slot_view(k).delay_aux4() == 0 {
-            self.sprite_check_damage_to_link(k);
+            // $1E:DD72 JSR $1E:C26B: complete body, caller opcode unchanged.
+            self.sprite_check_damage_to_link_bank1e(k);
             // ROM $1E:DD75 JSL $06:F2AA
             if (self.sprite_check_damage_from_link_long(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                 != 0

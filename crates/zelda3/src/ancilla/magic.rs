@@ -1052,7 +1052,8 @@ impl ZeldaState {
         let mut j = self.ancilla_slot_view(k).item_to_link() as usize * 2;
         for _ in 0..2 {
             if ANCILLA2_D_SOMARIA_BLOCK_FIZZ_SOMARIA_BLOCK_FIZZLE_CHAR[j] != 0xff {
-                self.ancilla_set_oam(
+                // $08:EA54 JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     x.wrapping_add(
                         ANCILLA2_D_SOMARIA_BLOCK_FIZZ_SOMARIA_BLOCK_FIZZLE_X[j] as i16 as u16,
@@ -1588,7 +1589,8 @@ impl ZeldaState {
             })
             .wrapping_sub(8)
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
-        self.ancilla_set_oam(
+        // $08:AD27 JSR F6E1: complete XY body, once per executed draw.
+        self.ancilla_set_oam_marked(
             oam,
             x,
             y,
@@ -1732,7 +1734,8 @@ impl ZeldaState {
                 if ANCILLA_DRAW_BOMBOS_FIRE_COLUMN_BOMBOS_SPELL_FIRE_COLUMN_CHAR[k] != 0xff {
                     let x = self.game_state.effects.bombos_spell.fire_column(kk).x();
                     let y = self.game_state.effects.bombos_spell.fire_column(kk).y();
-                    self.ancilla_set_oam(
+                    // $08:B3D6 JSR F6E1: complete XY body, once per executed draw.
+                    self.ancilla_set_oam_marked(
                         oam,
                         x.wrapping_add(
                             ANCILLA_DRAW_BOMBOS_FIRE_COLUMN_BOMBOS_SPELL_FIRE_COLUMN_X[k] as i16
@@ -1769,7 +1772,8 @@ impl ZeldaState {
         let mut t = self.game_state.effects.bombos_spell.blast(k).phase() as usize * 4 + 3;
         for _ in 0..4 {
             if ANCILLA_DRAW_BOMBOS_BLAST_BOMBOS_SPELL_DRAW_BLAST_CHAR[t] != 0xff {
-                self.ancilla_set_oam(
+                // $08:B644 JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     x.wrapping_add(
                         ANCILLA_DRAW_BOMBOS_BLAST_BOMBOS_SPELL_DRAW_BLAST_X[t] as i16 as u16,
@@ -1796,7 +1800,8 @@ impl ZeldaState {
         let b = self.ancilla_slot_view(k).work_byte_25() as usize;
         let mut j = b * 4;
         for _ in 0..4 {
-            self.ancilla_set_oam(
+            // $08:BB28 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x.wrapping_add(ANCILLA_MAGIC_POWDER_DRAW_MAGIC_POWDER_DRAW_X[j] as i16 as u16),
                 y.wrapping_add(ANCILLA_MAGIC_POWDER_DRAW_MAGIC_POWDER_DRAW_Y[j] as i16 as u16),
@@ -1908,7 +1913,8 @@ impl ZeldaState {
         );
         let mut j = self.ancilla_slot_view(k).item_to_link() as usize * 8;
         for _ in 0..8 {
-            self.ancilla_set_oam(
+            // $08:EBB6 JSR F6E1: complete XY body, once per executed draw.
+            self.ancilla_set_oam_marked(
                 oam,
                 x.wrapping_add(
                     ANCILLA2_E_SOMARIA_BLOCK_FISSION_SOMARIAN_BLOCK_DIVIDE_X[j] as i16 as u16,
@@ -1938,7 +1944,8 @@ impl ZeldaState {
         let mut j = ((self.ancilla_slot_view(k).timer() & 0xf8) >> 1) as usize;
         loop {
             if ANCILLA2_F_LAMP_FLAME_LAMP_FLAME_DRAW_CHAR[j] != 0xff {
-                self.ancilla_set_oam(
+                // $08:EC51 JSR F6E1: complete XY body, once per executed draw.
+                self.ancilla_set_oam_marked(
                     oam,
                     x.wrapping_add(ANCILLA2_F_LAMP_FLAME_LAMP_FLAME_DRAW_X[j] as i16 as u16),
                     y.wrapping_add(ANCILLA2_F_LAMP_FLAME_LAMP_FLAME_DRAW_Y[j] as i16 as u16),
