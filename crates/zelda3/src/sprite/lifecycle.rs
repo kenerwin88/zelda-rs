@@ -374,21 +374,46 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_absorbable_transient(&mut self, k: usize, transient: bool) -> bool {
+        // $06:D22F..D289: selection only; JMP drawing tails remain separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(
+            if transient { 0x06_d22f } else { 0x06_d232 }));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        if transient { blocks.block(0x06d22f); }
         if transient && self.sprite_return_if_phasing_out(k) {
             return false;
+        }
+        blocks.block(0x06d232);
+        if self.game_state.oam.has_sprite_sorting() {
+            blocks.taken(0x06d235);
+        } else {
+            blocks.block(0x06d237);
+            if self.game_state.world.location.is_outdoors() { blocks.taken(0x06d239); }
+            else { blocks.block(0x06d23b); }
         }
         if !self.game_state.oam.has_sprite_sorting() && self.game_state.world.location.is_indoors()
         {
             let value = 0x30;
             self.sprite_slot_view_mut(k).set_object_priority(value);
         }
+        blocks.block(0x06d240);
         if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
+            blocks.taken(0x06d245);
+            blocks.block(0x06d289);
             return false;
         }
+        blocks.block(0x06d247);
         if self.sprite_slot_view(k).delay_aux2() != 0 {
+            blocks.block(0x06d24c);
             self.oam_allocate_from_region_c(12);
-        }
+        } else { blocks.taken(0x06d24a); }
+        blocks.block(0x06d252);
         if self.sprite_slot_view(k).e() != 0 {
+            blocks.taken(0x06d255);
+            blocks.block(0x06d287);
+            // First PLA closes this frame; second PLA/RTS belongs to its caller.
+            drop(_scope);
+            blocks.block(0x06d288);
+            blocks.block(0x06d289);
             if self.game_state.enhanced_features.has(4096) {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_b(value);
@@ -398,28 +423,50 @@ impl ZeldaState {
 
         let j = self.sprite_slot_view(k).sprite_type().wrapping_sub(0xd8) as usize;
         let a = SPRITE_DRAW_ABSORBABLE_TRANSIENT_ABSORBABLE_GFX_BY_TYPE[j];
+        blocks.block(0x06d257);
+        // The source tables use the raw type as Y ($D144/$D135 + type).
+        if 0x44 + u16::from(self.sprite_slot_view(k).sprite_type()) > 0xff {
+            blocks.crossing(0x06d25a);
+        }
         if a != 0 {
+            blocks.block(0x06d25f);
             self.sprite_draw_numbered_absorbable(k, i32::from(a));
             return false;
         }
+        blocks.taken(0x06d25d);
 
         let t = SPRITE_DRAW_ABSORBABLE_TRANSIENT_ABSORBABLE_OAM_EXT_SIZE_BY_TYPE[j];
+        blocks.block(0x06d262);
+        if 0x35 + u16::from(self.sprite_slot_view(k).sprite_type()) > 0xff {
+            blocks.crossing(0x06d262);
+        }
         if t == 0 {
+            blocks.block(0x06d267);
             self.sprite_draw_single_small(k);
             return false;
         }
+        blocks.taken(0x06d265);
+        blocks.block(0x06d26a);
         if t == 2 {
+            blocks.block(0x06d26e);
             if self.sprite_slot_view(k).sprite_type() == 0xe6 {
+                blocks.block(0x06d275);
                 if self.sprite_slot_view(k).subtype() == 1 {
+                    blocks.taken(0x06d27a);
+                    blocks.block(0x06d284);
                     self.sprite_draw_thin_and_tall(k);
                     return false;
                 }
+                blocks.block(0x06d27c);
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_graphics(value);
-            }
+            } else { blocks.taken(0x06d273); }
+            blocks.block(0x06d281);
             self.sprite_draw_single_large(k);
             return false;
         }
+        blocks.taken(0x06d26c);
+        blocks.block(0x06d284);
         self.sprite_draw_thin_and_tall(k);
         false
     }
@@ -1140,15 +1187,24 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_module_fall1(&mut self, k: usize) {
+        // $06:852E..8542 is a tail of the $06:84E2 state dispatch.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x06852e);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            blocks.block(0x068533);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             self.sprite_manually_set_death_flag_uw(k);
+            blocks.block(0x06853a);
             return;
         }
+        blocks.taken(0x068531);
+        blocks.block(0x06853b);
         let (mut info, out) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
         if !out {
+            blocks.block(0x06853e);
             self.sprite_fall_draw(k, &mut info);
+            blocks.block(0x068542);
         }
     }
 

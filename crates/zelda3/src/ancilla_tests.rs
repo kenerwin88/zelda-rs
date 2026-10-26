@@ -581,3 +581,80 @@ fn native_receipt_oam_preserves_semantic_tiles_and_all_body_return_cycles() {
     }
     println!("native receipt OAM semantics: 1536 fixtures, full tiles and body/XY-helper return cycles match");
 }
+
+fn marker29_machine(native: &ZeldaState, entry: u32, slot: usize) -> Option<snes::Snes> {
+    use snes::{CartType, Snes};
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc"));
+    let rom = std::fs::read(path).ok()?;
+    let mut machine = Snes::new();
+    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+    machine.ram.copy_from_slice(&native.wram_image());
+    machine.ram[0x1fb..0x200].copy_from_slice(&[0xff, 0x7f, 0xff, 0x7f, 0]);
+    machine.cpu.e = false;
+    machine.cpu.unpack_flags(0x30);
+    machine.cpu.k = (entry >> 16) as u8;
+    machine.cpu.db = (entry >> 16) as u8;
+    machine.cpu.pc = entry as u16;
+    machine.cpu.sp = 0x1fa;
+    machine.cpu.x = slot as u16;
+    Some(machine)
+}
+
+fn marker29_state() -> ZeldaState {
+    let mut native = ZeldaState::new();
+    let mut image = native.wram_image().into_owned();
+    image[0x10] = 7;
+    image[0x11] = 0;
+    image[0x1b] = 1;
+    image[0xfc1] = 0;
+    image[0xfd8..0xfdc].copy_from_slice(&[0x40, 0, 0x40, 0]);
+    image[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
+    image[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
+    native.import_wram_image(&image);
+    native.sync_native_game_state_from_ram();
+    native.set_lag_free(true);
+    native
+}
+
+#[test]
+fn marker29_dash_dust_control_matches_rom() {
+    for k in [0,5] {
+        for (step,timer,item) in [(1,1,0),(0,1,0),(0,1,5),(0,0,0),(0,0,4),(0,0,5)] {
+            let mut native=marker29_state();
+            for (a,v) in [(0xc54,step),(0xc68,timer),(0xc5e,item),(0xc4a,0x1e)] {
+                native.write_wram_byte(a+k,v);
+            }
+            native.sync_native_game_state_from_ram();
+            let Some(machine)=marker29_machine(&native,0x08bc92,k) else {return};
+            let source=crate::cycle_ledger::assert_rom_marker_work(0x08833c,machine,
+                |s|s.cpu.k==8 && (0xbc92..0xbcc4).contains(&s.cpu.pc),||{
+                    let _scope=crate::cycle_ledger::routine(0x08833c);
+                    native.ancilla1_e_dash_dust(k);
+                });
+            for a in [0xc4a,0xc68,0xc5e] {
+                assert_eq!(native.read_wram_byte(a+k),source.snes().ram[a+k]);
+            }
+        }
+    }
+}
+
+#[test]
+fn marker29_safe_oam_coordinates_match_rom() {
+    for x in [0xff7fu16,0xff80,0xffff,0,0xff,0x100,0x17f,0x180] {
+        for y in [0xffefu16,0xfff0,0xffff,0,0xef,0xf0,0x100] {
+            let mut native=marker29_state();
+            native.write_wram_word(0x02,x);
+            native.write_wram_word(0x00,y);
+            native.sync_native_game_state_from_ram();
+            let Some(machine)=marker29_machine(&native,0x08f702,0) else {return};
+            let source=crate::cycle_ledger::assert_rom_marker_work(0x08f702,machine,
+                |s|s.cpu.k==8 && (0xf702..0xf72f).contains(&s.cpu.pc),||{
+                    native.ancilla_set_oam_safe(0x800,x,y,0x24,0x3c,2);
+                });
+            assert_eq!(native.read_wram_byte(0x800),source.snes().ram[0x800]);
+            assert_eq!(native.read_wram_byte(0x801),source.snes().ram[0x801]);
+        }
+    }
+}

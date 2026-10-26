@@ -251,18 +251,26 @@ impl ZeldaState {
     }
 
     pub(super) fn pengator_before_ai(&mut self, k: usize) -> bool {
+        // $1E:A196..A1BA: graphics/draw call and collision-reset prefix.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x1ea196);
         let value = self.sprite_slot_view(k).a().wrapping_add(
             PENGATOR_GRAPHICS_BY_DIRECTION[usize::from(self.sprite_slot_view(k).direction())],
         );
         self.sprite_slot_view_mut(k).set_graphics(value);
         self.pengator_draw(k);
+        blocks.block(0x1ea1a6);
+        let hit = self.sprite_slot_view(k).f() != 0;
+        if hit { blocks.taken(0x1ea1a9); }
+        else { blocks.block(0x1ea1ab); }
         if self.sprite_slot_view(k).f() != 0
             || (self.sprite_slot_view(k).wall_collision() & 15) != 0
         {
+            blocks.block(0x1ea1b2);
             self.sprite_slot_view_mut(k).set_ai_state(0);
             self.sprite_slot_view_mut(k).set_x_velocity(0);
             self.sprite_slot_view_mut(k).set_y_velocity(0);
-        }
+        } else { blocks.taken(0x1ea1b0); }
         if self.sprite_return_if_inactive(k) {
             return false;
         }
@@ -2702,7 +2710,8 @@ impl ZeldaState {
             return;
         }
 
-        self.sprite_check_damage_to_link(k);
+        // $1E:B46B JSR $C26B (far damage wrapper).
+        self.sprite_check_damage_to_link_bank1e(k);
         self.sprite_slot_view_mut(k).increment_subtype2();
         if ((self.sprite_slot_view(k).subtype2().wrapping_sub(1)) & 3) == 0 {
             self.sprite_slot_view_mut(k).add_g(1);

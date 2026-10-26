@@ -37,7 +37,7 @@ impl BlockMarkers {
     /// Native branch outcome adds the 65816's internal taken cycle.
     pub fn taken(&self, pc: u32) {
         if !self.0 || is_muted() { return; }
-        debug_assert!(rom_block_costs::BLOCKS.iter().any(|b| b.5 == pc && pc != 0),
+        #[cfg(any(debug_assertions, test))] assert!(rom_block_costs::BLOCKS.iter().any(|b| b.5 == pc && pc != 0),
             "taken marker must name a generated conditional branch");
         self.retire(pc, 1, 6);
     }
@@ -45,7 +45,7 @@ impl BlockMarkers {
     /// The executing native index, not a scene estimate, determines crossing.
     pub fn crossing(&self, pc: u32) {
         if !self.0 || is_muted() { return; }
-        debug_assert!(rom_block_costs::BLOCKS.iter().any(|b| b.6.contains(&pc)),
+        #[cfg(any(debug_assertions, test))] assert!(rom_block_costs::BLOCKS.iter().any(|b| b.6.contains(&pc)),
             "crossing marker must name a generated indexed read");
         self.retire(pc, 2, 6);
     }

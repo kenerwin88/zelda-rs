@@ -11772,3 +11772,56 @@ Default retains only the known spotlight caller-return fixture failure; reduced 
 | `1A/21` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
 | `1A/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
 | `1B/02` | 139 | 2 / 2 | 0 / 0 | 0 / 0 |
+
+## Continuation on `codex/cost-pacing29` (main `a28e327d`)
+
+### Fresh joint main baseline
+
+The documented joint baseline is ROM **4,936 missing / 0 excess / 0 FP**, live **5,633 / 590 / 132**. Fresh clean-main controls reproduce it; historical batch deltas are not added. Main was built before edits and recorded a fresh default 200k ledger. `target/cost-pacing29/main-provenance.json` binds the binary to the main tree. All evidence for this batch is in `target/cost-pacing29/`; scratch drivers remain in `/tmp`.
+
+| Census | Missing before / after | Excess before / after | FP before / after |
+| --- | ---: | ---: | ---: |
+| rom | 4,936 / 4,907 | 0 / 0 | 0 / 0 |
+| live | 5,633 / 5,606 | 590 / 592 | 132 / 132 |
+
+### ROM marker work
+
+Six requested parent gaps receive new prices, with two additional source entries for the shared absorbable entry and the damage trampoline. These are partial coverage additions: Pengator control before its inactivity test, Fall1 self work, dash-dust control through its preparation call, absorbable drawing selection, safe ancilla coordinates, and the far damage wrapper at two source-proven bank-$1E call sites. No existing scalar price is converted. The larger remaining handler bodies and the other requested routines stay open.
+
+`scripts/rom_block_costs.py --emit-rust` supplies all 49 new blocks from bounded entries in `scripts/rom_block_entries.json`. The source ROM and entry M/X determine the prices. Every new runtime charge uses `blocks.block`, `blocks.taken` or `blocks.crossing`, gated by `lag_free`, with source addresses in comments. No lag count, scene threshold, multiplier or fitted residual supplies a price. The absorbable table page crossings use the ROM table addresses and actual sprite type; its double return leaves the second PLA/RTS with the caller. Drawing tails and called bodies retain their separate prices.
+
+Clocks below are newly charged ROM instruction master clocks, measured from marker receipts. The cohort is the frozen batch-22 set of 2,825 iterations; route clocks cover all 1,473,123 native ROM census iterations. Lines are gross additions to native Rust, including comments and caller rewiring, excluding fixtures, generated rows and the entry manifest. Shared absorbable code is counted once.
+
+| Source owner / work | Frozen-cohort clocks | Whole-route clocks | Native lines added |
+| --- | ---: | ---: | ---: |
+| `$1E:8B19` Pengator `$A196..A1BA` | 161,200 | 17,033,846 | 9 |
+| `$06:84E2` Fall1 `$852E..8542` | 4,270 | 3,470,730 | 9 |
+| `$08:833C` dash dust `$BC92..BCC3` | 82,046 | 22,279,586 | 20 |
+| `$06:D22F` absorbable transient | 612,288 | 195,194,370 | 49 |
+| `$06:D232` shared absorbable entry | 1,044 | 2,178,448 | shared above |
+| `$08:F702` safe coordinates | 2,201,964 | 70,122,952 | 13 |
+| `$06:F121` far damage wrapper | 11,590 | 1,148,930 | 9 |
+| `$1E:C26B` damage trampoline | 6,344 | 628,888 | 15 |
+
+Pricing implementation additions: **124 lines**; fixtures: **221 lines**; generated table: **98 lines**; entry manifest: **9 added / 1 removed**. The frozen main instruction gap changes from **203,337,632** to **200,256,886** master clocks: **3,080,746 clocks closed**. `routine-cohort-before-after.json` retains every changed exclusive owner and the independent new-marker totals; every per-routine exclusive delta equals its independently recorded new marker clocks. Whole-route native exclusive sums reconcile to the main counter on every iteration.
+
+Seven `assert_rom_marker_work` fixtures exercise 543 unmodified-ROM cases: Pengator reset branches (32), Fall1 live/dead/offscreen paths (16), both absorbable entries, all 15 item types, sorting, CHR exclusion, allocation, double returns and phasing (420), safe coordinate boundaries (56), dash-dust branches (12), far damage gates (6), and its fixed trampoline (1). The shared absorbable fixture checks each source entry independently. These use the in-repo CPU only.
+
+### CPU-only verification
+
+Both fresh main controls and both candidate full census gates PASS: 1,473,123 iterations per lane, unexplained zero. Every candidate runtime hold equals P2. Missing/excess count lag NMIs; FP counts iterations. These periodically seeded logical gates do not establish continuous physical-field or exact A/V parity.
+
+The ROM census closes 29 previously missing iterations and introduces 0 newly missing iterations. New false-positive iterations: ROM 0, live 6. Six old live FP iterations disappear, leaving the live total at 132; live excess increases by two. `live-hold-deltas.json` retains all shifted rows. Full predictor CSVs and category JSONs retain all before/after values.
+
+All eight crystal/pendant windows keep every measured phase within one frame of source. Their phase durations and stable outcomes are identical before/after. The rupee-refill command and PCM onset measurements are also identical. `phase-verification.json`, `final-probe-metrics.json` and `final-stable-outcomes.json` retain these checks.
+
+The candidate default binary matches every state/display/SRAM/PCM/input/context record and EOF against the fresh main 200k ledger. All new prices/scopes are lagless-only; default/ROM-timing accounting and the existing scalar prices are unchanged. Both ordinary builds are warning-free; the known lib-test-only fixture warnings are separate.
+
+| Zelda library | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,549 | 1 | 3 |
+| reduced | 2,084 | 0 | 2 |
+
+Default retains only the known spotlight caller-return fixture failure; reduced passes entirely. The first optimized-suite run also exposed two pre-existing marker guard tests whose expected debug-assert panics were disabled by the parity profile. Two line replacements make those assertions active under `cfg(test)` as well as debug builds. Both ordinary binaries rebuilt byte-identically (`test-guard-build-equivalence.json`), so the complete census and 200k receipts remain bound to the final binaries. The two affected tests and all marker API/ROM fixtures were rerun on the rebuilt test binaries. The final shard manifest preserves the original complete, disjoint test union and these explicit replacements; original failing logs remain retained. Both CPU-only SNES lib suites, the five block generator/worklist Python tests (including exact regeneration), routine-coverage Python tests and `git diff --check` pass. `verification.json` binds the final source, builds, gates, metrics and library evidence; `artifact-sha256.json` records artifact identities.
+
+No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Supplied ledger/cache metadata remained unchanged across all 1,512 input files. This batch stops at the verified CPU-only pricing point above.

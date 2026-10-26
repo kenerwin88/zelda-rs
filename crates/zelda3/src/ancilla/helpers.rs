@@ -1387,6 +1387,19 @@ impl ZeldaState {
         flags: u8,
         mut big: u8,
     ) {
+        // $08:F702..F72E owns coordinates only, before char/flags/ext stores.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08_f702));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x08f702);
+        if x.wrapping_add(0x80) >= 0x180 {
+            blocks.taken(0x08f710);
+            blocks.block(0x08f726);
+        } else {
+            blocks.block(0x08f712);
+            if y.wrapping_add(0x10) < 0x100 { blocks.taken(0x08f724); }
+            else { blocks.block(0x08f726); }
+        }
+        blocks.block(0x08f72b);
         let mut yval = 0xf0;
         self.oam_state_mut().set_entry_x(oam, x as u8);
         let xt: u16 = if self.game_state.enhanced_features.has(1) {

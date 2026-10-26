@@ -609,6 +609,26 @@ impl ZeldaState {
         CHECK_DAMAGE_FROM_PLAYER_CARRY
     }
 
+    /// $1E:C26B -> $06:F121: bank trampoline and far-call wrapper.
+    /// The existing $06:F145 scalar prefix remains owned by that child.
+    pub(in crate::zelda_rtl) fn sprite_check_damage_to_link_bank1e(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e_c26b));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x1ec26b);
+        let result = self.sprite_check_damage_to_link_long(k);
+        blocks.block(0x1ec26f);
+        result
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_check_damage_to_link_long(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f121));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x06f121);
+        let result = self.sprite_check_damage_to_link(k);
+        blocks.block(0x06f127);
+        result
+    }
+
     // bool Sprite_CheckDamageToLink(int k) {  // 86f145
     //   if (link_disable_sprite_damage)
     //     return false;

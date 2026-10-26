@@ -418,7 +418,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_check_damage_to_link(k);
+        // $1E:8FE5 JSR $C26B (far damage wrapper).
+        self.sprite_check_damage_to_link_bank1e(k);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         self.sprite_move_xy(k);
         if self.sprite_slot_view(k).delay_main() == 0 && self.sprite_check_tile_collision(k) != 0 {

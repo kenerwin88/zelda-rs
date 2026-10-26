@@ -59,25 +59,44 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla1_e_dash_dust(&mut self, k: usize) {
+        // $08:BC92..BCC3: control and prep call, inside $08:833C.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x08bc92);
         if self.ancilla_slot_view(k).step() != 0 {
+            blocks.block(0x08bc97);
             self.dash_dust_motive(k);
+            blocks.block(0x08bc9b);
+            blocks.block(0x08bcb9);
             return;
         }
+        blocks.taken(0x08bc95);
+        blocks.block(0x08bc9d);
         if self.ancilla_slot_view(k).timer() == 0 {
+            blocks.block(0x08bca2);
             self.ancilla_slot_view_mut(k).set_timer(3);
             let item_to_link = self.ancilla_slot_view_mut(k).advance_item_to_link();
             if item_to_link == 5 {
+                blocks.taken(0x08bcb0);
+                blocks.block(0x08bcb9);
                 return;
             }
+            blocks.block(0x08bcb2);
             if item_to_link == 6 {
+                blocks.block(0x08bcb6);
                 self.ancilla_slot_view_mut(k).clear();
+                blocks.block(0x08bcb9);
                 return;
             }
-        }
+            blocks.taken(0x08bcb4);
+        } else { blocks.taken(0x08bca0); }
+        blocks.block(0x08bcba);
         if self.ancilla_slot_view(k).item_to_link() == 5 {
+            blocks.taken(0x08bcbf);
+            blocks.block(0x08bcb9);
             return;
         }
 
+        blocks.block(0x08bcc1);
         let (info_x, info_y) = self.ancilla_prep_oam_coord(k);
         let mut oam = self.game_state.oam.current_pointer_usize();
 
