@@ -848,10 +848,42 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_check_tile_property(&mut self, k: usize, j: i32) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e73c));
+        if self.lag_free {
+            // $06:E73C..E73E; direct entry (E72F falls through instead).
+            crate::cycle_ledger::charge(40
+                + if self.game_state.world.location.is_indoors() { 0 } else { 6 });
+        }
+        self.sprite_check_tile_property_body(k, j)
+    }
+
+    fn sprite_check_tile_property_body(&mut self, k: usize, j: i32) -> bool {
         let j = (j >> 1) as usize;
 
         let (x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
+        if self.lag_free {
+            // $06:E740..E799: price only the coordinates actually evaluated.
+            // The first indexed word table is $E6B7,Y; $E64B,Y cannot cross
+            // a page for any of the original probe offsets ($00..$6A).
+            let indoor = self.game_state.world.location.is_indoors();
+            // $E742/$E775 read current Y ($0FDA) first, not X ($0FD8).
+            let first_in_bounds = if indoor { y < 0x200 } else {
+                y.wrapping_sub(self.game_state.sprites.garnish_runtime.sprcoll_y_word())
+                    < self.game_state.sprites.garnish_runtime.sprcoll_y_size()
+            };
+            crate::cycle_ledger::charge(if indoor { 288 } else { 258 }
+                + if 0xb7 + j * 2 > 0xff { 6 } else { 0 }
+                + if first_in_bounds { if indoor { 258 } else { 220 } } else { 6 }
+                + 38 + if in_bounds { 6 + 46 } else { 24 });
+        }
         if !in_bounds {
+            if self.lag_free {
+                // $06:E852 JSR E872; that child executes SEC/SEP/BRA,
+                // then $E878 LDY/RTS. The outer frame tests flags2.
+                crate::cycle_ledger::charge_routine(0x06_e872, 58 + 66);
+                crate::cycle_ledger::charge(108
+                    + if self.sprite_slot_view(k).flags2() & 0x40 != 0 { 94 } else { 6 + 56 });
+            }
             if self.sprite_slot_view(k).flags2() & 0x40 != 0 {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -860,7 +892,7 @@ impl ZeldaState {
             return true;
         }
         let (tile, x) = self.sprite_get_tile_attribute(k, x, y);
-        self.sprite_classify_tile_property(k, x, y, tile)
+        self.sprite_classify_tile_property(k, x, y, tile, true)
     }
 
     fn sprite_tile_property_coordinates(&self, j: usize) -> (u16, u16, bool) {
@@ -914,25 +946,63 @@ impl ZeldaState {
         x: u16,
         y: u16,
         tile: NativeTile,
+        price: bool,
     ) -> bool {
+        let lag_free = self.lag_free && price;
+        let charge = |master| { if lag_free { crate::cycle_ledger::charge(master); } };
+        // $06:E7A1..E87A, M8/X8. Calls include their opcode only;
+        // E883's lookup, slope and damage bodies keep separate ownership.
+        charge(78); // TAY : LDA deflection : AND : BEQ.
         if self.sprite_slot_view(k).deflection_bits() & 8 != 0 {
+            charge(160); // $E7A9..E7B4 table lookup and ledge comparison.
             match tile.sprite_probe() {
                 EntityCollision::Ledge => {
+                    charge(6 + 40);
                     if self.game_state.world.location.is_outdoors() {
+                        charge(38);
                         let value = 4;
                         self.sprite_slot_view_mut(k).set_e(value);
-                    }
+                    } else { charge(6); }
+                    charge(24); // JMP E877.
                 }
-                EntityCollision::Passable => {}
-                _ => return self.entity_sloped_tile_collision(x, y).unwrap_or(true),
+                EntityCollision::Passable => { charge(32 + 6 + 24); }
+                _ => {
+                    charge(32 + 64);
+                    let code = tile.cartridge_attribute();
+                    charge(if code < 0x10 { 6 + 24 + 124 } else {
+                        32 + if code >= 0x14 { 6 + 24 + 124 } else { 70 + 66 }
+                    });
+                    return self.entity_sloped_tile_collision(x, y).unwrap_or(true);
+                }
             }
+            charge(80); // CLC : LDY : RTS.
             return false;
         }
 
+        charge(6 + 62); // $E7A7 taken, then flags5 ASL/BPL.
         if self.sprite_slot_view(k).flags5() & 0x40 != 0 {
             let typ = self.sprite_slot_view(k).sprite_type();
+            charge(64 + if typ == 0xd2 { 6 } else { 32 + if typ != 0x8a { 6 } else { 0 } });
+            if typ == 0xd2 || typ == 0x8a { charge(32); }
             if (typ == 0xd2 || typ == 0x8a) && tile == NativeTile::SHALLOW_WATER {
+                charge(6 + 22 + 80); // E7EB -> E80E BEQ -> E877.
                 return false;
+            }
+            charge(32); // $E7ED CMP #94 : BNE.
+            if typ == 0x94 {
+                charge(48 + if self.sprite_slot_view(k).e() == 0 { 6 } else { 22 });
+            } else {
+                charge(6 + 32);
+                if typ == 0xe3 { charge(6); }
+                else {
+                    charge(32);
+                    if typ == 0x8c { charge(6); }
+                    else {
+                        charge(32);
+                        if typ == 0x9a { charge(6); }
+                        else { charge(32 + if typ != 0x81 { 6 } else { 0 }); }
+                    }
+                }
             }
             if (typ == 0x94 && self.sprite_slot_view(k).e() == 0)
                 || typ == 0xe3
@@ -940,20 +1010,33 @@ impl ZeldaState {
                 || typ == 0x9a
                 || typ == 0x81
             {
+                charge(32 + if tile == NativeTile::DEEP_WATER { 6 + 80 } else {
+                    16 + 16 + if tile == NativeTile::SHALLOW_WATER { 6 + 80 } else { 22 + 124 }
+                });
                 return tile != NativeTile::DEEP_WATER && tile != NativeTile::SHALLOW_WATER;
             }
-        }
+        } else { charge(6); }
 
+        charge(160); // $E812..E81D block table.
         if !tile.blocks_sprites() {
+            charge(6 + 80);
             return false;
         }
+        let code = tile.cartridge_attribute();
+        charge(64);
+        if code >= 0x10 { charge(32); } else { charge(6); }
         if let Some(blocked) = self.entity_sloped_tile_collision(x, y) {
+            charge(68 + 66); // JSR slope : BRA : LDY : RTS.
             return blocked;
         }
+        if code >= 0x14 { charge(6); }
+        charge(32); // $E82F CMP #44 : BNE.
         if self.game_state.sprites.workspace.tile() == NativeTile::SPIKE_CACTUS {
+            charge(48);
             if self.sprite_slot_view(k).f() != 0
                 && !sign8(self.sprite_slot_view(k).incoming_damage())
             {
+                charge(48 + 78);
                 if self.sprite_slot_view(k).sprite_type() == 0x88
                     && self.game_state.enhanced_features.has(4096)
                 {
@@ -964,15 +1047,24 @@ impl ZeldaState {
                     self.ancilla_check_damage_to_sprite_preset(k, 4);
                 }
                 if self.sprite_slot_view(k).hit_timer() != 0 {
+                    charge(48 + 92);
                     let value = 153;
                     self.sprite_slot_view_mut(k).set_hit_timer(value);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_f(value);
-                }
-            }
+                } else { charge(48 + 6); }
+                charge(22);
+            } else if self.sprite_slot_view(k).f() == 0 { charge(6); }
+            else { charge(48 + 6 + 22); }
         } else if self.game_state.sprites.workspace.tile() == NativeTile::PIT {
+            charge(6 + 32 + 64);
+            if self.sprite_slot_view(k).flags() & 1 == 0 { charge(6 + 124); }
+            else {
+                charge(48 + if self.sprite_slot_view(k).f() != 0 { 6 + 80 } else { 124 });
+            }
             return self.sprite_slot_view(k).flags() & 1 == 0 || self.sprite_slot_view(k).f() == 0;
-        }
+        } else { charge(6 + 32 + 6); }
+        charge(124); // $E872..E87A SEC/SEP/BRA/LDY/RTS.
         true
     }
 
@@ -1004,7 +1096,7 @@ impl ZeldaState {
             x >>= 3;
         }
         let tile = self.game_state.sprites.workspace.tile();
-        if self.sprite_classify_tile_property(k, x, y, tile) {
+        if self.sprite_classify_tile_property(k, x, y, tile, false) {
             self.sprite_apply_vertical_tile_collision(k, direction as i32);
         }
     }
@@ -1063,15 +1155,16 @@ impl ZeldaState {
     //   return Sprite_CheckTileProperty(k, yy);
     // }
     pub(in crate::zelda_rtl) fn sprite_check_tile_in_direction(&mut self, k: usize, yy: i32) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e72f));
         if self.lag_free {
             // $06:E72F..E73E, M8/X8: save direction, flags-derived table
             // index and indoor branch. The shared tile-property body after
             // E740/E773 is not included in this prefix price.
-            crate::cycle_ledger::charge_routine(0x06_e72f,
+            crate::cycle_ledger::charge(
                 192 + if self.game_state.world.location.is_indoors() { 0 } else { 6 });
         }
         let t = i32::from(self.sprite_slot_view(k).flags() & 0xf0);
-        self.sprite_check_tile_property(k, 2 * ((t >> 2) + yy))
+        self.sprite_check_tile_property_body(k, 2 * ((t >> 2) + yy))
     }
 
     // bool Entity_CheckSlopedTileCollision(uint16 x, uint16 y) {  // 86e8fe
@@ -1898,10 +1991,18 @@ impl ZeldaState {
     //
     // 1:1 port of the dispatcher around `Sprite_CheckTileCollisionSingleLayer`.
     pub(in crate::zelda_rtl) fn sprite_check_tile_collision2(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e4ab));
         let value = 0;
         self.sprite_slot_view_mut(k).set_wall_collision(value);
         let f4 = self.sprite_slot_view(k).flags4();
         let dung_coll = self.game_state.dungeon.room_load.header_collision();
+        if self.lag_free {
+            // $06:E4AB..E4DA, M8/X8. The one-layer branch tail-jumps
+            // through $E4A8; each JSR below prices only its opcode.
+            crate::cycle_ledger::charge(86 + if sign8(f4) { 6 + 24 } else {
+                48 + if dung_coll == 0 { 6 + 24 } else { 228 }
+            });
+        }
         // sign8: top bit set.
         if (f4 & 0x80) != 0 || dung_coll == 0 {
             self.sprite_check_tile_collision_single_layer(k);
@@ -1913,12 +2014,17 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_floor(value);
         self.sprite_check_tile_collision_single_layer(k);
         if dung_coll == 4 {
+            if self.lag_free {
+                // $06:E4CB taken BEQ, then $E4A1..E4A7 restore/RTS.
+                crate::cycle_ledger::charge(6 + 112);
+            }
             let value = self.game_state.sprites.workspace.shared_scratch_a();
             self.sprite_slot_view_mut(k).set_floor(value);
             return;
         }
         let value = 0;
         self.sprite_slot_view_mut(k).set_floor(value);
+        if self.lag_free { crate::cycle_ledger::charge(198); } // $06:E4CD..E4DA.
         self.sprite_check_tile_collision_single_layer(k);
         // byte_7FFABC[k] = sprite_tiletype — write-through to the
         // dual-layer cache so the next iteration sees the lower-layer tile.
