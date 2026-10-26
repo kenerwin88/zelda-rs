@@ -320,17 +320,19 @@ impl ZeldaState {
         y: i32,
         carry_in: bool,
     ) {
-        if (((k as u8) ^ self.game_state.frame.frame_counter) & 7)
+        // $09:B459 is the shared executed tail of B429 and B306.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x09b459);
+        let skipped = (((k as u8) ^ self.game_state.frame.frame_counter) & 7)
             | self.game_state.player.follower_link.blink_countdown()
             | self
                 .game_state
                 .player
                 .follower_link
                 .sprite_damage_disable_timer()
-            != 0
-        {
-            return;
-        }
+            != 0;
+        if skipped { blocks.taken(0x09b464); }
+        if skipped { blocks.block(0x09b495); return; }
 
         fn sbc8(a: u8, b: u8, carry: bool) -> (u8, bool) {
             let r = i32::from(a) - i32::from(b) - i32::from(!carry);
@@ -348,16 +350,18 @@ impl ZeldaState {
         let (dx, carry) = sbc8(link_x, bg_x, carry_in);
         let (dx, carry) = sbc8(dx, x as u8, carry);
         let (dx, _) = adc8(dx, 0x0c, carry);
-        if dx >= 0x18 {
-            return;
-        }
+        blocks.block(0x09b466);
+        if dx >= 0x18 { blocks.taken(0x09b470); }
+        if dx >= 0x18 { blocks.block(0x09b495); return; }
         // `CMP #$18` with dx < 0x18 clears the carry for the y chain.
         let (dy, carry) = sbc8(link_y, bg_y, false);
         let (dy, carry) = sbc8(dy, y as u8, carry);
         let (dy, _) = adc8(dy, 0x16, carry);
-        if dy >= 0x1c {
-            return;
-        }
+        blocks.block(0x09b472);
+        if dy >= 0x1c { blocks.taken(0x09b47c); }
+        if dy >= 0x1c { blocks.block(0x09b495); return; }
+        blocks.block(0x09b47e);
+        blocks.block(0x09b495);
         self.follower_link_state_mut().set_auxiliary_state(1);
         self.follower_link_state_mut().set_incapacitated_timer(16);
         self.follower_link_state_mut().set_given_damage(16);
@@ -470,14 +474,23 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn garnish10_ganon_bat_flame(&mut self, k: usize) {
+        // $09:B110 dispatch -> B306; B33C jumps to the shared B459 tail.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x09b306);
+        if self.garnish_slot_view(k).countdown() != 8 { blocks.taken(0x09b30c); }
         if self.garnish_slot_view(k).countdown() == 8 {
+            blocks.block(0x09b30e);
             let value = 0x11;
             self.garnish_slot_view_mut(k).set_garnish_type(value);
         }
+        blocks.block(0x09b314);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        blocks.block(0x09b317);
+        blocks.block(0x09b33c);
+        blocks.block(0x09b70c);
         let j = usize::from(
             GARNISH10_GANON_BAT_FLAME_GANON_BAT_FLAME_IDX
                 [usize::from(self.garnish_slot_view(k).countdown() >> 3)],
@@ -500,10 +513,15 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn garnish0_a_cannon_smoke(&mut self, k: usize) {
+        // $09:B110 RTS-dispatches this complete $09:B3EE body.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x09b3ee);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        blocks.block(0x09b3f1);
+        blocks.block(0x09b70c);
         let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
@@ -548,16 +566,26 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn garnish09_lightning_trail(&mut self, k: usize) {
+        // $09:B110 RTS-dispatches this complete $09:B429 body.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x09b429);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        blocks.block(0x09b42c);
         let j = usize::from(self.garnish_slot_view(k).sprite());
         let room_offset = if self.game_state.dungeon.room_tracking.room_index2() == 0x20 {
             0x80
         } else {
             0
         };
+        let shifted = room_offset == 0;
+        if shifted { blocks.taken(0x09b444); }
+        if !shifted { blocks.block(0x09b446); }
+        blocks.block(0x09b449);
+        // $09:B456 JSR B70C: this call owns the finalize body once.
+        blocks.block(0x09b70c);
         self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
@@ -626,10 +654,15 @@ impl ZeldaState {
 
     // void Garnish08_KholdstareTrail(int k) {  // 89b4c6
     pub(in crate::zelda_rtl) fn garnish08_kholdstare_trail(&mut self, k: usize) {
+        // $09:B110 RTS-dispatches this complete $09:B4C6 body.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x09b4c6);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        blocks.block(0x09b4c9);
+        blocks.block(0x09b5d6);
         let i = usize::from(self.garnish_slot_view(k).countdown() >> 2);
         let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at(

@@ -1406,3 +1406,328 @@ fn marker35_direction_probe_bodies_match_rom() {
     }
     assert!(saw_nested_steps,"probe fixtures must execute the two nested step calls");
 }
+
+#[test]
+fn marker37_lightning_matches_rom() {
+    for (slot, countdown, x, y, frame, room, link_x, link_y) in [
+        (0usize, 8u8, 40u16, 48u16, 0u8, 0x20u8, 40u16, 48u16),
+        (1, 4, 40, 48, 1, 0, 41, 49),
+        (2, 0, 40, 48, 2, 0, 200, 48),
+        (0, 4, 40, 48, 0, 0, 40, 200),
+        (29, 0, 256, 48, 0, 0, 0, 0),
+        (0, 0, 40, 256, 0, 0, 0, 0),
+        (0, 4, 40, 48, 0x80, 0, 40, 48),
+    ] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90, 0x800); native.write_wram_word(0x92, 0xa20);
+        native.write_wram_byte(0x1f800 + slot, 9);
+        native.write_wram_byte(0x1f90e + slot, countdown);
+        native.write_wram_byte(0x1f83c + slot, x as u8);
+        native.write_wram_byte(0x1f878 + slot, (x >> 8) as u8);
+        native.write_wram_byte(0x1f81e + slot, y as u8);
+        native.write_wram_byte(0x1f85a + slot, (y >> 8) as u8);
+        native.write_wram_byte(0x1f92c + slot, 0);
+        native.write_wram_byte(0x1a, frame); native.write_wram_byte(0x48e, room);
+        native.write_wram_word(0x22, link_x); native.write_wram_word(0x20, link_y);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native, 0x09b429, slot) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x09b0b6, machine,
+            |s| s.cpu.k == 9 && ((0xb429..0xb496).contains(&s.cpu.pc)
+                || (0xb5d6..0xb5de).contains(&s.cpu.pc)
+                || (0xb70c..0xb714).contains(&s.cpu.pc)
+                || (0xb459..0xb496).contains(&s.cpu.pc)), || {
+                let _parent = crate::cycle_ledger::routine(0x09b0b6);
+                native.garnish09_lightning_trail(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_kholdstare_matches_rom() {
+    for (slot, countdown, x, y, frame, room, link_x, link_y) in [
+        (0usize, 8u8, 40u16, 48u16, 0u8, 0x20u8, 40u16, 48u16),
+        (1, 4, 40, 48, 1, 0, 41, 49),
+        (2, 0, 40, 48, 2, 0, 200, 48),
+        (0, 4, 40, 48, 0, 0, 40, 200),
+        (29, 0, 256, 48, 0, 0, 0, 0),
+        (0, 0, 40, 256, 0, 0, 0, 0),
+        (0, 4, 40, 48, 0x80, 0, 40, 48),
+    ] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90, 0x800); native.write_wram_word(0x92, 0xa20);
+        native.write_wram_byte(0x1f800 + slot, 8);
+        native.write_wram_byte(0x1f90e + slot, countdown);
+        native.write_wram_byte(0x1f83c + slot, x as u8);
+        native.write_wram_byte(0x1f878 + slot, (x >> 8) as u8);
+        native.write_wram_byte(0x1f81e + slot, y as u8);
+        native.write_wram_byte(0x1f85a + slot, (y >> 8) as u8);
+        native.write_wram_byte(0x1f92c + slot, 0);
+        native.write_wram_byte(0x1a, frame); native.write_wram_byte(0x48e, room);
+        native.write_wram_word(0x22, link_x); native.write_wram_word(0x20, link_y);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native, 0x09b4c6, slot) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x09b0b6, machine,
+            |s| s.cpu.k == 9 && ((0xb4c6..0xb4fb).contains(&s.cpu.pc)
+                || (0xb5d6..0xb5de).contains(&s.cpu.pc)
+                || (0xb70c..0xb714).contains(&s.cpu.pc)
+                ), || {
+                let _parent = crate::cycle_ledger::routine(0x09b0b6);
+                native.garnish08_kholdstare_trail(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_smoke_matches_rom() {
+    for (slot, countdown, x, y, frame, room, link_x, link_y) in [
+        (0usize, 8u8, 40u16, 48u16, 0u8, 0x20u8, 40u16, 48u16),
+        (1, 4, 40, 48, 1, 0, 41, 49),
+        (2, 0, 40, 48, 2, 0, 200, 48),
+        (0, 4, 40, 48, 0, 0, 40, 200),
+        (29, 0, 256, 48, 0, 0, 0, 0),
+        (0, 0, 40, 256, 0, 0, 0, 0),
+        (0, 4, 40, 48, 0x80, 0, 40, 48),
+    ] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90, 0x800); native.write_wram_word(0x92, 0xa20);
+        native.write_wram_byte(0x1f800 + slot, 10);
+        native.write_wram_byte(0x1f90e + slot, countdown);
+        native.write_wram_byte(0x1f83c + slot, x as u8);
+        native.write_wram_byte(0x1f878 + slot, (x >> 8) as u8);
+        native.write_wram_byte(0x1f81e + slot, y as u8);
+        native.write_wram_byte(0x1f85a + slot, (y >> 8) as u8);
+        native.write_wram_byte(0x1f92c + slot, 0);
+        native.write_wram_byte(0x1a, frame); native.write_wram_byte(0x48e, room);
+        native.write_wram_word(0x22, link_x); native.write_wram_word(0x20, link_y);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native, 0x09b3ee, slot) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x09b0b6, machine,
+            |s| s.cpu.k == 9 && ((0xb3ee..0xb419).contains(&s.cpu.pc)
+                || (0xb5d6..0xb5de).contains(&s.cpu.pc)
+                || (0xb70c..0xb714).contains(&s.cpu.pc)
+                || (0xb459..0xb496).contains(&s.cpu.pc)), || {
+                let _parent = crate::cycle_ledger::routine(0x09b0b6);
+                native.garnish0_a_cannon_smoke(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_bat_flame_matches_rom() {
+    for (slot, countdown, x, y, frame, room, link_x, link_y) in [
+        (0usize, 8u8, 40u16, 48u16, 0u8, 0x20u8, 40u16, 48u16),
+        (1, 4, 40, 48, 1, 0, 41, 49),
+        (2, 0, 40, 48, 2, 0, 200, 48),
+        (0, 4, 40, 48, 0, 0, 40, 200),
+        (29, 0, 256, 48, 0, 0, 0, 0),
+        (0, 0, 40, 256, 0, 0, 0, 0),
+        (0, 4, 40, 48, 0x80, 0, 40, 48),
+    ] {
+        let countdown = if countdown < 8 { 16 } else { countdown };
+        let mut native = fresh_state();
+        native.write_wram_word(0x90, 0x800); native.write_wram_word(0x92, 0xa20);
+        native.write_wram_byte(0x1f800 + slot, 16);
+        native.write_wram_byte(0x1f90e + slot, countdown);
+        native.write_wram_byte(0x1f83c + slot, x as u8);
+        native.write_wram_byte(0x1f878 + slot, (x >> 8) as u8);
+        native.write_wram_byte(0x1f81e + slot, y as u8);
+        native.write_wram_byte(0x1f85a + slot, (y >> 8) as u8);
+        native.write_wram_byte(0x1f92c + slot, 0);
+        native.write_wram_byte(0x1a, frame); native.write_wram_byte(0x48e, room);
+        native.write_wram_word(0x22, link_x); native.write_wram_word(0x20, link_y);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native, 0x09b306, slot) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x09b0b6, machine,
+            |s| s.cpu.k == 9 && ((0xb306..0xb33f).contains(&s.cpu.pc)
+                || (0xb5d6..0xb5de).contains(&s.cpu.pc)
+                || (0xb70c..0xb714).contains(&s.cpu.pc)
+                || (0xb459..0xb496).contains(&s.cpu.pc)), || {
+                let _parent = crate::cycle_ledger::routine(0x09b0b6);
+                native.garnish10_ganon_bat_flame(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_damage_body_matches_rom() {
+    // Guards, both hitbox forms, shield outcomes and every special tail.
+    for (floor, flags4, flags2, aux, bunny, lifting, shield, flags5, type_, dir, facing, frames, x) in [
+        (1u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0x95u8,0u8,0u8,0u8,40u16),
+        (0,0,0x80,0,0,0,0,0,0x95,0,0,0,40),
+        (0,0,0,0,0,0,0,0,0x95,0,0,0,200),
+        (0,0,0,1,0,0,0,0,0x95,0,0,0,40),
+        (0,0,0,0,1,0,0,0,0x95,0,0,0,40),
+        (0,0,0,0,0,0x80,0,0,0x95,0,0,0,40),
+        (0,0,0,0,0,0,0,0x20,0x95,0,4,0,40),
+        (0,0,0,0,0,0,1,0x20,0x95,0,4,0,40),
+        (0,0,0,0,0,0,1,0x20,0x9b,0,4,0,40),
+        (0,0,0,0,0,0,1,0x20,0x1b,0,4,0,40),
+        (0,0,0,0,0,0,1,0x20,0x0c,0,4,0,40),
+        (0,0,0,0,0,0,1,0x20,0x08,0,4,0,40),
+        (0,0,0,0,0,0,1,0x20,0x95,1,2,9,40),
+        (0,0,0,0,0,0,1,0x20,0x95,0,2,0,40),
+        (0,1,0x80,0,0,0,0,0,0x95,0,0,0,40),
+        (0,1,0,0,0,0,0,0,0x0c,0,0,0,40),
+    ] {
+        let mut native = fresh_state();
+        let slot = 0;
+        for (a,v) in [(0xf20,floor),(0xf60,flags4),(0xe40,flags2),(0x4d,aux),
+            (0x2e0,bunny),(0x308,lifting),(0x1f35a,shield),(0xbe0,flags5),
+            (0xe20,type_),(0xde0,dir),(0x2f,facing),(0x3c,frames),(0xdd0,9)] {
+            native.write_wram_byte(a,v);
+        }
+        native.write_wram_word(0x22,x); native.write_wram_word(0x20,40);
+        native.write_wram_byte(0xd10,40); native.write_wram_byte(0xd00,40);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,40);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x06f154,slot) else {return};
+        // The F154 prefix is independently priced from the F15C child.
+        let source = crate::cycle_ledger::assert_rom_marker_work(0x06f15c,machine,
+            |s|s.cpu.k==6 && ((0xf15c..0xf1f6).contains(&s.cpu.pc) || (0xe25a..0xe26e).contains(&s.cpu.pc))
+                && !(floor!=0 && s.cpu.pc==0xf1d7 || floor!=0 && s.cpu.pc==0xf1d8),||{
+                native.sprite_check_damage_to_link_same_layer_marked(slot);
+            });
+        assert_eq!(native.sprite_slot_view(slot).state(),source.snes().ram[0xdd0]);
+    }
+}
+
+#[test]
+fn marker37_fast_hitbox_matches_rom() {
+    for (slot, value) in [(0usize,0u8),(15,1),(0,31),(15,32),(0,0x80),(15,0xff)] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90,0x800); native.write_wram_word(0x92,0xa20);
+        native.write_wram_byte(0xd10 + slot,40); native.write_wram_byte(0xd00 + slot,48);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,48);
+        native.write_wram_byte(0xdd0 + slot,9);
+        native.write_wram_byte(0xfaa, value); native.write_wram_byte(0xfab, value); native.write_wram_byte(0xe20 + slot, if value == 0 {0x6a} else {1});
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x06f645,slot) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x06f645,machine,
+            |s|s.cpu.k==0x6 && (0xf645..0xf688).contains(&s.cpu.pc),||{
+                native.sprite_do_hit_boxes_fast_marked(slot, &mut crate::types::SpriteHitBox { r0_xlo:0,r8_xhi:0,r1_ylo:0,r9_yhi:0,r2:0,r3:0,r4_spr_xlo:0,r10_spr_xhi:0,r5_spr_ylo:0,r11_spr_yhi:0,r6_spr_xsize:0,r7_spr_ysize:0 });
+            });
+    }
+}
+
+#[test]
+fn marker37_babusu_matches_rom() {
+    for (slot, value) in [(0usize,0u8),(15,1),(0,31),(15,32),(0,0x80),(15,0xff)] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90,0x800); native.write_wram_word(0x92,0xa20);
+        native.write_wram_byte(0xd10 + slot,40); native.write_wram_byte(0xd00 + slot,48);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,48);
+        native.write_wram_byte(0xdd0 + slot,9);
+        native.write_wram_byte(0xdc0 + slot, if value == 0xff {0xff} else {value % 4});
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x0dbd20,slot) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x0dbd20,machine,
+            |s|s.cpu.k==0xd && (0xbd20..0xbd46).contains(&s.cpu.pc),||{
+                native.babusu_draw(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_large_shadow_matches_rom() {
+    for (slot, value) in [(0usize,0u8),(15,1),(0,31),(15,32),(0,0x80),(15,0xff)] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90,0x800); native.write_wram_word(0x92,0xa20);
+        native.write_wram_byte(0xd10 + slot,40); native.write_wram_byte(0xd00 + slot,48);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,48);
+        native.write_wram_byte(0xdd0 + slot,9);
+        native.write_wram_byte(0xf70 + slot, value);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x1dd1af,slot) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x1dd1af,machine,
+            |s|s.cpu.k==0x1d && (0xd1af..0xd1fd).contains(&s.cpu.pc),||{
+                native.sprite_draw_large_shadow2(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_same_layer_entry_matches_rom() {
+    for floor in [0u8,1] {
+        let mut native=fresh_state();
+        native.write_wram_byte(0xf20,floor);native.write_wram_byte(0xe40,0x80);
+        native.sync_native_game_state_from_ram();native.set_lag_free(true);
+        let Some(machine)=marker29_machine(&native,0x06f154,0)else{return};
+        crate::cycle_ledger::assert_rom_marker_work(0x06f154,machine,
+            |s|s.cpu.k==6 && ((0xf154..0xf15c).contains(&s.cpu.pc)
+                || floor!=0 && (0xf1d7..0xf1d9).contains(&s.cpu.pc)),||{
+                    native.sprite_check_damage_to_link_same_layer_marked(0);
+                });
+    }
+}
+
+#[test]
+fn marker37_probe_matches_rom() {
+    for (slot, value) in [(0usize,0u8),(15,1),(0,2),(15,3),(0,4),(15,0x80)] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90,0x800); native.write_wram_word(0x92,0xa20);
+        native.write_wram_byte(0xd10 + slot,40); native.write_wram_byte(0xd00 + slot,48);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,48);
+        native.write_wram_byte(0xdd0 + slot,9);
+        native.write_wram_byte(0x1b, value & 1); native.write_wram_byte(0xf20 + slot, value >> 1);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x0dc26e,slot) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x0dc26e,machine,
+            |s|s.cpu.k==0xd && (0xc26e..0xc2d1).contains(&s.cpu.pc),||{
+                native.probe_check_tile_solidity(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_statue_matches_rom() {
+    for (slot, value) in [(0usize,0u8),(15,1),(0,2),(15,3),(0,4),(15,0x80)] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90,0x800); native.write_wram_word(0x92,0xa20);
+        native.write_wram_byte(0xd10 + slot,40); native.write_wram_byte(0xd00 + slot,48);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,48);
+        native.write_wram_byte(0xdd0 + slot,9);
+        native.write_wram_byte(0xfa0, slot as u8); native.write_wram_byte(0x1a, value & 1); native.write_wram_byte(0xe20 + 2, if value==0 {0x1c}else{0}); native.write_wram_byte(0xdd0 + 2, if value==1 {8}else{9}); native.write_wram_byte(0xd10 + 2, if value==2 {40}else{200}); native.write_wram_byte(0xd00 + 2, if value==3 {200}else{48});
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x06c277,slot) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x06c277,machine,
+            |s|s.cpu.k==0x6 && (0xc277..0xc2e5).contains(&s.cpu.pc),||{
+                native.statue_block_sprites(slot);
+            });
+    }
+}
+
+#[test]
+fn marker37_hitbox_wrapper_matches_rom() {
+    for (slot, value) in [(0usize,0u8),(15,1),(0,2),(15,3),(0,4),(15,0x80)] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90,0x800); native.write_wram_word(0x92,0xa20);
+        native.write_wram_byte(0xd10 + slot,40); native.write_wram_byte(0xd00 + slot,48);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,48);
+        native.write_wram_byte(0xdd0 + slot,9);
+        native.write_wram_byte(0xf70 + slot, value);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x0683ea,slot) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x0683ea,machine,
+            |s|s.cpu.k==0x6 && (0x83ea..0x83f2).contains(&s.cpu.pc),||{
+                native.sprite_setup_hit_box_long_marked(slot, &mut crate::types::SpriteHitBox { r0_xlo:0,r8_xhi:0,r1_ylo:0,r9_yhi:0,r2:0,r3:0,r4_spr_xlo:0,r10_spr_xhi:0,r5_spr_ylo:0,r11_spr_yhi:0,r6_spr_xsize:0,r7_spr_ysize:0 });
+            });
+    }
+}
+
+#[test]
+fn marker37_red_bari_matches_rom() {
+    for (slot, value) in [(0usize,0u8),(15,1),(0,2),(15,3),(0,4),(15,0x80)] {
+        let mut native = fresh_state();
+        native.write_wram_word(0x90,0x800); native.write_wram_word(0x92,0xa20);
+        native.write_wram_byte(0xd10 + slot,40); native.write_wram_byte(0xd00 + slot,48);
+        native.write_wram_word(0xfd8,40); native.write_wram_word(0xfda,48);
+        native.write_wram_byte(0xdd0 + slot,9);
+        native.write_wram_byte(0xdc0 + slot, value & 1);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker29_machine(&native,0x06a3dc,slot) else {return};
+        crate::cycle_ledger::assert_rom_marker_work(0x06a3dc,machine,
+            |s|s.cpu.k==0x6 && (0xa3dc..0xa3f9).contains(&s.cpu.pc),||{
+                native.red_bari_draw(slot);
+            });
+    }
+}

@@ -429,7 +429,7 @@ impl ZeldaState {
                         == 0
                     {
                         self.follower_link_state_mut().clear_defense_flags();
-                        self.link_reset_swimming_state();
+                        self.link_reset_swimming_state_marked();
                     }
                     self.finish_swim_movement_tail();
                     return;

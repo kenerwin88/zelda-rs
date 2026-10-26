@@ -267,3 +267,59 @@ fn native_shield_dma_word_store_publishes_the_adjacent_staging_byte() {
     assert_eq!(state.ram[0x10b], 0x63);
     assert_eq!(state.ram[0x10a], 0x5a, "owned game-over byte must stay unpublished");
 }
+
+#[test]
+fn marker37_y_item_matches_rom() {
+    for (frames, bunny, game, item, active, hand, cape, flute) in [
+        (1u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8), (9,0,0,0,0,0,0,0),
+        (0,1,0,1,0,0,0,0), (0,1,0,11,0,0,0,0), (0,1,0,20,0,0,0,0),
+        (0,0,1,0,0,0,0,0), (0,0,2,0,0,0,0,0), (0,1,2,11,0,0,0,0),
+        (0,0,0,5,8,0,0,2), (0,0,0,6,8,0,0,0), (0,0,0,1,19,0,0,0),
+        (0,0,0,0,5,1,0,0), (0,0,0,0,6,1,0,0), (0,0,0,0,0,1,0,0),
+    ] {
+        let mut native = ZeldaState::new();
+        for (a,v) in [(0x3c,frames),(0x2e0,bunny),(0x3fc,game),(0x303,item),
+            (0x304,active),(0x301,hand),(0x55,cape),(0xf34c,flute)] {
+            native.write_wram_byte(if a==0xf34c {0x1f34c}else{a},v);
+        }
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let Some(machine) = marker36_player_machine(&native, 0x079b0e) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x079b0e, machine,
+            |s| s.cpu.k==7 && ((0x9b0e..0x9b92).contains(&s.cpu.pc) || s.cpu.pc==0x9ae5), || {
+                native.link_handle_y_item_marked();
+            });
+    }
+}
+
+#[test]
+fn marker37_a_press_matches_rom() {
+    for (hand, position, pose, frames, mask, action_state, grab, pull, statue, pickup, new_button) in [
+        (1u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8),
+        (0,1,0,0,0,0,0,0,0,0,0), (0,0,1,0,0,0,0,0,0,0,0),
+        (0,0,0,8,0x80,0,0,0,0,0,0), (0,0,0,9,0x80,0,0,0,0,0,0),
+        (0,0,0,0,0,0,0,0,0,0,0), (0,0,0,0,0,1,0,0,0,0,0),
+        (0,0,0,0,0,0,1,0,0,0,0), (0,0,0,0,0,0,0,1,0,0,0x80),
+        (0,0,0,0,0,0,0,0,1,0,0x80), (0,0,0,0,0,0,0,0,0,1,0x80),
+    ] {
+        let mut native=ZeldaState::new();
+        for (a,v) in [(0x301,hand),(0x37a,position),(0x379,pose),(0x3c,frames),(0x3a,mask),
+            (0x308,action_state),(0x376,grab),(0x3f8,pull),(0x2fa,statue),(0x2ec,pickup),(0xf6,new_button)] {
+            native.write_wram_byte(a,v);
+        }
+        native.sync_native_game_state_from_ram();native.set_lag_free(true);
+        let Some(machine)=marker36_player_machine(&native,0x079baa)else{return};
+        crate::cycle_ledger::assert_rom_marker_work(0x079baa,machine,
+            |s|s.cpu.k==7 && (0x9baa..0x9c4f).contains(&s.cpu.pc),||{native.link_handle_a_press_marked();});
+    }
+}
+
+#[test]
+fn marker37_swimming_reset_matches_rom() {
+    let mut native=ZeldaState::new();
+    native.write_wram_byte(0x2cb,0xff); native.write_wram_byte(0x34f,0xff);
+    native.write_wram_byte(0x32a,0xff);
+    native.sync_native_game_state_from_ram();native.set_lag_free(true);
+    let Some(machine)=marker36_player_machine(&native,0x07983a)else{return};
+    crate::cycle_ledger::assert_rom_marker_work(0x07983a,machine,
+        |s|s.cpu.k==7 && (0x983a..0x984b).contains(&s.cpu.pc),||{native.link_reset_swimming_state_marked();});
+}

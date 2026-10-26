@@ -790,6 +790,79 @@ impl ZeldaState {
         }
     }
 
+    /// Complete selectors reached by $07:81C6 and $07:8427 JSR $9B0E.
+    /// Calls and item JMP targets retain their separate body ownership.
+    pub(super) fn link_handle_y_item_marked(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079b0e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let p = &self.game_state.player.follower_link;
+        b.block(0x079b0e);
+        if p.button_b_frames() == 0 { b.taken(0x079b10); }
+        else {
+            b.block(0x079b12);
+            if p.button_b_frames() < 9 { b.taken(0x079b14); b.block(0x079ae5); return self.link_handle_y_item(); }
+        }
+        b.block(0x079b16);
+        if !p.is_bunny_mirror() { b.taken(0x079b19); }
+        else {
+            b.block(0x079b1b);
+            if p.current_item_y() == 11 { b.taken(0x079b20); }
+            else {
+                b.block(0x079b22);
+                if p.current_item_y() == 20 { b.taken(0x079b24); }
+                else { b.block(0x079b26); return self.link_handle_y_item(); }
+            }
+        }
+        b.block(0x079b27);
+        let game = self.game_state.minigame.is_archer_or_shovel_game();
+        if game == 0 { b.taken(0x079b2a); }
+        else {
+            b.block(0x079b2c);
+            if p.is_bunny_mirror() { b.taken(0x079b2f); }
+            else {
+                b.block(0x079b31);
+                if game == 2 { b.taken(0x079b33); b.block(0x079b38); }
+                else { b.block(0x079b35); }
+                return self.link_handle_y_item();
+            }
+        }
+        b.block(0x079b3b);
+        let old = p.current_item_active();
+        if old == p.current_item_y() { b.taken(0x079b41); }
+        else {
+            b.block(0x079b43);
+            if old != 8 { b.taken(0x079b48); }
+            else {
+                b.block(0x079b4a);
+                if self.game_state.inventory.items.flute() & 2 == 0 { b.taken(0x079b50); }
+                else { b.block(0x079b52); }
+            }
+            b.block(0x079b58);
+            if old != 19 { b.taken(0x079b5d); }
+            else {
+                b.block(0x079b5f);
+                if !p.is_cape_active() { b.taken(0x079b61); }
+                else { b.block(0x079b63); }
+            }
+        }
+        b.block(0x079b66);
+        let active = if !p.has_item_in_hand() && !p.has_position_mode() {
+            b.block(0x079b6e); p.current_item_y()
+        } else { b.taken(0x079b6c); old };
+        b.block(0x079b74);
+        if active == 0 && !p.has_item_in_hand() && !p.has_position_mode() { b.taken(0x079b74); b.block(0x079b91); }
+        else {
+            b.block(0x079b76);
+            if active == 5 { b.taken(0x079b78); }
+            else { b.block(0x079b7a); if active != 6 { b.taken(0x079b7c); } }
+            if matches!(active, 5 | 6) { b.block(0x079b7e); }
+            b.block(0x079b88);
+            if active.wrapping_sub(1) & 0x80 != 0 { b.taken(0x079b89); b.block(0x079b91); }
+            else { b.block(0x079b8b); }
+        }
+        self.link_handle_y_item();
+    }
+
     pub(super) fn link_handle_y_item(&mut self) {
         if self.game_state.player.follower_link.button_b_frames() != 0
             && self.game_state.player.follower_link.button_b_frames() < 9

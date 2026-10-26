@@ -348,31 +348,56 @@ impl ZeldaState {
     //   Repel overlapping active sprites away from the pushed statue.
     // }
     pub(super) fn statue_block_sprites(&mut self, k: usize) {
+        // $06:C10C JSR C277: all sixteen actual slot probes and hit tails.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06c277));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06c277);
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         for j in (0..16).rev() {
-            if self.sprite_slot_view(j).sprite_type() == 0x1c
-                || j == k
-                || (((j as u8) ^ self.game_state.frame.frame_counter) & 1) != 0
-                || self.sprite_slot_view(j).state() < 9
-            {
-                continue;
+            b.block(0x06c279);
+            let skipped = if self.sprite_slot_view(j).sprite_type() == 0x1c {
+                b.taken(0x06c27e); true
+            } else {
+                b.block(0x06c280);
+                if j == k { b.taken(0x06c283); true }
+                else {
+                    b.block(0x06c285);
+                    if (((j as u8) ^ self.game_state.frame.frame_counter) & 1) != 0 {
+                        b.taken(0x06c28a); true
+                    } else {
+                        b.block(0x06c28c);
+                        if self.sprite_slot_view(j).state() < 9 { b.taken(0x06c291); true }
+                        else { false }
+                    }
+                }
+            };
+            if skipped {
+                b.block(0x06c2df); if j != 0 { b.taken(0x06c2e2); } continue;
             }
+            b.block(0x06c293);
             let x = self.sprite_get_x(j);
             let y = self.sprite_get_y(j);
-            if cur_x.wrapping_sub(x).wrapping_add(12) < 24
-                && cur_y.wrapping_sub(y).wrapping_add(12) < 36
-            {
+            let x_hit = cur_x.wrapping_sub(x).wrapping_add(12) < 24;
+            let y_hit = cur_y.wrapping_sub(y).wrapping_add(12) < 36;
+            if !x_hit { b.taken(0x06c2b6); }
+            else { b.block(0x06c2b8); if !y_hit { b.taken(0x06c2c5); } }
+            if x_hit && y_hit {
+                b.block(0x06c2c7);
                 let value = 4;
                 self.sprite_slot_view_mut(j).set_f(value);
                 // ROM $06:C2D1
                 let pt = self.sprite_project_speed_towards_location_marked(k, x, y, 32);
+                b.block(0x06c2d4);
                 let value = pt.y;
                 self.sprite_slot_view_mut(j).set_y_recoil(value);
                 let value = pt.x;
                 self.sprite_slot_view_mut(j).set_x_recoil(value);
             }
+            // SEP #$20 normalizes either incoming accumulator width.
+            b.block(0x06c2df); if j != 0 { b.taken(0x06c2e2); }
         }
+        b.block(0x06c2e4);
     }
 
     // -----------------------------------------------------------------------

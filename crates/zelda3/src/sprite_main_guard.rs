@@ -348,13 +348,26 @@ impl ZeldaState {
     //   ...same tile probe as C, caching sprite_tiletype...
     // }
     pub(super) fn probe_check_tile_solidity(&mut self, k: usize) -> bool {
+        // $05:C1BF JSL C26E. Callees own their work separately.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dc26e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dc26e);
+        if self.sprite_slot_view(k).floor() == 0 { b.taken(0x0dc277); }
+        else { b.block(0x0dc279); }
+        b.block(0x0dc27e);
         let x = self.game_state.sprites.workspace.current_sprite_x();
         let y = self.game_state.sprites.workspace.current_sprite_y();
         let tile = if self.game_state.world.location.is_indoors() {
+            b.block(0x0dc286);
             self.entity_tile_at(self.sprite_slot_view(k).floor(), x, y).0
         } else {
-            self.overworld_map16_tile_definition_at_location(x >> 3, y)
+            b.taken(0x0dc284); b.block(0x0dc2a9);
+            let tile = self.overworld_map16_tile_definition_at_location(x >> 3, y);
+            b.block(0x0dc2be);
+            tile
         };
+        // C2C2 SEP #$30 has the same work at either incoming M width.
+        b.block(0x0dc2c2); b.block(0x0dc2c4);
         self.sprite_workspace_mut().set_tile(tile);
         tile.sprite_probe() != EntityCollision::Passable
     }

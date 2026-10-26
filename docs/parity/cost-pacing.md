@@ -12273,3 +12273,50 @@ All **48 crystal/pendant phases** remain within one frame of source; stable outc
 Complete, disjoint shard manifests bind the test binaries and observed results. Both CPU-only SNES suites pass **504 / 0 / 7**; all eight block-generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass. All **1,512** supplied ledger/cache files retain size and mtime. `verification.json`, source/binary hashes, command receipts and `artifact-sha256.json` bind this stop. Verified full predictors and raw profiles were deleted after summaries; `pruned-artifacts.json` retains their hashes. Compressed classifications and phase traces remain, with batch evidence below 3 GB.
 
 One accidental `--help` probe entered interactive GPU initialization and failed with no suitable adapter; no rendering completed (`rebuilt-help.log`, `recovery.json`). All verification above uses CPU entry points. No `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Branch/HEAD remain `codex/cost-pacing36` / `8b0f4ee2`. The **15M pricing target is still open**.
+
+## Verified batch 37 on `codex/cost-pacing37` (main `c751ec0b`)
+
+**12,946,080 frozen-cohort clocks closed; the 12M target is met.** New marker work and the signed-gap reduction agree exactly: **136,537,162 → 123,591,082** across the unchanged **2,825-iteration** cohort. Batch 36's retained routine ranking and final baseline were reused; no main controls were rerun. Evidence is in `target/cost-pacing37/`.
+
+The larger audited single-draw, shadow and inactive gaps already contain separately charged bodies; they receive no second price. This batch completes admissible garnish, player-control, damage, collision and drawing bodies at confirmed ROM callers. Larger partially priced owners remain open. Called coordinate, drawing, shadow, hitbox, projection and movement bodies retain their existing ownership; resumed fragments retain their previous entries.
+
+The generator adds **156 blocks / 578 ROM instructions**; all **658 existing rows remain byte-identical**. Y-item early exits also newly execute the existing `$07:9AE5` RTS marker **291 times / 12,222 clocks**. That shared-row reuse is included in the total above; there is **no scalar or attribution delta**. `shared-return-accounting.json` records this reuse. All runtime prices are lagless-only ROM markers selected by actual branches and executed loops, with source comments and statically confirmed callers. No scalar conversion, fitted lag residual, scene threshold, multiplier, scene table or checkpoint/classifier change was introduced. The two bounded flag-normalization joins price only width-independent SEP instructions and are covered by ROM fixtures.
+
+Sixteen `assert_rom_marker_work` fixtures pass **114 unmodified-ROM cases**, including early exits, shield tails, coordinate rejection, slot scans and both probe lanes. Shared garnish tails are exercised by their complete caller fixtures. Per-body figures below are native **new marker executions**, including separately listed shared tails once; they do not assert equivalent source/native call sequences or exact physical NMI placement. Lines are gross native additions, including caller rewiring/comments, excluding fixtures, generated rows and the manifest.
+
+| Body / source entry | Frozen clocks closed | Native lines added |
+| --- | ---: | ---: |
+| `$09:B429` Lightning trail | 2,203,392 | 9 |
+| `$06:F15C` Damage/shield body | 1,541,944 | 66 |
+| `$09:B4C6` Kholdstare trail | 1,237,492 | 5 |
+| `$07:9BAA` A-press control | 1,050,018 | 88 |
+| `$07:9B0E` Y-item selector | 1,049,894 | 75 |
+| `$0D:C26E` Tile-solidity probe | 733,608 | 14 |
+| `$1D:D1AF` Large shadow wrapper/body | 689,430 | 16 |
+| `$0D:BD20` Babusu draw | 665,952 | 8 |
+| `$09:B459` Shared garnish collision tail | 664,034 | 15 |
+| `$06:F645` Fast hitbox | 660,284 | 24 |
+| `$06:C277` Statue collision scan | 627,316 | 34 |
+| `$06:A3DC` Red Bari draw control | 577,660 | 5 |
+| `$09:B70C` Shared big-OAM finalization | 537,516 | 3 |
+| `$06:83EA` Far hitbox wrapper | 498,750 | 10 |
+| `$06:F154` Same-layer entry | 194,400 | 12 |
+| `$07:983A` Swimming-reset wrapper | 7,722 | 11 |
+| `$09:B306` Bat-flame control | 5,440 | 8 |
+| `$09:B3EE` Cannon-smoke control | 1,228 | 4 |
+| **Total** | **12,946,080** | **407** |
+
+Both final full census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; every runtime hold equals P2. These are periodically seeded CPU logical gates, not continuous-route or exact A/V proof. Missing/excess count lag NMIs; FP counts zero-source-lag iterations.
+
+| Lane | Retained main missing / excess / FP | Batch 37 missing / excess / FP |
+| --- | ---: | ---: |
+| ROM | 4,558 / 0 / 0 | **4,488 / 0 / 0** |
+| Live SPC | 5,258 / 593 / 133 | **5,184 / 589 / 131** |
+
+All **48 crystal/pendant phases** remain within one frame; stable outcomes match the retained main trace. The retained **default 200k ledger matches all records and EOF**. Default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; existing lib-test-only warnings remain separate.
+
+- Default Zelda library: **2,632 pass / 1 fail / 3 ignored** (only the known spotlight caller-return failure).
+- Reduced Zelda library: **2,167 pass / 0 fail / 2 ignored**.
+- Both CPU-only SNES suites: **504 / 0 / 7**. All eight generator/worklist tests, four routine-coverage tests, exact table regeneration and `git diff --check` pass.
+
+Complete disjoint library manifests, source/binary hashes, command receipts, per-routine clock/line summaries and `verification.json` bind this point. All **1,512** supplied ledger/cache files retain size and mtime. Raw predictors/profiles were deleted after summaries; hashes remain in the pruning manifests. Batch evidence remains below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used.

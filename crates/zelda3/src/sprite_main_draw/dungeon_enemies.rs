@@ -185,8 +185,13 @@ impl ZeldaState {
     //   Four 8x8 body tiles selected by sprite_graphics.
     // }
     pub(super) fn red_bari_draw(&mut self, k: usize) {
+        // $06:A280 JSR A3DC; the DC64 shadow JMP keeps its existing body price.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a3dc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a3dc);
         let base = (self.sprite_slot_view(k).graphics() as usize).min(1) * 4;
         let mut info = self.sprite_draw_multiple(k, &RED_BARI_DRAW_FRAMES[base..base + 4]);
+        b.block(0x06a3f6);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -687,12 +692,20 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Babusu_Draw(int k) {  // 8dbd20
     pub(in crate::zelda_rtl) fn babusu_draw(&mut self, k: usize) {
+        // $1E:9C6B JSL $0D:BD20: whole banked draw, children separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dbd20));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dbd20);
         let g = self.sprite_slot_view(k).graphics();
         if g != 0xff {
+            b.block(0x0dbd2b);
             let base = usize::from(g) * 2;
             self.sprite_draw_multiple(k, &BABUSU_DRAW_FRAMES[base..base + 2]);
+            b.block(0x0dbd3e);
         } else {
+            b.taken(0x0dbd29); b.block(0x0dbd40);
             self.sprite_prep_oam_coord(k);
+            b.block(0x0dbd44);
         }
     }
 

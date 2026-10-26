@@ -1223,7 +1223,7 @@ impl ZeldaState {
 
     fn ancilla_check_sprite_collision_single(&mut self, k: usize, j: usize) -> bool {
         let mut hb = self.ancilla_setup_hit_box(k);
-        self.sprite_setup_hit_box(j, &mut hb);
+        self.sprite_setup_hit_box_long_marked(j, &mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
         if !overlap {
             return false;

@@ -494,6 +494,15 @@ impl ZeldaState {
         self.ancilla_add_blanket(0x20);
     }
 
+    pub(in crate::zelda_rtl) fn link_reset_swimming_state_marked(&mut self) {
+        // $07:8158, $07:83E1 and $07:9747 JSL $983A.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07983a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07983a);
+        self.link_reset_swimming_state();
+        b.block(0x079849);
+    }
+
     pub(in crate::zelda_rtl) fn link_reset_swimming_state(&mut self) {
         self.follower_link_state_mut().reset_swim_stroke_state();
         self.reset_all_acceleration();
@@ -787,7 +796,7 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .clear_state_item_and_grab_flags();
         self.follower_link_state_mut().clear_defense_flags();
-        self.link_reset_swimming_state();
+        self.link_reset_swimming_state_marked();
         self.follower_link_state_mut().clear_direction_lock_bits(1);
         self.follower_link_state_mut().clear_z_high();
         if self.game_state.player.follower_link.electrocute_on_touch() != 0 {
@@ -914,7 +923,7 @@ impl ZeldaState {
         }
 
         self.reset_all_acceleration();
-        self.link_handle_y_item();
+        self.link_handle_y_item_marked();
         let mut dir = (self
             .game_state
             .player
@@ -1000,7 +1009,7 @@ impl ZeldaState {
             return;
         }
 
-        self.link_handle_a_press();
+        self.link_handle_a_press_marked();
         let dir = self.game_state.player.follower_link.joypad1h_last() & 0x0f;
         if dir == 0 {
             self.follower_link_state_mut()
@@ -1197,7 +1206,7 @@ impl ZeldaState {
 
         if !self.link_handle_toss() {
             self.ground_apress_defers_atomic_item_receipt = true;
-            self.link_handle_a_press();
+            self.link_handle_a_press_marked();
             self.ground_apress_defers_atomic_item_receipt = false;
             if matches!(
                 self.game_execution_scheduler.current_work(),
@@ -1275,7 +1284,7 @@ impl ZeldaState {
                 }
                 Some(GroundYItemTail::LampMagic) => self.link_item_lamp_after_native_magic_entry(),
                 Some(GroundYItemTail::SkipYItem) => unreachable!(),
-                None => self.link_handle_y_item(),
+                None => self.link_handle_y_item_marked(),
             }
             if self
                 .game_state

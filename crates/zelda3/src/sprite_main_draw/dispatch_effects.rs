@@ -14,6 +14,11 @@ impl ZeldaState {
     //   Sprite_Get16BitCoords(k);
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_big_shadow(&mut self, k: usize, anim: i32) {
+        self.sprite_draw_big_shadow_body(k, anim, false);
+    }
+
+    fn sprite_draw_big_shadow_body(&mut self, k: usize, anim: i32, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let z = self.sprite_slot_view(k).z() as u16;
         self.sprite_workspace_mut()
@@ -26,7 +31,9 @@ impl ZeldaState {
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = (anim as usize) * 3;
         self.sprite_draw_multiple(k, &LARGE_SHADOW_DRAW_FRAMES[base..base + 3]);
+        b.block(0x1dd1f7);
         self.sprite_get16_bit_coords(k);
+        b.block(0x1dd1fb);
     }
 
     // void SpriteActive_Main(int k) {  // 869271
@@ -391,8 +398,15 @@ impl ZeldaState {
     //   Clamp z-derived animation and delegate to SpriteDraw_BigShadow.
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_large_shadow2(&mut self, k: usize) {
-        let z = (self.sprite_slot_view(k).z() >> 3).min(4);
-        self.sprite_draw_big_shadow(k, z as i32);
+        // $1D:D1A3, $1D:E75E and $1E:AFFD JSL D1AF (bank wrapper included).
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd1af));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dd1af);
+        let z = self.sprite_slot_view(k).z() >> 3;
+        if z < 4 { b.taken(0x1dd1bb); } else { b.block(0x1dd1bd); }
+        let z = z.min(4);
+        b.block(0x1dd1bf);
+        self.sprite_draw_big_shadow_body(k, z as i32, true);
     }
 
     // -----------------------------------------------------------------------

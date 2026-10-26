@@ -304,7 +304,26 @@ impl ZeldaState {
         tile_attrs[(map8 & 0x01ff) as usize]
     }
 
-    pub(super) fn link_handle_a_press(&mut self) {
+    pub(super) fn link_handle_a_press_marked(&mut self) {
+        // $07:81B0 and $07:8510 JSR $9BAA; resumed tails retain their entry.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079baa));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x079baa);
+        let p = &self.game_state.player.follower_link;
+        if p.has_item_in_hand() { b.taken(0x079bb0); }
+        else {
+            b.block(0x079bb2);
+            if p.position_mode_has(0x1f) { b.taken(0x079bb7); }
+            else {
+                b.block(0x079bb9);
+                if p.player_pose_draw_counter() != 0 { b.taken(0x079bbc); }
+                else {
+                    b.block(0x079bbe);
+                    if p.button_b_frames() >= 9 { b.taken(0x079bc2); }
+                    else { b.block(0x079bc4); if p.button_mask_b_y() & 0x80 == 0 { b.taken(0x079bc8); } }
+                }
+            }
+        }
         self.follower_link_state_mut()
             .set_sprite_pickup_flag_cached(0);
         if self.game_state.player.follower_link.has_item_in_hand()
@@ -316,14 +335,15 @@ impl ZeldaState {
                 .player_pose_draw_counter()
                 != 0
         {
-            return;
+            b.block(0x079bca); return;
         }
         if self.game_state.player.follower_link.button_b_frames() < 9
             && (self.game_state.player.follower_link.button_mask_b_y() & 0x80) != 0
         {
-            return;
+            b.block(0x079bca); return;
         }
 
+        b.block(0x079bcb);
         let mut action = self.game_state.player.follower_link.tile_action_index();
         if !self.game_state.player.follower_link.has_action_state()
             && !self
@@ -332,9 +352,19 @@ impl ZeldaState {
                 .follower_link
                 .has_grabbing_wall_state()
         {
-            if !self.link_check_new_a_press() {
+            b.block(0x079bd6);
+            let new_press = self.link_check_new_a_press();
+            b.block(0x079bd9);
+            if !new_press {
+                b.taken(0x079bd9); b.block(0x079c4c);
                 self.follower_link_state_mut().set_y_button_action_flags(0);
                 return;
+            }
+            b.block(0x079bdb);
+            if !self.game_state.player.follower_link.needs_pull_for_rupees_sprite() { b.taken(0x079bde); }
+            else {
+                b.block(0x079be0);
+                if self.game_state.player.follower_link.facing() != 0 { b.taken(0x079be2); }
             }
             if self
                 .game_state
@@ -343,60 +373,77 @@ impl ZeldaState {
                 .needs_pull_for_rupees_sprite()
                 && self.game_state.player.follower_link.facing() == 0
             {
+                b.block(0x079be4);
                 action = 7;
-            } else if self
-                .game_state
-                .player
-                .follower_link
-                .is_near_moveable_statue()
-            {
-                action = 6;
             } else {
-                let mut attempt_action = false;
-                if self.game_state.player.follower_link.ancilla_pickup_flag() == 0 {
-                    if self.game_state.player.follower_link.sprite_pickup_flag() == 0 {
-                        action = self.link_handle_liftables();
-                        attempt_action = true;
-                    } else {
-                        let pickup_flag = self.game_state.player.follower_link.sprite_pickup_flag();
-                        self.follower_link_state_mut()
-                            .set_sprite_pickup_flag_cached(pickup_flag);
-                    }
-                }
-                if !attempt_action {
-                    if self.game_state.player.follower_link.button_b_frames() != 0 {
-                        self.link_reset_sword_and_item_usage();
-                    }
-                    if self
-                        .game_state
-                        .player
-                        .follower_link
-                        .has_item_or_position_mode()
-                    {
-                        self.follower_link_state_mut().clear_item_in_hand();
-                        self.follower_link_state_mut().clear_position_mode();
-                        self.link_reset_boomerang_y_stuff();
-                        self.minigame_state_mut().clear_flag_boomerang_in_place();
-                        if self.ancilla_slot_view(0).ancilla_type() == 5 {
-                            self.ancilla_slot_view_mut(0).set_ancilla_type(0);
+                b.block(0x079be9);
+                if self.game_state.player.follower_link.is_near_moveable_statue() {
+                    b.block(0x079bee); action = 6;
+                } else {
+                    b.taken(0x079bec); b.block(0x079bf3);
+                    let mut attempt_action = false;
+                    if self.game_state.player.follower_link.ancilla_pickup_flag() == 0 {
+                        b.block(0x079bf8);
+                        if self.game_state.player.follower_link.sprite_pickup_flag() == 0 {
+                            b.taken(0x079bfb); b.block(0x079c2c);
+                            action = self.link_handle_liftables();
+                            attempt_action = true;
+                        } else {
+                            b.block(0x079bfd);
+                            let pickup_flag = self.game_state.player.follower_link.sprite_pickup_flag();
+                            self.follower_link_state_mut()
+                                .set_sprite_pickup_flag_cached(pickup_flag);
                         }
                     }
-                    action = 1;
+                    if !attempt_action {
+                        if self.game_state.player.follower_link.ancilla_pickup_flag() != 0 { b.taken(0x079bf6); }
+                        b.block(0x079c03);
+                        if self.game_state.player.follower_link.button_b_frames() == 0 { b.taken(0x079c05); }
+                        if self.game_state.player.follower_link.button_b_frames() != 0 {
+                            b.block(0x079c07);
+                            self.link_reset_sword_and_item_usage();
+                        }
+                        b.block(0x079c0a);
+                        if !self.game_state.player.follower_link.has_item_or_position_mode() { b.taken(0x079c10); }
+                        if self
+                            .game_state
+                            .player
+                            .follower_link
+                            .has_item_or_position_mode()
+                        {
+                            b.block(0x079c12);
+                            self.follower_link_state_mut().clear_item_in_hand();
+                            self.follower_link_state_mut().clear_position_mode();
+                            self.link_reset_boomerang_y_stuff();
+                            b.block(0x079c1b);
+                            self.minigame_state_mut().clear_flag_boomerang_in_place();
+                            if self.ancilla_slot_view(0).ancilla_type() == 5 {
+                                b.block(0x079c25);
+                                self.ancilla_slot_view_mut(0).set_ancilla_type(0);
+                            } else { b.taken(0x079c23); }
+                        }
+                        b.block(0x079c28);
+                        action = 1;
+                    }
                 }
             }
 
+            b.block(0x079c2f);
             if action as usize >= LINK_APRESS_BASIC_ABILITY_BITMASKS.len()
                 || (LINK_APRESS_BASIC_ABILITY_BITMASKS[action as usize]
                     & self.game_state.inventory.player_resources.ability_flags())
                     == 0
             {
+                b.taken(0x079c36); b.block(0x079c4c);
                 self.follower_link_state_mut().set_y_button_action_flags(0);
                 return;
             }
+            b.block(0x079c38);
             self.follower_link_state_mut().set_tile_action_index(action);
             self.link_a_press_perform_basic(action.wrapping_mul(2));
-        }
+        } else { b.taken(0x079bd4); }
 
+        b.block(0x079c41);
         let action_index = self.game_state.player.follower_link.tile_action_index();
         self.follower_link_state_mut()
             .set_cached_tile_action_index(action_index);
