@@ -3,6 +3,79 @@
 use super::*;
 
 impl ZeldaState {
+
+
+    pub(in crate::zelda_rtl) fn sprite_project_speed_towards_location_long_marked(
+        &self, k: usize, x: u16, y: u16, vel: u8,
+    ) -> ProjectSpeedRet {
+        // $06:EA22..EA29: bank save/restore around JSR $EA2D.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ea22));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ea22);
+        let result = self.sprite_project_speed_towards_location_marked(k, x, y, vel);
+        b.block(0x06ea28);
+        result
+    }
+
+
+    pub(in crate::zelda_rtl) fn sprite_project_speed_towards_location_marked(
+        &self, k: usize, x: u16, y: u16, vel: u8,
+    ) -> ProjectSpeedRet {
+        // $06:EA2D..EA9F; EA2A is its zero-speed return. Location predicates
+        // own their called bodies; these markers own only this routine.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ea2d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ea2d);
+        if vel == 0 {
+            b.taken(0x06ea31); b.block(0x06ea2a);
+        } else {
+            let below = self.sprite_is_below_location(k, y);
+            let right = self.sprite_is_right_of_location(k, x);
+            b.block(0x06ea33); b.block(0x06ea38);
+            if below.b & 0x80 == 0 { b.taken(0x06ea3c); } else { b.block(0x06ea3e); }
+            b.block(0x06ea41); b.block(0x06ea46);
+            if right.b & 0x80 == 0 { b.taken(0x06ea4a); } else { b.block(0x06ea4c); }
+            let ym = (below.b as i8).unsigned_abs();
+            let xm = (right.b as i8).unsigned_abs();
+            let swapped = xm < ym;
+            b.block(0x06ea4f);
+            if swapped { b.block(0x06ea59); } else { b.taken(0x06ea57); }
+            b.block(0x06ea62);
+            let (minor, major) = if swapped { (xm, ym) } else { (ym, xm) };
+            let mut remainder = 0u8;
+            for i in 0..vel {
+                b.block(0x06ea68);
+                remainder = remainder.wrapping_add(minor);
+                if remainder < major { b.taken(0x06ea6f); }
+                else { b.block(0x06ea71); remainder = remainder.wrapping_sub(major); }
+                b.block(0x06ea75);
+                if i + 1 != vel { b.taken(0x06ea78); }
+            }
+            b.block(0x06ea7a);
+            if swapped { b.block(0x06ea7d); } else { b.taken(0x06ea7b); }
+            b.block(0x06ea87);
+            if below.a == 0 { b.taken(0x06ea8b); } else { b.block(0x06ea8d); }
+            b.block(0x06ea92);
+            if right.a == 0 { b.taken(0x06ea96); } else { b.block(0x06ea98); }
+            b.block(0x06ea9d);
+        }
+        self.sprite_project_speed_towards_location(k, x, y, vel)
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_move_z_marked(&mut self, k: usize, entry: u32) {
+        // $06:E96C and $1E:FF62 are byte-identical complete Z movers.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let delta = entry - 0x06e96c;
+        b.block(entry);
+        if self.sprite_slot_view(k).z_velocity() & 0x80 == 0 { b.taken(0x06e983 + delta); }
+        else { b.block(0x06e985 + delta); }
+        b.block(0x06e987 + delta);
+        self.sprite_move_z(k);
+    }
+
+
+
     pub(in crate::zelda_rtl) fn sprite_where_in_room_mask(&self, room: u16) -> u16 {
         self.game_state
             .sprites
@@ -224,7 +297,21 @@ impl ZeldaState {
 
     /// ROM: `SpritePrep_LoadProperties`
     pub(in crate::zelda_rtl) fn sprite_prep_load_properties(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0d_b818));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $0D:B818..B870, M8/X8. ResetProperties retains its own body.
+        blocks.block(0x0db818);
         self.sprite_prep_reset_properties(k);
+        blocks.block(0x0db81c);
+        let ty = u16::from(self.sprite_slot_view(k).sprite_type());
+        for (pc, base) in [(0x0db823, 0xb080u16), (0x0db829, 0xb173),
+            (0x0db82f, 0xb44c), (0x0db835, 0xb632), (0x0db83b, 0xb725),
+            (0x0db841, 0xb266), (0x0db847, 0xb53f), (0x0db863, 0xb359)] {
+            if (base & 0xff) + ty > 0xff { blocks.crossing(pc); }
+        }
+        if self.game_state.world.location.is_outdoors() { blocks.taken(0x0db852); }
+        else { blocks.block(0x0db854); }
+        blocks.block(0x0db857);
         self.sprite_prep_load_properties_after_reset(k);
     }
 
@@ -404,12 +491,18 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_is_right_of_link(&self, k: usize) -> PairU8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_ead1));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:EAD1..EAE3, M8/X8: complete signed X-difference predicate.
+        blocks.block(0x06ead1);
         let x = self
             .game_state
             .player
             .follower_link
             .x()
             .wrapping_sub(self.sprite_get_x(k));
+        if sign16(x) { blocks.block(0x06eae2); } else { blocks.taken(0x06eae0); }
+        blocks.block(0x06eae3);
         PairU8 {
             a: u8::from(sign16(x)),
             b: x as u8,
@@ -417,12 +510,19 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_is_below_link(&self, k: usize) -> PairU8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_eae8));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:EAE8..EB09, M8/X8: complete Y/Z predicate and PHP/PLP carries.
+        blocks.block(0x06eae8);
         let link_y = self.game_state.player.follower_link.y();
         let t = (link_y as u8) as i32 + 8;
         let u = (t & 0xff) + self.sprite_slot_view(k).z() as i32;
         let v = (u & 0xff) - self.sprite_slot_view(k).y_low() as i32;
         let w = (link_y >> 8) as i32 - self.sprite_slot_view(k).y_high() as i32 - i32::from(v < 0);
         let y = ((w & 0xff) + (t >> 8) + (u >> 8)) as u8;
+        if (y as i8).is_negative() { blocks.block(0x06eb08); }
+        else { blocks.taken(0x06eb06); }
+        blocks.block(0x06eb09);
         PairU8 {
             a: u8::from((y as i8).is_negative()),
             b: v as u8,
@@ -1039,9 +1139,17 @@ impl ZeldaState {
         info: &mut SpriteSpawnInfo,
         j_in: i32,
     ) -> i32 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d_f65f));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $1D:F65F..F6CE, M8/X8: actual slot search and complete spawn body.
+        // The property/reset children own their bodies independently.
+        blocks.block(0x1df65f);
         let mut j = j_in;
         loop {
+            blocks.block(0x1df660);
             if j >= 0 && self.sprite_slot_view(j as usize).state() == 0 {
+                blocks.taken(0x1df663);
+                blocks.block(0x1df66b);
                 let ju = j as usize;
                 self.sprite_spawn_dynamically_selected_prefix(
                     k,
@@ -1050,12 +1158,19 @@ impl ZeldaState {
                     ju,
                     crate::SpriteDynamicSpawnProgress::SubtypeCleared,
                 );
+                blocks.block(0x1df6a7);
+                if self.game_state.world.location.is_indoors() { blocks.taken(0x1df6a9); }
+                else { blocks.block(0x1df6ab); }
+                blocks.block(0x1df6b3);
                 break;
             }
+            blocks.block(0x1df665);
             j -= 1;
             if j < 0 {
+                blocks.block(0x1df668);
                 break;
             }
+            blocks.taken(0x1df666);
         }
         j
     }
@@ -1252,7 +1367,8 @@ impl ZeldaState {
     // actually triggered. Mirrors the C `int` return.
     pub(in crate::zelda_rtl) fn sprite_show_solicited_message(&mut self, k: usize, msg: u16) -> u16 {
         self.dialogue_message_index_mut().set_value(msg);
-        if !self.sprite_check_damage_to_link_same_layer(k)
+        // ROM $05:E1AD
+        if !self.sprite_check_damage_same_layer_long_marked(k)
             || self.sprite_check_if_link_is_busy()
             || (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0
             || self.sprite_slot_view(k).delay_aux4() != 0
@@ -1286,7 +1402,8 @@ impl ZeldaState {
     // }
     pub(in crate::zelda_rtl) fn sprite_show_message_on_contact(&mut self, k: usize, msg: u16) -> u16 {
         self.dialogue_message_index_mut().set_value(msg);
-        if !self.sprite_check_damage_to_link_same_layer(k)
+        // ROM $05:E1F6
+        if !self.sprite_check_damage_same_layer_long_marked(k)
             || self
                 .game_state
                 .player
@@ -1315,7 +1432,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_flags2(value);
         let value = 0x07;
         self.sprite_slot_view_mut(k).set_flags4(value);
-        let rv = self.sprite_check_damage_to_link_same_layer(k);
+        // ROM $05:FA71
+        let rv = self.sprite_check_damage_same_layer_long_marked(k);
         let value = bak2;
         self.sprite_slot_view_mut(k).set_flags2(value);
         let value = bak4;
@@ -1467,7 +1585,8 @@ impl ZeldaState {
         let bak = self.sprite_slot_view(k).flags4();
         let value = 0;
         self.sprite_slot_view_mut(k).set_flags4(value);
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $1E:F4FA
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             self.sprite_halt_all_movement();
         }
         let value = bak;

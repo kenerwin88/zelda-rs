@@ -29,7 +29,8 @@ impl ZeldaState {
             oam += 4;
         }
         let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:9568
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -77,7 +78,8 @@ impl ZeldaState {
     pub(super) fn vulture_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let mut info = self.sprite_draw_multiple(k, &VULTURE_DRAW_FRAMES[base..base + 2]);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1D:DD76
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------

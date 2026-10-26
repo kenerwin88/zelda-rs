@@ -1335,7 +1335,8 @@ impl ZeldaState {
         };
         if direction != 0 && direction != 3 {
             crate::cycle_ledger::charge(32 + 62 + 72);
-            self.sprite_draw_shadow_custom(k, &mut info, 10);
+            // ROM $0D:D3E5
+            self.sprite_draw_shadow_long_marked(k, &mut info, 10);
         } else if direction == 0 {
             crate::cycle_ledger::charge(6 + 72);
         } else {
@@ -1364,7 +1365,8 @@ impl ZeldaState {
             crate::cycle_ledger::charge(48 + 6 + 148 + 414 - 52);
             self.sprite_slot_view_mut(k).set_a(0x40);
             collision = true;
-        } else if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:DBA6
+        } else if self.sprite_check_damage_same_layer_long_marked(k) {
             // $05:DBA6 JSL Sprite_CheckDamageToPlayerSameLayer_ : BCC (78),
             // $05:DBAC-DBB8 (202: the hookshot/dash callees and the
             // delay store), then the shared $05:DBBB-DBCC block (212: STZ
@@ -2174,7 +2176,8 @@ impl ZeldaState {
         if (k ^ fc) & 3 == 0 {
             let tx = self.sprite_get_x(j_in);
             let ty = self.sprite_get_y(j_in);
-            let pt = self.sprite_project_speed_towards_location(k, tx, ty, 19);
+            // ROM $1D:CA69
+            let pt = self.sprite_project_speed_towards_location_long_marked(k, tx, ty, 19);
             self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
             self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
         }
@@ -2230,7 +2233,8 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn thief_check_collision_with_link(&mut self, k: usize) {
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $1D:CAF2
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             let pt = self.sprite_project_speed_towards_link(k, 32);
             self.follower_link_state_mut()
                 .set_actual_velocity_xy(pt.x, pt.y);
@@ -2271,34 +2275,62 @@ impl ZeldaState {
     //   } while (!sign8(--tmp_counter));
     // }
     pub(super) fn thief_spill_items(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d_cb30));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $1D:CB30..CBD5, M8/X8; RNG and spawn calls charge only their opcodes here.
+        blocks.block(0x1dcb30);
         self.temp_counter_mut().set(5);
         loop {
+            blocks.block(0x1dcb35);
             let pick = self.get_random_number() & 3;
+            blocks.block(0x1dcb39);
             self.sprite_workspace_mut().set_shared_scratch_a(pick);
             let count: u16 = if pick == 1 {
+                blocks.taken(0x1dcb3f);
+                blocks.block(0x1dcb4e);
                 self.game_state.inventory.player_resources.arrows() as u16
             } else if pick == 2 {
+                blocks.block(0x1dcb41);
+                blocks.taken(0x1dcb42);
+                blocks.block(0x1dcb54);
                 self.game_state.inventory.player_resources.bombs() as u16
             } else {
+                blocks.block(0x1dcb41);
+                blocks.block(0x1dcb44);
                 self.game_state.inventory.player_resources.rupees_goal()
             };
+            blocks.block(0x1dcb58);
             if count == 0 {
+                blocks.taken(0x1dcb58);
+                blocks.block(0x1dcbd5);
                 return;
             }
-            let Some((j, _)) =
-                self.spawn_sprite_dynamically_ex(k, THIEF_SPAWN_ITEMS[pick as usize], 7)
-            else {
+            blocks.block(0x1dcb5a);
+            let spawned = self.spawn_sprite_dynamically_ex(k, THIEF_SPAWN_ITEMS[pick as usize], 7);
+            blocks.block(0x1dcb66);
+            let Some((j, _)) = spawned else {
+                blocks.taken(0x1dcb66);
+                blocks.block(0x1dcbd5);
                 return;
             };
+            blocks.block(0x1dcb68);
             if pick == 1 {
+                blocks.taken(0x1dcb6c);
+                blocks.block(0x1dcb80);
                 self.player_resources_mut().decrement_arrows();
             } else if pick == 2 {
+                blocks.block(0x1dcb6e);
+                blocks.taken(0x1dcb6f);
+                blocks.block(0x1dcb8b);
                 self.player_resources_mut().decrement_bombs();
             } else {
+                blocks.block(0x1dcb6e);
+                blocks.block(0x1dcb71);
                 let cur = self.game_state.inventory.player_resources.rupees_goal();
                 self.player_resources_mut()
                     .set_rupees_goal(cur.wrapping_sub(1));
             }
+            blocks.block(0x1dcb94);
             let lx = self.game_state.player.follower_link.x();
             let ly = self.game_state.player.follower_link.y();
             self.sprite_set_x(j, lx);
@@ -2315,9 +2347,12 @@ impl ZeldaState {
             // `--tmp_counter` then `!sign8(...)` continues while non-negative.
             let new_tc = self.temp_counter_mut().decrement();
             if (new_tc as i8) < 0 {
+                blocks.taken(0x1dcbd0);
                 break;
             }
+            blocks.block(0x1dcbd2);
         }
+        blocks.block(0x1dcbd5);
     }
 
     // void Thief_Draw(int k) {  // sprite_main.c:17407
@@ -2339,7 +2374,8 @@ impl ZeldaState {
         let mut info = self.sprite_draw_multiple(k, &THIEF_DRAW_FRAMES[gfx * 2..gfx * 2 + 2]);
         if self.sprite_slot_view(k).pause() == 0 {
             self.thief_draw_apply_head_overrides_for_dn(k);
-            self.sprite_draw_shadow_custom(k, &mut info, 10);
+            // ROM $1D:CCD5
+            self.sprite_draw_shadow_long_marked(k, &mut info, 10);
         }
     }
 
@@ -2460,7 +2496,8 @@ impl ZeldaState {
             let z_velocity = (self.get_random_number() & 15) | 16;
             self.sprite_slot_view_mut(k).set_z_velocity(z_velocity);
         }
-        let pt = self.sprite_project_speed_towards_location(k, 0xcf5, 0x6fe, 16);
+        // ROM $1E:E361
+        let pt = self.sprite_project_speed_towards_location_long_marked(k, 0xcf5, 0x6fe, 16);
         self.sprite_slot_view_mut(k)
             .set_x_velocity(pt.x.wrapping_shl(1));
         self.sprite_slot_view_mut(k)
@@ -2698,7 +2735,8 @@ impl ZeldaState {
             self.sprite_draw_multiple(k, &KIKI_DRAW_FRAMES2[gfx * 6..gfx * 6 + 6])
         };
         if self.sprite_slot_view(k).pause() == 0 {
-            self.sprite_draw_shadow_custom(k, &mut info, 10);
+            // ROM $1E:E88D, $1E:E8B1
+            self.sprite_draw_shadow_long_marked(k, &mut info, 10);
         }
         ((info.x | info.y) & 0xff00) != 0
     }
@@ -2755,7 +2793,8 @@ impl ZeldaState {
         {
             self.sprite_slot_view_mut(k).set_ai_state(0);
         }
-        self.sprite_move_z(k);
+        // ROM $06:A6BF
+        self.sprite_move_z_marked(k, 0x06e96c);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z(0);
@@ -3015,7 +3054,8 @@ impl ZeldaState {
         }
         self.sprite_behave_as_barrier(k);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
-        self.sprite_move_z(k);
+        // ROM $06:B284
+        self.sprite_move_z_marked(k, 0x06e96c);
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z(0);
             self.sprite_slot_view_mut(k).set_z_velocity(16);
@@ -3049,7 +3089,8 @@ impl ZeldaState {
     pub(super) fn smithy_main(&mut self, k: usize) {
         self.smithy_draw(k);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
-        self.sprite_move_z(k);
+        // ROM $06:B357
+        self.sprite_move_z_marked(k, 0x06e96c);
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z(0);
             self.sprite_slot_view_mut(k).set_z_velocity(0);

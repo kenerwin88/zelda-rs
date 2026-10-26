@@ -25,7 +25,8 @@ impl ZeldaState {
                 }
                 self.ancilla_slot_view_mut(k).set_step(a);
             }
-            if self.ancilla_check_sprite_collision(k).is_some()
+            // ROM $08:8546
+            if self.ancilla_check_sprite_collision_marked(k).is_some()
                 || self.ancilla_check_tile_collision_staggered(k) != 0
             {
                 let mut bullet = self.ancilla_slot_view_mut(k);
@@ -242,7 +243,8 @@ impl ZeldaState {
                 pt.y.wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()),
             );
             self.ancilla_slot_view_mut(k).set_direction(0);
-            self.ancilla_check_sprite_collision(k);
+            // ROM $08:DDBB
+            self.ancilla_check_sprite_collision_marked(k);
             oam += 4;
             if i == 0 {
                 break;
@@ -423,7 +425,8 @@ impl ZeldaState {
             };
             if flag {
                 self.palette_electro_themed_gear();
-                self.filter_majorly_whiten_bg();
+                // ROM $08:AAC9
+                self.filter_majorly_whiten_bg_marked();
             } else {
                 self.load_actual_gear_palettes();
                 self.palette_restore_bg_from_flash();

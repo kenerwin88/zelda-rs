@@ -184,7 +184,8 @@ impl ZeldaState {
         let target_y = self
             .sprite_get_y(j)
             .wrapping_sub(self.sprite_slot_view(j).z() as u16);
-        let pt = self.sprite_project_speed_towards_location(k, target_x, target_y, 32);
+        // ROM $05:BEC3
+        let pt = self.sprite_project_speed_towards_location_long_marked(k, target_x, target_y, 32);
         let mut sprite = self.sprite_slot_view_mut(j);
         sprite.set_y_recoil(pt.y);
         sprite.set_x_recoil(pt.x);

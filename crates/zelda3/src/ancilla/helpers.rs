@@ -10,6 +10,60 @@ use crate::tile_definition::{EntityCollision, NativeTile};
 use crate::types::{abs16, project_speed_from_differences, sign8, AncillaRadialProjection, PairU8, Point16U, ProjectSpeedRet, SpriteHitBox};
 
 impl ZeldaState {
+    pub(in crate::zelda_rtl) fn ancilla_check_sprite_collision_marked(&mut self, k: usize) -> Option<usize> {
+        // $08:8D68..8DA1. The single-sprite child at 8DAE owns its body
+        // and its successful double return; the scan has no success epilogue.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x088d68));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x088d68);
+        for j in (0..16).rev() {
+            b.block(0x088d6a);
+            let ty = self.ancilla_slot_view(k).ancilla_type();
+            let mut eligible = true;
+            if ty == 9 { b.taken(0x088d6f); }
+            else {
+                b.block(0x088d71);
+                if ty == 0x1f { b.taken(0x088d73); }
+                else {
+                    b.block(0x088d75);
+                    if (((j as u8 ^ self.game_state.frame.frame_counter) & 3)
+                        | self.sprite_slot_view(j).pause()) != 0 {
+                        b.taken(0x088d7d); eligible = false;
+                    }
+                }
+            }
+            if eligible {
+                b.block(0x088d7f);
+                if self.sprite_slot_view(j).state() < 9 { b.taken(0x088d84); eligible = false; }
+            }
+            if eligible {
+                b.block(0x088d86);
+                if self.sprite_slot_view(j).deflection_bits() & 2 != 0 { b.taken(0x088d8b); }
+                else {
+                    b.block(0x088d8d);
+                    if self.ancilla_slot_view(k).object_priority() != 0 {
+                        b.taken(0x088d90); eligible = false;
+                    }
+                }
+            }
+            if eligible {
+                b.block(0x088d92);
+                if self.ancilla_slot_view(k).floor() != self.sprite_slot_view(j).floor() {
+                    b.taken(0x088d98); eligible = false;
+                }
+            }
+            if eligible {
+                b.block(0x088d9a);
+                if self.ancilla_check_sprite_collision_single(k, j) { return Some(j); }
+            }
+            b.block(0x088d9d);
+            if j != 0 { b.taken(0x088d9e); }
+        }
+        b.block(0x088da0);
+        None
+    }
+
+
     /// ROM: `Ancilla_GetY`
     pub(in crate::zelda_rtl) fn ancilla_get_y(&self, k: usize) -> u16 {
         self.ancilla_slot_view(k).y()
@@ -1296,7 +1350,8 @@ impl ZeldaState {
             .ancilla_get_y(k)
             .wrapping_sub(8)
             .wrapping_sub(self.ancilla_slot_view(k).z() as u16);
-        let pt = self.sprite_project_speed_towards_location(j, x, y, 80);
+        // ROM $08:E2A6
+        let pt = self.sprite_project_speed_towards_location_long_marked(j, x, y, 80);
         let value = !pt.y;
         self.sprite_slot_view_mut(j).set_y_recoil(value);
         let value = !pt.x;

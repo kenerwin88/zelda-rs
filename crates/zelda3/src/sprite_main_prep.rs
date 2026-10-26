@@ -986,7 +986,8 @@ impl ZeldaState {
             return;
         }
         self.sprite_slot_view_mut(k).set_flags4(0x0a);
-        if self.sprite_check_damage_to_link_same_layer(k)
+        // ROM $05:836E
+        if self.sprite_check_damage_same_layer_long_marked(k)
             && self.game_state.player.follower_link.filtered_joypad_l() & 0x80 != 0
         {
             self.archery_game_guy_show_msg(k, 0x88);
@@ -2439,7 +2440,8 @@ impl ZeldaState {
             let graphics = self.sprite_slot_view(k).c() >> 3;
             self.sprite_slot_view_mut(k).set_graphics(graphics);
             self.oam_allocate_from_region_c(4);
-            self.sprite_draw_single_small(k);
+            // ROM $06:C3A7
+            self.sprite_draw_single_small_marked(k);
             return;
         }
         if self.sprite_slot_view(k).b() != 0 {
@@ -3078,7 +3080,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j).set_z_velocity(22);
         let x = (info.r0_x & !0xff).wrapping_add(u16::from(self.get_random_number()));
         let y = (info.r2_y & !0xff).wrapping_add(u16::from(self.get_random_number()));
-        let pt = self.sprite_project_speed_towards_location(k, x, y, 10);
+        // ROM $1E:F56B
+        let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 10);
         self.sprite_slot_view_mut(j).set_x_velocity(pt.x);
         self.sprite_slot_view_mut(j).set_y_velocity(pt.y);
     }

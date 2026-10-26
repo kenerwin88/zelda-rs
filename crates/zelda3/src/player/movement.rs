@@ -219,6 +219,31 @@ mod velocity_price_tests {
 }
 
 impl ZeldaState {
+    pub(in crate::zelda_rtl) fn check_if_room_needs_double_layer_check_marked(&mut self) -> bool {
+        // $07:B97C..B9B2; even BNE +0 at B98B consumes a taken-branch cycle.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07b97c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let collision = self.game_state.dungeon.room_load.header_collision();
+        b.block(0x07b97c);
+        if collision == 0 { b.taken(0x07b97f); b.block(0x07b9b1); }
+        else {
+            b.block(0x07b981);
+            if collision == 4 { b.taken(0x07b983); b.block(0x07b9b1); }
+            else {
+                b.block(0x07b985);
+                if collision < 2 { b.taken(0x07b987); }
+                else {
+                    b.block(0x07b989);
+                    if collision != 3 { b.taken(0x07b98b); }
+                    b.block(0x07b98d);
+                }
+                b.block(0x07b9ab);
+            }
+        }
+        self.check_if_room_needs_double_layer_check()
+    }
+
+
     pub(in crate::zelda_rtl) fn link_handle_swim_accels(&mut self) {
         let mut mask = 0x0c;
         for offset in [0, 2] {

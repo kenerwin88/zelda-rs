@@ -399,7 +399,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(0).set_ai_state(3);
                 self.sprite_slot_view_mut(0).set_delay_main(16);
             }
-            let pt = self.sprite_project_speed_towards_location(k, x, y, 32);
+            // ROM $1D:8B42
+            let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 32);
             self.sprite_approach_target_speed(k, pt.x, pt.y);
         }
     }
@@ -423,8 +424,10 @@ impl ZeldaState {
             | u16::from(self.sprite_slot_view(k).a());
         let y = (u16::from(self.sprite_slot_view(k).e()) << 8)
             | u16::from(self.sprite_slot_view(k).c());
-        let pt = self.sprite_project_speed_towards_location(k, x, y, 2);
-        let pt2 = self.sprite_project_speed_towards_location(k, x, y, 80);
+        // ROM $1D:8B5D, $1D:8B6D
+        let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 2);
+        // ROM $1D:8B5D, $1D:8B6D
+        let pt2 = self.sprite_project_speed_towards_location_long_marked(k, x, y, 80);
         self.sprite_slot_view_mut(k)
             .set_x_velocity(pt2.y.wrapping_sub(pt.x));
         self.sprite_slot_view_mut(k)
@@ -1052,7 +1055,8 @@ impl ZeldaState {
                 }
                 let x = self.game_state.player.follower_link.x() & 0xff00 | 0x78;
                 let y = self.game_state.player.follower_link.y() & 0xff00 | 0x50;
-                let pt = self.sprite_project_speed_towards_location(k, x, y, 5);
+                // ROM $1D:8986
+                let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 5);
                 let xvel = self.sprite_slot_view(k).x_velocity();
                 let yvel = self.sprite_slot_view(k).y_velocity();
                 self.sprite_slot_view_mut(k)

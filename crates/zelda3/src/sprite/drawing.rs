@@ -3,6 +3,48 @@
 use super::*;
 
 impl ZeldaState {
+    pub(in crate::zelda_rtl) fn sprite_draw_single_small_long_marked(&mut self, k: usize) {
+        // $06:DBF8..DBFF: bank wrapper, excluding DCEF's body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dbf8));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06dbf8);
+        self.sprite_draw_single_small_marked(k);
+        b.block(0x06dbfe);
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_draw_single_small_marked(&mut self, k: usize) {
+        // $06:DCEF..DD37. Position-prefix resumes retain their raw entry;
+        // only a complete call receives this price. DC66's shadow is a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dcef));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06dcef);
+        let Some(continuation) = self.sprite_draw_single_small_position_prefix(k) else { return; };
+        b.block(0x06dcf2);
+        if continuation.visible {
+            b.block(0x06dd0f);
+            let ty = self.sprite_slot_view(k).sprite_type();
+            if 4 + usize::from(ty) > 255 { b.crossing(0x06dd17); }
+            let base = SINGLE_LARGE_SPRITE_CHAR_BASE_BY_TYPE.get(usize::from(ty)).copied().unwrap_or(0);
+            let index = base.wrapping_add(self.sprite_slot_view(k).graphics());
+            if 9 + usize::from(index) > 255 { b.crossing(0x06dd1f); }
+        } else { b.taken(0x06dd0d); }
+        b.block(0x06dd2b);
+        if self.sprite_slot_view(k).flags3() & 0x10 == 0 {
+            b.taken(0x06dd30); b.block(0x06dd37);
+        } else { b.block(0x06dd32); }
+        self.sprite_draw_single_small_after_position(k, continuation);
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_draw_shadow_long_marked(&mut self, k: usize, info: &mut PrepOamCoordsRet, size: u8) {
+        // $06:DC54..DC5B is a far wrapper; DC64/DC66 remain unchanged.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dc54));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06dc54);
+        self.sprite_draw_shadow_custom(k, info, size);
+        b.block(0x06dc5a);
+    }
+
+
 
     // void Oam_ResetRegionBases() {  // 8683d3
     //   memcpy(oam_region_base, kOam_ResetRegionBases, 12);
@@ -1089,9 +1131,26 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_thin_and_tall(&mut self, k: usize) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:DD40..DDAE, M8/X8; coordinate and shadow bodies stay separate.
+        // JMP tails inherit the caller's owner, just as the ROM profiler does.
+        blocks.block(0x06dd40);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        blocks.block(0x06dd43);
+        if y.wrapping_add(0x10) < 0x100 { blocks.taken(0x06dd68); }
+        else { blocks.block(0x06dd6a); }
+        blocks.block(0x06dd6f);
+        if y.wrapping_add(8).wrapping_add(0x10) < 0x100 { blocks.taken(0x06dd80); }
+        else { blocks.block(0x06dd82); }
+        blocks.block(0x06dd87);
+        let ty = u16::from(self.sprite_slot_view(k).sprite_type());
+        if 0x04 + ty > 0xff { blocks.crossing(0x06dd8c); }
+        let base = SINGLE_LARGE_SPRITE_CHAR_BASE_BY_TYPE.get(usize::from(ty))
+            .copied().unwrap_or(0);
+        let index = base.wrapping_add(self.sprite_slot_view(k).graphics());
+        if 0x09 + u16::from(index) > 0xff { blocks.crossing(0x06dd94); }
         let oam = self.game_state.oam.current_pointer_usize();
         let chr = self.sprite_single_draw_char(k);
         self.set_oam_helper0_at(oam, x, y, chr, flags, 0);
@@ -1103,10 +1162,14 @@ impl ZeldaState {
             flags,
             0,
         );
+        // $06:DC4C..DC65 is the shared conditional-shadow tail. DC66 already prices its body.
+        blocks.block(0x06dc4c);
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
+            blocks.taken(0x06dc51);
+            blocks.block(0x06dc64);
             let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
             self.sprite_draw_shadow_custom(k, &mut info, 10);
-        }
+        } else { blocks.block(0x06dc53); }
     }
 
     // void SpriteFall_Draw(int k, PrepOamCoordsRet *info) {  // 9dffc5

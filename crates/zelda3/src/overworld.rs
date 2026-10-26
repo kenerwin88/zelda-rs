@@ -74,6 +74,13 @@ const OVERWORLD_DOOR_ANIM_TILES: [u16; 56] = [
 ];
 
 impl ZeldaState {
+    pub(super) fn overworld_check_special_switch_area_marked(&mut self) {
+        // $0E:DE49..DE99; the coordinate child owns its own instructions.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ede49));
+        self.overworld_check_special_switch_area_with_markers(crate::cycle_ledger::blocks(self.lag_free));
+    }
+
+
     /// Immutable data operands used by the native dungeon-exit caller.
     pub(crate) fn native_overworld_exit_table_byte(&self, address: u32) -> Option<u8> {
         let address = address & 0x7f_ffff;
@@ -6871,13 +6878,15 @@ impl ZeldaState {
         }
 
         let Some((dir, y_idx)) = transition else {
-            self.overworld_check_special_switch_area();
+            // ROM $02:AA2E
+            self.overworld_check_special_switch_area_marked();
             return;
         };
 
         let expected_dir = [1u8, 2, 4, 8][y_idx];
         if expected_dir != dir || self.link_check_for_edge_screen_transition() {
-            self.overworld_check_special_switch_area();
+            // ROM $02:AA2E
+            self.overworld_check_special_switch_area_marked();
             return;
         }
 
@@ -7952,15 +7961,30 @@ impl ZeldaState {
 
     /// ROM: `Overworld_CheckSpecialSwitchArea`
     pub(super) fn overworld_check_special_switch_area(&mut self) {
+        self.overworld_check_special_switch_area_with_markers(crate::cycle_ledger::blocks(false));
+    }
+
+    fn overworld_check_special_switch_area_with_markers(&mut self, b: crate::cycle_ledger::BlockMarkers) {
+        b.block(0x0ede49);
         let map8 = self.overworld_get_map16_of_link_mult8();
+        b.block(0x0ede4e); b.block(0x0ede5a);
         let a = map8[0] & 0x01ff;
+        let mut matched = false;
         for i in (0..4).rev() {
-            if SPECIAL_SWITCH_AREA_TILE_IDS[i] == a
-                && SPECIAL_SWITCH_AREA_SCREENS[i]
-                    == u16::from(self.game_state.world.location.overworld_screen_index())
-            {
+            b.block(0x0ede5c); b.block(0x0ede60);
+            if SPECIAL_SWITCH_AREA_TILE_IDS[i] != a { b.taken(0x0ede64); continue; }
+            b.block(0x0ede66);
+            if SPECIAL_SWITCH_AREA_SCREENS[i] == u16::from(self.game_state.world.location.overworld_screen_index()) {
+                b.block(0x0ede6e);
                 self.set_dungeon_room(SPECIAL_SWITCH_AREA_EXITS[i]);
                 let direction = SPECIAL_SWITCH_AREA_DIRECTIONS[i];
+                let mut shift = direction;
+                loop {
+                    b.block(0x0ede85);
+                    if shift & 1 != 0 { break; }
+                    b.taken(0x0ede87); shift >>= 1;
+                }
+                b.block(0x0ede89);
                 // C sets BOTH ow_screen_transition_dir_bits (0x410) and ..._2 (0x416). The port was
                 // missing the 0x410 write (it only called set_screen_transition_direction_bits =
                 // 0x416), so a special-switch overworld exit left 0x410 stale (0 instead of the
@@ -7973,9 +7997,14 @@ impl ZeldaState {
                 self.set_transition_direction_enum(trans as u8);
                 self.set_submodule(23);
                 self.set_main_module(11);
+                matched = true;
                 break;
             }
+            b.taken(0x0ede6c); b.block(0x0ede5a);
         }
+        if !matched { b.block(0x0ede5c); b.taken(0x0ede5e); }
+        // SEP #$30/RTL has the same encoding and cost on both M-width edges.
+        b.block(0x0ede97);
     }
 
     pub(super) fn ScrollAndCheckForSOWExit(&mut self) {

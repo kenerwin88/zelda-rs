@@ -35,7 +35,8 @@ impl ZeldaState {
             }
             return;
         }
-        self.sprite_check_damage_to_link_same_layer(k);
+        // ROM $1D:A28D
+        self.sprite_check_damage_same_layer_long_marked(k);
         let x = self
             .sprite_get_x(k)
             .wrapping_add_signed(i16::from(self.sprite_slot_view(k).x_velocity() as i8));

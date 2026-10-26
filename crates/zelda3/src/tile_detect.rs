@@ -16,6 +16,16 @@ const SWORD_DOORWAY_DETECT_Y_OFFSETS: [i8; 4] = [-1, 24, 16, 16];
 const TILE_DETECT_DIAG_STATES: [u16; 4] = [4, 0, 6, 2];
 
 impl ZeldaState {
+    pub(super) fn player_tile_detect_nearby_marked(&mut self) {
+        // $07:CF12..CF7D; reset and the four tile-execution bodies are children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07cf12));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07cf12); b.block(0x07cf19); b.block(0x07cf53);
+        b.block(0x07cf5f); b.block(0x07cf6f); b.block(0x07cf7b);
+        self.player_tile_detect_nearby();
+    }
+
+
     /// Encoded export for the replay summary; gameplay reads the definition.
     pub fn overworld_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
         self.overworld_tile_definition_at_location(x, y)

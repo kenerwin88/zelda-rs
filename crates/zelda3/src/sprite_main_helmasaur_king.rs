@@ -268,6 +268,7 @@ impl ZeldaState {
                 break;
             }
         }
+        // ROM $1E:81FC
         self.sprite_move_xy_bank(k, 0x1eff34);
     }
 

@@ -1502,7 +1502,8 @@ impl ZeldaState {
             self.dungeon_flag_room_data_quadrants();
         }
 
-        self.player_tile_detect_nearby();
+        // ROM $07:B876, $07:B88F, $07:B7F5, $07:ACCF
+        self.player_tile_detect_nearby_marked();
         if self.game_state.player.tile_detection.deepwater() & 0x0f != 0
             && !self.game_state.player.follower_link.is_in_deep_water()
         {

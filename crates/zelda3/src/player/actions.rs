@@ -267,7 +267,8 @@ impl ZeldaState {
         if self.game_state.player.tile_detection.shallow_water() & 1 != 0 {
             self.ancilla_sfx2_near(0x24);
         }
-        self.player_tile_detect_nearby();
+        // ROM $07:95C7
+        self.player_tile_detect_nearby_marked();
         if self.game_state.system_signals.sound_effect_1() & 0x3f != 0x24 {
             self.ancilla_sfx2_near(0x21);
         }
@@ -1686,7 +1687,8 @@ impl ZeldaState {
             .follower_link
             .should_probe_recoil_landing_tile()
         {
-            self.player_tile_detect_nearby();
+            // ROM $07:885C
+            self.player_tile_detect_nearby_marked();
             if self.game_state.player.tile_detection.pit_tile() & 0x0f == 0x0f {
                 self.follower_link_state_mut().set_handler_state(1);
                 self.follower_link_state_mut().set_speed_setting(4);

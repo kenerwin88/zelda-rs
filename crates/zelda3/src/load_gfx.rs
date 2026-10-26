@@ -1266,6 +1266,26 @@ const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
 ];
 
 impl ZeldaState {
+    pub(super) fn filter_majorly_whiten_bg_marked(&mut self) {
+        // $0E:D757..D7FD: eight passes over twelve colors. D7FE's existing
+        // scalar color body is unchanged and excluded from these markers.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ed757));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ed757);
+        for i in 0..8 {
+            for pc in [0x0ed75b, 0x0ed762, 0x0ed76d, 0x0ed778, 0x0ed783,
+                0x0ed78e, 0x0ed799, 0x0ed7a4, 0x0ed7af, 0x0ed7ba, 0x0ed7c5, 0x0ed7d0] { b.block(pc); }
+            b.block(0x0ed7db);
+            if i == 7 { b.taken(0x0ed7e3); } else { b.block(0x0ed7e5); }
+        }
+        b.block(0x0ed7e8);
+        if self.game_state.display.palette_buffer.aux_color(0) != 0 { b.taken(0x0ed7f3); }
+        else { b.block(0x0ed7f5); }
+        b.block(0x0ed7f6);
+        self.filter_majorly_whiten_bg();
+    }
+
+
     pub(crate) fn native_overworld_palette_selection_byte(address: u32) -> Option<u8> {
         let address=address&0x7f_ffff;
         if (0x0ed504..0x0ed580).contains(&address) {
@@ -5316,7 +5336,8 @@ impl ZeldaState {
         // the RTL (44). The callees charge their own bodies.
         if flash & 1 != 0 {
             crate::cycle_ledger::charge(62 + 6 + 32 + 84 + 38 + 44);
-            self.filter_majorly_whiten_bg();
+            // ROM $1D:E9CD
+            self.filter_majorly_whiten_bg_marked();
         } else {
             crate::cycle_ledger::charge(62 + 6 + 32 + 6 + 62 + 38 + 44);
             self.palette_restore_bg_from_flash();

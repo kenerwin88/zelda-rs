@@ -135,7 +135,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $1A:F5BB
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             if self.game_state.world.location.overworld_screen_index() == 0x43 {
                 self.ancilla_add_gt_cutscene();
             } else {
@@ -341,7 +342,8 @@ impl ZeldaState {
             k,
             &BULLY_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1E:EDBD
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -425,7 +427,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.sprite_move_xyz_bank(k, 0x1eff34);
         // ROM $1E:EB5C -> $1E:8B2E -> $06:E496
-        let t = self.sprite_check_tile_collision_long(k);
+        let t = self.sprite_check_tile_collision_bank1e_marked(k);
         if t != 0 {
             if (t & 3) == 0 {
                 let value = self.sprite_slot_view(k).y_velocity().wrapping_neg();
@@ -463,7 +465,8 @@ impl ZeldaState {
                         | u16::from(self.get_random_number());
                     let y = (self.game_state.player.follower_link.y() & 0xff00)
                         | u16::from(self.get_random_number());
-                    let pt = self.sprite_project_speed_towards_location(k, x, y, 8);
+                    // ROM $1E:EBE0
+                    let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 8);
                     let value = pt.x;
                     self.sprite_slot_view_mut(k).set_b(value);
                     let value = pt.y;
@@ -515,7 +518,7 @@ impl ZeldaState {
         self.bully_handle_message(k);
         self.sprite_move_xyz_bank(k, 0x1eff34);
         // ROM $1E:EC88 -> $1E:8B2E -> $06:E496
-        let t = self.sprite_check_tile_collision_long(k);
+        let t = self.sprite_check_tile_collision_bank1e_marked(k);
         if t != 0 {
             if (t & 3) == 0 {
                 let value = self.sprite_slot_view(k).y_velocity().wrapping_neg();
@@ -531,7 +534,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 let j = usize::from(self.sprite_slot_view(k).head_direction());
                 if (((k as u8) ^ self.game_state.frame.frame_counter) & 0x1f) == 0 {
-                    let pt = self.sprite_project_speed_towards_location(
+                    // ROM $1E:ECDD
+                    let pt = self.sprite_project_speed_towards_location_long_marked(
                         k,
                         self.sprite_get_x(j),
                         self.sprite_get_y(j),
@@ -604,7 +608,8 @@ impl ZeldaState {
             k,
             &LADY_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1A:F94E
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -616,7 +621,8 @@ impl ZeldaState {
             k,
             &YOUNG_SNITCH_LADY_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:E39E
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -654,7 +660,8 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_slot_view(k).ai_state() == 0
-                && self.sprite_check_damage_to_link_same_layer(k)
+                // ROM $05:E6E8
+                && self.sprite_check_damage_same_layer_long_marked(k)
             {
                 let value = self.sprite_direction_to_face_link(k) ^ 3;
                 self.sprite_slot_view_mut(k).set_direction(value);
@@ -899,7 +906,8 @@ impl ZeldaState {
     // void Sprite_Hobo_Bubble(int k) {  // 86beb4
     pub(super) fn sprite_hobo_bubble(&mut self, k: usize) {
         self.oam_allocate_from_region_c(4);
-        self.sprite_draw_single_small(k);
+        // ROM $06:BEBA
+        self.sprite_draw_single_small_marked(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -907,7 +915,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(value);
         if self.sprite_slot_view(k).delay_aux1() == 0 {
             self.sprite_slot_view_mut(k).add_graphics(1);
-            self.sprite_move_z(k);
+            // ROM $06:BED5
+            self.sprite_move_z_marked(k, 0x06e96c);
             if self.sprite_slot_view(k).delay_main() == 0 {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -922,7 +931,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_Hobo_Fire(int k) {  // 86bf15
     pub(super) fn sprite_hobo_fire(&mut self, k: usize) {
-        self.sprite_draw_single_small(k);
+        // ROM $06:BF15
+        self.sprite_draw_single_small_marked(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -942,13 +952,15 @@ impl ZeldaState {
         let value = 6;
 
         self.sprite_slot_view_mut(k).set_graphics(value);
-        self.sprite_draw_single_small(k);
+        // ROM $06:BF86
+        self.sprite_draw_single_small_marked(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
         // ROM $06:BF8C
         self.sprite_move_xy_marked(k, 0x06e93e);
-        self.sprite_move_z(k);
+        // ROM $06:BF8F
+        self.sprite_move_z_marked(k, 0x06e96c);
         let flags = SPRITE_HOBO_SMOKE_OAM_FLAGS
             [usize::from((self.game_state.frame.frame_counter >> 4) & 3)];
         let value = (self.sprite_slot_view(k).oam_flags() & 0x3f) | flags;
@@ -975,7 +987,8 @@ impl ZeldaState {
         let bak0 = self.sprite_slot_view(k).flags4();
         let value = 7;
         self.sprite_slot_view_mut(k).set_flags4(value);
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:E8D1, $05:E904
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             let value = self.sprite_slot_view(k).ai_state();
             self.sprite_slot_view_mut(k).set_c(value);
             let value = 3;
@@ -990,7 +1003,8 @@ impl ZeldaState {
                 let j = self.sprite_direction_to_face_link(k);
                 let value = j ^ 3;
                 self.sprite_slot_view_mut(k).set_head_direction(value);
-                if self.sprite_check_damage_to_link_same_layer(k) {
+                // ROM $05:E8D1, $05:E904
+                if self.sprite_check_damage_same_layer_long_marked(k) {
                     self.link_cancel_dash();
                     let value = j ^ 3;
                     self.sprite_slot_view_mut(k).set_direction(value);
@@ -1073,7 +1087,8 @@ impl ZeldaState {
             k,
             &RUNNING_MAN_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:EA6C
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1084,7 +1099,8 @@ impl ZeldaState {
             k,
             &ELDER_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:F255
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1095,7 +1111,8 @@ impl ZeldaState {
             k,
             &SHOPKEEPER_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:F939
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1106,7 +1123,8 @@ impl ZeldaState {
             k,
             &FLUTE_BOY_FATHER_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $0D:C3FC
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1141,7 +1159,8 @@ impl ZeldaState {
     // void InnKeeper_Draw(int k) {  // 85e3dc
     pub(super) fn inn_keeper_draw(&mut self, k: usize) {
         let mut info = self.sprite_draw_multiple_player_deferred(k, &INN_KEEPER_DRAW_FRAMES);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:E3EE
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1172,7 +1191,8 @@ impl ZeldaState {
         let bak0 = self.sprite_slot_view(k).flags4();
         let value = 2;
         self.sprite_slot_view_mut(k).set_flags4(value);
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:E40A
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             self.sprite_nullify_hookshot_drag();
             self.follower_link_state_mut().set_speed_setting(0);
             self.link_cancel_dash();
@@ -1201,7 +1221,8 @@ impl ZeldaState {
                 1 => {
                     if self.game_state.player.follower_link.joypad1h_last() & 0x40 == 0 {
                         self.sprite_show_solicited_message(k, 0x004c);
-                    } else if self.sprite_check_damage_to_link_same_layer(k)
+                    // ROM $05:E40A
+                    } else if self.sprite_check_damage_same_layer_long_marked(k)
                         && self.game_state.inventory.save_progress.hud_current_item()
                             == HUD_ITEM_MUSHROOM_DRAW
                     {
@@ -1349,7 +1370,8 @@ impl ZeldaState {
             k,
             &BLIND_HIDEOUT_GUY_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $0D:C4A0
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1431,7 +1453,8 @@ impl ZeldaState {
         } else if self.sprite_show_solicited_message(k, 0x00a4) & 0x100 == 0
             && self.game_state.inventory.save_progress.hud_current_item() == HUD_ITEM_FLUTE_DRAW
             && self.game_state.player.follower_link.joypad1h_last() & 0x40 != 0
-            && self.sprite_check_damage_to_link_same_layer(k)
+            // ROM $0D:C38C
+            && self.sprite_check_damage_same_layer_long_marked(k)
         {
             self.sprite_show_message_unconditional(0x00a2);
             self.sprite_slot_view_mut(k).add_ai_state(1);
@@ -1448,7 +1471,8 @@ impl ZeldaState {
             k,
             &SWEEPING_LADY_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $0D:C506
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1857,7 +1881,8 @@ impl ZeldaState {
             k,
             &MAZE_GAME_GUY_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $0D:CDC9
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1868,7 +1893,8 @@ impl ZeldaState {
             k,
             &DRINKING_GUY_DRAW_FRAMES[base..base + 3],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1A:F94E
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1894,7 +1920,8 @@ impl ZeldaState {
             0 => {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_graphics(value);
-                if self.sprite_check_damage_to_link_same_layer(k) {
+                // ROM $1D:F971
+                if self.sprite_check_damage_same_layer_long_marked(k) {
                     self.link_cancel_dash();
                     let pt = self.sprite_project_speed_towards_link(k, 48);
                     self.follower_link_state_mut().set_incapacitated_timer(16);
@@ -1994,10 +2021,18 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TalkingTree_Eye(int k) {  // 9dfb0a
     pub(super) fn talking_tree_eye(&mut self, k: usize) {
-        self.sprite_draw_single_small(k);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d_fb0a));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $1D:FB0A..FB85, M8/X8: complete eye body, excluding drawing,
+        // inactivity and speed-projection children. F94B tail-dispatches here.
+        blocks.block(0x1dfb0a);
+        // ROM $1D:FB0A
+        self.sprite_draw_single_small_long_marked(k);
+        blocks.block(0x1dfb0e);
         if self.sprite_return_if_inactive(k) {
             return;
         }
+        blocks.block(0x1dfb11);
         let mut j = usize::from(self.sprite_slot_view(k).head_direction());
         let x = u16::from(self.sprite_slot_view(k).a())
             | (u16::from(self.sprite_slot_view(k).b()) << 8);
@@ -2009,20 +2044,29 @@ impl ZeldaState {
         );
         self.sprite_set_y(k, y);
         let pt = self.sprite_project_speed_towards_link(k, 2);
+        blocks.block(0x1dfb39);
         if !sign8(pt.y) {
+            blocks.block(0x1dfb3d);
             let value = pt.x.wrapping_add(2);
             self.sprite_slot_view_mut(k).set_direction(value);
-        } else if self.sprite_slot_view(k).direction() != 2 {
-            let value = self.sprite_slot_view(k).direction().wrapping_add(
-                if self.sprite_slot_view(k).direction() >= 2 {
-                    0xff
-                } else {
-                    1
-                },
-            );
-            self.sprite_slot_view_mut(k).set_direction(value);
+        } else {
+            blocks.taken(0x1dfb3b);
+            blocks.block(0x1dfb47);
+            if self.sprite_slot_view(k).direction() != 2 {
+                blocks.block(0x1dfb4e);
+                let value = self.sprite_slot_view(k).direction().wrapping_add(
+                    if self.sprite_slot_view(k).direction() >= 2 {
+                        0xff
+                    } else {
+                        1
+                    },
+                );
+                self.sprite_slot_view_mut(k).set_direction(value);
+            } else { blocks.taken(0x1dfb4c); }
         }
+        blocks.block(0x1dfb5c);
         j = usize::from(self.sprite_slot_view(k).direction());
+        if 0xff + j > 0xff { blocks.crossing(0x1dfb63); }
         self.sprite_set_x(
             k,
             x.wrapping_add_signed(i16::from(TALKING_TREE_EYE_X_OFFSETS_1[j])),
@@ -2198,7 +2242,8 @@ impl ZeldaState {
             2,
         );
         crate::cycle_ledger::charge(492);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:BE05
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -2210,7 +2255,8 @@ impl ZeldaState {
             k,
             &QUARREL_BROS_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:E19E
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -2280,7 +2326,8 @@ impl ZeldaState {
             k,
             &TROUGH_BOY_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:FFFA
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------

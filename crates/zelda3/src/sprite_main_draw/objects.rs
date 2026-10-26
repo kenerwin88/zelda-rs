@@ -365,7 +365,8 @@ impl ZeldaState {
             {
                 let value = 4;
                 self.sprite_slot_view_mut(j).set_f(value);
-                let pt = self.sprite_project_speed_towards_location(k, x, y, 32);
+                // ROM $06:C2D1
+                let pt = self.sprite_project_speed_towards_location_marked(k, x, y, 32);
                 let value = pt.y;
                 self.sprite_slot_view_mut(j).set_y_recoil(value);
                 let value = pt.x;
@@ -485,7 +486,8 @@ impl ZeldaState {
             .clear_position_mode_bits(0x20);
         let value = 0;
         self.sprite_slot_view_mut(k).set_a(value);
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:F31E
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             self.sprite_nullify_hookshot_drag();
             self.follower_link_state_mut().set_speed_setting(0);
             self.sprite_repel_dash();
@@ -654,7 +656,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void PullSwitch_HandleUpPulling(int k) {  // 85d743
     pub(super) fn pull_switch_handle_up_pulling(&mut self, k: usize) {
-        if !self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:D743
+        if !self.sprite_check_damage_same_layer_long_marked(k) {
             return;
         }
         self.follower_link_state_mut().set_actual_velocity_xy(0, 0);
@@ -739,7 +742,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void PullSwitch_HandleDownPulling(int k) {  // 85d999
     pub(super) fn pull_switch_handle_down_pulling(&mut self, k: usize) {
-        if !self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:D999
+        if !self.sprite_check_damage_same_layer_long_marked(k) {
             return;
         }
         self.follower_link_state_mut().set_actual_velocity_xy(0, 0);
@@ -966,7 +970,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        let dmg = self.sprite_check_damage_to_link_same_layer(k);
+        // ROM $05:9573
+        let dmg = self.sprite_check_damage_same_layer_long_marked(k);
         if dmg {
             self.sprite_nullify_hookshot_drag();
             self.sprite_repel_dash();
@@ -1082,7 +1087,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:FC0B
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             let value = 3;
             self.sprite_slot_view_mut(k).set_ai_state(value);
         }
@@ -1154,7 +1160,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:FCA5
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             let value = 3;
             self.sprite_slot_view_mut(k).set_ai_state(value);
         }
@@ -1263,7 +1270,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        // ROM $05:FD5D
+        if self.sprite_check_damage_same_layer_long_marked(k) {
             self.sprite_nullify_hookshot_drag();
             self.follower_link_state_mut().set_speed_setting(0);
             self.sprite_repel_dash();
@@ -1659,7 +1667,8 @@ impl ZeldaState {
             // LDA $037B : ORA $031F : BNE (80; taken +6), $05:AFC1 LDA $02E4
             // : BNE (48; taken +6), then $05:AFC6-AFDD the mirror-warp setup
             // (264) and $05:AFDF STZ $DD0,x : BRA (60).
-            if self.sprite_check_damage_to_link_same_layer(k) {
+            // ROM $05:AFAE
+            if self.sprite_check_damage_same_layer_long_marked(k) {
                 let armed = self.sprite_slot_view(k).a() != 0;
                 let vulnerable = (self
                     .game_state
@@ -1779,7 +1788,8 @@ impl ZeldaState {
             if self.sprite_return_if_inactive(k) {
                 return;
             }
-            if self.sprite_check_damage_to_link_same_layer(k) {
+            // ROM $1E:EED9
+            if self.sprite_check_damage_same_layer_long_marked(k) {
                 if self.sprite_slot_view(k).a() == 0 {
                     self.set_submodule(46);
                     self.set_subsubmodule(0);

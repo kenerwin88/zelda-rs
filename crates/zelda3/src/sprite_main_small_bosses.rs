@@ -2082,7 +2082,8 @@ impl ZeldaState {
                         | self.sprite_slot_view(k).g() as u16;
                     let y = ((self.sprite_slot_view(k).subtype() as u16) << 8)
                         | self.sprite_slot_view(k).anim_clock() as u16;
-                    let pt = self.sprite_project_speed_towards_location(k, x, y, 16);
+                    // ROM $1D:E84A, $1D:E7F9
+                    let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 16);
                     self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
                     self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
                 }
@@ -2112,7 +2113,8 @@ impl ZeldaState {
                         | self.sprite_slot_view(k).a() as u16;
                     let y = ((self.sprite_slot_view(k).direction() as u16) << 8)
                         | self.sprite_slot_view(k).c() as u16;
-                    let pt = self.sprite_project_speed_towards_location(k, x, y, 16);
+                    // ROM $1D:E84A, $1D:E7F9
+                    let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 16);
                     self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
                     self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
                 }
@@ -2397,7 +2399,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_x_velocity(1);
             self.sprite_slot_view_mut(k).set_y_velocity(1);
             // ROM $1E:C38C -> $1E:8B2E -> $06:E496
-            if self.sprite_check_tile_collision_long(k) != 0 {
+            if self.sprite_check_tile_collision_bank1e_marked(k) != 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
                 return;
             }
@@ -2435,7 +2437,8 @@ impl ZeldaState {
             0 => {
                 self.sprite_slot_view_mut(k).set_head_direction(2);
                 let bak0 = self.sprite_slot_view(k).z();
-                self.sprite_move_z(k);
+                // ROM $1E:C404
+                self.sprite_move_z_marked(k, 0x1eff62);
                 if (self.sprite_slot_view(k).z_velocity().wrapping_sub(192) as i8) >= 0 {
                     {
                         let value = self.sprite_slot_view(k).z_velocity().wrapping_sub(3);
@@ -2509,7 +2512,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(0);
                 self.sprite_slot_view_mut(k).set_head_direction(2);
                 let old_z = self.sprite_slot_view(k).z();
-                self.sprite_move_z(k);
+                // ROM $1E:C404
+                self.sprite_move_z_marked(k, 0x1eff62);
                 if (self.sprite_slot_view(k).z_velocity().wrapping_sub(64) as i8) < 0 {
                     {
                         let value = self.sprite_slot_view(k).z_velocity().wrapping_add(2);

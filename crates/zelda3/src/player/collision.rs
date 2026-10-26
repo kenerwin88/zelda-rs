@@ -2437,7 +2437,8 @@ impl ZeldaState {
         // $07:B64F..B65F: primary JSR followed by the inherited B660 tail.
         let blocks = crate::cycle_ledger::blocks(self.lag_free);
         blocks.block(0x07b64f);
-        let double_layer = self.check_if_room_needs_double_layer_check();
+        // $07:B64F JSR $B97C; the callee owns its instructions separately.
+        let double_layer = self.check_if_room_needs_double_layer_check_marked();
         blocks.block(0x07b652);
         if double_layer {
             blocks.block(0x07b654);
@@ -2814,7 +2815,8 @@ impl ZeldaState {
 
         if can_double_layer {
             blocks.block(0x07b7db);
-            let double_layer = self.check_if_room_needs_double_layer_check();
+            // $07:B7DB JSR $B97C; the callee owns its instructions separately.
+            let double_layer = self.check_if_room_needs_double_layer_check_marked();
             blocks.block(0x07b7de);
             if double_layer {
                 self.check_primary_collision_layer();

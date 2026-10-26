@@ -772,7 +772,8 @@ impl ZeldaState {
         if (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0 {
             return false;
         }
-        self.sprite_check_damage_to_link_same_layer(k)
+        // ROM $1E:F395
+        self.sprite_check_damage_same_layer_long_marked(k)
     }
 
     // bool ShopItem_HandleCost(int amt) {  // 9ef39e

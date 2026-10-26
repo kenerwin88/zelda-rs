@@ -7,6 +7,25 @@ use crate::types::sign8;
 use crate::types::SpriteHitBox;
 
 impl ZeldaState {
+    pub(in crate::zelda_rtl) fn beamos_laser_draw_marked(&mut self, k: usize) {
+        // $05:925B..92C5. The coordinate helper owns its own JSL body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05925b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05925b); b.block(0x05925e);
+        for i in (0..32).rev() {
+            let j = usize::from(self.sprite_slot_view(k).graphics()) * 32 + i;
+            let y = self.game_state.effects.sprite_histories.beamos_laser_history(j).y()
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
+            b.block(0x05926d);
+            if y.wrapping_add(16) < 256 { b.taken(0x0592a4); } else { b.block(0x0592a6); }
+            b.block(0x0592aa);
+            if i != 0 { b.taken(0x0592c2); }
+        }
+        b.block(0x0592c4);
+        self.beamos_laser_draw(k);
+    }
+
+
 
     // -----------------------------------------------------------------------
     // void SpriteDraw_Beamos_Eyeball(int k, PrepOamCoordsRet *info) {  // 859151
@@ -256,7 +275,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_aux1() != 0 {
             return;
         }
-        self.beamos_laser_draw(k);
+        // ROM $05:91BA
+        self.beamos_laser_draw_marked(k);
         if self.sprite_slot_view(k).state() == 0 {
             self.sprite_system_mut().decrement_limit_instance();
             return;
@@ -283,7 +303,8 @@ impl ZeldaState {
             }
             return;
         }
-        if !self.sprite_check_damage_to_link_same_layer(k)
+        // ROM $05:9218
+        if !self.sprite_check_damage_same_layer_long_marked(k)
             // ROM $05:921E -> $05:B88D -> $06:E496
             && self.sprite_check_tile_collision_long(k) == 0
         {
@@ -374,7 +395,8 @@ impl ZeldaState {
                 &PENGATOR_DRAW_FRAMES1[extra_base..extra_base + 2],
             );
         }
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1E:A45D
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -421,9 +443,10 @@ impl ZeldaState {
             return;
         }
         // ROM $1E:A988 -> $1E:8B2E -> $06:E496
-        self.sprite_check_tile_collision_long(k);
+        self.sprite_check_tile_collision_bank1e_marked(k);
         if !self.game_state.player.follower_link.is_cape_active()
-            && self.sprite_check_damage_to_link_same_layer(k)
+            // ROM $1E:A98F
+            && self.sprite_check_damage_same_layer_long_marked(k)
         {
             self.link_cancel_dash();
             let value = 32;
@@ -477,7 +500,8 @@ impl ZeldaState {
             if dx < 32 && dy < 32 {
                 let value = 15;
                 self.sprite_slot_view_mut(j).set_f(value);
-                let pt = self.sprite_project_speed_towards_location(k, x, y, 0x40);
+                // ROM $1E:AA2B
+                let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 0x40);
                 let value = pt.y;
                 self.sprite_slot_view_mut(j).set_y_recoil(value);
                 let value = pt.x;
@@ -682,7 +706,8 @@ impl ZeldaState {
     pub(in crate::zelda_rtl) fn flying_tile_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
         let mut info = self.sprite_draw_multiple(k, &FLYING_TILE_DRAW_FRAMES[base..base + 4]);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1E:BCE3
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -1062,10 +1087,11 @@ impl ZeldaState {
         self.sprite_check_damage_to_and_from_link(k);
         self.firesnake_spawn_fireball(k);
         if self.sprite_slot_view(k).wall_collision() == 0 {
+            // ROM $1E:D211
             self.sprite_move_xy_bank(k, 0x1eff34);
         }
         // ROM $1E:D214 -> $1E:8B2E -> $06:E496
-        if self.sprite_check_tile_collision_long(k) != 0 {
+        if self.sprite_check_tile_collision_bank1e_marked(k) != 0 {
             let j = usize::from(
                 self.sprite_slot_view(k).direction() * 2 + (self.get_random_number() & 1),
             );
@@ -1093,9 +1119,10 @@ impl ZeldaState {
                     [usize::from((self.game_state.frame.frame_counter >> 2) & 3)];
             self.sprite_slot_view_mut(k).set_oam_flags(value);
             if !self.sprite_check_damage_to_link(k) {
+                // ROM $1E:C297
                 self.sprite_move_xy_bank(k, 0x1eff34);
                 // ROM $1E:C29A -> $1E:8B2E -> $06:E496
-                if self.sprite_check_tile_collision_long(k) == 0 {
+                if self.sprite_check_tile_collision_bank1e_marked(k) == 0 {
                     return;
                 }
             }

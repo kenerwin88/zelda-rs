@@ -864,7 +864,8 @@ impl ZeldaState {
                 // ROM $1E:DB5B, $1E:DA74 JSL $06:DBF0
                 self.sprite_draw_single_large_long(k);
             } else {
-                self.sprite_draw_single_small(k);
+                // ROM $1E:DB61
+                self.sprite_draw_single_small_long_marked(k);
             }
             if self.sprite_return_if_inactive(k) {
                 return;
@@ -879,6 +880,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
                 let value = 64;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
+                // ROM $1E:DB80, $1E:DA7E
                 self.sprite_move_xy_bank(k, 0x1eff34);
             }
             let value = ENERGY_BALL_GRAPHICS[self.sprite_slot_view(k).delay_main() as usize];
@@ -896,9 +898,10 @@ impl ZeldaState {
             return;
         }
         self.sprite_slot_view_mut(k).add_subtype2(1);
+        // ROM $1E:DB80, $1E:DA7E
         self.sprite_move_xy_bank(k, 0x1eff34);
         // ROM $1E:DA81 -> $1E:8B2E -> $06:E496
-        if self.sprite_check_tile_collision_long(k) != 0 {
+        if self.sprite_check_tile_collision_bank1e_marked(k) != 0 {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             if self.sprite_slot_view(k).b() != 0 {

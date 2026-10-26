@@ -2138,7 +2138,8 @@ impl ZeldaState {
         self.credits_sprite_draw_set_shadow_prop(k, 0);
         self.oam_allocate_from_region_a(4);
         let mut info = self.ending_coords;
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $0E:A608
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
         self.ending_coords = info;
     }
 
@@ -2146,7 +2147,8 @@ impl ZeldaState {
         self.credits_sprite_draw_set_shadow_prop(k, 0);
         self.oam_allocate_from_region_a(4);
         let mut info = self.ending_coords;
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $0E:A608
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
         self.ending_coords = info;
     }
 

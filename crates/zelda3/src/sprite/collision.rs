@@ -3,6 +3,43 @@
 use super::*;
 
 impl ZeldaState {
+    pub(in crate::zelda_rtl) fn sprite_setup_hit_box00_marked(&self, k: usize) -> bool {
+        // $06:F1F6..F227: the two unsigned bounds, including both returns.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f1f6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06f1f6);
+        if self.game_state.player.follower_link.x()
+            .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x()).wrapping_add(11) >= 23 {
+            b.taken(0x06f20c); b.block(0x06f224);
+        } else {
+            b.block(0x06f20e);
+            if self.sprite_setup_hit_box00(k) { b.block(0x06f220); }
+            else { b.taken(0x06f21e); b.block(0x06f224); }
+        }
+        self.sprite_setup_hit_box00(k)
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_check_damage_same_layer_long_marked(&mut self, k: usize) -> bool {
+        // $06:F129..F130; the damage predicate remains a separate child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f129));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06f129);
+        let hit = self.sprite_check_damage_to_link_same_layer(k);
+        b.block(0x06f12f);
+        hit
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_check_tile_collision_bank1e_marked(&mut self, k: usize) -> u8 {
+        // $1E:8B2E..8B32: JSL $06:E496 and RTS; the far child is already priced.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8b2e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8b2e);
+        let result = self.sprite_check_tile_collision_long(k);
+        b.block(0x1e8b32);
+        result
+    }
+
+
 
     pub(super) fn entity_apply_rumble_to_sprites(&mut self, hb: &mut SpriteHitBox) {
         for j in (0..=15).rev() {
@@ -720,7 +757,8 @@ impl ZeldaState {
             self.sprite_setup_hit_box(k, &mut hitbox);
             self.check_if_hit_boxes_overlap(&hitbox)
         } else {
-            self.sprite_setup_hit_box00(k)
+            // ROM $06:F16C
+            self.sprite_setup_hit_box00_marked(k)
         };
 
         if sign8(self.sprite_slot_view(k).flags2()) {
@@ -1206,9 +1244,16 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_check_for_tile_in_direction_horizontal(&mut self, k: usize, yy: i32) {
-        if !self.sprite_check_tile_in_direction(k, yy) {
-            return;
+        let _scope=self.lag_free.then(|| crate::cycle_ledger::routine(0x06e5b8));
+        let blocks=crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E5B8: JSR tile child, carry branch, response and return.
+        blocks.block(0x06e5b8);
+        let hit=self.sprite_check_tile_in_direction(k, yy);
+        blocks.block(0x06e5bb);
+        if !hit {
+            blocks.taken(0x06e5bb); blocks.block(0x06e5ed); return;
         }
+        self.sprite_tile_direction_response_work(k,0x06e5b8);
 
         let idx = (yy as usize) & 3;
         self.sprite_slot_view_mut(k).or_wall_collision(
@@ -1228,11 +1273,37 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_check_for_tile_in_direction_vertical(&mut self, k: usize, yy: i32) {
-        if !self.sprite_check_tile_in_direction(k, yy) {
-            return;
+        let _scope=self.lag_free.then(|| crate::cycle_ledger::routine(0x06e5ee));
+        let blocks=crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E5EE: JSR tile child, carry branch, response and return.
+        blocks.block(0x06e5ee);
+        let hit=self.sprite_check_tile_in_direction(k, yy);
+        blocks.block(0x06e5f1);
+        if !hit {
+            blocks.taken(0x06e5f1); blocks.block(0x06e623); return;
         }
+        self.sprite_tile_direction_response_work(k,0x06e5ee);
 
         self.sprite_apply_vertical_tile_collision(k, yy);
+    }
+
+    fn sprite_tile_direction_response_work(&self, k: usize, entry: u32) {
+        let b=crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E5BD..E5ED / E5F3..E623. The two optional JSRs each
+        // execute the same one-pixel body; the third execution is a tail.
+        b.block(entry+5);
+        if self.sprite_slot_view(k).subtype()&7>=5 {
+            b.taken(entry+0x15); b.block(entry+0x35); return;
+        }
+        b.block(entry+0x17);
+        if self.sprite_slot_view(k).f()!=0 {
+            for call in [entry+0x1c,entry+0x1f] {
+                b.block(call);
+                let _step=self.lag_free.then(|| crate::cycle_ledger::routine(entry+0x22));
+                b.block(entry+0x22); b.block(entry+0x35);
+            }
+        } else { b.taken(entry+0x1a); }
+        b.block(entry+0x22); b.block(entry+0x35);
     }
 
     fn sprite_apply_vertical_tile_collision(&mut self, k: usize, yy: i32) {
@@ -2166,18 +2237,41 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_check_tile_collision_single_layer(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e4db));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E4DB..E5B7, M8/X8: complete layer control. Probe, tile,
+        // position adjustment, conveyor and Func8 bodies remain separate.
+        blocks.block(0x06e4db);
         if self.sprite_slot_view(k).flags2() & 0x20 != 0 {
-            if self.sprite_check_tile_property(k, 0x6a) {
+            blocks.block(0x06e4e2);
+            let hit=self.sprite_check_tile_property(k, 0x6a);
+            blocks.block(0x06e4e7);
+            if hit {
+                blocks.block(0x06e4e9);
                 let value = self.sprite_slot_view(k).wall_collision().wrapping_add(1);
                 self.sprite_slot_view_mut(k).set_wall_collision(value);
             }
+            else { blocks.taken(0x06e4e7); }
+            blocks.block(0x06e4ec);
             return;
+        }
+        blocks.taken(0x06e4e0);
+        blocks.block(0x06e4ed);
+        if sign8(self.sprite_slot_view(k).flags4()) { blocks.taken(0x06e4f0); }
+        else {
+            blocks.block(0x06e4f2);
+            if self.game_state.dungeon.room_load.header_collision()!=0 { blocks.taken(0x06e4f5); }
         }
 
         if sign8(self.sprite_slot_view(k).flags4())
             || self.game_state.dungeon.room_load.header_collision() == 0
         {
+            blocks.block(0x06e4f7);
             if self.sprite_slot_view(k).y_velocity() != 0 {
+                blocks.block(0x06e4fe);
+                if sign8(self.sprite_slot_view(k).y_velocity()) { blocks.taken(0x06e4fe); }
+                else { blocks.block(0x06e500); }
+                blocks.block(0x06e501);
                 self.sprite_check_for_tile_in_direction_vertical(
                     k,
                     if sign8(self.sprite_slot_view(k).y_velocity()) {
@@ -2187,7 +2281,13 @@ impl ZeldaState {
                     },
                 );
             }
+            else { blocks.taken(0x06e4fc); }
+            blocks.block(0x06e504);
             if self.sprite_slot_view(k).x_velocity() != 0 {
+                blocks.block(0x06e50b);
+                if sign8(self.sprite_slot_view(k).x_velocity()) { blocks.taken(0x06e50b); }
+                else { blocks.block(0x06e50d); }
+                blocks.block(0x06e50e);
                 self.sprite_check_for_tile_in_direction_horizontal(
                     k,
                     if sign8(self.sprite_slot_view(k).x_velocity()) {
@@ -2197,25 +2297,42 @@ impl ZeldaState {
                     },
                 );
             }
+            else { blocks.taken(0x06e509); }
+            blocks.block(0x06e511);
         } else {
+            blocks.block(0x06e513);
+            blocks.block(0x06e515);
             self.sprite_check_for_tile_in_direction_vertical(k, 1);
+            blocks.block(0x06e518); blocks.taken(0x06e519);
+            blocks.block(0x06e515);
             self.sprite_check_for_tile_in_direction_vertical(k, 0);
+            blocks.block(0x06e518); blocks.block(0x06e51b);
+            blocks.block(0x06e51d);
             self.sprite_check_for_tile_in_direction_horizontal(k, 3);
+            blocks.block(0x06e520); blocks.taken(0x06e523);
+            blocks.block(0x06e51d);
             self.sprite_check_for_tile_in_direction_horizontal(k, 2);
+            blocks.block(0x06e520);
         }
 
         self.sprite_check_tile_collision_after_directions(k);
     }
 
     pub(in crate::zelda_rtl) fn sprite_check_tile_collision_after_directions(&mut self, k: usize) {
-        if sign8(self.sprite_slot_view(k).flags5()) || self.sprite_slot_view(k).z() != 0 {
-            return;
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x06e525);
+        if sign8(self.sprite_slot_view(k).flags5()) {
+            blocks.taken(0x06e528); blocks.block(0x06e52f); return;
         }
-
+        blocks.block(0x06e52a);
+        if self.sprite_slot_view(k).z() != 0 { blocks.block(0x06e52f); return; }
+        blocks.taken(0x06e52d);
+        blocks.block(0x06e530);
         self.sprite_check_tile_property(k, 0x68);
         let tile = self.game_state.sprites.workspace.tile();
         self.sprite_slot_view_mut(k)
             .set_draw_i(tile.cartridge_attribute());
+        self.sprite_layer_tile_tail_work(k, tile);
         if tile == NativeTile::WATER_STAIRCASE {
             if self.game_state.oam.has_sprite_sorting() && self.sprite_slot_view(k).state() == 11 {
                 let value = 1;
@@ -2254,6 +2371,62 @@ impl ZeldaState {
             // A water-current room carries sprites like the third conveyor.
             self.sprite_apply_conveyor(k, 2);
         }
+    }
+
+    fn sprite_layer_tile_tail_work(&self, k: usize, tile: NativeTile) {
+        let b=crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E535..E5B7: comparisons/branches and child opcodes only.
+        b.block(0x06e535);
+        if tile==NativeTile::WATER_STAIRCASE {
+            b.block(0x06e540);
+            if self.game_state.oam.has_sprite_sorting() {
+                b.block(0x06e545);
+                if self.sprite_slot_view(k).state()==11 { b.block(0x06e54c); return; }
+                b.taken(0x06e54a);
+            } else { b.taken(0x06e543); }
+        } else { b.taken(0x06e53e); }
+        b.block(0x06e552);
+        if tile==NativeTile::PIT {
+            b.block(0x06e556);
+            if self.sprite_slot_view(k).flags()&1!=0 {
+                b.block(0x06e55d);
+                if self.game_state.world.location.is_outdoors() { b.block(0x06e561); return; }
+                b.taken(0x06e55f); b.block(0x06e564);
+                let ty=self.sprite_slot_view(k).sprite_type();
+                if ty==0x13 { b.taken(0x06e570); b.block(0x06e576); }
+                else {
+                    b.block(0x06e572);
+                    if ty==0x26 { b.block(0x06e576); } else { b.taken(0x06e574); }
+                }
+                b.block(0x06e57e); return;
+            }
+            b.taken(0x06e55b);
+        } else {
+            b.taken(0x06e554); b.block(0x06e582);
+            if tile==NativeTile::MOVING_FLOOR {
+                b.block(0x06e586);
+                if self.game_state.sprites.dual_layer_tile_cache.tile(k)==NativeTile::WATER_STAIRCASE {
+                    b.block(0x06e58e); b.block(0x06e591);
+                } else { b.taken(0x06e58c); b.block(0x06e5b7); }
+                return;
+            }
+            b.taken(0x06e584);
+        }
+        b.block(0x06e59a);
+        let attribute=tile.cartridge_attribute();
+        if attribute>=0x68 {
+            b.block(0x06e59e);
+            if attribute<0x6c { b.block(0x06e5a2); b.block(0x06e5a7); }
+            else { b.taken(0x06e5a0); b.block(0x06e5b7); }
+            return;
+        }
+        b.taken(0x06e59c); b.block(0x06e5a8);
+        if tile!=NativeTile::DEEP_WATER { b.taken(0x06e5aa); b.block(0x06e5b7); return; }
+        b.block(0x06e5ac);
+        if self.game_state.dungeon.room_load.header_collision()!=4 {
+            b.taken(0x06e5b1); b.block(0x06e5b7); return;
+        }
+        b.block(0x06e5b3); b.block(0x06e5a2); b.block(0x06e5a7);
     }
 
     // uint8 Sprite_GetTileAttribute(int k, uint16 *x, uint16 y) {  // 86e883

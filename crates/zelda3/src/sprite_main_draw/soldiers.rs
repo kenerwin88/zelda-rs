@@ -381,7 +381,8 @@ impl ZeldaState {
             let value =
                 ENEMY_ARROW_DIRECTIONS[((self.sprite_slot_view(k).delay_main() >> 3) & 3) as usize];
             self.sprite_slot_view_mut(k).set_direction(value);
-            self.sprite_move_z(k);
+            // ROM $06:B7EE
+            self.sprite_move_z_marked(k, 0x06e96c);
             self.sprite_move_xy(k);
             self.sprite_slot_view_mut(k).subtract_z_velocity(2);
             if sign8(self.sprite_slot_view(k).z()) {

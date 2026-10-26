@@ -609,7 +609,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).z() == 0 {
             self.sprite_draw_water_ripple_with_oam_adjust(k);
             if self.game_state.frame.submodule == 0
-                && self.sprite_check_damage_to_link_same_layer(k)
+                // ROM $1D:DF61
+                && self.sprite_check_damage_same_layer_long_marked(k)
             {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -1026,7 +1027,8 @@ impl ZeldaState {
         );
         if self.sprite_slot_view(k).anim_clock() == 0 {
             let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
-            self.sprite_draw_shadow_custom(k, &mut info, 10);
+            // ROM $05:9FA7
+            self.sprite_draw_shadow_long_marked(k, &mut info, 10);
         }
     }
 
@@ -1266,7 +1268,8 @@ impl ZeldaState {
             .sprite_histories
             .swamola_target(k)
             .y();
-        self.sprite_project_speed_towards_location(k, x, y, 15)
+        // ROM $1D:9E2D
+        self.sprite_project_speed_towards_location_long_marked(k, x, y, 15)
     }
 
     // -----------------------------------------------------------------------
@@ -1499,7 +1502,8 @@ impl ZeldaState {
                 .wrapping_add(4);
             self.sprite_workspace_mut().set_current_sprite_x(x);
             self.sprite_workspace_mut().set_current_sprite_y(y);
-            self.sprite_draw_single_small(k);
+            // ROM $1E:A975
+            self.sprite_draw_single_small_long_marked(k);
         } else {
             // ROM $1E:A97A JSL $06:DBF0
             self.sprite_draw_single_large_long(k);

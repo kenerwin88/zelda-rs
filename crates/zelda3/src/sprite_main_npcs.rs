@@ -225,7 +225,8 @@ impl ZeldaState {
     // }
     pub(super) fn bee_main(&mut self, k: usize) {
         self.bee_handle_z(k);
-        self.sprite_draw_single_small(k);
+        // ROM $1E:DD48
+        self.sprite_draw_single_small_long_marked(k);
         self.bee_handle_interactions(k);
         if self.sprite_return_if_inactive(k) {
             return;
@@ -237,6 +238,7 @@ impl ZeldaState {
             self.sprite_spawn_sparkle_garnish(k);
         }
         self.bee_bzzt(k);
+        // ROM $1E:DD61
         self.sprite_move_xy_bank(k, 0x1eff34);
         let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
@@ -270,7 +272,8 @@ impl ZeldaState {
                 .follower_link
                 .y()
                 .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
-            let pt = self.sprite_project_speed_towards_location(k, x, y, 20);
+            // ROM $1E:DDC9
+            let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 20);
             let oam_flags = self.sprite_slot_view(k).oam_flags();
             let delay = (k as u8).wrapping_add(self.sprite_slot_view(k).a());
             let mut sprite = self.sprite_slot_view_mut(k);
@@ -833,7 +836,8 @@ impl ZeldaState {
             k,
             &BOTTLE_VENDOR_DRAW_FRAMES[base..base + 2],
         );
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $05:EBC2
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
         ((info.x | info.y) >> 8) as u8
     }
 

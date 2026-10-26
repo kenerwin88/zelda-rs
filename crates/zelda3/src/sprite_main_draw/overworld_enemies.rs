@@ -7,6 +7,15 @@ use crate::tile_definition::NativeTile;
 use crate::types::sign8;
 
 impl ZeldaState {
+    pub(in crate::zelda_rtl) fn zazak_draw_marked(&mut self, k: usize) {
+        // $0D:C0A6..C0F2; DrawMultiple and the far shadow own their bodies.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dc0a6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dc0a6);
+        self.zazak_draw_with_markers(k, b);
+    }
+
+
 
     // -----------------------------------------------------------------------
     // void SpriteDraw_ZirroBomb(int k) {  // 8dd606 — sprite_main.c:13246
@@ -143,24 +152,32 @@ impl ZeldaState {
     // void Zazak_Draw(int k) {  // 8dc0a6
     //   Three body tiles, head-char patch, and common shadow.
     // }
-    pub(in crate::zelda_rtl) fn zazak_draw(&mut self, k: usize) {
+    fn zazak_draw_with_markers(&mut self, k: usize, b: crate::cycle_ledger::BlockMarkers) {
         let base = (self.sprite_slot_view(k).graphics() as usize) * 3;
         let mut info = self.sprite_draw_multiple(k, &ZAZAK_DRAW_FRAMES[base..base + 3]);
+        b.block(0x0dc0c6);
         if self.sprite_slot_view(k).pause() != 0 {
+            b.taken(0x0dc0c9); b.block(0x0dc0f1);
             return;
         }
+        b.block(0x0dc0cb);
+        if self.sprite_slot_view(k).delay_aux1() == 0 { b.taken(0x0dc0d5); }
+        else { b.block(0x0dc0d7); }
         let i = (self.sprite_slot_view(k).head_direction() as usize)
             + if self.sprite_slot_view(k).delay_aux1() == 0 {
                 0
             } else {
                 4
             };
+        b.block(0x0dc0db);
         let oam = self.game_state.oam.current_pointer_usize();
+        if (oam & 255) + 3 > 255 { b.crossing(0x0dc0e3); }
         self.oam_state_mut()
             .set_entry_char(oam, ZAZAK_DRAW_CHARS[i]);
         self.oam_state_mut()
             .merge_entry_flags(oam, !0x40, ZAZAK_DRAW_FLAGS[i]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
+        b.block(0x0dc0f1);
     }
 
     // -----------------------------------------------------------------------
@@ -199,7 +216,8 @@ impl ZeldaState {
     pub(in crate::zelda_rtl) fn bomber_draw(&mut self, k: usize) {
         let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
         let mut info = self.sprite_draw_multiple(k, &BOMBER_DRAW_FRAMES[base..base + 2]);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $0D:D588
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -381,7 +399,8 @@ impl ZeldaState {
             y = y.wrapping_sub(u16::from(d));
             oam = oam.wrapping_sub(4);
         }
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1D:C7E6
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -397,7 +416,8 @@ impl ZeldaState {
     pub(super) fn lynel_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
         let mut info = self.sprite_draw_multiple(k, &LYNEL_DRAW_FRAMES[base..base + 3]);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1D:889C
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
@@ -704,7 +724,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).subtype2() >= 64
             || (self.sprite_slot_view(k).subtype2() & 1) == 0
         {
-            self.sprite_draw_single_small(k);
+            // ROM $06:D863
+            self.sprite_draw_single_small_marked(k);
         }
         if self.sprite_return_if_inactive(k) {
             return;
@@ -714,7 +735,8 @@ impl ZeldaState {
             return;
         }
         self.sprite_slot_view_mut(k).subtract_z_velocity(1);
-        self.sprite_move_z(k);
+        // ROM $06:D872
+        self.sprite_move_z_marked(k, 0x06e96c);
         if sign8(self.sprite_slot_view(k).z()) {
             let value = 0;
             self.sprite_slot_view_mut(k).set_z(value);
@@ -1792,7 +1814,8 @@ impl ZeldaState {
         let mut shadow_info = self.sprite_draw_multiple(k, &PIKIT_DRAW_FRAMES[base..base + 2]);
         let bak = self.sprite_slot_view(k).flags2();
         self.sprite_slot_view_mut(k).subtract_flags2(6);
-        self.sprite_draw_shadow_custom(k, &mut shadow_info, 10);
+        // ROM $0D:D72C
+        self.sprite_draw_shadow_long_marked(k, &mut shadow_info, 10);
         let value = bak;
         self.sprite_slot_view_mut(k).set_flags2(value);
         self.sprite_draw_pikit_loot(k, &info);
@@ -1830,6 +1853,7 @@ impl ZeldaState {
     pub(in crate::zelda_rtl) fn tektite_draw(&mut self, k: usize) {
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let mut info = self.sprite_draw_multiple(k, &TEKTITE_DRAW_FRAMES[base..base + 2]);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        // ROM $1D:C40D
+        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
     }
 }

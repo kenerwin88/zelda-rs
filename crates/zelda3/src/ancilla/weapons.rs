@@ -182,7 +182,8 @@ impl ZeldaState {
             self.ancilla_slot_view_mut(k).add_x_velocity(acceleration);
         }
         self.ancilla_move_x(k);
-        let hit_spr = self.ancilla_check_sprite_collision(k);
+        // ROM $08:91D2
+        let hit_spr = self.ancilla_check_sprite_collision_marked(k);
 
         if self.ancilla_slot_view(k).item_to_link() == 0 {
             if hit_spr.is_some() {
@@ -338,7 +339,8 @@ impl ZeldaState {
                 self.ancilla_slot_view_mut(k).set_l(value);
                 self.ancilla_move_x(k);
                 self.ancilla_move_y(k);
-                let mut coll = self.ancilla_check_sprite_collision(k).is_some();
+                // ROM $08:86E7
+                let mut coll = self.ancilla_check_sprite_collision_marked(k).is_some();
                 if !coll {
                     self.ancilla_slot_view_mut(k).or_direction(8);
                     coll = self.ancilla_check_tile_collision(k) != 0;
@@ -486,7 +488,8 @@ impl ZeldaState {
                 }
                 self.ancilla_move_y(k);
                 self.ancilla_move_x(k);
-                if self.ancilla_check_sprite_collision(k).is_some()
+                // ROM $08:A515
+                if self.ancilla_check_sprite_collision_marked(k).is_some()
                     || self.ancilla_check_tile_collision(k) != 0
                 {
                     self.ancilla_slot_view_mut(k).set_ancilla_type(0x11);
@@ -525,7 +528,8 @@ impl ZeldaState {
         let value = 255;
         self.ancilla_slot_view_mut(k).set_s_player(value);
         let j;
-        if let Some(sprite) = self.ancilla_check_sprite_collision(k) {
+        // ROM $08:A16B
+        if let Some(sprite) = self.ancilla_check_sprite_collision_marked(k) {
             j = sprite;
             let value = self
                 .ancilla_slot_view(k)
@@ -1113,7 +1117,8 @@ impl ZeldaState {
                     if !self.hookshot_should_i_even_bother_with_tiles(k) {
                         if self.ancilla_slot_view(k).l() == 0
                             && self.ancilla_slot_view(k).step() == 0
-                            && self.ancilla_check_sprite_collision(k).is_some()
+                            // ROM $08:BDD7
+                            && self.ancilla_check_sprite_collision_marked(k).is_some()
                             && self.ancilla_slot_view(k).step() == 0
                         {
                             let mut hookshot = self.ancilla_slot_view_mut(k);
