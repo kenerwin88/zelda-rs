@@ -868,18 +868,115 @@ fn marker29_state() -> ZeldaState {
 }
 
 #[test]
-fn marker29_pengator_prefix_matches_rom() {
+fn marker30_bank1e_axis_whole_body_matches_rom() {
+    marker30_axis_cases(0x1eff34);
+}
+
+#[test]
+fn marker30_bank1d_axis_whole_body_matches_rom() {
+    marker30_axis_cases(0x1de95d);
+}
+
+#[test]
+fn marker30_bank1e_xyz_whole_body_matches_rom() { marker30_wrapper_cases(0x1eff1e,0x1eff28,0x1eff34,0); }
+#[test]
+fn marker30_bank1e_xy_whole_body_matches_rom() { marker30_wrapper_cases(0x1eff21,0x1eff28,0x1eff34,1); }
+#[test]
+fn marker30_bank1e_x_whole_body_matches_rom() { marker30_wrapper_cases(0x1eff28,0x1eff34,0x1eff34,2); }
+#[test]
+fn marker30_bank1d_xyz_whole_body_matches_rom() { marker30_wrapper_cases(0x1de948,0x1de952,0x1de95d,0); }
+#[test]
+fn marker30_bank1d_xy_whole_body_matches_rom() { marker30_wrapper_cases(0x1de94b,0x1de952,0x1de95d,1); }
+#[test]
+fn marker30_bank1d_x_whole_body_matches_rom() { marker30_wrapper_cases(0x1de952,0x1de95d,0x1de95d,2); }
+
+fn marker30_wrapper_cases(entry:u32,end:u32,axis:u32,kind:u8) {
+    for k in [0,15] {
+        for velocity in [0,1,15,16,127,128,255] {
+            let mut native=marker29_state();
+            native.write_wram_byte(0xfa0,k as u8);
+            for a in [0xd40,0xd50,0xf80] {native.write_wram_byte(a+k,velocity);}
+            native.sync_native_game_state_from_ram();
+            let Some(machine)=marker29_machine(&native,entry,k)else{return};
+            crate::cycle_ledger::assert_rom_marker_work(entry,machine,
+                |s|s.cpu.k==(entry>>16)as u8 && (entry as u16..end as u16).contains(&s.cpu.pc),
+                ||match kind {
+                    0=>native.sprite_move_xyz_bank(k,axis),
+                    1=>native.sprite_move_xy_bank(k,axis),
+                    _=>native.sprite_move_x_bank(k,axis),
+                });
+        }
+    }
+}
+
+fn marker30_axis_cases(entry: u32) {
+    for slot in [0,15] {
+        for horizontal in [false,true] {
+            for velocity in 0..=255 {
+                for (position,fraction) in [(0u16,0u8),(255,255),(0xffff,15)] {
+                    let mut native=marker29_state();
+                    let offset=if horizontal {16}else{0};
+                    for (address,value) in [(0xd40,velocity),(0xd60,fraction),
+                        (0xd00,position as u8),(0xd20,(position>>8)as u8)] {
+                        native.write_wram_byte(address+offset+slot,value);
+                    }
+                    native.sync_native_game_state_from_ram();
+                    let Some(machine)=marker29_machine(&native,entry,slot+offset)else{return};
+                    let source=crate::cycle_ledger::assert_rom_marker_work(entry,machine,
+                        |s|s.cpu.k==(entry>>16)as u8 && (entry as u16..entry as u16+0x2e).contains(&s.cpu.pc),
+                        ||native.sprite_move_axis_bank(slot,horizontal,entry));
+                    for address in [0xd00,0xd20,0xd60] {
+                        assert_eq!(native.read_wram_byte(address+offset+slot),source.snes().ram[address+offset+slot]);
+                    }
+                }
+            }
+        }
+    }
+    // The shared native recoil helper represents these two distinct ROM
+    // callers. Check the actual XY call through both unmodified bodies.
+    for k in [0,15] {
+        for (x,y) in [(16u8,240u8),(240,16)] {
+            let mut native=marker29_state();
+            for(a,v)in[(0xdd0,9),(0xe20,0x99),(0xea0,8),(0xcd2,0x80),
+                (0xf40,x),(0xf30,y),(0xd00,0x40),(0xd10,0x40)] {native.write_wram_byte(a+k,v);}
+            native.write_wram_byte(0xfa0,k as u8);native.sync_native_game_state_from_ram();
+            let caller=if entry==0x1eff34 {0x1efe9b}else{0x1de8c5};
+            let Some(machine)=marker29_machine(&native,caller,k)else{return};
+            crate::cycle_ledger::assert_rom_marker_work(entry,machine,
+                |s|s.cpu.k==(entry>>16)as u8 && (entry as u16..entry as u16+0x2e).contains(&s.cpu.pc),
+                ||{native.sprite_return_if_recoiling_bank(k,entry);});
+        }
+    }
+}
+
+#[test]
+fn marker30_pengator_whole_body_matches_rom() {
     for k in [0, 15] {
         for direction in 0..4 {
-            for (hit, wall) in [(0, 0), (1, 0), (0, 1), (0, 0x80)] {
+            for (state, ai, delay, frame, z, hit, wall) in [
+                (8,0,0,0,0,0,0),(8,0,0,0,0,1,0),(8,0,0,0,0,0,1),
+                (9,0,0,0,0,0,0),(9,1,0,0,0,0,0),(9,1,0,1,0,0,0),
+                (9,2,0,0,0,0,0),(9,2,1,0,0,0,0),(9,2,5,0,0,0,0),
+                (9,2,15,0,0,0,0),(9,3,0,0,0,0,0),(9,3,0,1,0,0,0),
+                (9,3,0,0,0x80,0,0),(9,0,0,0,0,1,0)] {
                 let mut native = marker29_state();
-                for (a, v) in [(0xdd0, 8), (0xe20, 0x99), (0xde0, direction),
+                for (a, v) in [(0xdd0, state), (0xe20, 0x99), (0xde0, direction),
                     (0xd90, 1), (0xea0, hit), (0xe70, wall), (0xd10, 0x40),
-                    (0xd00, 0x40)] { native.write_wram_byte(a + k, v); }
+                    (0xd00, 0x40),(0xd80,ai),(0xdf0,delay),(0xf70,z)] { native.write_wram_byte(a + k, v); }
+                native.write_wram_byte(0x1a,frame);
+                native.write_wram_byte(0xfa0,k as u8);
+                native.write_wram_word(0x20,0x180);
+                native.write_wram_word(0x22,0x180);
                 native.sync_native_game_state_from_ram();
                 let Some(machine) = marker29_machine(&native, 0x1ea196, k) else { return };
                 let source = crate::cycle_ledger::assert_rom_marker_work(0x1e8b19, machine,
-                    |s| s.cpu.k == 0x1e && (0xa196..0xa1bb).contains(&s.cpu.pc), || {
+                    |s| (s.cpu.k == 0x1e && ([(0xa196,0xa1e2),(0xa1ea,0xa1f5),
+                        (0xa1fb,0xa240),(0xa244,0xa261),(0xa271,0xa2b5)].iter()
+                        .any(|&(a,b)|(a..b).contains(&s.cpu.pc))
+                        // Plain FF19 RTS returns from recoil; after its two
+                        // PLAs it returns from this fixture's Pengator frame.
+                        || s.cpu.pc==0xff18 || (s.cpu.pc==0xff19 && s.cpu.sp==0x1fa)))
+                        || (s.cpu.k==0 && (0x8784..0x879c).contains(&s.cpu.pc)), || {
                         let _scope = crate::cycle_ledger::routine(0x1e8b19);
                         native.sprite_99_pengator(k);
                     });
@@ -889,6 +986,19 @@ fn marker29_pengator_prefix_matches_rom() {
             }
         }
     }
+}
+
+#[test]
+fn marker30_pengator_local_dispatch_matches_rom() {
+    let mut native=marker29_state();
+    for (a,v) in [(0xdd0,9),(0xe20,0x99),(0xd10,0x40),(0xd00,0x40)] {native.write_wram_byte(a,v);}
+    native.write_wram_word(0x20,0x180);native.write_wram_word(0x22,0x180);
+    native.sync_native_game_state_from_ram();
+    let Some(machine)=marker29_machine(&native,0x1ea196,0)else{return};
+    crate::cycle_ledger::assert_rom_marker_work(0x008781,machine,
+        |s|s.cpu.k==0 && (0x8781..0x8784).contains(&s.cpu.pc),|| {
+            let _scope=crate::cycle_ledger::routine(0x1e8b19);native.sprite_99_pengator(0);
+        });
 }
 
 #[test]

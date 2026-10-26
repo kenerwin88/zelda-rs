@@ -230,14 +230,14 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1eff34) {
             return;
         }
         if self.sprite_slot_view(k).head_direction() != 0 {
             self.sprite_spawn_sparkle_garnish(k);
         }
         self.bee_bzzt(k);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
         let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         if self.sprite_slot_view(k).delay_aux4() == 0 {
@@ -495,7 +495,7 @@ impl ZeldaState {
                     return;
                 }
                 self.bee_bzzt(k);
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1eff34);
                 let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).head_direction() != 0 {

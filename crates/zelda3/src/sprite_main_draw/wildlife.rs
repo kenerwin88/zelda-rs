@@ -91,11 +91,11 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
             return;
         }
         self.sprite_check_damage_to_and_from_link(k);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1de95d);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 let r = self.sprite_is_right_of_link(k);

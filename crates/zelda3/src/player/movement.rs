@@ -1,6 +1,57 @@
 //! Swimming, movement animation, velocity integration, slopes, and direction limits.
 
 use super::*;
+
+#[cfg(test)]
+mod marker30_tests {
+    use super::*;
+
+    #[test]
+    fn marker30_direction_limits_whole_body_matches_rom() {
+        let path=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+        let Ok(rom)=std::fs::read(path)else{return};
+        let machine = |native:&ZeldaState,entry:u16| {
+            let mut s=snes::Snes::new();s.cart.load(snes::CartType::LoRom,&rom,0x2000);
+            s.ram.copy_from_slice(&native.wram_image());s.ram[0x1fd..0x200].copy_from_slice(&[0xff,0x7f,0]);
+            s.cpu.e=false;s.cpu.unpack_flags(0x30);s.cpu.k=7;s.cpu.db=7;s.cpu.pc=entry;s.cpu.sp=0x1fc;s
+        };
+        for direction in 0..16 {
+            let mut native=ZeldaState::new();let mut image=native.wram_image().into_owned();
+            image[0x10]=7;image[0x1b]=1;image[0x67]=direction;image[0x20]=0x40;image[0x22]=0x40;
+            native.import_wram_image(&image);native.sync_native_game_state_from_ram();native.set_lag_free(true);
+            crate::cycle_ledger::assert_rom_marker_work(0x07b660,machine(&native,0xb660),
+                |s|s.cpu.k==7 && (0xb660..0xb7c3).contains(&s.cpu.pc),|| {
+                    let _scope=crate::cycle_ledger::routine(0x07b660);native.player_limit_directions_inner();
+                });
+        }
+        // Enter after each real probe with independently varied result bits.
+        // These unmodified-ROM suffix fixtures cover the response branches
+        // that an all-clear tile map cannot reach in the whole-call cases.
+        for vertical in [false,true] {
+            for bits in [0,1,2,3,4,8,16,32,48,51] {
+                for door in [0,2] {
+                    for direction in [1,2,4,8,5,10] {
+                        for collision in [0,2] {
+                            for (auxiliary,moving,spike) in [(0,0,0),(1,0,0),(0,1,0),(0,1,3)] {
+                                let mut native=ZeldaState::new();let mut image=native.wram_image().into_owned();
+                                for(a,v)in[(0x10,7),(0x1b,1),(0x67,direction),(0x0e,bits),(0x62,door),
+                                    (0x46c,collision),(0x4d,auxiliary),(0x34a,moving),(0x2e8,spike),
+                                    (0x0c,3),(0x20,0x40),(0x22,0x40)] {image[a]=v;}
+                                native.import_wram_image(&image);native.sync_native_game_state_from_ram();native.set_lag_free(true);
+                                let (start,end)=if vertical{(0xb682,0xb701)}else{(0xb71b,0xb798)};
+                                crate::cycle_ledger::assert_rom_marker_work(0x07b660,machine(&native,start),
+                                    |s|s.cpu.k==7 && (start..end).contains(&s.cpu.pc),|| {
+                                        let _scope=crate::cycle_ledger::routine(0x07b660);
+                                        native.limit_direction_response_markers(vertical);
+                                    });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 use crate::game_state::{CollisionAxis, CollisionDirection, CollisionOrder, MovementProbeKind, PlayerAxis};
 use crate::tile_definition::NativeTile;
 
@@ -1620,13 +1671,22 @@ impl ZeldaState {
     }
 
     pub(super) fn player_limit_directions_inner(&mut self) {
+        // $07:B660..B666: shared JSR entry or diagonal parent's fallthrough.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x07b660);
         self.follower_link_state_mut().reset_direction_limits();
         self.player_limit_directions_after_reset(None);
     }
 
     pub(super) fn player_limit_directions_after_reset(&mut self, native_vertical_probe: Option<CollisionDirection>) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x07b668);
         let direction = self.game_state.player.follower_link.direction();
         if direction & 0x0c != 0 {
+            blocks.taken(0x07b66c);
+            blocks.block(0x07b671);
+            if direction & 8 != 0 { blocks.taken(0x07b677); }
+            else { blocks.block(0x07b679); }
+            blocks.block(0x07b67b);
             let probe_direction = native_vertical_probe.unwrap_or_else(|| {
                 self.follower_link_state_mut().increment_orthogonal_direction_count();
                 let probe_direction = CollisionDirection::along(CollisionAxis::Vertical, direction & 8 != 0);
@@ -1659,6 +1719,7 @@ impl ZeldaState {
             );
             }
 
+            self.limit_direction_response_markers(true);
             let r14 = self.game_state.player.tile_detection.collision_bits();
             if r14 & 0x30 != 0
                 && self.game_state.player.tile_detection.door_direction_flags() as u8 & 2 == 0
@@ -1714,14 +1775,24 @@ impl ZeldaState {
                     self.follower_link_state_mut().set_direction_mask_a(mask);
                 }
             }
-        }
+        } else { blocks.block(0x07b66e); }
 
         self.player_limit_directions_after_vertical(None);
     }
 
     pub(super) fn player_limit_directions_after_vertical(&mut self, native_horizontal_probe: Option<CollisionDirection>) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
         let direction = self.game_state.player.follower_link.direction();
+        if direction & 12 != 0 {
+            blocks.block(0x07b701);
+            if direction & 3 != 0 { blocks.taken(0x07b705); }
+            else { blocks.block(0x07b707); }
+        }
         if native_horizontal_probe.is_some() || (direction & 0x0c != 0 && direction & 3 != 0) {
+            blocks.block(0x07b70a);
+            if direction & 2 != 0 { blocks.taken(0x07b710); }
+            else { blocks.block(0x07b712); }
+            blocks.block(0x07b714);
             let probe_direction = native_horizontal_probe.unwrap_or_else(|| {
                 self.follower_link_state_mut().increment_orthogonal_direction_count();
                 let direction = CollisionDirection::along(CollisionAxis::Horizontal, direction & 2 != 0);
@@ -1734,6 +1805,7 @@ impl ZeldaState {
                 MovementProbeKind::Slope,
             );
 
+            self.limit_direction_response_markers(false);
             let r14 = self.game_state.player.tile_detection.collision_bits();
             if r14 & 0x30 != 0
                 && self.game_state.player.tile_detection.door_direction_flags() as u8 & 2 != 0
@@ -1790,13 +1862,112 @@ impl ZeldaState {
                 }
             }
 
+            blocks.block(0x07b798);
             self.follower_link_state_mut().apply_direction_masks();
         }
 
+        // $07:B7A0..B7C2: selected direction and orthogonal count return.
+        blocks.block(0x07b7a0);
+        if self.game_state.player.follower_link.direction() & 15 == 0 {
+            blocks.taken(0x07b7a4);
+        } else {
+            blocks.block(0x07b7a6);
+            if self.game_state.player.follower_link.moving_against_diag_tile() & 15 == 0 {
+                blocks.taken(0x07b7aa);
+            } else { blocks.block(0x07b7ac); }
+        }
+        blocks.block(0x07b7ae);
+        if self.game_state.player.follower_link.num_orthogonal_directions() != 2 {
+            blocks.taken(0x07b7b4);
+        } else {
+            blocks.block(0x07b7b6);
+            if self.game_state.player.follower_link.facing() & 4 == 0 {
+                blocks.taken(0x07b7bc);
+            } else { blocks.block(0x07b7be); }
+            blocks.block(0x07b7c0);
+        }
+        blocks.block(0x07b7c2);
         self.follower_link_state_mut()
             .force_direction_from_diag_tile_if_needed();
         self.follower_link_state_mut()
             .resolve_orthogonal_direction_count_from_facing();
+    }
+
+    fn limit_direction_response_markers(&self, vertical: bool) {
+        // $07:B682..B700 / B71B..B797: source branches after each real probe.
+        // Each tuple names corresponding ROM blocks/branches, not prices.
+        if !self.lag_free { return; }
+        let b = crate::cycle_ledger::blocks(true);
+        let pcs = if vertical {
+            [0x07b682,0x07b686,0x07b688,0x07b68c,0x07b68e,0x07b698,
+             0x07b69a,0x07b6a0,0x07b6a2,0x07b6a4,0x07b6a6,
+             0x07b6aa,0x07b6ad,0x07b6af,0x07b6b3,0x07b6b5,
+             0x07b6b7,0x07b6b9,0x07b6bb,0x07b6bf,0x07b6c1,
+             0x07b6c3,0x07b6c7,0x07b6c9,0x07b6ce,0x07b6d0,0x07b6d5,
+             0x07b6d7,0x07b6db,0x07b6dd,0x07b6f5,0x07b6fc]
+        } else {
+            [0x07b71b,0x07b71f,0x07b721,0x07b725,0x07b727,0x07b72f,
+             0x07b731,0x07b737,0x07b739,0x07b73b,0x07b73d,
+             0x07b741,0x07b744,0x07b746,0x07b74a,0x07b74c,
+             0x07b74e,0x07b750,0x07b752,0x07b756,0x07b758,
+             0x07b75a,0x07b75e,0x07b760,0x07b765,0x07b767,0x07b76c,
+             0x07b76e,0x07b772,0x07b774,0x07b78c,0x07b793]
+        };
+        let bits = self.game_state.player.tile_detection.collision_bits() as u8;
+        let direction = self.game_state.player.follower_link.direction();
+        let orthogonal = if vertical { 3 } else { 12 };
+        b.block(pcs[0]);
+        let ordinary = if bits & 0x30 == 0 { b.taken(pcs[1]); true }
+        else {
+            b.block(pcs[2]);
+            let door = self.game_state.player.tile_detection.door_direction_flags() as u8 & 2 != 0;
+            if door == vertical { b.taken(pcs[3]); true }
+            else {
+                b.block(pcs[4]);
+                if ((bits & 0x30) >> if vertical { 4 } else { 2 }) & direction != 0 {
+                    b.taken(pcs[5]); true
+                } else {
+                    b.block(pcs[6]);
+                    if direction & orthogonal == 0 { b.taken(pcs[7]); true }
+                    else {
+                        b.block(pcs[8]);
+                        if direction & if vertical { 2 } else { 8 } != 0 { b.taken(pcs[9]); }
+                        else { b.block(pcs[10]); }
+                        b.block(pcs[31]); false
+                    }
+                }
+            }
+        };
+        if !ordinary { return; }
+        b.block(pcs[11]);
+        if self.game_state.dungeon.room_load.header_collision() != 0 {
+            b.block(pcs[13]);
+            if bits & 3 != 0 { b.taken(pcs[14]); }
+            else { b.block(pcs[15]); return; }
+        } else {
+            b.taken(pcs[12]); b.block(pcs[16]);
+            let auxiliary = self.game_state.player.follower_link.has_auxiliary_state();
+            if !auxiliary { b.taken(pcs[17]); }
+            else {
+                b.block(pcs[18]);
+                if self.game_state.player.tile_detection.slope_collision_bits() & 3 == 0 { b.taken(pcs[19]); }
+                else { b.block(pcs[20]); b.block(pcs[30]); b.block(pcs[31]); return; }
+            }
+        }
+        b.block(pcs[21]);
+        if bits & 3 == 0 { b.taken(pcs[22]); return; }
+        b.block(pcs[23]);
+        if self.game_state.player.follower_link.flag_moving() == 0 { b.taken(pcs[24]); }
+        else {
+            b.block(pcs[25]);
+            if self.game_state.player.tile_detection.spike_cactus_tiles() & 3 != 0 { b.taken(pcs[26]); }
+            else {
+                b.block(pcs[27]);
+                if direction & orthogonal == 0 { b.taken(pcs[28]); }
+                else { b.block(pcs[29]); }
+            }
+        }
+        b.block(pcs[30]); b.block(pcs[31]);
     }
 
     pub(in crate::zelda_rtl) fn link_handle_velocity(&mut self) {

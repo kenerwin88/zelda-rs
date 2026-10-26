@@ -1895,6 +1895,22 @@ impl ZeldaState {
     //   ...see sprite.c:3143...
     // }
     pub(in crate::zelda_rtl) fn sprite_return_if_recoiling(&mut self, k: usize) -> bool {
+        self.sprite_return_if_recoiling_from(k, None)
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_return_if_recoiling_bank(&mut self, k: usize, axis: u32) -> bool {
+        // $1E:FE9B..FF1D / $1D:E8C5..E947 enter their same-bank XY body
+        // at $1E:FF05 / $1D:E92F. Only that real movement call is newly priced.
+        let recoiling = self.sprite_return_if_recoiling_from(k, self.lag_free.then_some(axis));
+        // $1E:FF18..FF19: the first PLA closed the recoil frame; this
+        // second PLA/RTS belongs to the returning caller (including Pengator).
+        if axis == 0x1eff34 && recoiling {
+            crate::cycle_ledger::blocks(self.lag_free).block(0x1eff18);
+        }
+        recoiling
+    }
+
+    fn sprite_return_if_recoiling_from(&mut self, k: usize, axis: Option<u32>) -> bool {
         if self.sprite_slot_view(k).f() == 0 {
             return false;
         }
@@ -1946,7 +1962,8 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
                 }
             } else {
-                self.sprite_move_xy(k);
+                if let Some(entry) = axis { self.sprite_move_xy_bank(k, entry); }
+                else { self.sprite_move_xy(k); }
             }
         }
         let value = yvbak;

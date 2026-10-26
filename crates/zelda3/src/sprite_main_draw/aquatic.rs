@@ -640,7 +640,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xyz(k);
+        self.sprite_move_xyz_bank(k, 0x1de95d);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         if sign8(self.sprite_slot_view(k).z()) {
             let value = 0;
@@ -743,7 +743,7 @@ impl ZeldaState {
             }
             2 => {
                 self.sprite_slot_view_mut(k).add_subtype2(1);
-                self.sprite_move_xyz(k);
+                self.sprite_move_xyz_bank(k, 0x1de95d);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if self.sprite_slot_view(k).z_velocity() == (-48i8) as u8 {
                     self.catfish_spawn_plop(k);
@@ -1112,7 +1112,7 @@ impl ZeldaState {
             .y_velocity()
             .wrapping_add(self.sprite_slot_view(k).z_velocity());
         self.sprite_slot_view_mut(k).set_y_velocity(value);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1de95d);
         let value = old_vel;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
 

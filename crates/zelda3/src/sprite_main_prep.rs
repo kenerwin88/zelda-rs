@@ -1318,7 +1318,7 @@ impl ZeldaState {
 
     pub(super) fn fire_bat_move(&mut self, k: usize) {
         self.fire_bat_animate(k);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1de95d);
 
         if self.sprite_slot_view(k).subtype2() & 7 != 0 {
             return;
@@ -2168,7 +2168,7 @@ impl ZeldaState {
                 _ => {}
             },
             1 => {
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1eff34);
                 match self.sprite_slot_view(k).ai_state() {
                     0 => {
                         self.sprite_slot_view_mut(k).increment_ai_state();
@@ -3654,7 +3654,7 @@ impl ZeldaState {
             return;
         }
         self.sprite_behave_as_barrier(k);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1de95d);
         self.sprite_slot_view_mut(k).set_x_velocity(0);
 
         match self.sprite_slot_view(k).ai_state() {

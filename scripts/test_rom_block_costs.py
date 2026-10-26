@@ -39,7 +39,6 @@ class BlockCosts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'conflicting M/X'):
             self.fixture([0xd0, 2, 0xc2, 0x20, 0x60])
 
-
     def test_paired_status_restore_tracks_widths_and_rejects_stack_aliases(self):
         blocks = self.fixture([0x08, 0xc2, 0x20, 0x28, 0xa9, 1, 0x60])
         instructions = [i for b in blocks for i in b]
@@ -50,6 +49,14 @@ class BlockCosts(unittest.TestCase):
             self.fixture([0x08, 0x48, 0x28, 0x60])
         with self.assertRaisesRegex(ValueError, 'unbalanced saved status'):
             self.fixture([0x08, 0x60])
+
+    def test_terminal_indirect_dispatch_requires_an_explicit_boundary(self):
+        rom=bytearray(0x8000);rom[:3]=bytes([0xdc,0,0])
+        spec=dict(entry='008000',end='008003')
+        with self.assertRaisesRegex(ValueError,'explicit entries'):
+            costs.generated_blocks(rom,[spec])
+        blocks=costs.generated_blocks(rom,[dict(spec,terminal_dispatch=True)])
+        self.assertEqual([i.name for b in blocks for i in b],['JML'])
 
 
 if __name__ == '__main__':

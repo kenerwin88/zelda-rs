@@ -423,7 +423,7 @@ impl ZeldaState {
         let value = (self.sprite_slot_view(k).oam_flags() & !0x80)
             | self.sprite_slot_view(k).head_direction();
         self.sprite_slot_view_mut(k).set_oam_flags(value);
-        self.sprite_move_xyz(k);
+        self.sprite_move_xyz_bank(k, 0x1eff34);
         // ROM $1E:EB5C -> $1E:8B2E -> $06:E496
         let t = self.sprite_check_tile_collision_long(k);
         if t != 0 {
@@ -513,7 +513,7 @@ impl ZeldaState {
             return;
         }
         self.bully_handle_message(k);
-        self.sprite_move_xyz(k);
+        self.sprite_move_xyz_bank(k, 0x1eff34);
         // ROM $1E:EC88 -> $1E:8B2E -> $06:E496
         let t = self.sprite_check_tile_collision_long(k);
         if t != 0 {

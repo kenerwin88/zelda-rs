@@ -332,7 +332,7 @@ impl ZeldaState {
                 }
                 let value = (-32i8) as u8;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
-                self.sprite_move_y(k);
+                self.sprite_move_axis_bank(k, false, 0x1de95d);
                 if self.sprite_slot_view(k).y_low() < 48 {
                     let value = 66;
                     self.sprite_slot_view_mut(k).set_delay_aux4(value);
@@ -558,7 +558,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1eff34) {
             return;
         }
         let value = 1;
@@ -712,7 +712,7 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).g() < 64 {
                     self.sprite_slot_view_mut(k).add_g(1);
                 }
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1eff34);
             }
             6 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -735,7 +735,7 @@ impl ZeldaState {
                         let value = CLONE_DASH_X_VELOCITIES[idx] as u8;
                         self.sprite_slot_view_mut(k).set_x_velocity(value);
                         self.sprite_slot_view_mut(k).add_y_velocity(2);
-                        self.sprite_move_xy(k);
+                        self.sprite_move_xy_bank(k, 0x1eff34);
                         let j = self.sprite_agahnim_apply_motion_blur(k);
                         if j >= 0 {
                             let value = 4;
@@ -809,7 +809,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
                 let value = pt.x;
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1eff34);
                 self.sprite_agahnim_apply_motion_blur(k);
             }
             10 => {
@@ -879,7 +879,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
                 let value = 64;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1eff34);
             }
             let value = ENERGY_BALL_GRAPHICS[self.sprite_slot_view(k).delay_main() as usize];
             self.sprite_slot_view_mut(k).set_graphics(value);
@@ -896,7 +896,7 @@ impl ZeldaState {
             return;
         }
         self.sprite_slot_view_mut(k).add_subtype2(1);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
         // ROM $1E:DA81 -> $1E:8B2E -> $06:E496
         if self.sprite_check_tile_collision_long(k) != 0 {
             let value = 0;
@@ -1045,7 +1045,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         let value = GIANT_MOLDORM_Y_VELOCITIES[j] as u8;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1de95d);
         if self.sprite_check_tile_collision(k) != 0 {
             let value =
                 GIANT_MOLDORM_NEXT_DIRECTIONS[self.sprite_slot_view(k).direction() as usize];
@@ -1679,7 +1679,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 }
                 self.sprite_slot_view_mut(k).subtract_y_velocity(2);
-                self.sprite_move_y(k);
+                self.sprite_move_axis_bank(k, false, 0x1de95d);
             }
             2 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -1695,10 +1695,10 @@ impl ZeldaState {
                     self.helmasaur_fireball_quad_split(k);
                 } else if self.sprite_slot_view(k).head_direction() < 20 {
                     self.sprite_slot_view_mut(k).add_head_direction(1);
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy_bank(k, 0x1de95d);
                 }
             }
-            4 => self.sprite_move_xy(k),
+            4 => self.sprite_move_xy_bank(k, 0x1de95d),
             _ => {}
         }
     }

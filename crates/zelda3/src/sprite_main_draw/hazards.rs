@@ -631,7 +631,7 @@ impl ZeldaState {
             {
                 self.sprite_apply_speed_towards_link(k, 16);
             }
-            self.sprite_move_xy(k);
+            self.sprite_move_xy_bank(k, 0x1de95d);
             if self.sprite_check_tile_collision(k) != 0 {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -748,7 +748,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).add_b(1);
         }
 
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
         if self.sprite_slot_view(k).x_velocity() != 0
             && self.sprite_slot_view(k).y_velocity() != 0
             && self.sprite_check_if_room_is_clear()
@@ -1043,7 +1043,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1eff34) {
             return;
         }
         let value = (self.sprite_slot_view(k).oam_flags() & 0x3f)
@@ -1062,7 +1062,7 @@ impl ZeldaState {
         self.sprite_check_damage_to_and_from_link(k);
         self.firesnake_spawn_fireball(k);
         if self.sprite_slot_view(k).wall_collision() == 0 {
-            self.sprite_move_xy(k);
+            self.sprite_move_xy_bank(k, 0x1eff34);
         }
         // ROM $1E:D214 -> $1E:8B2E -> $06:E496
         if self.sprite_check_tile_collision_long(k) != 0 {
@@ -1093,7 +1093,7 @@ impl ZeldaState {
                     [usize::from((self.game_state.frame.frame_counter >> 2) & 3)];
             self.sprite_slot_view_mut(k).set_oam_flags(value);
             if !self.sprite_check_damage_to_link(k) {
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1eff34);
                 // ROM $1E:C29A -> $1E:8B2E -> $06:E496
                 if self.sprite_check_tile_collision_long(k) == 0 {
                     return;

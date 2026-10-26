@@ -285,7 +285,7 @@ impl ZeldaState {
                                 .wrapping_add(SOMARIA_PLATFORM_DRAG_Y_OFFSETS[j] as i16 as u16);
                             self.follower_link_state_mut().set_drag_player_x(dx);
                             self.follower_link_state_mut().set_drag_player_y(dy);
-                            self.sprite_move_xy(k);
+                            self.sprite_move_xy_bank(k, 0x1eff34);
                             self.somaria_platform_drag_link(k);
                         } else {
                             self.follower_link_state_mut().set_somaria_platform_state(1);
@@ -566,7 +566,7 @@ impl ZeldaState {
                 let direction = self.sprite_slot_view(k).direction();
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 self.somaria_platform_and_pipe_handle_movement(k);
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1eff34);
             }
             2 => {
                 if self.game_state.sprites.system.alt_sprite_spawned_flag() == 255
@@ -628,7 +628,7 @@ impl ZeldaState {
                             self.somaria_platform_handle_drag(k);
                         }
                     }
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy_bank(k, 0x1eff34);
                     let x = self.sprite_get_x(k).wrapping_sub(8);
                     let y = self.sprite_get_y(k).wrapping_sub(14);
                     let link_x = self.game_state.player.follower_link.x();
@@ -1615,7 +1615,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).or_oam_flags(0x40);
             }
         }
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
         if (self.game_state.frame.frame_counter & 63) == 0 {
             let x = (self.game_state.player.follower_link.x() & !0xff)
                 .wrapping_add(u16::from(self.get_random_number()));

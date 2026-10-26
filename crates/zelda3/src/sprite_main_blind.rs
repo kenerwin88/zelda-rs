@@ -138,7 +138,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).f() == 14 {
             self.sprite_slot_view_mut(k).set_f(8);
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
             return;
         }
         let new_sub = self.sprite_slot_view(k).subtype().wrapping_sub(1);
@@ -182,7 +182,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).increment_anim_clock();
         }
         if self.sprite_slot_view(k).f() == 0 {
-            self.sprite_move_xy(k);
+            self.sprite_move_xy_bank(k, 0x1de95d);
         }
     }
 
@@ -374,7 +374,7 @@ impl ZeldaState {
                     sprite.set_ignore_projectile(0);
                 } else if self.sprite_slot_view(k).delay_aux2() < 64 {
                     self.sprite_slot_view_mut(k).set_y_velocity((-8i8) as u8);
-                    self.sprite_move_y(k);
+                    self.sprite_move_axis_bank(k, false, 0x1de95d);
                 }
                 self.blind_animate(k);
                 self.sprite_slot_view_mut(k).set_head_direction(4);
@@ -417,7 +417,7 @@ impl ZeldaState {
                 {
                     self.sprite_slot_view_mut(k).increment_g();
                 }
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1de95d);
                 if self.sprite_slot_view(k).wall_collision() != 0 {
                     let wc = self.sprite_slot_view(k).wall_collision();
                     self.blind_fireball_flurry(k, wc);
@@ -431,7 +431,7 @@ impl ZeldaState {
                 self.blind_check_bump_damage(k);
                 if self.sprite_slot_view(k).delay_aux2() != 0 {
                     self.blind_decelerate_x(k);
-                    self.sprite_move_x(k);
+                    self.sprite_move_x_bank(k, 0x1de95d);
                     self.blind_decelerate_y(k);
                 } else {
                     let j = (self.sprite_slot_view(k).direction().wrapping_sub(2)) as usize;
@@ -449,7 +449,7 @@ impl ZeldaState {
                         sprite.increment_c();
                         sprite.set_b(b);
                     }
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy_bank(k, 0x1de95d);
                     self.blind_decelerate_x(k);
                 }
             }
@@ -648,7 +648,7 @@ impl ZeldaState {
             };
             self.sprite_slot_view_mut(k).add_y_velocity(delta as u8);
         }
-        self.sprite_move_y(k);
+        self.sprite_move_axis_bank(k, false, 0x1de95d);
         if self.sprite_slot_view(k).wall_collision() != 0 {
             let wc = self.sprite_slot_view(k).wall_collision();
             self.blind_fireball_flurry(k, wc);

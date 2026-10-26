@@ -375,7 +375,7 @@ impl ZeldaState {
         }
         self.sprite_check_damage_to_and_from_link(k);
         self.swish_every16_frames(k);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1de95d);
         self.sprite_slot_view_mut(k).decrement_subtype2();
         let j = ((self.sprite_slot_view(k).subtype2() >> 2) & 7) as usize;
         self.sprite_slot_view_mut(k).set_g(GANON_SPIN_G_STATES[j]);
@@ -456,7 +456,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
             }
             2 => {
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1de95d);
                 self.sprite_slot_view_mut(k).set_deflection_bits(64);
                 if self.sprite_slot_view(k).delay_aux1() == 0 {
                     if self.sprite_slot_view(k).delay_main() == 0 {
@@ -542,7 +542,7 @@ impl ZeldaState {
             let delay_aux4 = self.sprite_slot_view(k).delay_aux4();
             self.sprite_slot_view_mut(k)
                 .set_ignore_projectile(delay_aux4);
-            if self.sprite_return_if_recoiling(k) {
+            if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
                 return;
             }
             self.sprite_slot_view_mut(k).set_delay_main(0);
@@ -702,7 +702,7 @@ impl ZeldaState {
                 } else {
                     let pt = self.sprite_project_speed_towards_location(k, x, y, 32);
                     self.sprite_approach_target_speed(k, pt.x, pt.y);
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy_bank(k, 0x1de95d);
                     if self.sprite_slot_view(k).delay_main() == 0
                         || (self.game_state.frame.frame_counter & 1) != 0
                     {
@@ -985,7 +985,7 @@ impl ZeldaState {
             if self.sprite_return_if_inactive(k) {
                 return;
             }
-            self.sprite_move_y(k);
+            self.sprite_move_axis_bank(k, false, 0x1de95d);
             self.sprite_slot_view_mut(k).increment_subtype2();
             if (self.sprite_slot_view(k).subtype2() & 31) == 0 {
                 let y_velocity = self.sprite_slot_view(k).y_velocity().wrapping_sub(1);
@@ -1059,11 +1059,11 @@ impl ZeldaState {
                     .set_x_velocity(xvel.wrapping_add(pt.x));
                 self.sprite_slot_view_mut(k)
                     .set_y_velocity(yvel.wrapping_add(pt.y));
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1de95d);
                 self.sprite_slot_view_mut(k).set_x_velocity(xvel);
                 self.sprite_slot_view_mut(k).set_y_velocity(yvel);
             } else {
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1de95d);
                 if self.sprite_slot_view(k).x_velocity() != 64 {
                     self.sprite_slot_view_mut(k).add_x_velocity(1);
                     self.sprite_slot_view_mut(k).add_y_velocity((-1i8) as u8);

@@ -1366,7 +1366,7 @@ impl ZeldaState {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_a(value);
                 self.sprite_apply_speed_towards_link(k, 8);
-                self.sprite_move_xy(k);
+                self.sprite_move_xy_bank(k, 0x1de95d);
                 self.sprite_get16_bit_coords(k);
                 let x = self
                     .game_state
@@ -1515,7 +1515,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_state(value);
             return;
         }
-        self.sprite_move_xyz(k);
+        self.sprite_move_xyz_bank(k, 0x1eff34);
         if self.sprite_check_damage_to_link(k) {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x0b);
             self.player_resources_mut().increment_heart_filler_by(8);

@@ -2026,7 +2026,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
             return;
         }
         // ROM $1D:C8E2 JSL $06:F2AA
@@ -2071,7 +2071,7 @@ impl ZeldaState {
             2 => {
                 self.sprite_apply_speed_towards_link(k, 18);
                 if self.sprite_slot_view(k).wall_collision() == 0 {
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy_bank(k, 0x1de95d);
                 }
                 self.sprite_check_tile_collision(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -2106,7 +2106,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k)
                         .set_graphics(THIEF_GFX[usize::from(i)]);
                     if self.sprite_slot_view(k).wall_collision() == 0 {
-                        self.sprite_move_xy(k);
+                        self.sprite_move_xy_bank(k, 0x1de95d);
                     }
                     self.sprite_check_tile_collision(k);
                     let direction = self.sprite_slot_view(k).head_direction();
@@ -2454,7 +2454,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_state(0);
         }
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
-        self.sprite_move_xyz(k);
+        self.sprite_move_xyz_bank(k, 0x1eff34);
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z(0);
             let z_velocity = (self.get_random_number() & 15) | 16;
@@ -2509,7 +2509,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xyz(k);
+        self.sprite_move_xyz_bank(k, 0x1eff34);
         self.sprite_slot_view_mut(k).decrement_z_velocity();
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z_velocity(0);
@@ -2567,7 +2567,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xyz(k);
+        self.sprite_move_xyz_bank(k, 0x1eff34);
         self.sprite_slot_view_mut(k).decrement_z_velocity();
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z_velocity(0);

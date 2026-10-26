@@ -317,7 +317,7 @@ impl ZeldaState {
         let value =
             ZORO_X_VELOCITIES[usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 1)] as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
         if self.sprite_slot_view(k).delay_main() == 0 {
             blocks.block(0x1e9c0f);
             blocks.block(0x1e9c12); // $1E:9C0F..9C12 JSR collision, BEQ
@@ -423,7 +423,7 @@ impl ZeldaState {
         // $1E:8FE5 JSR $C26B (far damage wrapper).
         self.sprite_check_damage_to_link_bank1e(k);
         self.sprite_slot_view_mut(k).add_subtype2(1);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
         // ROM $1E:8FF3 -> $1E:8B2E -> $06:E496
         if self.sprite_slot_view(k).delay_main() == 0 && self.sprite_check_tile_collision_long(k) != 0 {
             let value = 0;
@@ -532,7 +532,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
             return;
         }
 
@@ -568,7 +568,7 @@ impl ZeldaState {
             }
             1 => {
                 self.sprite_check_damage_to_and_from_link(k);
-                self.sprite_move_xyz(k);
+                self.sprite_move_xyz_bank(k, 0x1de95d);
                 self.sprite_check_tile_collision(k);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if sign8(self.sprite_slot_view(k).z()) {
@@ -955,6 +955,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
+        // $06:DDEC JSR $FF78: bank-06 recoil (not yet marker-priced).
         if self.sprite_return_if_recoiling(k) {
             return;
         }
@@ -1755,7 +1756,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_direction(value);
             }
         }
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
     }
 
     pub(in crate::zelda_rtl) fn eyegore_draw(&mut self, k: usize) {

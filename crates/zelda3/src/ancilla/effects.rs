@@ -98,10 +98,16 @@ impl ZeldaState {
 
         blocks.block(0x08bcc1);
         let (info_x, info_y) = self.ancilla_prep_oam_coord(k);
+        // $08:BCC4..BD4B: complete three-entry dust drawing loop.
+        blocks.block(0x08bcc4);
         let mut oam = self.game_state.oam.current_pointer_usize();
 
         let r12 = ANCILLA1_E_DASH_DUST_DASH_DUST_DRAW_X1
             [self.game_state.player.follower_link.facing_index()] as i16;
+        if self.game_state.player.follower_link.water_ripple_or_grass_state() == 1 {
+            blocks.block(0x08bcea);
+        } else { blocks.taken(0x08bce8); }
+        blocks.block(0x08bcec);
         let mut t = 3
             * (self.ancilla_slot_view(k).item_to_link() as usize
                 + if self
@@ -116,8 +122,11 @@ impl ZeldaState {
                     0
                 });
 
-        for _ in (0..=2).rev() {
+        for remaining in (0..=2).rev() {
+            blocks.block(0x08bd02);
             if ANCILLA1_E_DASH_DUST_DASH_DUST_DRAW_CHAR[t] != 0xff {
+                blocks.block(0x08bd0b);
+                if 0xf4 + 2 * t > 0xff { blocks.crossing(0x08bd13); }
                 self.ancilla_set_oam(
                     oam,
                     info_x
@@ -128,10 +137,14 @@ impl ZeldaState {
                     4 | self.game_state.oam.priority_high(),
                     0,
                 );
+                blocks.block(0x08bd28);
                 oam += 4;
-            }
+            } else { blocks.taken(0x08bd09); }
+            blocks.block(0x08bd44);
+            if remaining != 0 { blocks.taken(0x08bd48); }
             t += 1;
         }
+        blocks.block(0x08bd4a);
     }
 
     pub(super) fn dash_dust_motive(&mut self, k: usize) {

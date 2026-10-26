@@ -209,7 +209,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
             return;
         }
         let value = self.sprite_direction_to_face_link(k);
@@ -274,7 +274,7 @@ impl ZeldaState {
                         let value = pt.y;
                         self.sprite_slot_view_mut(k).set_y_velocity(value);
                     }
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy_bank(k, 0x1de95d);
                     if self.sprite_check_tile_collision(k) != 0 {
                         self.lynel_increment_state(k);
                         return;

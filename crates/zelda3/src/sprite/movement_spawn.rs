@@ -705,6 +705,48 @@ impl ZeldaState {
         if horizontal { self.sprite_move_x(k); } else { self.sprite_move_y(k); }
     }
 
+    /// $1E:FF34..FF61 and $1D:E95D..E98A are identical full axis bodies.
+    /// Their X wrappers execute the same body with X = slot + $10.
+    pub(in crate::zelda_rtl) fn sprite_move_axis_bank(&mut self, k: usize, horizontal: bool, entry: u32) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
+        self.sprite_move_axis_marked_body(k, horizontal, entry);
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_move_xy_bank(&mut self, k: usize, entry: u32) {
+        // $1E:FF21..FF27 / $1D:E94B..E951: two calls and RTS.
+        let xy = if entry == 0x1eff34 { 0x1eff21 } else { 0x1de94b };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xy));
+        self.sprite_move_xy_bank_body(k, entry, xy);
+    }
+
+    fn sprite_move_xy_bank_body(&mut self, k: usize, entry: u32, xy: u32) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(xy);
+        self.sprite_move_x_bank(k, entry);
+        blocks.block(xy + 3);
+        self.sprite_move_axis_bank(k, false, entry);
+        blocks.block(xy + 6);
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_move_x_bank(&mut self, k: usize, entry: u32) {
+        // $1E:FF28..FF33 / $1D:E952..E95C: X-to-Y-array wrapper.
+        let x = if entry == 0x1eff34 { 0x1eff28 } else { 0x1de952 };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(x));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(x);
+        self.sprite_move_axis_bank(k, true, entry);
+        blocks.block(if entry == 0x1eff34 { 0x1eff30 } else { 0x1de95b });
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_move_xyz_bank(&mut self, k: usize, entry: u32) {
+        // $1E:FF1E..FF27 / $1D:E948..E951: Z call and shared XY tail.
+        let xyz = if entry == 0x1eff34 { 0x1eff1e } else { 0x1de948 };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xyz));
+        crate::cycle_ledger::blocks(self.lag_free).block(xyz);
+        self.sprite_move_z(k);
+        self.sprite_move_xy_bank_body(k, entry, xyz + 3);
+    }
+
     // ----- Common sprite-AI helpers (round-3 agent) -----
     // Direct 1:1 ports of the small Sprite_* helpers that are widely shared by
     // sprite-AI handlers. Bodies preserved verbatim modulo Rust-isms.

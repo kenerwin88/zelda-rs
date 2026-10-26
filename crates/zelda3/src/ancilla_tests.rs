@@ -619,7 +619,7 @@ pub(super) fn marker29_state() -> ZeldaState {
 }
 
 #[test]
-fn marker29_dash_dust_control_matches_rom() {
+fn marker30_dash_dust_whole_body_matches_rom() {
     for k in [0,5] {
         for (step,timer,item) in [(1,1,0),(0,1,0),(0,1,5),(0,0,0),(0,0,4),(0,0,5)] {
             let mut native=marker29_state();
@@ -629,7 +629,7 @@ fn marker29_dash_dust_control_matches_rom() {
             native.sync_native_game_state_from_ram();
             let Some(machine)=marker29_machine(&native,0x08bc92,k) else {return};
             let source=crate::cycle_ledger::assert_rom_marker_work(0x08833c,machine,
-                |s|s.cpu.k==8 && (0xbc92..0xbcc4).contains(&s.cpu.pc),||{
+                |s|s.cpu.k==8 && (0xbc92..0xbd4c).contains(&s.cpu.pc),||{
                     let _scope=crate::cycle_ledger::routine(0x08833c);
                     native.ancilla1_e_dash_dust(k);
                 });

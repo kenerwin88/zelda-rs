@@ -11898,3 +11898,79 @@ Default retains only the known spotlight caller-return failure; reduced passes e
 Preliminary candidates are retained separately: `trial1/` records the rejected broad damage-wrapper alias, while `trial2/` and `trial3/` record partial-coverage checks below the frozen 15M target. None supplies a final gate or acceptance claim. The final verification binds the corrected source and binaries independently.
 
 `verification.json` and `artifact-sha256.json` bind the final evidence. Supplied ledger/cache size and mtime metadata remain unchanged across 1,512 files. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. This batch stops at the verified CPU-only pricing point above.
+
+## Continuation on `codex/cost-pacing30` (main `ec6c16b6`)
+
+### Fresh joint main baseline
+
+Main's joint baseline is ROM **4,907 missing / 0 excess / 0 FP**, live **5,606 / 592 / 132**. Fresh clean-main builds and controls reproduce it. The default control recorded a fresh 200k ledger before edits. `target/cost-pacing30/main-provenance.json` binds that binary to main. Final evidence is in `target/cost-pacing30/final/`; earlier trials are retained separately and are superseded. Scratch drivers are in `/tmp`.
+
+| Census | Main missing / excess / FP | Final missing / excess / FP |
+| --- | ---: | ---: |
+| rom | 4,907 / 0 / 0 | 4,874 / 0 / 0 |
+| live | 5,606 / 592 / 132 | 5,571 / 590 / 132 |
+
+### Complete selected bodies and clock closure
+
+The frozen batch-22 cohort contains 2,825 iterations. `selection-ranking.json` retains the measured exclusive source/native gaps for all fourteen candidate owners. Raw dispatcher gaps include inherited bodies and existing child attribution: `$00:80B5` itself already prices all eight instructions. This group completes the selected Pengator, dash-dust, cardinal, diagonal and two bank-specific axis bodies, with eight shared source entries kept separate. Other module, sprite and ancilla bodies remain open. No existing scalar price was converted.
+
+All new payments use `blocks.block`, `blocks.taken` or `blocks.crossing`, gated by `lag_free`, with ROM addresses in comments. `scripts/rom_block_costs.py` generates 205 new blocks covering 632 previously unmarked instructions. Bounded dispatch entries exclude inline data. Proven PHP/PLP pairs retain their saved M/X; an explicitly bounded terminal indirect jump prices only its opcode. No lag count, residual, scene threshold, multiplier or scene table supplies a price. Called bodies retain separate source frames; X movement executes the Y-array body at slot + $10.
+
+The frozen main instruction gap falls from **200,256,886** to **183,843,904** master clocks: **16,412,982 clocks closed**, meeting the 15M target. Independently recorded new markers total **16,412,982** clocks. The existing-work/attribution remainder is **0**. `routine-cohort-before-after.json` retains every changed owner, source/native calls and exclusive totals.
+
+| Source owner / completed work | Exclusive clocks closed (new markers) | Native lines added |
+| --- | ---: | ---: |
+| `$1E:8B19` Pengator control, all four states and recoil caller returns | 560,668 | 55 |
+| `$00:8781` Pengator local-dispatch entry | 25,168 | shared with Pengator |
+| `$07:B7C7` complete cardinal collision body | 3,709,040 | 199 |
+| `$07:B64F` diagonal entry and shared tail | 3,118,090 | 15 |
+| `$07:B660` complete shared direction-limit body | 540,242 | 120 shared |
+| `$08:833C` remaining complete dash-dust draw loop | 125,584 | 15 |
+| `$1E:FF34` bank-1E full Y/X-array body | 3,541,720 | 98 callers + shared |
+| `$1D:E95D` bank-1D full Y/X-array body | 2,309,704 | 63 callers + shared |
+| `$1E:FF1E` bank-1E XYZ wrapper | 187,740 | shared |
+| `$1E:FF21` bank-1E XY entry | 560,254 | shared |
+| `$1E:FF28` bank-1E X wrapper | 948,562 | shared |
+| `$1D:E948` bank-1D XYZ wrapper | 135,000 | shared |
+| `$1D:E94B` bank-1D XY entry | 203,546 | shared |
+| `$1D:E952` bank-1D X wrapper | 447,664 | shared |
+
+New markers equal the measured exclusive clock increase in every row. Line counts are gross nonblank implementation additions, including comments and caller rewiring; shared code is counted once. The movement/recoil entries share **65** lines. Total native additions are **642** lines including **12** blank lines; fixtures add **274** lines and the generated table adds **410**. `lines-added.json` retains the disjoint accounting.
+
+The caller audit binds split AI/draw helpers and the bank-specific movement inside recoil to their ROM entries. The bank-1E recoil double return charges its second PLA/RTS to the caller; its ordinary RTS stays with the recoil frame. The first diagonal direction-limit call has its own `$07:B660` frame, while the fallthrough tail belongs to `$07:B64F`. These boundaries prevent parent/child duplication.
+
+A ROM suffix fixture exposed a moving-floor order discrepancy at `$07:B801..B83E`: the ROM saves pre-addition Y/X bytes in `$00/$01` and uses those bytes to choose the probe order. Lagless now uses those saved values. Default/ROM-timing follows its existing path and retains its prices. This is a source-derived ordering repair, not a clock adjustment.
+
+Fourteen `assert_rom_marker_work` fixtures execute unmodified ROM: all signed axis velocities and subpixel/wrap cases, both bank-specific X/XY/XYZ entries, real recoil movement callers, all Pengator states and early returns, the local-dispatch stack handoff, the full dust loop, and cardinal/diagonal primary-layer, collision-result and return-tail branches. Both configurations pass every marker fixture. Source prices do not establish complete source/native call equivalence; the per-owner call counts remain visible in the cohort audit.
+
+### CPU-only verification
+
+Both final full census gates PASS: **1,473,123 iterations per lane**, complete, unexplained zero. Every runtime hold equals P2. Missing/excess count lag NMIs; FP counts iterations. Routine and block receipts cover the frozen 2,825-row cohort, where every exclusive sum reconciles to the main-instruction counter. No whole-route per-owner aggregation is claimed. These periodically seeded logical gates do not establish continuous physical-field or exact A/V parity.
+
+The ROM lane closes 33 previously missing iterations and introduces 0 newly missing iterations. Newly false-positive iterations: ROM 0, live 9. Full CSVs and `verification.json` retain every changed row.
+
+All 48 measured phases across eight crystal/pendant windows remain within one frame of source. Their durations and stable room/Link/save outcomes are unchanged from main. The rupee command and PCM-onset measurements are retained separately. The final default binary matches every state/display/SRAM/PCM/input/context record and EOF of the fresh main 200k ledger. Both ordinary builds are warning-free; default lib-test compilation retains the known fixture-only dead-code warnings.
+
+| Zelda library | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,561 | 1 | 3 |
+| reduced | 2,096 | 0 | 2 |
+
+Default retains only the known spotlight caller-return fixture failure; reduced passes entirely. The shard manifest verifies the complete disjoint test unions. Both CPU-only SNES lib suites, generator/worklist tests (including exact regeneration), routine-coverage tests and `git diff --check` pass. `verification.json` binds the final source, binaries, counters, gates, library results and phase evidence.
+
+No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. All 1,512 supplied ledger/cache input files retain their size and mtime. The batch stops at this verified CPU-only pricing point.
+
+### Joint merge of batches 30+31
+
+Against main `b9145ee9`, all 338 caller rewirings survive. The ROM audit covers 39 shared functions and 129 wrapper calls, with no merge-induced parent/child double charge. The 632 and 405 new instructions are disjoint; the merged manifest is their exact union. Movement delegates once to the identical axis body. Only a duplicated Python test method needed removal. Evidence: `target/joint3031/verification.json`.
+
+Inherited batch-30 issue: Stalfos-head recoil selects bank-1E movement, while `$06:DDEC` calls `$06:FF78` with bank-06 movement. This is unchanged from `211a36ac` and outside the authorized merge-fix scope.
+
+| Full census | Main missing / excess / FP | Joint missing / excess / FP |
+| --- | ---: | ---: |
+| ROM | 4,812 / 0 / 0 | 4,779 / 0 / 0 |
+| live | 5,508 / 589 / 131 | 5,475 / 589 / 131 |
+
+Both gates PASS at 1,473,123 iterations, unexplained zero. All 48 crystal/pendant phases remain within one frame and unchanged from fresh main; stable outcomes match. Every default 200k ledger record and EOF matches the fresh archived-main baseline. Both ordinary builds are warning-free.
+
+Default library: **2,579 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,114 / 0 / 2**. Both CPU-only SNES suites, all eight generator/worklist tests including exact regeneration, four routine-coverage tests and diff checks pass. Existing default test-fixture warnings remain separate from ordinary builds. All 1,512 supplied input files retain their size and mtime. These are CPU-only logical checks; the rebase and index remain untouched.

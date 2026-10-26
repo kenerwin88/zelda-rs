@@ -95,7 +95,7 @@ impl ZeldaState {
             {
                 self.sprite_slot_view_mut(k).xor_oam_flags(0x40);
             }
-            self.sprite_move_xyz(k);
+            self.sprite_move_xyz_bank(k, 0x1eff34);
             self.sprite_slot_view_mut(k).subtract_z_velocity(2);
             if sign8(self.sprite_slot_view(k).z()) {
                 let mut sprite = self.sprite_slot_view_mut(k);
@@ -268,7 +268,7 @@ impl ZeldaState {
                 break;
             }
         }
-        self.sprite_move_xy(k);
+        self.sprite_move_xy_bank(k, 0x1eff34);
     }
 
     // bool HelmasaurKing_MaybeFireball(int k) {  // sprite_main.c:19431

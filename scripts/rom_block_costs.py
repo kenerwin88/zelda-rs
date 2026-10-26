@@ -411,6 +411,8 @@ def generated_blocks(rom, entries):
                     continue
                 if ins.name in ('JMP', 'JML', 'BRA', 'BRL'):
                     if ins.mode not in ('abs', 'long', 'rel', 'rel16'):
+                        if spec.get('terminal_dispatch') and nxt == end:
+                            continue
                         raise ValueError(f'{pc:06x}: indirect dispatch needs explicit entries')
                     leaders.add(ins.operand)
                     pending.append((ins.operand, m8, x8, status))

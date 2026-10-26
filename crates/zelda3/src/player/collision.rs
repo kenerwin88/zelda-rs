@@ -2433,10 +2433,22 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_handle_diagonal_collision(&mut self) {
-        if self.check_if_room_needs_double_layer_check() {
-            self.player_limit_directions_inner();
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07b64f));
+        // $07:B64F..B65F: primary JSR followed by the inherited B660 tail.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x07b64f);
+        let double_layer = self.check_if_room_needs_double_layer_check();
+        blocks.block(0x07b652);
+        if double_layer {
+            blocks.block(0x07b654);
+            {
+                let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x07b660));
+                self.player_limit_directions_inner();
+            }
+            blocks.block(0x07b657);
             self.create_velocity_from_moving_background();
-        }
+        } else { blocks.taken(0x07b652); }
+        blocks.block(0x07b65a);
         self.follower_link_state_mut().mask_direction(0x0f);
         self.player_limit_directions_inner();
     }
@@ -2589,21 +2601,78 @@ impl ZeldaState {
     }
 
     fn check_primary_collision_layer(&mut self) {
+        // $07:B7E0..B848: parent body around independently owned probes.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x07b7e0);
+        let collision = self.game_state.dungeon.room_load.header_collision();
+        if collision < 2 { blocks.taken(0x07b7e5); }
+        else {
+            blocks.block(0x07b7e7);
+            if collision == 3 { blocks.taken(0x07b7ec); }
+        }
         let order = CollisionOrder::VerticalFirst;
         if self.game_state.dungeon.room_load.header_collision() >= 2
             && self.game_state.dungeon.room_load.header_collision() != 3
         {
+            blocks.block(0x07b7ee);
             self.follower_link_state_mut().set_tile_coll_flag(2);
             self.player_tile_detect_nearby();
             self.check_primary_collision_layer_after_nearby();
             return;
         }
+        blocks.block(0x07b840);
         self.run_slope_collision_checks(order);
+        blocks.block(0x07b843);
     }
 
     fn check_primary_collision_layer_after_nearby(&mut self) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x07b7f8);
         let mut order = CollisionOrder::VerticalFirst;
         let collision_bits = self.game_state.player.tile_detection.collision_bits() as u8;
+        if collision_bits == 0 { blocks.taken(0x07b7ff); }
+        else {
+            blocks.block(0x07b801);
+            if collision_bits == 12 { blocks.taken(0x07b819); }
+            else {
+                blocks.block(0x07b81b);
+                if collision_bits == 3 { blocks.taken(0x07b81d); }
+                else {
+                    blocks.block(0x07b81f);
+                    if collision_bits == 10 { blocks.taken(0x07b821); }
+                    else {
+                        blocks.block(0x07b823);
+                        if collision_bits == 5 { blocks.taken(0x07b825); }
+                        else {
+                            blocks.block(0x07b827);
+                            let inspect_velocity = if collision_bits & 12 != 0 {
+                                blocks.taken(0x07b829); true
+                            } else {
+                                blocks.block(0x07b82b);
+                                if collision_bits & 3 != 0 { blocks.taken(0x07b82f); true }
+                                else { blocks.block(0x07b831); false }
+                            };
+                            if inspect_velocity {
+                                blocks.block(0x07b833);
+                                if self.game_state.player.follower_link.y_velocity() != 0 {
+                                    blocks.taken(0x07b835);
+                                } else {
+                                    blocks.block(0x07b837);
+                                    if self.game_state.player.follower_link.x_velocity() == 0 {
+                                        blocks.taken(0x07b839);
+                                    } else {
+                                        blocks.block(0x07b83b);
+                                        if self.game_state.dungeon.moving_floor.floor_y_velocity_low() & 0x80 == 0 {
+                                            blocks.taken(0x07b83e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         self.tile_detect_position_mut()
             .set_tile_collision_bits_primary(collision_bits);
         if self
@@ -2617,6 +2686,15 @@ impl ZeldaState {
                 self.game_state.dungeon.moving_floor.floor_x_velocity_low() as u16;
             let floor_y_velocity =
                 self.game_state.dungeon.moving_floor.floor_y_velocity_low() as u16;
+            // $07:B801..B83E: $00/$01 retain the pre-addition Y/X bytes.
+            // The source's probe-order tests read those saved bytes. Keep
+            // default/ROM-timing compatibility outside the lagless lane.
+            let source_order = CollisionOrder::for_moving_floor(
+                collision_bits,
+                self.game_state.player.follower_link.x_velocity(),
+                self.game_state.player.follower_link.y_velocity(),
+                floor_y_velocity as u8 as i8,
+            );
             self.follower_link_state_mut()
                 .add_movement_velocity_delta(floor_x_velocity, floor_y_velocity);
             order = CollisionOrder::for_moving_floor(
@@ -2625,8 +2703,11 @@ impl ZeldaState {
                 self.game_state.player.follower_link.y_velocity(),
                 self.game_state.dungeon.moving_floor.floor_y_velocity_low() as i8,
             );
+            if self.lag_free { order = source_order; }
         }
+        blocks.block(if order == CollisionOrder::VerticalFirst { 0x07b840 } else { 0x07b845 });
         self.run_slope_collision_checks(order);
+        if order == CollisionOrder::VerticalFirst { blocks.block(0x07b843); }
     }
 
     pub(in crate::zelda_rtl) fn finish_native_cardinal_collision(
@@ -2700,6 +2781,10 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_handle_cardinal_collision(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07b7c7));
+        // $07:B7C7..B7DE: kickback and primary-layer selection.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x07b7c7);
         self.tile_detect_position_mut().clear_diag_state();
         self.tile_detect_position_mut().clear_diagonal_tile();
 
@@ -2711,9 +2796,15 @@ impl ZeldaState {
             & 0x30
             != 0
         {
+            blocks.taken(0x07b7cf);
             true
         } else {
+            blocks.block(0x07b7d1);
             self.link_handle_diagonal_kickback();
+            blocks.block(0x07b7d4);
+            if self.game_state.player.follower_link.moving_against_diag_deadlocked() == 0 {
+                blocks.taken(0x07b7d6);
+            } else { blocks.block(0x07b7d8); }
             self.game_state
                 .player
                 .follower_link
@@ -2721,29 +2812,49 @@ impl ZeldaState {
                 == 0
         };
 
-        if can_double_layer && self.check_if_room_needs_double_layer_check() {
-            self.check_primary_collision_layer();
-            self.create_velocity_from_moving_background();
+        if can_double_layer {
+            blocks.block(0x07b7db);
+            let double_layer = self.check_if_room_needs_double_layer_check();
+            blocks.block(0x07b7de);
+            if double_layer {
+                self.check_primary_collision_layer();
+                blocks.block(0x07b848);
+                self.create_velocity_from_moving_background();
+            } else { blocks.taken(0x07b7de); }
         }
 
         self.finish_cardinal_collision_after_primary();
     }
 
     fn finish_cardinal_collision_after_primary(&mut self) {
+        // $07:B84B..B8D2: full final-layer dispatch and response.
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x07b84b);
         let collision = self.game_state.dungeon.room_load.header_collision();
         let moved = (self.game_state.player.follower_link.x_velocity()
             | self.game_state.player.follower_link.y_velocity())
             != 0;
         if collision == 2 {
+            blocks.taken(0x07b850);
+            blocks.block(0x07b88f);
             self.player_tile_detect_nearby();
             self.finish_cardinal_collision_after_nearby(true);
             return;
         } else if collision == 3 {
+            blocks.block(0x07b852);
+            blocks.taken(0x07b854);
+            blocks.block(0x07b8cb);
             self.follower_link_state_mut().set_tile_coll_flag(1);
             self.run_slope_collision_checks(CollisionOrder::HorizontalFirst);
         } else if collision == 4 || moved {
+            blocks.block(0x07b852);
+            blocks.block(0x07b856);
+            if collision == 4 { blocks.taken(0x07b858); }
+            else { blocks.block(0x07b85a); blocks.taken(0x07b85e); }
+            blocks.block(0x07b8c1);
             self.follower_link_state_mut().set_tile_coll_flag(1);
             self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
+            blocks.block(0x07b8c9);
         } else if !self
             .game_state
             .player
@@ -2751,16 +2862,23 @@ impl ZeldaState {
             .is_edge_transition_blocked_by_handler_state()
             && self.game_state.player.follower_link.handler_state() != 19
         {
+            self.cardinal_stationary_dispatch_markers();
+            blocks.block(0x07b876);
             self.player_tile_detect_nearby();
             self.finish_cardinal_collision_after_nearby(false);
             return;
+        } else {
+            self.cardinal_stationary_dispatch_markers();
+            blocks.block(0x07b88c);
         }
 
         self.finish_cardinal_collision_after_checks();
     }
 
     fn finish_cardinal_collision_after_nearby(&mut self, collision_two: bool) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
         if collision_two {
+            blocks.block(0x07b892);
             if (self.game_state.player.tile_detection.collision_bits() as u8
                 | self
                     .game_state
@@ -2769,36 +2887,50 @@ impl ZeldaState {
                     .tile_collision_bits_primary())
                 == 0x0f
             {
+                blocks.block(0x07b89b);
                 if self.game_state.player.follower_link.blink_countdown() == 0 {
+                    blocks.block(0x07b8a0);
                     self.follower_link_state_mut().set_blink_countdown(58);
-                }
+                } else { blocks.taken(0x07b89e); }
+                blocks.block(0x07b8a5);
                 if self.game_state.player.follower_link.direction() == 0 {
+                    blocks.block(0x07b8a9);
                     if self.game_state.dungeon.moving_floor.floor_y_velocity_low() != 0 {
+                        blocks.block(0x07b8ae);
                         let y_velocity = self.game_state.player.follower_link.y_velocity();
                         self.follower_link_state_mut()
                             .set_y_velocity((0u8).wrapping_sub(y_velocity));
-                    }
+                    } else { blocks.taken(0x07b8ac); }
+                    blocks.block(0x07b8b5);
                     if self.game_state.dungeon.moving_floor.floor_x_velocity_low() != 0 {
+                        blocks.block(0x07b8ba);
                         let x_velocity = self.game_state.player.follower_link.x_velocity();
                         self.follower_link_state_mut()
                             .set_x_velocity((0u8).wrapping_sub(x_velocity));
-                    }
-                }
-            }
+                    } else { blocks.taken(0x07b8b8); }
+                } else { blocks.taken(0x07b8a7); }
+            } else { blocks.taken(0x07b899); }
+            blocks.block(0x07b8c1);
             self.follower_link_state_mut().set_tile_coll_flag(1);
             self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
+            blocks.block(0x07b8c9);
         } else {
+            blocks.block(0x07b879);
             if self.game_state.player.tile_detection.pit_tile() & 0x0f != 0 {
+                blocks.block(0x07b87f);
                 self.follower_link_state_mut().set_handler_state(1);
                 if !self.game_state.player.follower_link.is_running() {
+                    blocks.block(0x07b888);
                     self.follower_link_state_mut().set_speed_setting(4);
-                }
-            }
+                } else { blocks.taken(0x07b886); }
+            } else { blocks.taken(0x07b87d); }
+            blocks.block(0x07b88c);
         }
         self.finish_cardinal_collision_after_checks();
     }
 
     fn finish_cardinal_collision_after_checks(&mut self) {
+        crate::cycle_ledger::blocks(self.lag_free).block(0x07b8d3);
         if let Some(tail)=self.early_main_tile_response.take() {
             let probe=self.early_main_tile_probe.take().expect("native main response requires a completed probe");
             assert_eq!(probe.item,0);
@@ -2815,6 +2947,8 @@ impl ZeldaState {
     }
 
     fn finish_cardinal_collision_after_main(&mut self) {
+        // $07:B8D8..B955: coordinate-derived direction and moving-floor tail.
+        self.cardinal_return_markers();
         if self
             .game_state
             .player
@@ -2867,11 +3001,188 @@ impl ZeldaState {
             }
         }
     }
+
+    fn cardinal_stationary_dispatch_markers(&self) {
+        if !self.lag_free { return; }
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        for pc in [0x07b852, 0x07b856, 0x07b85a, 0x07b860] { b.block(pc); }
+        let state = self.game_state.player.follower_link.handler_state();
+        for (value, branch, next) in [(19,0x07b864,0x07b866), (8,0x07b868,0x07b86a),
+            (9,0x07b86c,0x07b86e), (10,0x07b870,0x07b872)] {
+            if state == value { b.taken(branch); return; }
+            b.block(next);
+        }
+        if state == 3 { b.taken(0x07b874); }
+    }
+
+    fn cardinal_return_markers(&self) {
+        if !self.lag_free { return; }
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let p = &self.game_state.player.follower_link;
+        b.block(0x07b8d8);
+        if p.num_orthogonal_directions() == 0 { b.taken(0x07b8da); }
+        else { b.block(0x07b8dc); }
+        b.block(0x07b8de);
+        if p.handler_state() == 11 { b.taken(0x07b8e2); }
+        else {
+            b.block(0x07b8e4);
+            let delta = p.y().wrapping_sub(p.safe_return_y()) as u8;
+            if delta == 0 { b.taken(0x07b8ed); }
+            else {
+                b.block(0x07b8ef);
+                if delta & 128 != 0 { b.taken(0x07b8ef); } else { b.block(0x07b8f1); }
+                b.block(0x07b8f3);
+            }
+        }
+        b.block(0x07b8fc);
+        let dx = p.x().wrapping_sub(p.safe_return_x()) as u8;
+        if dx == 0 { b.taken(0x07b905); }
+        else {
+            b.block(0x07b907);
+            if dx & 128 != 0 { b.taken(0x07b907); } else { b.block(0x07b909); }
+            b.block(0x07b90b);
+        }
+        b.block(0x07b914);
+        if self.game_state.world.location.is_outdoors() { b.taken(0x07b916); }
+        else {
+            b.block(0x07b918);
+            if self.game_state.dungeon.room_load.header_collision() != 4 { b.taken(0x07b91d); }
+            else {
+                b.block(0x07b91f);
+                if p.handler_state() != 4 { b.taken(0x07b923); }
+                else {
+                    let dy = if p.handler_state() == 11 { p.y_velocity() }
+                        else { p.y().wrapping_sub(p.safe_return_y()) as u8 };
+                    for (floor, velocity, start, zero, sign, positive, compare, miss, mask) in [
+                        (self.game_state.dungeon.moving_floor.floor_y_velocity_low(),dy,
+                            0x07b925,0x07b92a,0x07b92c,0x07b92e,0x07b930,0x07b936,0x07b938),
+                        (self.game_state.dungeon.moving_floor.floor_x_velocity_low(),dx,
+                            0x07b93d,0x07b942,0x07b944,0x07b946,0x07b948,0x07b94e,0x07b950)] {
+                        b.block(start);
+                        if floor == 0 { b.taken(zero); continue; }
+                        b.block(sign);
+                        if floor & 128 != 0 { b.taken(sign); } else { b.block(positive); }
+                        b.block(compare);
+                        if velocity != floor { b.taken(miss); } else { b.block(mask); }
+                    }
+                }
+            }
+        }
+        b.block(0x07b955);
+    }
 }
 
 #[cfg(test)]
 mod response_price_tests {
     use super::*;
+
+    #[test]
+    fn marker30_diagonal_whole_body_matches_rom() {
+        let path=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+        let Ok(rom)=std::fs::read(path)else{return};
+        for collision in 0..=4 {
+            for direction in 0..16 {
+                for (auxiliary,moving,diag) in [(0,0,0),(1,0,1),(0,1,0)] {
+                    let mut native=ZeldaState::new();
+                    let mut image=native.wram_image().into_owned();
+                    for (a,v) in [(0x10,7),(0x1b,1),(0x46c,collision),(0x67,direction),
+                        (0x4d,auxiliary),(0x34a,moving),(0x6b,diag),(0x20,0x40),(0x22,0x40)] {image[a]=v;}
+                    native.import_wram_image(&image);native.sync_native_game_state_from_ram();native.set_lag_free(true);
+                    let mut machine=snes::Snes::new();machine.cart.load(snes::CartType::LoRom,&rom,0x2000);
+                    machine.ram.copy_from_slice(&image);machine.ram[0x1fd..0x200].copy_from_slice(&[0xff,0x7f,0]);
+                    machine.cpu.e=false;machine.cpu.unpack_flags(0x30);machine.cpu.k=7;machine.cpu.db=7;
+                    machine.cpu.pc=0xb64f;machine.cpu.sp=0x1fc;
+                    eprintln!("diagonal collision={collision} direction={direction} aux={auxiliary} moving={moving} diag={diag}");
+                    crate::cycle_ledger::assert_rom_marker_work(0x07b64f,machine,
+                        |s|s.cpu.k==7 && s.cpu.sp==0x1fc && (0xb64f..0xb7c3).contains(&s.cpu.pc),
+                        ||native.link_handle_diagonal_collision());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn marker30_cardinal_whole_body_matches_rom() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc");
+        let Ok(rom) = std::fs::read(path) else { return };
+        for collision in 0..=4 {
+            for direction in [0, 1, 2, 4, 8, 5, 10, 15] {
+                for (handler, velocity, diag) in [(0,0,0),(0,1,0),(0,255,0x30),
+                    (3,0,0),(4,0,0),(8,0,0),(9,0,0),(10,0,0),(11,1,0),(19,0,0)] {
+                    let mut native = ZeldaState::new();
+                    let mut image = native.wram_image().into_owned();
+                    for (address, value) in [(0x10,7),(0x1b,1),(0x46c,collision),
+                        (0x67,direction),(0x5d,handler),(0x30,velocity),(0x31,velocity),
+                        (0x6b,diag),(0x20,0x40),(0x22,0x40),(0x3e,0x40),(0x3f,0x40)] {
+                        image[address] = value;
+                    }
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    native.set_lag_free(true);
+                    let mut machine = snes::Snes::new();
+                    machine.cart.load(snes::CartType::LoRom,&rom,0x2000);
+                    machine.ram.copy_from_slice(&image);
+                    machine.ram[0x1fd..0x200].copy_from_slice(&[0xff,0x7f,0]);
+                    machine.cpu.e=false;
+                    machine.cpu.unpack_flags(0x30);
+                    machine.cpu.k=7; machine.cpu.db=7;
+                    machine.cpu.pc=0xb7c7; machine.cpu.sp=0x1fc;
+                    eprintln!("cardinal collision={collision} dir={direction} handler={handler} vel={velocity} diag={diag}");
+                    crate::cycle_ledger::assert_rom_marker_work(0x07b7c7,machine,
+                        |s|s.cpu.k==7 && (0xb7c7..0xb956).contains(&s.cpu.pc),
+                        ||native.link_handle_cardinal_collision());
+                }
+            }
+        }
+        // Exercise every primary-order branch at the real post-probe PC.
+        for bits in 0..16 {
+            for yv in [0,1] {
+                for xv in [0,1] {
+                    for floor in [0,128] {
+                        let mut native=ZeldaState::new();let mut image=native.wram_image().into_owned();
+                        for(a,v)in[(0x10,7),(0x1b,1),(0x0e,bits),(0x30,yv),(0x31,xv),
+                            (0x310,floor),(0x20,0x40),(0x22,0x40)] {image[a]=v;}
+                        native.import_wram_image(&image);native.sync_native_game_state_from_ram();native.set_lag_free(true);
+                        let mut machine=snes::Snes::new();machine.cart.load(snes::CartType::LoRom,&rom,0x2000);
+                        machine.ram.copy_from_slice(&image);machine.ram[0x1fd..0x200].copy_from_slice(&[0xff,0x7f,0]);
+                        machine.cpu.e=false;machine.cpu.unpack_flags(0x10);machine.cpu.k=7;machine.cpu.db=7;
+                        machine.cpu.pc=0xb7f8;machine.cpu.sp=0x1fc;
+                        crate::cycle_ledger::assert_rom_marker_work(0x07b7c7,machine,
+                            |s|s.cpu.k==7 && (0xb7f8..0xb848).contains(&s.cpu.pc),|| {
+                                let _scope=crate::cycle_ledger::routine(0x07b7c7);
+                                native.check_primary_collision_layer_after_nearby();
+                            });
+                    }
+                }
+            }
+        }
+        // The full return tail, including zero/signed coordinate deltas,
+        // ledge hopping, and equal/unequal moving-floor cancellation.
+        for indoors in [0,1] {
+            for collision in [0,4] {
+                for handler in [0,4,11] {
+                    for floor in [0,1,255] {
+                        for (dx,dy) in [(0u8,0u8),(1,1),(255,255),(1,255),(255,1)] {
+                            let mut native=ZeldaState::new();let mut image=native.wram_image().into_owned();
+                            for(a,v)in[(0x1b,indoors),(0x46c,collision),(0x5d,handler),
+                                (0x310,floor),(0x312,floor),(0x20,0x40u8.wrapping_add(dy)),
+                                (0x22,0x40u8.wrapping_add(dx)),(0x3e,0x40),(0x3f,0x40),(0x30,1),(0x67,15)] {image[a]=v;}
+                            native.import_wram_image(&image);native.sync_native_game_state_from_ram();native.set_lag_free(true);
+                            let mut machine=snes::Snes::new();machine.cart.load(snes::CartType::LoRom,&rom,0x2000);
+                            machine.ram.copy_from_slice(&image);machine.ram[0x1fd..0x200].copy_from_slice(&[0xff,0x7f,0]);
+                            machine.cpu.e=false;machine.cpu.unpack_flags(0x30);machine.cpu.k=7;machine.cpu.db=7;
+                            machine.cpu.pc=0xb8d8;machine.cpu.sp=0x1fc;
+                            crate::cycle_ledger::assert_rom_marker_work(0x07b7c7,machine,
+                                |s|s.cpu.k==7 && (0xb8d8..0xb956).contains(&s.cpu.pc),|| {
+                                    let _scope=crate::cycle_ledger::routine(0x07b7c7);
+                                    native.finish_cardinal_collision_after_main();
+                                });
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn collision_response_setup_prices_match_executed_rom() {
