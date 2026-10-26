@@ -222,7 +222,10 @@ impl ZeldaState {
 
     // void Player_SetupActionHitBox(SpriteHitBox *hb) {  // 86f5e0
     pub(in crate::zelda_rtl) fn player_setup_action_hit_box(&self, hb: &mut SpriteHitBox) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f5e0));
+        if self.lag_free { crate::cycle_ledger::charge(48); } // $06:F5E0..F5E3 LDA/BNE.
         if self.game_state.player.follower_link.is_running() {
+            if self.lag_free { crate::cycle_ledger::charge(6 + 506); } // $F5B7..F5DF dash tail.
             let j = self.game_state.player.follower_link.facing_index();
             let x = self.game_state.player.follower_link.x().wrapping_add(
                 u16::from(PLAYER_SETUP_ACTION_HIT_BOX_RUN_X_LO[j])
@@ -242,10 +245,16 @@ impl ZeldaState {
         }
 
         let mut t = 0usize;
+        if self.lag_free { crate::cycle_ledger::charge(102); } // $06:F5E5..F5ED.
+        if self.lag_free && !self.game_state.player.follower_link.item_in_hand_has(10) {
+            crate::cycle_ledger::charge(64); // $06:F5EF..F5F4.
+        }
         if !self.game_state.player.follower_link.item_in_hand_has(10)
             && !self.game_state.player.follower_link.position_mode_has(0x10)
         {
+            if self.lag_free { crate::cycle_ledger::charge(40); } // $06:F5F6..F5F8.
             if sign8(self.game_state.player.follower_link.button_b_frames()) {
+                if self.lag_free { crate::cycle_ledger::charge(6 + 432); } // $F594..F5B6 spin tail.
                 let x = self.game_state.player.follower_link.x().wrapping_sub(14);
                 let y = self.game_state.player.follower_link.y().wrapping_sub(10);
                 hb.r0_xlo = x as u8;
@@ -259,12 +268,28 @@ impl ZeldaState {
                 [usize::from(self.game_state.player.follower_link.button_b_frames())]
                 != 0
             {
+                if self.lag_free { crate::cycle_ledger::charge(48 + 6 + 110); } // $F5FA..F5FD; $F63F..F644.
                 hb.r8_xhi = 0x80;
                 return;
             }
+            if self.lag_free { crate::cycle_ledger::charge(48 + 132); } // $06:F5FA..F608.
             t = usize::from(self.game_state.player.follower_link.facing()) * 8
                 + usize::from(self.game_state.player.follower_link.button_b_frames())
                 + 1;
+        } else if self.lag_free {
+            crate::cycle_ledger::charge(6); // Taken BNE at $06:F5ED or $F5F4.
+        }
+        if self.lag_free {
+            // $06:F609..F63E: signed X/Y offsets, four table reads and return.
+            // X8 absolute indexed reads add six on an actual table-page crossing.
+            let x = PLAYER_ACTION_HIT_BOX_FROM_TABLE_X_OFFSETS[t]
+                .wrapping_add(self.game_state.player.follower_link.oam_x_offset_signed());
+            let y = PLAYER_ACTION_HIT_BOX_FROM_TABLE_Y_OFFSETS[t]
+                .wrapping_add(self.game_state.player.follower_link.oam_y_offset_signed());
+            let crossings = [0xf46dusize, 0xf4ef, 0xf4ae, 0xf530].iter()
+                .filter(|&&base| (base & 255) + t > 255).count() as u64;
+            crate::cycle_ledger::charge(102 + 226 + 306 + if x < 0 { 14 } else { 6 }
+                + if y < 0 { 14 } else { 6 } + crossings * 6);
         }
         self.player_action_hit_box_from_table(hb, t, false);
     }

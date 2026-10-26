@@ -665,3 +665,98 @@ fn movable_statue_far_from_link_does_not_touch_direction_tmp_counter() {
     assert_eq!(s.game_state.scratch_counter.value(), 0x02);
     assert!(!s.game_state.player.follower_link.is_near_moveable_statue());
 }
+
+#[test]
+fn action_hitbox_and_swamola_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut cases = Vec::new();
+    for facing in [0u8, 2, 4, 6] {
+        for frames in [0u8, 1, 4, 8, 127, 128, 255] {
+            for mode in 0..4 {
+                for offset in [0u8, 127, 128, 255] {
+                    // Item/position bypasses do not index the sword-frame table.
+                    if frames == 127 && mode == 0 { continue; }
+                    cases.push((0x06_f5e0, 0usize, vec![(0x2f, facing), (0x3c, frames),
+                        (0x372, u8::from(mode == 1)), (0x301, if mode == 2 { 2 } else { 0 }),
+                        (0x37a, if mode == 3 { 16 } else { 0 }), (0x45, offset), (0x44, offset),
+                        (0x22, 255), (0x23, 255), (0x20, 0), (0x21, 0)]));
+                }
+            }
+        }
+    }
+    for slot in [0usize, 5] {
+        for velocity in [0u8, 1, 127, 128, 255] {
+            for frame in [0u8, 31, 255] {
+                cases.push((0x1d_9f64, slot, vec![(0xd40 + slot, velocity),
+                    (0xd50 + slot, 16), (0xe80 + slot, frame), (0xdd0 + slot, 9),
+                    (0xd00 + slot, 128), (0xd10 + slot, 128), (0xe40 + slot, 0)]));
+            }
+        }
+    }
+    for (entry, slot, changes) in cases {
+        let mut native = ZeldaState::new();
+        let mut image = native.wram_image().into_owned();
+        for &(address, value) in &changes { image[address] = value; }
+        image[0x90..0x92].copy_from_slice(&0x0800u16.to_le_bytes());
+        image[0x92..0x94].copy_from_slice(&0x0a20u16.to_le_bytes());
+        native.import_wram_image(&image);
+        native.sync_native_game_state_from_ram();
+        let mut machine = Snes::new();
+        machine.cart.load(CartType::LoRom, &rom, 0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());
+        machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+        machine.cpu.e = false;
+        machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = (entry >> 16) as u8;
+        machine.cpu.db = machine.cpu.k;
+        machine.cpu.pc = entry as u16;
+        machine.cpu.sp = 0x1fc;
+        machine.cpu.x = slot as u16;
+        let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+        let mut source = RomCpuTimingProbe::new(machine, clock,
+            SourcePpuReadState::snes9x_reset()).unwrap();
+        let mut measured = 0;
+        for _ in 0..20000 {
+            let cpu = &source.snes().cpu;
+            let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+            let owns = if entry == 0x06_f5e0 { (0x06_f594..=0x06_f644).contains(&pc) }
+                else { (0x1d_9f64..=0x1d_a03b).contains(&pc) };
+            let step = source.step().unwrap();
+            if owns { measured += step.transactions.iter()
+                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>(); }
+            if source.snes().cpu.pc == 0x8000 { break; }
+        }
+        assert_eq!(source.snes().cpu.pc, 0x8000, "entry={entry:x} {changes:?}");
+        let mut hb = crate::types::SpriteHitBox {
+            r0_xlo: 0, r8_xhi: 0, r1_ylo: 0, r9_yhi: 0, r2: 0, r3: 0,
+            r4_spr_xlo: 0, r10_spr_xhi: 0, r5_spr_ylo: 0, r11_spr_yhi: 0,
+            r6_spr_xsize: 0, r7_spr_ysize: 0,
+        };
+        for lagless in [true, false] {
+            native.set_lag_free(lagless);
+            let actual = crate::cycle_ledger::measure_routine_self_work(entry, || {
+                if entry == 0x06_f5e0 { native.player_setup_action_hit_box(&mut hb); }
+                else { native.swamola_draw(slot); }
+            });
+            if lagless {
+                assert_eq!(actual, measured, "entry={entry:x} {changes:?}");
+                if entry == 0x06_f5e0 {
+                    assert_eq!(hb.r8_xhi, source.snes().ram[8]);
+                    if hb.r8_xhi != 128 {
+                        assert_eq!([hb.r0_xlo, hb.r1_ylo, hb.r2, hb.r3, hb.r9_yhi],
+                            [source.snes().ram[0], source.snes().ram[1], source.snes().ram[2],
+                             source.snes().ram[3], source.snes().ram[9]]);
+                    }
+                }
+            } else {
+                // Existing draw children have ROM-timing charges; only the
+                // newly introduced caller instructions must be absent.
+                assert_eq!(actual, 0, "entry={entry:x}");
+            }
+        }
+    }
+}

@@ -969,8 +969,15 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_activate_when_proximal_big(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09_c5fa));
+        if self.lag_free { crate::cycle_ledger::charge(64); } // $09:C5FA..C5FF LDY/LDA/BEQ.
         if self.overworld_vertical_scroll_delta_low() == 0 {
+            if self.lag_free { crate::cycle_ledger::charge(6 + 42); } // Taken BEQ; $C634 RTS.
             return;
+        }
+        if self.lag_free {
+            // $09:C601..C620 BPL/optional INY, coordinates and LDX #21.
+            crate::cycle_ledger::charge(16 + if sign8(self.overworld_vertical_scroll_delta_low()) { 14 } else { 6 } + 332);
         }
         let xt: u16 = if self
             .game_state
@@ -998,10 +1005,15 @@ impl ZeldaState {
             } else {
                 0x110
             });
-        for _ in (0..=(21 + (xt >> 3))).rev() {
+        for column in (0..=(21 + (xt >> 3))).rev() {
+            if self.lag_free {
+                // $09:C622..C632 JSR only, X increment, DEX/BPL.
+                crate::cycle_ledger::charge(222 + if column == 0 { 0 } else { 6 });
+            }
             self.sprite_overworld_proximity_motivated_load(x, y);
             x = x.wrapping_add(16);
         }
+        if self.lag_free { crate::cycle_ledger::charge(42); } // $09:C634 RTS.
     }
 
     pub(in crate::zelda_rtl) fn sprite_overworld_proximity_motivated_load(&mut self, x: u16, y: u16) -> bool {

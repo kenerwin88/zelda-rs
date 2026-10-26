@@ -1312,8 +1312,24 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Swamola_Draw(int k) {  // 9d9f64
     pub(super) fn swamola_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d_9f64));
+        if self.lag_free {
+            // $1D:9F64..9FD4: head setup/call opcodes, history and OAM setup.
+            // Child conversion/drawing bodies keep their own instruction work.
+            crate::cycle_ledger::charge(1038 + if sign8(self.sprite_slot_view(k).y_velocity()) { 24 } else { 6 } + 320);
+        }
         self.swamola_draw_before_segments(k);
-        self.swamola_draw_remaining_segments(k, 0);
+        for segment in 0..4 {
+            if self.lag_free {
+                // $1D:9FD7..A039: history loads, signed OAM step, JSL only,
+                // counter and BNE. Sprite/table indices stay on their pages.
+                crate::cycle_ledger::charge(642 + if sign8(self.sprite_slot_view(k).y_velocity()) { 200 } else { 6 + 178 } + 194 + if segment == 3 { 0 } else { 6 });
+            }
+            self.swamola_prepare_segment(k, segment);
+            self.sprite_draw_single_large(k);
+            self.sprite_workspace_mut().set_shared_scratch_a(segment as u8 + 1);
+        }
+        if self.lag_free { crate::cycle_ledger::charge(42); } // $1D:A03B RTS.
     }
 
     fn swamola_draw_before_segments(&mut self, k: usize) {
