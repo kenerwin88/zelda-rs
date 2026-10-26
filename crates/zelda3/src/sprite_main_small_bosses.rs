@@ -2025,6 +2025,13 @@ impl ZeldaState {
 
     // void Sprite_BE_VitreousEye(int k) {  // 9de773
     pub(super) fn sprite_be_vitreous_eye(&mut self, k: usize) {
+        if self.lag_free {
+            // $1D:E773..E798: 416 clocks of coordinate setup, JSL draw
+            // (62), JSR inactive (46). Y is 0/2/4/6, so neither word
+            // table crosses a page. Both child bodies retain their scopes;
+            // this RTS-dispatched body stays in $1D:C222's caller frame.
+            crate::cycle_ledger::charge(416 + 62 + 46);
+        }
         let j = ((self.sprite_slot_view(k).subtype2() >> 4) & 3) as usize;
         let cur_x = self
             .game_state

@@ -5,6 +5,73 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn vitreous_eye_setup_price_matches_executed_rom_prefix() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for slot in [0usize, 15] {
+        for subtype in [0u8, 16, 32, 48, 255] {
+            let mut native = fresh_state();
+            let mut image = native.wram_image().into_owned();
+            image[0xdd0 + slot] = 9;
+            image[0xe20 + slot] = 0xbe;
+            image[0xe80 + slot] = subtype;
+            image[0xdc0 + slot] = 1; // stop before the still-unpriced AI
+            image[0xfd8..0xfdc].copy_from_slice(&[0xfe, 0xff, 1, 0]);
+            image[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
+            image[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
+            native.import_wram_image(&image);
+            native.sync_native_game_state_from_ram();
+            native.set_lag_free(true);
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.ram.copy_from_slice(&native.wram_image());
+            machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0x30);
+            machine.cpu.k = 0x1d;
+            machine.cpu.db = 0x1d;
+            machine.cpu.pc = 0xe773;
+            machine.cpu.sp = 0x1fc;
+            machine.cpu.x = slot as u16;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut owned = 0;
+            let mut finished = false;
+            for _ in 0..2000 {
+                let cpu = &source.snes().cpu;
+                let parent = cpu.sp == 0x1fc && cpu.k == 0x1d;
+                let last = parent && cpu.pc == 0xe798;
+                let step = source.step().unwrap();
+                if parent {
+                    owned += step.transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                }
+                if last { finished = true; break; }
+            }
+            assert!(finished);
+            assert_eq!(owned, 524);
+            let actual = crate::cycle_ledger::measure_routine_self_work(0x1d_c222, || {
+                let _parent = crate::cycle_ledger::routine(0x1d_c222);
+                native.sprite_be_vitreous_eye(slot);
+            });
+            assert_eq!(actual, owned, "slot={slot} subtype={subtype}");
+            native.set_lag_free(false);
+            let default_self = crate::cycle_ledger::measure_routine_self_work(0x1d_c222, || {
+                let _parent = crate::cycle_ledger::routine(0x1d_c222);
+                native.sprite_be_vitreous_eye(slot);
+            });
+            // Existing drawing children also charge in default mode. Only
+            // the added caller setup must contribute zero there.
+            assert_eq!(default_self, 0);
+        }
+    }
+}
+
+#[test]
 fn trinexx_cache_position_writes_all_four_components() {
     // Trinexx_CachePosition copies the current XY (lo/hi) into the
     // sprite scratch fields A/B/C/G. Verify the byte order matches

@@ -446,6 +446,19 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_check_damage_from_link(&mut self, k: usize) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f2b4));
+        if self.lag_free {
+            // $06:F2B4..F2C6; rejected paths take $F321 JMP $F3AF,
+            // CLC/BRA $F3C7, LDA #0/RTS (24 + 36 + 58).
+            crate::cycle_ledger::charge(if self.sprite_slot_view(k).hit_timer() & 0x80 != 0 {
+                64 + 6 + 22 + 118
+            } else if self.sprite_slot_view(k).floor()
+                != self.game_state.player.follower_link.lower_level_state() {
+                64 + 56 + 22 + 118
+            } else if self.game_state.player.follower_link.has_disabled_oam_offsets() {
+                64 + 56 + 16 + 56 + 6 + 118
+            } else { 64 + 56 + 16 + 56 });
+        }
         if (self.sprite_slot_view(k).hit_timer() & 0x80) != 0
             || self.sprite_slot_view(k).floor()
                 != self.game_state.player.follower_link.lower_level_state()
@@ -462,6 +475,11 @@ impl ZeldaState {
         self.player_setup_action_hit_box(&mut hb);
         self.sprite_setup_hit_box(k, &mut hb);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
+        if self.lag_free {
+            // $06:F2C8..F2D1: three JSR opcodes and BCC. Each callee
+            // owns its body; a miss takes the same $F321 rejection tail.
+            crate::cycle_ledger::charge(154 + if overlap { 0 } else { 6 + 118 });
+        }
         if !overlap {
             return 0;
         }
@@ -572,6 +590,21 @@ impl ZeldaState {
     //   return Sprite_CheckDamageToPlayer_1(k);
     // }
     pub(in crate::zelda_rtl) fn sprite_check_damage_to_link(&mut self, k: usize) -> bool {
+        if self.lag_free {
+            // $06:F145..F15A falls through the stagger/hit and layer gates.
+            // A rejection takes BNE (+6) then CLC/RTS (56). The successful
+            // prefix stops at $F15C; damage and shield bodies remain open.
+            let clocks = if self.game_state.player.follower_link.sprite_damage_disable_timer() != 0 {
+                48 + 6 + 56
+            } else if (((k as u8) ^ self.game_state.frame.frame_counter) & 3)
+                | self.sprite_slot_view(k).hit_timer() != 0 {
+                48 + 102 + 6 + 56
+            } else if self.game_state.player.follower_link.lower_level_state()
+                != self.sprite_slot_view(k).floor() {
+                48 + 102 + 80 + 6 + 56
+            } else { 48 + 102 + 80 };
+            crate::cycle_ledger::charge_routine(0x06_f145, clocks);
+        }
         self.game_state
             .player
             .follower_link

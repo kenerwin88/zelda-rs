@@ -1,6 +1,95 @@
 use super::*;
 
 #[test]
+fn damage_gate_prefix_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut cases = 0;
+    let mut hits = 0;
+    for entry in [0xf145u16, 0xf2b4] {
+        for slot in [0usize, 15] {
+            for frame in 0..4u8 {
+                for hit in [0u8, 1, 0x80] {
+                    for disabled in [0u8, 1] {
+                        for floor in [0u8, 1] {
+                            for offset in [0u8, 0x80] {
+                                for x in [0u16, 500] {
+                                    let mut native = ZeldaState::new();
+                                    let mut image = native.wram_image().into_owned();
+                                    image[0x1a] = frame;
+                                    image[0xef0 + slot] = hit;
+                                    image[0xf20 + slot] = floor;
+                                    image[0x37b] = disabled;
+                                    image[0x44] = offset;
+                                    image[0x37a] = 0x10; // success returns before the unpriced damage body
+                                    image[0xdd0 + slot] = 9;
+                                    image[0xe20 + slot] = 0x9c;
+                                    image[0xf60 + slot] = 0;
+                                    image[0xd10 + slot] = x as u8;
+                                    image[0xd30 + slot] = (x >> 8) as u8;
+                                    native.import_wram_image(&image);
+                                    native.sync_native_game_state_from_ram();
+                                    native.set_lag_free(true);
+                                    let mut machine = Snes::new();
+                                    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                                    machine.ram.copy_from_slice(&native.wram_image());
+                                    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                                    machine.cpu.e = false;
+                                    machine.cpu.unpack_flags(0x30);
+                                    machine.cpu.k = 6;
+                                    machine.cpu.db = 6;
+                                    machine.cpu.pc = entry;
+                                    machine.cpu.sp = 0x1fc;
+                                    machine.cpu.x = slot as u16;
+                                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                                    let mut source = RomCpuTimingProbe::new(machine, clock,
+                                        SourcePpuReadState::snes9x_reset()).unwrap();
+                                    let mut owned = 0;
+                                    for _ in 0..2000 {
+                                        let cpu = &source.snes().cpu;
+                                        if cpu.sp == 0x1fc && cpu.k == 6
+                                            && cpu.pc == if entry == 0xf145 { 0xf15c } else { 0xf2d3 } {
+                                            hits += 1;
+                                            break;
+                                        }
+                                        if cpu.pc == 0x8000 { break; }
+                                        let parent = cpu.sp == 0x1fc;
+                                        let step = source.step().unwrap();
+                                        if parent {
+                                            owned += step.transactions.iter()
+                                                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                                        }
+                                    }
+                                    assert!(matches!(source.snes().cpu.pc, 0x8000 | 0xf15c | 0xf2d3));
+                                    let actual = crate::cycle_ledger::measure_routine_self_work(
+                                        0x06_0000 | u32::from(entry), || {
+                                            if entry == 0xf145 { native.sprite_check_damage_to_link(slot); }
+                                            else { native.sprite_check_damage_from_link(slot); }
+                                        });
+                                    assert_eq!(actual, owned,
+                                        "entry={entry:x} slot={slot} frame={frame} hit={hit} disabled={disabled} floor={floor} offset={offset} x={x}");
+                                    native.set_lag_free(false);
+                                    let start = crate::cycle_ledger::master();
+                                    if entry == 0xf145 { native.sprite_check_damage_to_link(slot); }
+                                    else { native.sprite_check_damage_from_link(slot); }
+                                    assert_eq!(crate::cycle_ledger::master(), start);
+                                    cases += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(hits > 0);
+    eprintln!("damage gates: {cases} executed-ROM cases, {hits} successful prefixes");
+}
+
+#[test]
 fn garnish_prep_prices_match_executed_rom_paths() {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
