@@ -7,10 +7,11 @@ fn fresh_state() -> ZeldaState {
 
 #[test]
 fn zoro_caller_price_matches_executed_rom_paths() {
-    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
-        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    use snes::{CartType, Snes};
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| root.join("saves/zelda3.sfc"));
+    let Ok(rom) = std::fs::read(path) else { return };
     let mut cases = 0;
     for slot in [0usize, 15] {
         for subtype in [0u8, 2, 3, 255] {
@@ -49,27 +50,12 @@ fn zoro_caller_price_matches_executed_rom_paths() {
                     machine.cpu.pc = 0x9bc8;
                     machine.cpu.sp = 0x1fc;
                     machine.cpu.x = slot as u16;
-                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
-                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
-                    let mut source = RomCpuTimingProbe::new(machine, clock,
-                        SourcePpuReadState::snes9x_reset()).unwrap();
-                    let mut owned = 0;
-                    for _ in 0..10000 {
-                        let cpu = &source.snes().cpu;
-                        // PHX temporarily lowers SP in the inlined garnish search.
-                        let parent = cpu.k == 0x1e && (0x9bc8..=0x9c6a).contains(&cpu.pc);
-                        let step = source.step().unwrap();
-                        if parent { owned += step.transactions.iter()
-                            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>(); }
-                        if source.snes().cpu.pc == 0x8000 { break; }
-                    }
-                    assert_eq!(source.snes().cpu.pc, 0x8000);
                     let mut default = native.clone();
-                    let actual = crate::cycle_ledger::measure_routine_self_work(0x1e_8b19, || {
-                        let _parent = crate::cycle_ledger::routine(0x1e_8b19);
-                        native.sprite_9_c_zoro(slot);
-                    });
-                    assert_eq!(actual, owned, "slot={slot} subtype={subtype} free={free} c={c} delay={delay} below={below}");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x1e_8b19, machine,
+                        |s| s.cpu.k == 0x1e && (0x9bc8..=0x9c6a).contains(&s.cpu.pc), || {
+                            let _parent = crate::cycle_ledger::routine(0x1e_8b19);
+                            native.sprite_9_c_zoro(slot);
+                        });
                     for a in [0xdd0, 0xdb0, 0xe80, 0xdc0, 0xd50] {
                         assert_eq!(native.read_wram_byte(a + slot), source.snes().ram[a + slot]);
                     }

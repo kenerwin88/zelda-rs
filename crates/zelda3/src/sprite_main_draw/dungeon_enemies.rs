@@ -281,31 +281,34 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Zoro(int k) {  // 9e9bd0
     pub(in crate::zelda_rtl) fn zoro(&mut self, k: usize) {
-        let lag_free = self.lag_free;
-        let charge = |clocks| { if lag_free { crate::cycle_ledger::charge(clocks); } };
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
         // $1E:9BD0..9BDD: C gate, optional INC/JSR/CPY/BEQ.
-        charge(48);
+        blocks.block(0x1e9bd0);
         if self.sprite_slot_view(k).c() == 0 {
-            charge(130);
+            blocks.block(0x1e9bd5);
+            blocks.block(0x1e9bdb);
             self.sprite_slot_view_mut(k).add_c(1);
             if self.sprite_is_below_link(k).a != 0 {
-                charge(80); // $1E:9BDF..9BE2 STZ/RTS
+                blocks.block(0x1e9bdf); // $1E:9BDF..9BE2 STZ/RTS
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
                 return;
             }
-            charge(6); // $1E:9BDD taken BEQ
+            blocks.taken(0x1e9bdd);
         } else {
-            charge(6); // $1E:9BD3 taken BNE
+            blocks.taken(0x1e9bd3);
         }
-        charge(108); // $1E:9BE3..9BE7 JSL draw, JSR inactive
+        blocks.block(0x1e9be3);
+        blocks.block(0x1e9be7); // $1E:9BE3..9BE7 JSL draw, JSR inactive
         self.sprite_draw_single_small(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
         // $1E:9BEA..9C0D: damage JSR, animation/velocity, move JSR,
         // delay gate. Child bodies retain their existing scopes.
-        charge(452);
+        blocks.block(0x1e9bea);
+        blocks.block(0x1e9bed);
+        blocks.block(0x1e9c0a);
         self.sprite_check_damage_to_and_from_link(k);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let value = (self.sprite_slot_view(k).subtype2() >> 1) & 1;
@@ -315,32 +318,44 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         self.sprite_move_xy(k);
         if self.sprite_slot_view(k).delay_main() == 0 {
-            charge(62); // $1E:9C0F..9C12 JSR collision, BEQ
+            blocks.block(0x1e9c0f);
+            blocks.block(0x1e9c12); // $1E:9C0F..9C12 JSR collision, BEQ
             if self.sprite_check_tile_collision(k) != 0 {
-                charge(38); // $1E:9C14 STZ
+                blocks.block(0x1e9c14); // $1E:9C14 STZ
                 self.sprite_slot_view_mut(k).set_state(0);
             } else {
-                charge(6); // $1E:9C12 taken BEQ
+                blocks.taken(0x1e9c12);
             }
         } else {
-            charge(6); // $1E:9C0D taken BNE
+            blocks.taken(0x1e9c0d);
         }
-        charge(64); // $1E:9C17..9C1C subtype test
+        blocks.block(0x1e9c17); // $1E:9C17..9C1C subtype test
         if (self.sprite_slot_view(k).subtype2() & 3) != 0 {
-            charge(6 + 42); // taken BNE, $1E:9C2C RTS
+            blocks.taken(0x1e9c1c);
+            blocks.block(0x1e9c2c); // $1E:9C2C RTS
             return;
         }
         let j = self.garnish_alloc();
-        // $1E:9C1E..9C29: PHX/TXY/LDX (52), then one 92-clock
-        // occupied pass (LDA/BEQ/DEX/BPL taken) per rejected slot.
-        charge(52 + 92 * if j < 0 { 29 } else { 29 - j as u64 });
+        // $1E:9C1E..9C29: setup, then the actual descending search.
+        // Native garnish_alloc supplies the number of rejected source slots.
+        blocks.block(0x1e9c1e);
+        for _ in 0..if j < 0 { 29 } else { 29 - j } {
+            blocks.block(0x1e9c22);
+            blocks.block(0x1e9c28);
+            blocks.taken(0x1e9c29);
+        }
         if j < 0 {
-            charge(56 + 30 + 28 + 42); // last BPL falls through, PLX/RTS
+            blocks.block(0x1e9c22);
+            blocks.block(0x1e9c28);
+            blocks.block(0x1e9c2b);
+            blocks.block(0x1e9c2c); // last BPL falls through, PLX/RTS
             return;
         }
-        // $1E:9C22/9C26 free-slot LDA/BEQ taken; $9C2D..9C6A
-        // writes the selected trail slot and restores X before RTS.
-        charge(62 + 674);
+        // $1E:9C22/9C26 free-slot branch; $9C2D..9C6A trail writes.
+        // All abs,Y reads use the original sprite slot (0..15): no crossing.
+        blocks.block(0x1e9c22);
+        blocks.taken(0x1e9c26);
+        blocks.block(0x1e9c2d);
         let j = j as usize;
         let value = 6;
         self.garnish_slot_view_mut(j).set_garnish_type(value);

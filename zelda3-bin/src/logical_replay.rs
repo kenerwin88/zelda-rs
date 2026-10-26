@@ -1166,6 +1166,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut outcome_trace: Option<BufWriter<fs::File>> = None;
     let mut pacing_predictor: Option<BufWriter<fs::File>> = None;
     let mut routine_profile: Option<BufWriter<fs::File>> = None;
+    let mut block_profile: Option<BufWriter<fs::File>> = None;
     let mut object_profile: Option<BufWriter<fs::File>> = None;
     let mut sprite_profile: Option<BufWriter<fs::File>> = None;
     let mut routine_profile_iterations: Vec<(u64, u64)> = Vec::new();
@@ -1200,6 +1201,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 let mut file = BufWriter::new(fs::File::create(value(index)).expect("create routine profile"));
                 writeln!(file, "iteration,routine,calls,inclusive,exclusive").expect("profile header");
                 routine_profile = Some(file);
+                let path = std::path::Path::new(&value(index)).with_extension("blocks.csv");
+                let mut file = BufWriter::new(fs::File::create(path).expect("create block profile"));
+                writeln!(file, "iteration,routine,pc,kind,count,master").expect("block header");
+                block_profile = Some(file);
                 let path = std::path::Path::new(&value(index)).with_extension("objects.csv");
                 let mut file = BufWriter::new(fs::File::create(path).expect("create object profile"));
                 writeln!(file, "iteration,object,routine,calls,inclusive,exclusive").expect("object header");
@@ -1652,6 +1657,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                         for ((object, address), [calls, inclusive, exclusive]) in objects {
                             writeln!(file, "{},{object:03x},{address:06x},{calls},{inclusive},{exclusive}", iteration.index)
                                 .expect("object profile");
+                        }
+                    }
+                    let blocks = zelda3::cycle_ledger::take_block_profile();
+                    if let (true, Some(file), Some(iteration)) = (profiling, block_profile.as_mut(), iteration) {
+                        use std::io::Write;
+                        for ((routine, pc, kind), [count, master]) in blocks {
+                            writeln!(file, "{},{routine:06x},{pc:06x},{kind},{count},{master}", iteration.index).expect("block profile");
                         }
                     }
                     let rows = zelda3::cycle_ledger::take_routine_profile();

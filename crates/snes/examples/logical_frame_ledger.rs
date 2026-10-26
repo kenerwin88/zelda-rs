@@ -41,6 +41,9 @@
 //! keep their original call frame; interrupts and bus stalls remain excluded.
 //! `sprite-profile.csv` partitions state bodies by entry type/state/slot,
 //! matching the native profiler. Entry, timers and tail dispatch are excluded.
+//! `ZELDA3_LEDGER_BLOCK_PROFILE=1` also writes per-PC instruction receipts
+//! for the same complete iterations to instruction-profile.csv. These feed
+//! scripts/rom_block_worklist.py; routine totals cannot identify executed blocks.
 
 use sha2::{Digest, Sha256};
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
@@ -299,8 +302,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut profile_depth = 0usize;
     let mut profile_main_active = false;
     let mut profile: std::collections::BTreeMap<(u64, u32), [u64; 3]> = Default::default();
+    let block_profile_enabled = env::var_os("ZELDA3_LEDGER_BLOCK_PROFILE").is_some();
+    let mut instruction_profile: std::collections::BTreeMap<(u64, u32, u32, u8), [u64; 3]> = Default::default();
+    // Follow main instructions only; interrupts must not invent block entries
+    // in the interrupted stream. Include actual computed-jump destinations.
+    let mut profile_block_entry = true;
     let mut profile_complete = std::collections::BTreeSet::new();
     let mut previous_sp = 0u16;
+    let mut previous_widths = 0x30u8;
     // Selected main steps only. Wall minus CPU transactions includes the
     // stalls deliberately excluded from routine-profile.csv.
     let mut structural: std::collections::BTreeMap<u64, [u64; 6]> = Default::default();
@@ -505,6 +514,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         end != 0 && *index <= profile_iterations[end - 1].1
                     });
                     if step.origin_pc == 0x00_8038 {
+                        profile_block_entry = true;
                         profile_main_active = true;
                         profile_depth = 0;
                         profile_stack.clear();
@@ -523,6 +533,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let cycles: u64 = step.transactions.iter()
                                 .filter(|transaction| transaction.started_at < end)
                                 .map(|transaction| u64::from(transaction.duration_master_cycles)).sum();
+                            if block_profile_enabled {
+                                let routine = profile_stack.last().map_or(0x008034, |frame| frame.0);
+                                let row = instruction_profile.entry((index, routine, step.origin_pc & 0x7fffff, previous_widths)).or_default();
+                                row[0] += 1;
+                                row[1] += cycles;
+                                row[2] += u64::from(profile_block_entry);
+                            }
                             if let Some((&depth, selection)) = sprite_frames.last_key_value() {
                                 let (mut kind, state, slot, mut active) = *selection;
                                 if !active && sprite_tails.get(usize::from(state)).copied()
@@ -614,6 +631,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                     }
+                    if profile_depth == 0 && main_stack && profile_main_active {
+                        profile_block_entry = matches!(step.opcode,
+                            0x00 | 0x02 | 0x10 | 0x20 | 0x22 | 0x30 | 0x40 | 0x44 |
+                            0x4c | 0x50 | 0x54 | 0x5c | 0x60 | 0x6b | 0x6c | 0x70 |
+                            0x7c | 0x80 | 0x82 | 0x90 | 0xb0 | 0xd0 | 0xdc | 0xf0 | 0xfc);
+                    }
                     if step.origin_pc == 0x00_805d {
                         if let Some(index) = selected { profile_complete.insert(index); }
                         profile_main_active = false;
@@ -621,6 +644,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if step.opcode == RTI { profile_depth = profile_depth.saturating_sub(1); }
                     if step.accepted_interrupt.is_some() { profile_depth += 1; }
                     previous_sp = cpu.sp;
+                    previous_widths = cpu.pack_flags() & 0x30;
                 }
                 if step_trace_hosts.is_some_and(|(lo, hi)| (lo..=hi).contains(&(host as u64))) {
                     let raster = exec.raster_position();
@@ -915,6 +939,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("ledger-nmi-profile host={host} routine={routine:06x} master={master} wall={wall}");
     }
     if let Some(writer) = profile_output.as_mut() {
+        if block_profile_enabled {
+            let mut blocks = BufWriter::new(fs::File::create(out_dir.join("instruction-profile.csv"))?);
+            writeln!(blocks, "iteration,routine,pc,m8,x8,count,master,entries")?;
+            for ((index, routine, pc, widths), [count, master, entries]) in instruction_profile {
+                if profile_complete.contains(&index) {
+                    writeln!(blocks, "{index},{routine:06x},{pc:06x},{},{},{count},{master},{entries}",
+                        u8::from(widths & 0x20 != 0), u8::from(widths & 0x10 != 0))?;
+                }
+            }
+        }
         let mut sprites = BufWriter::new(fs::File::create(out_dir.join("sprite-profile.csv"))?);
         writeln!(sprites, "iteration,type,state,slot,routine,calls,inclusive,exclusive")?;
         for ((index, kind, state, slot, routine), [calls, inclusive, exclusive]) in sprite_profile {

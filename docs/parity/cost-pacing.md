@@ -11456,3 +11456,48 @@ Both ordinary candidate builds and the fresh main default build are warning-free
 The sole default library failure is the known spotlight caller-return fixture; reduced passes entirely. The manifest checks complete, disjoint named test unions. Both SNES library suites, Python routine-coverage tests and `git diff --check` pass.
 
 No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Scratch scripts stayed in `/tmp`; supplied ledgers/cache and the other checkout remained read-only. This stops at one verified group; remaining body prices and full-route source reconciliation are open.
+
+## Generated block-cost tooling on `codex/block-costs` (main `f7ccbc0c`)
+
+Evidence: `target/block-costs/`. This batch stops at a verified tooling point: the generated table, lagless marker API, reusable ROM fixture helper, source/native block receipts, and an existing Zoro price converted to markers. **No new routine was priced; no additional instruction clocks were closed.** The requested 3–4 new leaders and the measured frozen-cohort block ranking remain open.
+
+`rom_block_costs.py --emit-rust` reads `scripts/rom_block_entries.json` (bounded routine entries and entry M/X), walks source control flow and emits `crates/zelda3/src/rom_block_costs.rs`. Calls end blocks and price only their opcode. The generated rows carry address/end, entry M/X, static master clocks, conditional branch PC and indexed-read PCs; comments retain the variable-cost notes and ROM SHA-256. Callees must preserve the declared M/X, DP low byte is zero, and bus assumptions are explicit. Bounds must exclude inline dispatch data; dispatch arms need separate entries. Conflicting widths, overlapping decoding, dynamic width/DP restores, indirect dispatch and unresolved bus costs are rejected. Python tests regenerate and compare the checked-in table on the ROM, skipping that comparison when the ROM is absent.
+
+A native site creates `let blocks = crate::cycle_ledger::blocks(self.lag_free)` and names source work with `blocks.block(0x1e9bd0)`, `blocks.taken(0x1e9bd3)`, or `blocks.crossing(indexed_read_pc)`. Extras must name an eligible generated instruction. Disabled markers and muted previews add no charge. Existing routine scopes retain ownership; markers create no scopes. The new generic `assert_rom_marker_work` helper executes an unmodified ROM CPU fixture, accepts an explicit exclusive-source ownership predicate for calls/JMP tails/local stack pushes, and compares its instruction transactions with the native marker trail under that routine owner. It returns the source machine for behavioral assertions.
+
+Zoro `$1E:9BD0..9C6A` and its `$9BC8` dispatch use the generated blocks. The allocator result determines the actual rejected-slot loop; there is no fitted residual or scene price. The Zoro body has 30 one-line marker calls plus one marker-context declaration; its dispatch has three marker calls. The existing fixture now uses the generic helper instead of a private source stepping/counting loop. All 128 ROM cases retain the prior totals, state/garnish checks and zero default-mode caller charge. New ledger tests cover lane gating, muting, source ownership, branch extras and page extras.
+
+`ZELDA3_LEDGER_BLOCK_PROFILE=1` adds `instruction-profile.csv` to the existing CPU-only source routine profiler, under the same selected complete iterations. Receipts preserve source call-frame owner, PC, entry M/X, executions, actual block entries (including computed-jump destinations) and instruction clocks; interrupts, refresh and DMA stalls use the existing routine-profile exclusions. Interrupt handlers do not introduce spurious entries in the interrupted main stream. Native `--routine-profile` now writes a companion `*.blocks.csv` with routine/PC/kind/count/clocks. `scripts/rom_block_worklist.py` partitions observed instructions at real control-flow boundaries, reconciles every iteration/owner to the source exclusive profile, and ranks blocks by executed source clocks. It distinguishes marker declarations from measured native marker charges and leaves ambiguous M/X attribution unresolved rather than counting a native charge twice. Legacy scalar prices are not block-resolved; no marker does not mean no price.
+
+The retained frozen source directory (`cost-pacing10/source-missing`) has only routine and structural profiles, without PC receipts. Routine totals cannot identify which basic blocks executed, so the tool refuses to synthesize a frozen block ranking from them. A fresh source CPU capture with the block-profile flag is required before selecting the requested new leaders; use the retained frozen routine profile as the reconciliation anchor, so a recapture cannot silently redefine the source cohort. This short batch does not run that complete source recapture. The pipeline is instead exercised from reset over 200 CPU-only hosts: 11 selected complete iterations, 4,044 source PC rows, and every instruction clock reconciled before ranking. `worklist-smoke.json` is explicitly a smoke ranking, not the frozen gameplay cohort. Enabling the new source receipts leaves both its routine and structural profiles byte-identical to a matching capture with receipts disabled.
+
+Regeneration and ranking interfaces:
+
+```sh
+python3 scripts/rom_block_costs.py --emit-rust > crates/zelda3/src/rom_block_costs.rs
+python3 -m unittest discover -s scripts -p 'test_rom_block*.py'
+python3 scripts/rom_block_worklist.py <source>/instruction-profile.csv <frozen-source>/routine-profile.csv \
+  --cohort <batch-22>/decomposition.json --native <candidate>.blocks.csv --json <worklist>.json
+```
+
+The supplied context listed 4,950 ROM / 5,647 live missing NMIs. Fresh clean-main controls from the pinned HEAD are used below for before/after; a lower fresh baseline is not credited to the marker conversion.
+
+CPU-only verification:
+
+| Census | Missing before / after | Excess before / after | FP before / after |
+| --- | ---: | ---: | ---: |
+| rom | 4,936 / 4,936 | 0 / 0 | 0 / 0 |
+| live | 5,633 / 5,633 | 590 / 590 | 132 / 132 |
+
+Both fresh main controls and both candidate full census gates PASS: 1,473,123 iterations each, unexplained zero. Every predictor CSV column is byte-identical before/after in both lanes, not only the headline hold counts. Every cartridge runtime hold remains P2. The frozen 2,825-row native routine profile is byte-identical, and all route-wide native routine call/inclusive/exclusive aggregates are identical. The frozen main-instruction gap remains **203,337,632 master clocks**, with **0 clocks closed**. These periodically seeded CPU-only checks do not establish continuous physical-field or exact A/V parity.
+
+The fresh main default binary was built before Rust edits. Candidate default matches every state/display/SRAM/PCM/input/context record and EOF in its freshly recorded 200k ledger. Ordinary default and reduced builds and the source-profiler build are warning-free; existing lib-test fixture warnings remain separate.
+
+| Zelda library | Passed | Failed | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,542 | 1 | 3 |
+| reduced | 2,077 | 0 | 2 |
+
+The sole default library failure is the known spotlight caller-return fixture; reduced passes entirely. The shard manifest verifies complete, disjoint named test unions. Both SNES lib suites, the five block generator/worklist Python tests (including ROM regeneration), existing routine-coverage Python tests, the source/worklist smoke and `git diff --check` pass. `verification.json`, `provenance.json`, full predictor CSVs, native block receipts and the fixture/build/suite logs retain the evidence.
+
+No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. The source smoke executes only the in-repo CPU model. Scratch drivers stayed in `/tmp`; supplied ledgers/cache and the other checkout remained read-only. The next pricing batch still needs the frozen source PC capture, its measured block ranking, and 3–4 new marker-based routine prices.

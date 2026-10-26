@@ -1,0 +1,44 @@
+"""Generator contracts; ROM equality skips on machines without the cartridge."""
+import json
+import unittest
+from pathlib import Path
+
+import rom_block_costs as costs
+
+
+class BlockCosts(unittest.TestCase):
+    def test_checked_in_table_matches_rom(self):
+        if not costs.DEFAULT_ROM.is_file():
+            self.skipTest('ROM absent')
+        rom = costs.DEFAULT_ROM.read_bytes()
+        if len(rom) % 0x400 == 0x200:
+            rom = rom[0x200:]
+        entries = json.loads(Path('scripts/rom_block_entries.json').read_text())
+        self.assertEqual(costs.emit_rust(rom, entries),
+                         Path('crates/zelda3/src/rom_block_costs.rs').read_text())
+
+    def fixture(self, code):
+        rom = bytearray(0x8000)
+        rom[:len(code)] = bytes(code)
+        return costs.generated_blocks(rom, [dict(entry='008000', end=f'{0x8000 + len(code):06x}')])
+
+    def test_branch_target_splits_block_and_retains_extra(self):
+        blocks = self.fixture([0xd0, 1, 0xea, 0x60])
+        self.assertEqual([[i.pc for i in b] for b in blocks], [[0x8000], [0x8002], [0x8003]])
+        self.assertEqual(blocks[0][0].price()[:2], (16, 6))
+
+    def test_calls_split_and_rep_changes_immediate_width(self):
+        blocks = self.fixture([0x20, 0x00, 0x90, 0xc2, 0x20, 0xa9, 1, 2, 0x60])
+        self.assertEqual(len(blocks), 2)
+        self.assertEqual(blocks[1][1].length, 3)
+        self.assertFalse(blocks[1][1].m8)
+
+    def test_dynamic_width_and_conflicts_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'dynamic state'):
+            self.fixture([0x28, 0x60])
+        with self.assertRaisesRegex(ValueError, 'conflicting M/X'):
+            self.fixture([0xd0, 2, 0xc2, 0x20, 0x60])
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -2598,7 +2598,10 @@ impl ZeldaState {
         if self.lag_free {
             // $1E:9BC8..9BCD LDA/ BNE Zoro, or JMP Babasu. Both are
             // tail bodies of SpriteActive3_Main ($1E:8B19).
-            crate::cycle_ledger::charge(if self.sprite_slot_view(k).e() != 0 { 54 } else { 72 });
+            let blocks = crate::cycle_ledger::blocks(self.lag_free);
+            blocks.block(0x1e9bc8);
+            if self.sprite_slot_view(k).e() != 0 { blocks.taken(0x1e9bcb); }
+            else { blocks.block(0x1e9bcd); }
         }
         if self.sprite_slot_view(k).e() != 0 {
             self.zoro(k);

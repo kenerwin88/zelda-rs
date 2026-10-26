@@ -15,9 +15,71 @@ use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::collections::BTreeMap;
 
+#[path = "rom_block_costs.rs"]
+mod rom_block_costs;
+
+/// A source block marker is enabled only by the executing state's lagless
+/// lane. Muted previews remain muted; default/ROM timing receives no charge.
+pub struct BlockMarkers(bool);
+
+pub fn blocks(lagless: bool) -> BlockMarkers { BlockMarkers(lagless) }
+
+impl BlockMarkers {
+    /// Static instruction work at this ROM block's documented entry M/X.
+    #[inline]
+    pub fn block(&self, address: u32) {
+        if !self.0 || is_muted() { return; }
+        let index = rom_block_costs::BLOCKS.binary_search_by_key(&address, |b| b.0)
+            .expect("ROM block missing from generated table");
+        self.retire(address, 0, rom_block_costs::BLOCKS[index].4);
+    }
+
+    /// Native branch outcome adds the 65816's internal taken cycle.
+    pub fn taken(&self, pc: u32) {
+        if !self.0 || is_muted() { return; }
+        debug_assert!(rom_block_costs::BLOCKS.iter().any(|b| b.5 == pc && pc != 0),
+            "taken marker must name a generated conditional branch");
+        self.retire(pc, 1, 6);
+    }
+
+    /// The executing native index, not a scene estimate, determines crossing.
+    pub fn crossing(&self, pc: u32) {
+        if !self.0 || is_muted() { return; }
+        debug_assert!(rom_block_costs::BLOCKS.iter().any(|b| b.6.contains(&pc)),
+            "crossing marker must name a generated indexed read");
+        self.retire(pc, 2, 6);
+    }
+
+    fn retire(&self, address: u32, kind: u8, clocks: u64) {
+        charge(clocks);
+        PROFILE.with(|profile| {
+            if let Some(p) = profile.borrow_mut().as_mut().filter(|p| p.active) {
+                let owner = LEDGER.with(|l| l.borrow().addresses.last().copied().unwrap_or(0));
+                let row = p.blocks.entry((owner, address, kind)).or_default();
+                row[0] += 1;
+                row[1] += clocks;
+            }
+        });
+        #[cfg(test)]
+        MARKER_TRAIL.with(|trail| {
+            if let Some(trail) = trail.borrow_mut().as_mut() {
+                let owner = LEDGER.with(|l| l.borrow().addresses.last().copied().unwrap_or(0));
+                trail.push((owner, address, kind, clocks));
+            }
+        });
+    }
+}
+
+/// Take before the enclosing routine profile; kind 0=block, 1=taken, 2=crossing.
+pub fn take_block_profile() -> BTreeMap<(u32, u32, u8), [u64; 2]> {
+    PROFILE.with(|p| p.borrow_mut().as_mut()
+        .map_or_else(BTreeMap::new, |p| std::mem::take(&mut p.blocks)))
+}
+
 /// Diagnostic work only; address zero is work outside every annotated scope.
 #[derive(Default)]
 struct RoutineProfile {
+    blocks: BTreeMap<(u32, u32, u8), [u64; 2]>,
     active: bool,
     rows: BTreeMap<u32, [u64; 3]>, // calls, inclusive, exclusive
     fragment_path: Vec<u32>,
@@ -42,6 +104,8 @@ struct Ledger {
 }
 
 thread_local! {
+    #[cfg(test)]
+    static MARKER_TRAIL: RefCell<Option<Vec<(u32, u32, u8, u64)>>> = const { RefCell::new(None) };
     /// The running total, a plain cell so a charge is one add on the hot
     /// path (annotated routines charge many times per frame).
     static MASTER: Cell<u64> = const { Cell::new(0) };
@@ -451,9 +515,77 @@ pub(crate) fn measure_routine_self_work(address: u32, run: impl FnOnce()) -> u64
         .filter(|(pc, _)| *pc == address).map(|(_, cycles)| *cycles).sum())
 }
 
+/// Execute an unmodified ROM fixture and compare its exclusive instruction
+/// work with the native marker trail. `owns` describes source ownership (it
+/// can include JMP tails/local stack pushes), never a cycle formula. The
+/// fixture supplies the normal RTS/RTL sentinel at $8000 and CPU registers.
+#[cfg(test)]
+pub(crate) fn assert_rom_marker_work(
+    routine: u32,
+    machine: snes::Snes,
+    owns: impl Fn(&snes::Snes) -> bool,
+    native: impl FnOnce(),
+) -> snes::RomCpuTimingProbe {
+    use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, SourcePpuReadState};
+    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+    let mut source = RomCpuTimingProbe::new(machine, clock, SourcePpuReadState::snes9x_reset()).unwrap();
+    let mut expected = 0;
+    for _ in 0..100000 {
+        let owned = owns(source.snes());
+        let step = source.step().unwrap();
+        if owned { expected += step.transactions.iter()
+            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>(); }
+        if source.snes().cpu.pc == 0x8000 { break; }
+    }
+    assert_eq!(source.snes().cpu.pc, 0x8000, "ROM fixture did not return");
+    MARKER_TRAIL.with(|t| assert!(t.borrow_mut().replace(Vec::new()).is_none()));
+    native();
+    let trail = MARKER_TRAIL.with(|t| t.borrow_mut().take().unwrap());
+    let actual: u64 = trail.iter().filter(|t| t.0 == routine).map(|t| t.3).sum();
+    assert_eq!(actual, expected, "routine {routine:06x}: native marker trail {trail:?}");
+    source
+}
+
 #[cfg(test)]
 mod annotation_probe_tests {
     use super::*;
+
+    #[test]
+    fn generated_markers_preserve_lane_muting_and_routine_ownership() {
+        let start = master();
+        blocks(false).block(0x1e9bd0);
+        blocks(false).taken(0x1e9bd3);
+        blocks(false).crossing(0x1e9bd0);
+        muted(|| blocks(true).block(0x1e9bd0));
+        assert_eq!(master(), start);
+        profile_iteration(true);
+        profile_main_begin();
+        {
+            let _scope = routine(0x1e8b19);
+            let markers = blocks(true);
+            markers.block(0x1e9bd0);
+            markers.taken(0x1e9bd3);
+            markers.crossing(0x1e9bd0);
+        }
+        profile_main_end();
+        assert_eq!(master() - start, 60);
+        assert_eq!(take_block_profile(), BTreeMap::from([
+            ((0x1e8b19, 0x1e9bd0, 0), [1, 48]),
+            ((0x1e8b19, 0x1e9bd0, 2), [1, 6]),
+            ((0x1e8b19, 0x1e9bd3, 1), [1, 6]),
+        ]));
+        assert_eq!(take_routine_profile()[&0x1e8b19], [1, 60, 60]);
+    }
+
+    #[test]
+    #[should_panic(expected = "generated conditional branch")]
+    fn taken_marker_rejects_a_nonbranch_pc() { blocks(true).taken(0x1e9bd0); }
+
+    #[test]
+    #[should_panic(expected = "generated indexed read")]
+    fn crossing_marker_rejects_a_nonindexed_pc() { blocks(true).crossing(0x1e9bdd); }
 
     #[test]
     fn object_identity_preserves_routine_totals_and_excludes_muted_previews() {
