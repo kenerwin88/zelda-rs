@@ -426,12 +426,38 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_project_speed_towards_link(&self, k: usize, vel: u8) -> ProjectSpeedRet {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e991));
         if vel == 0 {
+            // $06:E991..E995 -> E98E..E990: STA, CMP, taken BEQ, STZ, RTS.
+            if self.lag_free { crate::cycle_ledger::charge(56 + 6 + 66); }
             return ProjectSpeedRet::ZERO;
         }
         let below = self.sprite_is_below_link(k);
         let right = self.sprite_is_right_of_link(k);
-        project_speed_from_differences(vel, below, right)
+        let result = project_speed_from_differences(vel, below, right);
+        if self.lag_free {
+            let ym = (below.b as i8).unsigned_abs();
+            let xm = (right.b as i8).unsigned_abs();
+            let swapped = xm < ym;
+            // The unsigned minor result counts the SBC/INC paths actually
+            // executed in $06:E9CC..E9DC, before axis swap and output signs.
+            let (minor, negative) = if swapped { (result.x, right.a) } else { (result.y, below.a) };
+            let subtractions = if negative != 0 { minor.wrapping_neg() } else { minor };
+            crate::cycle_ledger::charge(
+                56 + 154 + if below.b & 0x80 == 0 { 6 } else { 30 }
+                + 134 + if right.b & 0x80 == 0 { 6 } else { 30 }
+                + 104 + if swapped { 136 } else { 6 }
+                + 72 // $E9C6..E9CA: accumulator/output/index initialization.
+                // Each pass: 102 + taken BCC(6) + 54 + taken BNE(6).
+                // A subtraction replaces taken BCC(6) with SBC/INC(62).
+                + u64::from(vel) * 168 - 6 + u64::from(subtractions) * 56
+                + 30 + if swapped { 146 } else { 6 } // $E9DE..E9E9.
+                + 64 + if below.a != 0 { 54 } else { 6 } // $E9EB..E9F4.
+                + 64 + if right.a != 0 { 54 } else { 6 } // $E9F6..E9FF.
+                + 98, // $EA01..EA03: PLY, PLX, RTS. Callees priced separately.
+            );
+        }
+        result
     }
 
     pub(in crate::zelda_rtl) fn sprite_project_speed_towards_location(

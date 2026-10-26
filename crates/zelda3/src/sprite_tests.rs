@@ -2523,3 +2523,65 @@ fn sprite_bounce_from_tile_collision_returns_zero_without_collision() {
     assert_eq!(s.sprite_slot_view(k).y_velocity(), 0xf0);
     assert_eq!(s.sprite_slot_view(k).g(), 7);
 }
+
+#[test]
+fn sprite_projection_price_matches_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for slot in [0usize, 15] {
+        for speed in [0u8, 1, 2, 16, 127, 128, 255] {
+            for (dx, dy) in [(0u16, 0u16), (1, 0), (0, 1), (1, 1), (127, 128),
+                (128, 127), (255, 256), (256, 255), (65535, 128), (128, 65535),
+                (65535, 65535), (32768, 1), (1, 32768)] {
+                let mut native = ZeldaState::new();
+                let mut image = native.wram_image().into_owned();
+                image[0x22..0x24].copy_from_slice(&dx.to_le_bytes());
+                image[0x20..0x22].copy_from_slice(&dy.to_le_bytes());
+                image[0xf70 + slot] = 7;
+                native.import_wram_image(&image);
+                native.sync_native_game_state_from_ram();
+                native.sprite_set_x(slot, 0);
+                native.sprite_set_y(slot, 15);
+                native.set_lag_free(true);
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = 6;
+                machine.cpu.db = 6;
+                machine.cpu.pc = 0xe991;
+                machine.cpu.sp = 0x1fc;
+                machine.cpu.x = slot as u16;
+                machine.cpu.a = u16::from(speed);
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                let mut measured = 0;
+                for _ in 0..3000 {
+                    let pc = source.snes().cpu.pc;
+                    let step = source.step().unwrap();
+                    if (0xe98e..=0xea03).contains(&pc) {
+                        measured += step.transactions.iter()
+                            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                    }
+                    if source.snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.snes().cpu.pc, 0x8000);
+                let actual = crate::cycle_ledger::measure_routine_self_work(0x06_e991, || {
+                    let result = native.sprite_project_speed_towards_link(slot, speed);
+                    assert_eq!((result.x, result.y), (source.snes().ram[1], source.snes().ram[0]));
+                });
+                assert_eq!(actual, measured, "slot={slot} speed={speed} dx={dx} dy={dy}");
+                native.set_lag_free(false);
+                assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x06_e991, || {
+                    native.sprite_project_speed_towards_link(slot, speed);
+                }), 0);
+            }
+        }
+    }
+}

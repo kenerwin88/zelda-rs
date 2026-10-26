@@ -666,11 +666,22 @@ impl ZeldaState {
         x: u16,
         y: u16,
     ) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08_a7ab));
         let base_frame = frame;
         loop {
             let tile = ANCILLA_DRAW_EXPLOSION_BOMB_DRAW_EXPLOSION_TILE[frame];
+            // $08:A7AB..A7B0: tile read, sentinel comparison and BEQ.
+            if self.lag_free { crate::cycle_ledger::charge(64); }
             if tile.char != 0xff {
                 let i = idx + base_frame;
+                if self.lag_free {
+                    // $08:A7B2..A800, including JSR but excluding $08:F702.
+                    // $9D7C,X/$9D7E,X read the two offset words at X=i*4.
+                    let offset = (i * 4) as u8;
+                    let crossings = u64::from(u16::from(offset) + 0x7c > 0xff)
+                        + u64::from(u16::from(offset) + 0x7e > 0xff);
+                    crate::cycle_ledger::charge(1100 + crossings * 6);
+                }
                 let offset = ANCILLA_DRAW_EXPLOSION_BOMB_DRAW_EXPLOSION_OFFSET[i];
                 self.ancilla_set_oam_safe(
                     oam,
@@ -681,13 +692,18 @@ impl ZeldaState {
                     ANCILLA_DRAW_EXPLOSION_BOMB_DRAW_EXPLOSION_EXT[frame],
                 );
                 oam += 4;
+            } else if self.lag_free {
+                crate::cycle_ledger::charge(6); // $A7B0: taken sentinel BEQ.
             }
             frame += 1;
             idx += 1;
+            // $08:A802..A80A: INX twice, INC, LDA, CMP and actual BNE.
+            if self.lag_free { crate::cycle_ledger::charge(130 + if idx != idx_end { 6 } else { 0 }); }
             if idx == idx_end {
                 break;
             }
         }
+        if self.lag_free { crate::cycle_ledger::charge(42); } // $08:A80C RTS.
         oam
     }
 
@@ -962,4 +978,66 @@ impl ZeldaState {
         );
     }
 
+}
+
+#[cfg(test)]
+mod price_tests {
+    use super::*;
+
+    #[test]
+    fn explosion_price_matches_executed_rom_paths() {
+        use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+            CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        for frame in [0usize, 6, 12, 18, 24, 30, 36, 42, 48] {
+            for count in [1usize, 4, 6] {
+                for (x, y) in [(0u16, 0u16), (127, 239), (128, 240), (255, 255),
+                    (256, 256), (65535, 65535)] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    let mut machine = Snes::new();
+                    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                    for (address, value) in [(0x90, 0x800u16), (0x92, 0xa20),
+                        (4, (frame * 4) as u16), (0xc, y), (0xe, x)] {
+                        machine.ram[address..address + 2].copy_from_slice(&value.to_le_bytes());
+                    }
+                    machine.ram[8] = count as u8;
+                    machine.ram[0xb] = 0x32;
+                    machine.ram[0x65] = 0x30;
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0x30);
+                    machine.cpu.k = 8;
+                    machine.cpu.db = 8;
+                    machine.cpu.pc = 0xa7ab;
+                    machine.cpu.sp = 0x1fc;
+                    machine.cpu.x = (frame * 2) as u16;
+                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                    let mut source = RomCpuTimingProbe::new(machine, clock,
+                        SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut measured = 0;
+                    for _ in 0..1000 {
+                        let pc = source.snes().cpu.pc;
+                        let step = source.step().unwrap();
+                        if (0xa7ab..=0xa80c).contains(&pc) {
+                            measured += step.transactions.iter()
+                                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                        }
+                        if source.snes().cpu.pc == 0x8000 { break; }
+                    }
+                    assert_eq!(source.snes().cpu.pc, 0x8000);
+                    let actual = crate::cycle_ledger::measure_routine_self_work(0x08_a7ab, || {
+                        native.ancilla_draw_explosion(0x800, frame, 0, count, 0x32, x, y);
+                    });
+                    assert_eq!(actual, measured, "frame={frame} count={count} x={x} y={y}");
+                    native.set_lag_free(false);
+                    assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x08_a7ab, || {
+                        native.ancilla_draw_explosion(0x800, frame, 0, count, 0x32, x, y);
+                    }), 0);
+                }
+            }
+        }
+    }
 }
