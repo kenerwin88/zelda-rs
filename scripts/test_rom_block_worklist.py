@@ -3,6 +3,22 @@ from rom_block_worklist import rank
 
 
 class Worklist(unittest.TestCase):
+    def test_width_convergence_keeps_shared_tail_separate(self):
+        rom = bytes([0xc2, 0x30, 0x60]) + bytes(0x8000 - 3)
+        receipts = [dict(iteration='7', routine='008000', pc=pc,
+                         m8=m8, x8=x8, count=str(count), master=str(master), entries='0')
+                    for pc, m8, x8, count, master in [
+                        ('008000', '1', '1', 1, 22),
+                        ('008000', '0', '0', 1, 22),
+                        ('008002', '0', '0', 2, 84)]]
+        routines = {7: {'008000': (2, 128, 128), 'total': (1, 128, 128)}}
+        rows = rank(rom, receipts, routines, {7}, set(), None)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]['block'], '008002')
+        self.assertEqual(rows[0]['source_master'], 84)
+        self.assertEqual(sum(r['source_master'] for r in rows), 128)
+        self.assertTrue(all(r['end'] == '008002' for r in rows[1:]))
+
     def test_executed_branch_fragments_and_native_owner(self):
         rom = bytes([0xd0, 1, 0xea, 0x60]) + bytes(0x8000 - 4)
         receipts = [dict(iteration='7', routine='008000', pc=pc, m8='1', x8='1', count=str(count), master=str(master), entries='0')

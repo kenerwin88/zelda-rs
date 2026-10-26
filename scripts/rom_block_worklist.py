@@ -73,6 +73,7 @@ def rank(rom, receipts, routines, cohort, declared, native):
     # width-correct successor, and a control instruction always ends its block.
     successor = {}
     predecessor = {}
+    incoming = defaultdict(list)
     for key, ins in decoded.items():
         owner, pc, m8, x8 = key
         if ins.kind == 'CTL':
@@ -82,10 +83,14 @@ def rank(rom, receipts, routines, cohort, declared, native):
             if ins.operand & 0x10: x8 = ins.name == 'SEP'
         nxt = (owner, pc + ins.length, m8, x8)
         if nxt in observed and nxt[1] not in leaders:
-            if nxt in predecessor:
-                raise ValueError(f'ambiguous straight-line predecessor at {nxt}')
-            successor[key] = nxt
-            predecessor[nxt] = key
+            incoming[nxt].append(key)
+    for nxt, previous in incoming.items():
+        # REP/SEP can converge distinct entry widths onto one successor.
+        # Keep that shared tail as its own block instead of assigning its
+        # executed clocks to either predecessor (or counting them twice).
+        if len(previous) == 1:
+            successor[previous[0]] = nxt
+            predecessor[nxt] = previous[0]
     rows = []
     consumed = set()
     for key in sorted(observed):
