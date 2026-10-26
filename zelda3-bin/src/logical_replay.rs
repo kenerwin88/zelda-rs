@@ -1725,6 +1725,14 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             continue;
         }
         let observed_polls = game.take_song_end_poll_observations();
+        if zelda3::debug_env::var_os("ZELDA3_DEBUG_LAGLESS_SONG_POLL").is_some()
+            && (!observed_polls.is_empty() || iteration.is_some_and(|i| !i.apu_reads.is_empty()))
+        {
+            eprintln!("lagless-poll-context iteration={} host={} audio_start={} audio_end={} callbacks={} held={} masked={} engine={:?} source={:?} source_open_host={:?}",
+                iteration_index, game.frame_ctr_dbg, audio_start, audio_pairs, audio_callbacks,
+                native_held, native_elapsed, observed_polls, iteration.map(|i| &i.apu_reads),
+                iteration.map(|i| i.open_host));
+        }
         if let (Some(output), Some(iteration), Some((module, submodule, room, song))) =
             (audio_map.as_mut(), iteration, entry_audio_context)
         {

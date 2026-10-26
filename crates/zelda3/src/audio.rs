@@ -887,6 +887,13 @@ impl ZeldaState {
     /// offset of this read. The timing receipt never supplies the port value:
     /// Zelda's deterministic SPC program remains its sole owner.
     pub(crate) fn zelda_read_apui00_for_song_end_poll(&mut self) -> u8 {
+        if self.lag_free && crate::debug_env::var_os!("ZELDA3_DEBUG_LAGLESS_SONG_POLL").is_some() {
+            eprintln!("lagless-poll-position host={} instructions={} vwf={} dma={} entry={} clock={:?}",
+                self.frame_ctr_dbg,
+                crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start),
+                self.lag_free_vwf_master, self.native_cost_main_dma(), self.native_cost_entry_handler(),
+                self.zelda_spc_driver_clock_debug_summary());
+        }
         let value = self.read_apui00_for_song_end_poll();
         if let Some(reads) = self.song_end_poll_observations.as_mut() {
             reads.push(value);

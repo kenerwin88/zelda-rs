@@ -11501,3 +11501,274 @@ The fresh main default binary was built before Rust edits. Candidate default mat
 The sole default library failure is the known spotlight caller-return fixture; reduced passes entirely. The shard manifest verifies complete, disjoint named test unions. Both SNES lib suites, the five block generator/worklist Python tests (including ROM regeneration), existing routine-coverage Python tests, the source/worklist smoke and `git diff --check` pass. `verification.json`, `provenance.json`, full predictor CSVs, native block receipts and the fixture/build/suite logs retain the evidence.
 
 No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. The source smoke executes only the in-repo CPU model. Scratch drivers stayed in `/tmp`; supplied ledgers/cache and the other checkout remained read-only. The next pricing batch still needs the frozen source PC capture, its measured block ranking, and 3–4 new marker-based routine prices.
+
+## Live song-end diagnosis on `codex/live-songend` (main `70e51911`)
+
+Diagnosis-only stopping point. No audio clock, song duration, instruction price or pacing behavior changed. The existing code additions are opt-in observations under `ZELDA3_DEBUG_LAGLESS_SONG_POLL`; they record each native poll's priced instruction position, opening handler, SPC cursor and logical-iteration context. Evidence is in `target/live-songend/`, principally `poll-diagnosis.json`, the two stderr traces, audio maps, and source poll receipts extracted read-only from the pinned cache.
+
+### What the measurements establish
+
+**(b) is present:** lagless `read_apui00_for_song_end_poll` returns the frame-entry boolean projection of the preceding output callback's SPC acknowledgement. It does not advance the SPC to the read. Only the original-timing live-owner branch samples an intra-window clone. Boolean 1 versus raw SPC `$13` is intentional normalization; the gameplay branch tests zero versus nonzero. `advance_lagless` advances the persistent output cursor by 534 DSP pairs (17,088 SPC clocks) per output callback, including held and masked callbacks. The trace also retains `origin + local`, the actual SPC execution position; the nominal cursor is not the instruction-retirement clock, because audio execution includes the existing 19-cycle lookahead and instruction overshoot. `poll-diagnosis.json` records both coordinates.
+
+The read position is not the current instruction counter verbatim. Fresh `scripts/rom_block_costs.py` listings for `$08:C3FD` and `$08:C606` show a 30-clock system-bank `LDA $2140`, followed by a 16-clock untaken branch. Native callers charge both before invoking the helper. Thus the priced I/O-access start is the recorded instruction count minus 22 (branch 16 plus I/O 6). This is an instruction position, excluding opening-handler time and bus stalls; it is not an exact CPU wall/bus timestamp. No price was added or altered.
+
+| Requested iteration | Cartridge answer / priced read start | Live answer / priced read start | SPC cursor at poll (DSP pairs), cartridge / live |
+| ---: | --- | --- | --- |
+| 94848 | $13 / 17,668 | $00 / 17,668 | 55,208,658 / 55,208,658 |
+| 94849 | $13 / 17,668 | no poll | 55,209,192 / no poll |
+| 229029 | $13 / 18,678 | $01 / 18,678 | 132,687,786 / 132,687,786 |
+| 229030 | $13 / 18,678 | $00 / 18,678 | 132,688,320 / 132,688,320 |
+
+At 94849 the live lane has already left the polling branch and executes the five-hold workload. On this joint main, the second first mismatch is 229030; the historical 27b shift to 229029 is not reproduced as the current first mismatch. Both observations use uninterrupted full-route census execution, not forced-window seeds.
+
+All ten retained song-cause clusters were sampled, including the three pendant and seven crystal clusters. Each row below pairs the current live first zero with the cartridge ledger's first zero following that cluster. Source receipt offsets are **candidate host-relative DSP sample positions** in the ledger's opening/closing host interval. They are quantized, may include multiple source polls and are not an exact CPU timestamp or an unambiguous iteration join.
+
+| Retained cause | Current live first zero | Live SPC cursor (DSP pairs) | Priced read start, main instructions | Cartridge first zero | Source receipt candidates (host:sample offsets) |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 94849 | 94848 | 55,208,658 | 17,668 | 94854 | 103726:75 |
+| 142083 | 142083 | 82,419,696 | 19,474 | 142088 | 154786:77; 154787:75 |
+| 229030 | 229030 | 132,688,320 | 18,678 | 229035 | 249308:75; 249309:79 |
+| 380876 | 380876 | 220,148,442 | 19,460 | 380881 | 413473:85 |
+| 462622 | 462622 | 44,963,334 | 23,896 | 462628 | 500859:88 |
+| 627250 | 627250 | 93,171,786 | 25,664 | 627256 | 677406:96; 677407:93 |
+| 735861 | 735861 | 59,920,674 | 24,194 | 735867 | 792918:96; 792919:94 |
+| 881728 | 881728 | 80,722,644 | 27,352 | 881734 | 947003:89; 947004:90 |
+| 1064729 | 1064728 | 102,902,868 | 25,254 | 1064734 | 1143492:87 |
+| 1318330 | 1318330 | 144,300,150 | 26,704 | 1318335 | 1416755:95 |
+
+The cartridge remains nonzero through 94853 and 229034, first answering zero at 94854 and 229035. The historical one-iteration batch shifts therefore describe movement between builds, not a one-iteration live-to-cartridge gap. The sampled live zeroes precede the cartridge zeroes by several logical iterations. Their SPC acknowledgement is already zero at the callback boundary before the priced read, so advancing forward to that read cannot recover the source's still-playing value. An ignored within-iteration offset exists, but these measurements do not establish it as the cause of the early zeroes.
+
+`source-output-clock-positions.json` joins the pinned source audio hash ledger to the poll receipt candidates, retaining cumulative output-grid positions for all ten sampled source-zero windows and the four requested iterations. These source sample-grid coordinates remain distinct from exact SPC execution or CPU bus timestamps. `relative-clock-history.json` additionally measures the first three music-request-to-cartridge-zero intervals: source host deltas are 638, 637 and 638; native cartridge-lane output callback deltas are 638, 638 and 638. The first and third therefore have no net callback-count discrepancy across those intervals. Matched command delivery and SPC initial state are still unmeasured, so this is not tempo proof.
+
+`clock-accounting-audit.json` checks every iteration in both full lanes: callbacks equal one main callback plus held plus masked callbacks, with zero residual on all 1,473,123 rows. At every traced poll the SPC cursor equals the output callback clock up to one constant offset per explicit reseed epoch; that offset never changes inside an epoch. Thus no unaccounted SPC advance or double-counted hold/mask callback appears in these observations. This does not equate the callback clock with the source physical-field clock.
+
+**(c) affects the clock path, but a defect is not isolated:** the native output clock counts actual held/masked callbacks, and instruction additions can change that count before a poll. The audio maps retain every such callback and reseed. That is not evidence that a particular hold or masked field is incorrectly counted. **(a) remains open:** unequal command/clock histories have not been eliminated, so these runs cannot attribute the early end to SPC/DSP fidelity or tempo. No matched-command, matched-state source/native song-duration experiment was performed.
+
+**The exact source CPU position requested in scope remains unavailable.** The supplied iteration ledger stores APU values and host bounds, and the pinned receipt stores host-relative DSP offsets; neither stores the source CPU bus timestamp/PC for this join. No fresh source CPU capture or Snes9x execution was performed. Likewise the native priced counter is not a complete bus cursor. These limitations prevent treating a priced-offset rule as a verified general fix. This batch stops at the measured clock-mapping gap and early-zero counterexample.
+
+### Current-main verification
+
+The supplied historical 641-row count is not reproduced by this current-main invocation: the fresh live trace has 639 song-end-poll rows, 14 lag rows and 14,741 polygon rows. The fresh cartridge metrics are 4,936 missing / 0 excess / 0 FP; live is 5,633 / 590 / 132. These are current-main measurements, not an improvement claim against the older batch notes. Both censuses use the reduced diagnostic binary, `--seed-every 2000`, and the bound read-only full ledger/cache inputs.
+
+Both fresh complete CPU census gates PASS, 1,473,123 iterations each, unexplained zero. These are periodically seeded logical gates, not continuous physical-field or exact A/V proof. There is no behavioral after-trial: the before/after columns below are identical because the change only logs observations. They are not two independent full runs per lane.
+
+| Lane | Missing before / after | Excess before / after | FP before / after | Song-end classified rows before / after | Audio duration change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| rom | 4,936 / 4,936 | 0 / 0 | 0 / 0 | 0 / 0 | 0 (logging only) |
+| live | 5,633 / 5,633 | 590 / 590 | 132 / 132 | 639 / 639 | 0 (logging only) |
+
+`live-category-before-after.csv` retains every live category's missing/excess/FP values with the same logging-only interpretation. The full current category metrics are also in `live.metrics.json`; no category is omitted from those artifacts. Route audio durations are rom: 841,580,262 stereo pairs / 26299.383187 seconds, live: 841,507,104 stereo pairs / 26297.097000 seconds. These are output-grid durations, not a new measurement of source song tempo.
+
+Both ordinary diagnostic builds and the clean-main default baseline build are warning-free. The fresh main default binary recorded a new 200k ledger; the diagnostic default build matches all state/display/SRAM/PCM/input/context records and EOF. Default/ROM-timing accounting is unchanged. Library results (test-only fixture warnings separate from ordinary builds):
+
+| Library | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,538 | 1 | 3 |
+| reduced | 2,073 | 0 | 2 |
+
+Default retains only the known spotlight caller-return fixture failure; reduced passes entirely. Both CPU-only SNES library suites also pass. Interrupted shards were recovered by running exactly the unobserved names from the saved test lists; the manifest checks the complete, disjoint union of observed results. `git diff --check` passes. Binary, source, input and output identities are bound by `verification.json` and `artifact-sha256.json`. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Supplied ledgers/cache stayed read-only; scratch scripts stayed in `/tmp`.
+
+
+### Live category table (logging-only before / after)
+
+| Module/submodule | Source lag | Missing before / after | Excess before / after | FP before / after |
+| --- | ---: | ---: | ---: | ---: |
+| `00/00` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `00/01` | 114 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `00/02` | 2 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/05` | 62 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/06` | 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `00/07` | 14 | 12 / 12 | 0 / 0 | 0 / 0 |
+| `00/0A` | 6 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `00/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/00` | 235 | 48 / 48 | 0 / 0 | 0 / 0 |
+| `01/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/02` | 7 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `01/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `01/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `03/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `03/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/01` | 2 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `04/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `04/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `05/00` | 639 | 6 / 6 | 0 / 0 | 0 / 0 |
+| `06/00` | 8,196 | 89 / 89 | 0 / 0 | 0 / 0 |
+| `07/00` | 3,679 | 1,651 / 1,651 | 103 / 103 | 19 / 19 |
+| `07/01` | 928 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/02` | 8,770 | 334 / 334 | 0 / 0 | 0 / 0 |
+| `07/03` | 53 | 53 / 53 | 0 / 0 | 0 / 0 |
+| `07/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/06` | 984 | 23 / 23 | 0 / 0 | 0 / 0 |
+| `07/07` | 4,060 | 261 / 261 | 0 / 0 | 0 / 0 |
+| `07/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0B` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `07/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/0E` | 7,979 | 121 / 121 | 0 / 0 | 0 / 0 |
+| `07/0F` | 2,992 | 71 / 71 | 0 / 0 | 0 / 0 |
+| `07/10` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/12` | 391 | 18 / 18 | 0 / 0 | 0 / 0 |
+| `07/13` | 71 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/14` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/15` | 2,333 | 72 / 72 | 0 / 0 | 0 / 0 |
+| `07/16` | 303 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/17` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/18` | 41 | 41 / 41 | 35 / 35 | 14 / 14 |
+| `07/19` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `07/1A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `08/00` | 6,466 | 253 / 253 | 0 / 0 | 0 / 0 |
+| `08/01` | 706 | 17 / 17 | 53 / 53 | 0 / 0 |
+| `08/02` | 2,576 | 90 / 90 | 0 / 0 | 0 / 0 |
+| `09/00` | 1,253 | 1,118 / 1,118 | 0 / 0 | 0 / 0 |
+| `09/01` | 3,479 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `09/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/03` | 4,372 | 9 / 9 | 0 / 0 | 0 / 0 |
+| `09/04` | 508 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `09/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/06` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `09/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/0D` | 247 | 87 / 87 | 0 / 0 | 0 / 0 |
+| `09/0E` | 83 | 5 / 5 | 0 / 0 | 0 / 0 |
+| `09/0F` | 242 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `09/10` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/11` | 274 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `09/12` | 32 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/13` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/14` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/15` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/16` | 265 | 86 / 86 | 0 / 0 | 0 / 0 |
+| `09/1F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/20` | 138 | 5 / 5 | 0 / 0 | 0 / 0 |
+| `09/21` | 84 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/23` | 6,054 | 362 / 362 | 0 / 0 | 0 / 0 |
+| `09/2C` | 228 | 4 / 4 | 0 / 0 | 0 / 0 |
+| `09/2D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `09/2E` | 363 | 10 / 10 | 0 / 0 | 0 / 0 |
+| `09/2F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/00` | 29 | 9 / 9 | 0 / 0 | 0 / 0 |
+| `0B/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/17` | 68 | 31 / 31 | 0 / 0 | 0 / 0 |
+| `0B/18` | 24 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/19` | 64 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `0B/1A` | 60 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `0B/1B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/1C` | 48 | 11 / 11 | 0 / 0 | 0 / 0 |
+| `0B/24` | 103 | 60 / 60 | 0 / 0 | 0 / 0 |
+| `0B/25` | 30 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/26` | 61 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0B/27` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/28` | 68 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/29` | 59 | 32 / 32 | 0 / 0 | 0 / 0 |
+| `0B/2A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0B/2B` | 66 | 23 / 23 | 0 / 0 | 0 / 0 |
+| `0E/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `0E/02` | 12,964 | 370 / 370 | 223 / 223 | 96 / 96 |
+| `0E/03` | 2,672 | 37 / 37 | 0 / 0 | 0 / 0 |
+| `0E/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/05` | 138 | 36 / 36 | 0 / 0 | 0 / 0 |
+| `0E/07` | 1,065 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/08` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0E/0A` | 1,845 | 20 / 20 | 0 / 0 | 0 / 0 |
+| `0E/0B` | 243 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `0F/00` | 449 | 22 / 22 | 0 / 0 | 0 / 0 |
+| `0F/01` | 5,432 | 74 / 74 | 0 / 0 | 0 / 0 |
+| `10/00` | 157 | 1 / 1 | 81 / 81 | 0 / 0 |
+| `10/01` | 2,672 | 2 / 2 | 5 / 5 | 0 / 0 |
+| `11/00` | 973 | 7 / 7 | 0 / 0 | 0 / 0 |
+| `11/07` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/02` | 23 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/03` | 472 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `12/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/05` | 19 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/06` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/08` | 32 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/09` | 4 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0E` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `12/0F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/04` | 3 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `13/05` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/03` | 64 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `15/04` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/05` | 14 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/06` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/07` | 83 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0A` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `15/0C` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/00` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/02` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `16/04` | 0 | 0 / 0 | 90 / 90 | 3 / 3 |
+| `17/01` | 141 | 3 / 3 | 0 / 0 | 0 / 0 |
+| `18/00` | 59 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `19/00` | 72 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `19/01` | 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `19/02` | 2,001 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/00` | 59 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/01` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/02` | 46 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/03` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/04` | 58 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/05` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/06` | 55 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/07` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/08` | 58 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/09` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0A` | 58 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0C` | 53 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0E` | 57 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/0F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/10` | 56 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/11` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/12` | 60 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/13` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/14` | 47 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/15` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/16` | 45 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/17` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/18` | 58 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/19` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1A` | 59 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1B` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1C` | 59 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `1A/1D` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1E` | 51 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/1F` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/20` | 41 | 2 / 2 | 0 / 0 | 0 / 0 |
+| `1A/21` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1A/22` | 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| `1B/02` | 139 | 2 / 2 | 0 / 0 | 0 / 0 |
