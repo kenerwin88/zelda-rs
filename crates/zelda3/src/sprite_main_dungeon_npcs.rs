@@ -1109,7 +1109,8 @@ impl ZeldaState {
         // $05:DE41 LDA $D80,x (32), JSL JumpTableLocal (62 + 414) into the
         // five-entry table at $05:DE48.
         crate::cycle_ledger::charge(46);
-        self.sprite_move_xy(k);
+        // ROM $05:DE3E
+        self.sprite_move_xy_marked(k, 0x05fa00);
         crate::cycle_ledger::charge_routine(0x00_8781, 52);
         crate::cycle_ledger::charge(32 + 62 + 414 - 52);
         match self.sprite_slot_view(k).ai_state() {
@@ -1504,7 +1505,8 @@ impl ZeldaState {
         self.sprite_behave_as_barrier(k);
         crate::cycle_ledger::charge(62 + 46);
         if self.sprite_track_body_to_head(k) {
-            self.sprite_move_xy(k);
+            // ROM $05:DCFA
+            self.sprite_move_xy_marked(k, 0x05fa00);
         }
         crate::cycle_ledger::charge_routine(0x00_8781, 52);
         crate::cycle_ledger::charge(32 + 62 + 414 - 52);
@@ -2027,7 +2029,8 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        self.sprite_check_damage_from_link(k);
+        // ROM $1D:C8E2 JSL $06:F2AA
+        self.sprite_check_damage_from_link_long(k);
         if self.sprite_slot_view(k).ai_state() != 3 {
             let j = self.sprite_direction_to_face_link(k);
             self.sprite_slot_view_mut(k).set_head_direction(j);
@@ -2945,7 +2948,8 @@ impl ZeldaState {
     // }
     fn cucco_do_movement_xy(&mut self, k: usize) -> u8 {
         self.sprite_move_xy(k);
-        self.sprite_check_tile_collision(k)
+        // ROM $06:A7BE JSL $06:E496
+        self.sprite_check_tile_collision_long(k)
     }
 
     // ----- Smithy cluster -----------------------------------------------
@@ -2969,7 +2973,8 @@ impl ZeldaState {
         }
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.sprite_move_xy(k);
+                // ROM $06:B21B
+                self.sprite_move_xy_marked(k, 0x06e93e);
                 let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).delay_main() != 0 {

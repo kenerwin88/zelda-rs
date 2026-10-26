@@ -799,6 +799,16 @@ impl ZeldaState {
         while self.retire_single_large_draw_instruction(&mut work).is_some() {}
     }
 
+    pub(in crate::zelda_rtl) fn sprite_draw_single_large_long(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_dbf0));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:DBF0..DBF7: bank wrapper only. DC10/DC13, coordinate
+        // prep and the shadow tail already retire their own instructions.
+        blocks.block(0x06dbf0);
+        self.sprite_draw_single_large(k);
+        blocks.block(0x06dbf6);
+    }
+
     pub(in crate::zelda_rtl) fn begin_single_large_draw(
         &self,
         k: usize,

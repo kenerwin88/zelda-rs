@@ -242,7 +242,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         if self.sprite_slot_view(k).delay_aux4() == 0 {
             self.sprite_check_damage_to_link(k);
-            if (self.sprite_check_damage_from_link(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
+            // ROM $1E:DD75 JSL $06:F2AA
+            if (self.sprite_check_damage_from_link_long(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                 != 0
             {
                 self.sprite_show_message_unconditional(0xc8);

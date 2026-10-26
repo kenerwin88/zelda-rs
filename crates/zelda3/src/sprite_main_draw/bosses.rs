@@ -861,7 +861,8 @@ impl ZeldaState {
 
         if self.sprite_slot_view(k).ai_state() != 0 {
             if self.sprite_slot_view(k).graphics() != 2 {
-                self.sprite_draw_single_large(k);
+                // ROM $1E:DB5B, $1E:DA74 JSL $06:DBF0
+                self.sprite_draw_single_large_long(k);
             } else {
                 self.sprite_draw_single_small(k);
             }
@@ -888,14 +889,16 @@ impl ZeldaState {
         if self.sprite_slot_view(k).b() != 0 {
             self.seeker_energy_ball_draw(k);
         } else {
-            self.sprite_draw_single_large(k);
+            // ROM $1E:DB5B, $1E:DA74 JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
         }
         if self.sprite_return_if_inactive(k) {
             return;
         }
         self.sprite_slot_view_mut(k).add_subtype2(1);
         self.sprite_move_xy(k);
-        if self.sprite_check_tile_collision(k) != 0 {
+        // ROM $1E:DA81 -> $1E:8B2E -> $06:E496
+        if self.sprite_check_tile_collision_long(k) != 0 {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             if self.sprite_slot_view(k).b() != 0 {
@@ -932,7 +935,8 @@ impl ZeldaState {
             }
         } else {
             self.sprite_check_damage_to_link(k);
-            if (self.sprite_check_damage_from_link(k) & PLAYER_DAMAGE_CARRY_MASK_DRAW) != 0 {
+            // ROM $1E:DAE2 JSL $06:F2AA
+            if (self.sprite_check_damage_from_link_long(k) & PLAYER_DAMAGE_CARRY_MASK_DRAW) != 0 {
                 if self.sprite_slot_view(k).b() != 0 {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_state(value);
@@ -1245,7 +1249,8 @@ impl ZeldaState {
             let oldy = self.sprite_get_y(k);
             self.sprite_set_x(k, self.game_state.sprites.workspace.current_sprite_x());
             self.sprite_set_y(k, self.game_state.sprites.workspace.current_sprite_y());
-            self.sprite_check_damage_from_link(k);
+            // ROM $1D:DAF5 JSL $06:F2AA
+            self.sprite_check_damage_from_link_long(k);
             let value = 0;
             self.sprite_slot_view_mut(k).set_a(value);
             let value = 9;

@@ -229,7 +229,8 @@ impl ZeldaState {
             self.dungeon_environment_mut()
                 .set_water_puzzle_state_changed(1);
         }
-        self.sprite_move_xy(k);
+        // ROM $06:C11C
+        self.sprite_move_xy_marked(k, 0x06e93e);
         self.sprite_get16_bit_coords(k);
         self.sprite_check_tile_collision2(k);
         self.sprite_zero_velocity_xy(k);
@@ -327,7 +328,8 @@ impl ZeldaState {
                 .sprite_get_y(k)
                 .wrapping_add(u16::from(MOVABLE_STATUE_SWITCH_Y_OFFSETS[j]));
             let floor = self.sprite_slot_view(k).floor();
-            if !self.probe_entity_tile(floor, x, y).0.is_floor_switch() {
+            // ROM $06:C229 JSL $06:E87B
+            if !self.probe_entity_tile_long(floor, x, y).0.is_floor_switch() {
                 return false;
             }
         }
@@ -1005,8 +1007,10 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         let value = SPRITE_57_DESERT_STATUE_YV[j] as u8;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
-        self.sprite_move_xy(k);
-        if self.sprite_check_tile_collision(k) != 0 {
+        // ROM $05:95C9
+        self.sprite_move_xy_marked(k, 0x05fa00);
+        // ROM $05:95CC -> $05:B88D -> $06:E496
+        if self.sprite_check_tile_collision_long(k) != 0 {
             let value =
                 SPRITE_57_DESERT_STATUE_NEXT_D[usize::from(self.sprite_slot_view(k).direction())];
             self.sprite_slot_view_mut(k).set_direction(value);
@@ -1145,7 +1149,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BookOfMudora(int k) {  // 85fc9e
     pub(super) fn sprite_book_of_mudora(&mut self, k: usize) {
-        self.sprite_draw_single_large(k);
+        // ROM $05:FC9E JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -1263,7 +1268,8 @@ impl ZeldaState {
             self.follower_link_state_mut().set_speed_setting(0);
             self.sprite_repel_dash();
         }
-        self.sprite_move_xy(k);
+        // ROM $05:FD6F
+        self.sprite_move_xy_marked(k, 0x05fa00);
         self.sprite_slot_view_mut(k).subtract_z_velocity(1);
         self.sprite_move_z(k);
         if sign8(self.sprite_slot_view(k).z()) {
@@ -1349,15 +1355,29 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DashTreeTop_Draw(int k) {  // 85fe6f
     pub(super) fn dash_tree_top_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05_fe6f));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $05:FE6F..FF38, M8/X8: the two complete drawing paths.
+        // Coordinate prep and CorrectOamEntries retain their own work.
+        blocks.block(0x05fe6f);
         if self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet).is_none() {
             return;
         }
+        blocks.block(0x05fe72);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let (x0, y0) = self
             .draw_scratch_position_mut()
             .offset_low_position(0u8.wrapping_sub(0x20), 0u8.wrapping_sub(0x20));
         if self.sprite_slot_view(k).subtype2() == 0 {
+            blocks.block(0x05fe8a);
+            for column in 0..4 {
+                blocks.block(0x05fe95);
+                if column != 3 { blocks.taken(0x05fea6); }
+            }
+            blocks.block(0x05fea8);
             for (i, char_flags) in DASH_TREE_TOP_GRID_CHAR_FLAGS.iter().enumerate() {
+                blocks.block(0x05fedb);
+                if i != 15 { blocks.taken(0x05fee9); }
                 let entry_x = x0.wrapping_add(((i & 3) as u8) * 0x10);
                 let entry_y = y0.wrapping_add(((i >> 2) as u8) * 0x10);
                 self.oam_state_mut().set_entry_x(oam + i * 4, entry_x);
@@ -1365,9 +1385,14 @@ impl ZeldaState {
                 self.oam_state_mut()
                     .set_entry_char_flags(oam + i * 4, *char_flags);
             }
+            blocks.block(0x05feeb);
         } else {
+            blocks.taken(0x05fe88);
+            blocks.block(0x05fef7);
             let j = usize::from(self.sprite_slot_view(k).subtype2() - 1);
             for i in (0..16).rev() {
+                blocks.block(0x05ff06);
+                if i != 0 { blocks.taken(0x05ff2b); }
                 self.oam_state_mut().write_entry(
                     oam,
                     x0.wrapping_add(DASH_TREE_TOP_DRAW_X_OFFSETS[i] as u8),
@@ -1377,8 +1402,10 @@ impl ZeldaState {
                 );
                 oam += 4;
             }
+            blocks.block(0x05ff2d);
         }
         self.sprite_correct_oam_entries(k, 15, 2);
+        blocks.block(if self.sprite_slot_view(k).subtype2() == 0 { 0x05fef6 } else { 0x05ff38 });
     }
 
     // -----------------------------------------------------------------------
@@ -1607,7 +1634,8 @@ impl ZeldaState {
             if self.game_state.frame.submodule != 0x23
                 && self.game_state.sprites.system.chr_halfslot_state() < 3
             {
-                self.sprite_draw_single_large(k);
+                // ROM $05:AF8F JSL $06:DBF0
+                self.sprite_draw_single_large_long(k);
             }
             // $05:AF93 JSR Sprite_ReturnIfInactive_ (46; a double return
             // when inactive), then $05:AF96-AFAC the OAM-flag rotation and
@@ -1746,7 +1774,8 @@ impl ZeldaState {
                 .current_sprite_x()
                 .wrapping_sub(5);
             self.sprite_workspace_mut().set_current_sprite_x(cur_x);
-            self.sprite_draw_single_large(k);
+            // ROM $1E:EED2 JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
             if self.sprite_return_if_inactive(k) {
                 return;
             }

@@ -1713,7 +1713,8 @@ impl ZeldaState {
     //   ThrownSprite_TileAndSpriteInteraction(k);
     // }
     pub(in crate::zelda_rtl) fn throwable_scenery_interact_with_sprites_and_tiles(&mut self, k: usize) {
-        self.sprite_move_xy(k);
+        // ROM $06:E164
+        self.sprite_move_xy_marked(k, 0x06e93e);
         if self.sprite_slot_view(k).e() == 0 {
             self.sprite_check_tile_collision(k);
         }

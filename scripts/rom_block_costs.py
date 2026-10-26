@@ -358,27 +358,46 @@ def generated_blocks(rom, entries):
     """
     instructions = {}
     leaders = set()
+    saved_widths = {}
     for spec in entries:
         entry, end = (int(spec[k], 16) for k in ('entry', 'end'))
         if end <= entry:
             raise ValueError(f'{entry:06x}: invalid routine range')
         leaders.add(entry)
-        pending = [(entry, spec.get('m8', True), spec.get('x8', True))]
+        pending = [(entry, spec.get('m8', True), spec.get('x8', True), ())]
         while pending:
-            pc, m8, x8 = pending.pop()
+            pc, m8, x8, status = pending.pop()
             if not entry <= pc < end:
                 continue
             if pc in instructions:
                 old = instructions[pc]
                 if (old.m8, old.x8) != (m8, x8):
                     raise ValueError(f'{pc:06x}: conflicting M/X entry states')
+                if saved_widths[pc] != status:
+                    raise ValueError(f'{pc:06x}: conflicting saved status stacks')
                 continue
             ins = decode(rom, pc, m8, x8)
             if ins is None or pc + ins.length > end:
                 raise ValueError(f'{pc:06x}: undecodable/truncated instruction')
-            if ins.name in ('PLP', 'RTI', 'XCE', 'TCD', 'PLD', 'MVN', 'MVP', 'BRK', 'COP', 'WAI', 'STP'):
+            if ins.name in ('RTI', 'XCE', 'TCD', 'PLD', 'MVN', 'MVP', 'BRK', 'COP', 'WAI', 'STP'):
                 raise ValueError(f'{pc:06x}: unsupported dynamic state: {ins.name}')
             instructions[pc] = ins
+            saved_widths[pc] = status
+            # A lexically proven PHP/PLP pair restores its actual M/X. Other
+            # local stack operations inside the pair remain unsupported;
+            # calls already have the generator's balanced-return contract.
+            if ins.name == 'PHP':
+                if len(status) >= 16:
+                    raise ValueError(f'{pc:06x}: unbounded status stack')
+                status += ((m8, x8),)
+            elif ins.name == 'PLP':
+                if not status:
+                    raise ValueError(f'{pc:06x}: unsupported dynamic state: PLP')
+                m8, x8 = status[-1]
+                status = status[:-1]
+            elif status and ins.name in ('PHA', 'PHX', 'PHY', 'PHB', 'PHD', 'PHK',
+                                          'PLA', 'PLX', 'PLY', 'PLB', 'PEA', 'PEI', 'PER', 'TCS', 'TXS'):
+                raise ValueError(f'{pc:06x}: stack mutation inside saved status')
             if ins.name in ('REP', 'SEP'):
                 value = ins.name == 'SEP'
                 if ins.operand & 0x20: m8 = value
@@ -386,17 +405,20 @@ def generated_blocks(rom, entries):
             nxt = pc + ins.length
             if ins.kind == 'CTL':
                 leaders.add(nxt)
-                if ins.name in ('RTS', 'RTL'): continue
+                if ins.name in ('RTS', 'RTL'):
+                    if status:
+                        raise ValueError(f'{pc:06x}: unbalanced saved status')
+                    continue
                 if ins.name in ('JMP', 'JML', 'BRA', 'BRL'):
                     if ins.mode not in ('abs', 'long', 'rel', 'rel16'):
                         raise ValueError(f'{pc:06x}: indirect dispatch needs explicit entries')
                     leaders.add(ins.operand)
-                    pending.append((ins.operand, m8, x8))
+                    pending.append((ins.operand, m8, x8, status))
                     continue
                 if ins.mode == 'rel':
                     leaders.add(ins.operand)
-                    pending.append((ins.operand, m8, x8))
-            pending.append((nxt, m8, x8))
+                    pending.append((ins.operand, m8, x8, status))
+            pending.append((nxt, m8, x8, status))
     for pc, ins in instructions.items():
         if any(pc + offset in instructions for offset in range(1, ins.length)):
             raise ValueError(f'{pc:06x}: overlapping instruction boundaries')

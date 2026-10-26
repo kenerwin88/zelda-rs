@@ -2267,7 +2267,8 @@ impl ZeldaState {
                 self.sprite_get16_bit_coords(k);
                 self.sprite_slot_view_mut(k).set_x_velocity(1);
                 self.sprite_slot_view_mut(k).set_y_velocity(1);
-                if self.sprite_check_tile_collision(k) == 0 {
+                // ROM $06:BCE6 JSL $06:E496
+                if self.sprite_check_tile_collision_long(k) == 0 {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     if self.game_state.sprites.follower_runtime.indicator() != 0 {
                         self.sprite_slot_view_mut(k).set_ai_state(5);
@@ -4654,13 +4655,15 @@ impl ZeldaState {
     pub(super) fn sprite_prep_spike(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).set_x_velocity(32);
         self.sprite_slot_view_mut(k).set_y_velocity((-16i8) as u8);
-        self.sprite_move_y(k);
+        // ROM $06:91E1
+        self.sprite_move_y_marked(k, 0x06e93e);
         self.sprite_slot_view_mut(k).set_y_velocity(0);
     }
 
     pub(super) fn sprite_prep_rock_stal(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).set_y_velocity((-16i8) as u8);
-        self.sprite_move_y(k);
+        // ROM $06:91E1
+        self.sprite_move_y_marked(k, 0x06e93e);
         self.sprite_slot_view_mut(k).set_y_velocity(0);
     }
 

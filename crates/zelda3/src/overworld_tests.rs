@@ -1576,3 +1576,61 @@ fn flat_tile_effect_prices_match_executed_rom() {
     }
     assert!(count > 600, "selected flat effect coverage: {count}");
 }
+
+#[test]
+fn marker31_map16_link_coordinate_body_matches_rom() {
+    use snes::{CartType, Snes};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (Ok(rom), Ok(assets)) = (std::fs::read(root.join("saves/zelda3.sfc")),
+        std::fs::read(root.join("zelda3_assets.dat"))) else { return };
+    let mut native = ZeldaState::new();
+    native.set_assets(&assets).unwrap();
+    native.set_lag_free(true);
+    let mut machine = Snes::new();
+    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+    machine.ram.copy_from_slice(&native.wram_image());
+    machine.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+    machine.cpu.e = false;
+    machine.cpu.unpack_flags(0);
+    machine.cpu.k = 14;
+    machine.cpu.db = 14;
+    machine.cpu.pc = 0xde9a;
+    machine.cpu.sp = 0x1fa;
+    crate::cycle_ledger::assert_rom_marker_work(0x0ede9a, machine,
+        |s| s.cpu.k == 14 && (0xde9a..0xdece).contains(&s.cpu.pc), || {
+            native.overworld_get_map16_of_link_mult8();
+        });
+}
+
+#[test]
+fn marker31_horizontal_slope_setup_matches_rom() {
+    use crate::game_state::{CollisionAxis, CollisionDirection, MovementProbeKind};
+    use snes::{CartType, Snes};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (Ok(rom), Ok(assets)) = (std::fs::read(root.join("saves/zelda3.sfc")),
+        std::fs::read(root.join("zelda3_assets.dat"))) else { return };
+    for direction in 0..4 {
+        let mut native = ZeldaState::new();
+        native.set_assets(&assets).unwrap();
+        native.write_wram_byte(0x1b, 1);
+        native.write_wram_word(0xec, 0x1ff);
+        native.sync_native_game_state_from_ram();
+        native.set_lag_free(true);
+        let mut machine = Snes::new();
+        machine.cart.load(CartType::LoRom, &rom, 0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());
+        machine.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+        machine.cpu.e = false;
+        machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = 7;
+        machine.cpu.db = 7;
+        machine.cpu.pc = 0xcec9;
+        machine.cpu.sp = 0x1fa;
+        machine.cpu.y = direction * 2;
+        crate::cycle_ledger::assert_rom_marker_work(0x07cec9, machine,
+            |s| s.cpu.k == 7 && (0xcec9..0xcf0a).contains(&s.cpu.pc), || {
+                native.detect_player_movement(CollisionAxis::Horizontal,
+                    CollisionDirection::from_legacy(direction as u8), MovementProbeKind::Slope);
+            });
+    }
+}

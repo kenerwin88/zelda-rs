@@ -380,7 +380,8 @@ impl ZeldaState {
         let y = self.overlord_get_y(k).wrapping_add(8);
         // The spawner only works from its nest, the original door identity 0x82.
         let floor = self.overlord_slot_view(k).floor();
-        if self.probe_entity_tile(floor, x, y).0 != NativeTile::from_cartridge(0x82) {
+        // ROM $09:B8F5 JSL $06:E87B; this spawner has no existing lookup price.
+        if self.probe_entity_tile_long(floor, x, y).0 != NativeTile::from_cartridge(0x82) {
             return;
         }
         if self.overlord_slot_view(k).gen2() >= 0x18 || self.overlord_slot_view(k).gen2() & 3 != 0 {

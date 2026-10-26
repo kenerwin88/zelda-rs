@@ -195,7 +195,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).e() != 0 {
             self.sprite_slot_view_mut(k).or_object_priority_bits(48);
         }
-        self.sprite_draw_single_large(k);
+        // ROM $05:BEE0 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         let sprite = self.sprite_slot_view(k);
         if sprite.hit_timer() != 0 || sprite.delay_aux1() == 1 {
             self.sprite_slot_view_mut(k).set_hit_timer(0);
@@ -223,11 +224,14 @@ impl ZeldaState {
             return;
         }
         if self.sprite_slot_view(k).delay_aux3() == 0 {
-            self.sprite_check_damage_from_link(k);
+            // ROM $05:BF3E JSL $06:F2AA
+            self.sprite_check_damage_from_link_long(k);
         }
-        self.sprite_move_xy(k);
+        // ROM $05:BF42
+        self.sprite_move_xy_marked(k, 0x05fa00);
         if self.game_state.world.location.is_indoors() {
-            self.sprite_check_tile_collision(k);
+            // ROM $05:BF49 -> $05:B88D -> $06:E496
+            self.sprite_check_tile_collision_long(k);
         }
         self.thrown_sprite_tile_and_sprite_interaction(k);
     }
@@ -913,7 +917,8 @@ impl ZeldaState {
             sprite.set_x_velocity(SOLDIER_PATROL_X_VELOCITIES[i] as u8);
             sprite.set_y_velocity(SOLDIER_PATROL_Y_VELOCITIES[i] as u8);
         }
-        self.sprite_check_tile_collision(k);
+        // ROM $05:C3B0 -> $05:B88D -> $06:E496
+        self.sprite_check_tile_collision_long(k);
         if self.sprite_slot_view(k).delay_aux2() != 0 {
             if self.sprite_slot_view(k).delay_aux2() == 44 {
                 let n = SOLDIER_PRIMARY_COLLISION_NEXT_STEPS[i];
@@ -1313,7 +1318,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).wall_collision() == 0 {
             self.sprite_move_xy(k);
         }
-        self.sprite_check_tile_collision(k);
+        // ROM $05:CE53 -> $05:B88D -> $06:E496
+        self.sprite_check_tile_collision_long(k);
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {

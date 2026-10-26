@@ -884,7 +884,8 @@ impl ZeldaState {
     //   if (!--sprite_B[k]) sprite_state[k] = 0;
     // }
     pub(super) fn sprite_master_sword_light_beam(&mut self, k: usize) {
-        self.sprite_draw_single_large(k);
+        // ROM $05:8AEA JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_slot_view(k).a() != 0 {
             if let Some(SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
                 slot,
@@ -907,7 +908,8 @@ impl ZeldaState {
                             "source replacement spawn skipped a higher free slot {candidate}",
                         );
                     }
-                    self.sprite_move_xy(k);
+                    // ROM $05:8AF3
+                    self.sprite_move_xy_marked(k, 0x05fa00);
                     let mut info = SpriteSpawnInfo::default();
                     self.sprite_spawn_dynamically_selected_prefix(
                         k, 0x62, &mut info, spawned, progress,
@@ -944,7 +946,8 @@ impl ZeldaState {
                                 self.sprite_move_xy_through_y_subpixel(k);
                             self.sprite_slot_view_mut(k).set_y_low(continuation.y_low);
                         }
-                        crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy(k),
+                        // ROM $05:8AF3
+                        crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy_marked(k, 0x05fa00),
                     }
                     self.sprite_main_cpu_boundary =
                         Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
@@ -955,7 +958,8 @@ impl ZeldaState {
                     return;
                 }
             }
-            self.sprite_move_xy(k);
+            // ROM $05:8AF3
+            self.sprite_move_xy_marked(k, 0x05fa00);
             if (self.game_state.frame.frame_counter & 3) == 0 {
                 self.master_sword_spawn_replacement_light_beam(k);
             } else {
@@ -1202,7 +1206,8 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_master_sword_prop(&mut self, k: usize) {
         self.oam_allocate_from_region_b(4);
-        self.sprite_draw_single_large(k);
+        // ROM $05:8D2F JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_move_xy(k);
@@ -1467,7 +1472,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xy(k);
+        // ROM $06:B179
+        self.sprite_move_xy_marked(k, 0x06e93e);
         self.sprite_move_z(k);
         if self.sprite_slot_view(k).delay_main() == 0 {
             self.sprite_slot_view_mut(k).set_state(0);
@@ -1586,7 +1592,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         if self.game_state.world.location.is_indoors() && self.sprite_slot_view(k).delay_aux1() == 0
         {
-            if (self.sprite_check_tile_collision(k) & 3) != 0 {
+            // ROM $1E:FD2F -> $1E:8B2E -> $06:E496
+            if (self.sprite_check_tile_collision_long(k) & 3) != 0 {
                 let x_velocity = 0u8.wrapping_sub(self.sprite_slot_view(k).x_velocity());
                 let direction = 0u8.wrapping_sub(self.sprite_slot_view(k).direction());
                 self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
@@ -1659,7 +1666,8 @@ impl ZeldaState {
     pub(super) fn somaria_platform_and_pipe_check_tile(&mut self, k: usize) -> NativeTile {
         let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        self.probe_entity_tile(0, x, y).0
+        // ROM $1E:F7D8 JSL $06:E87B
+        self.probe_entity_tile_long(0, x, y).0
     }
 
 }

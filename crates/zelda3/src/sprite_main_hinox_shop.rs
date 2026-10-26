@@ -528,7 +528,8 @@ impl ZeldaState {
             sprite.set_deflection_bits(4);
             sprite.set_flags4(0x1c);
         }
-        self.sprite_check_damage_from_link(k);
+        // ROM $1E:F273 JSL $06:F2AA
+        self.sprite_check_damage_from_link_long(k);
         self.sprite_slot_view_mut(k).set_flags4(0xa);
     }
 

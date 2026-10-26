@@ -85,6 +85,34 @@ impl ZeldaState {
         (tile, x)
     }
 
+    pub(super) fn probe_entity_tile_long(&mut self, floor: u8, x: u16, y: u16) -> (NativeTile, u16) {
+        let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e87b));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E87B..E882 is the far wrapper; $06:E883's existing
+        // scalar-priced sprite entry continues to use the unmarked helper.
+        blocks.block(0x06e87b);
+        let result = {
+            let _body = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e886));
+            // $06:E886..E8D5, M8/X8: actual floor/indoor branches,
+            // including the outdoor JSL opcode, excluding its $00:882E body.
+            blocks.block(0x06e886);
+            if floor < 1 { blocks.taken(0x06e88c); }
+            else { blocks.block(0x06e88e); }
+            blocks.block(0x06e893);
+            if self.game_state.world.location.is_indoors() {
+                blocks.block(0x06e89a);
+            } else {
+                blocks.taken(0x06e898);
+                blocks.block(0x06e8bf);
+            }
+            let result = self.probe_entity_tile(floor, x, y);
+            if !self.game_state.world.location.is_indoors() { blocks.block(0x06e8ce); }
+            result
+        };
+        blocks.block(0x06e881);
+        result
+    }
+
     pub(super) fn detect_player_movement(
         &mut self,
         axis: CollisionAxis,
@@ -106,7 +134,14 @@ impl ZeldaState {
             crate::cycle_ledger::charge(clocks);
             scope
         }));
+        let slope = axis == CollisionAxis::Horizontal && kind == MovementProbeKind::Slope;
+        let _slope_scope = (self.lag_free && slope).then(|| crate::cycle_ledger::routine(0x07_cec9));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free && slope);
+        // $07:CEC9..CF09, M8/X8: reset JSR, setup/two Execute
+        // JSRs and width/RTS tail. The three children own their bodies.
+        blocks.block(0x07cec9);
         self.tile_detect_reset_state();
+        blocks.block(0x07cece);
         self.tile_detect_position_mut().clear_pit_tile();
         let mask = self.game_state.player.tile_detection.location_calc_mask();
         let player = &self.game_state.player.follower_link;
@@ -133,7 +168,9 @@ impl ZeldaState {
         // the second probe (bit 2), whereas a cardinal high side uses bit 4.
         for (index, point) in points.iter().enumerate() {
             self.tile_detection_execute((point.x & mask) >> 3, point.y & mask, 1 << index);
+            if index == 0 { blocks.block(0x07cefb); }
         }
+        blocks.block(0x07cf07);
     }
 
     pub(super) fn player_tile_detect_nearby(&mut self) {

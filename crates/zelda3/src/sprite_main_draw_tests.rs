@@ -974,3 +974,21 @@ fn marker29_damage_trampoline_matches_rom() {
             native.sprite_check_damage_to_link_bank1e(0);
         });
 }
+
+#[test]
+fn marker31_tree_top_matches_rom() {
+    for k in [0usize, 15] {
+        for subtype in 0..=6 {
+            let mut native = marker29_state();
+            native.write_wram_byte(0xe80 + k, subtype);
+            native.write_wram_word(0xfd8, 0x40);
+            native.write_wram_word(0xfda, 0x40);
+            native.sync_native_game_state_from_ram();
+            let Some(machine) = marker29_machine(&native, 0x05fe6f, k) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x05fe6f, machine,
+                |s| s.cpu.k == 5 && (0xfe6f..0xff39).contains(&s.cpu.pc), || {
+                    native.dash_tree_top_draw(k);
+                });
+        }
+    }
+}

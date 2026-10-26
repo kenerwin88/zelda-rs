@@ -205,6 +205,10 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_prep_reset_properties(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0d_b871));
+        // $0D:B871..B8F0, M8/X8: every reset store and RTL. Partial
+        // source-cursor resumes below retain their separate accounting.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0db871);
         self.sprite_slot_view_mut(k).clear_prep_runtime_state();
     }
 
@@ -643,6 +647,62 @@ impl ZeldaState {
 
     pub(in crate::zelda_rtl) fn sprite_move_y(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).move_y();
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_move_xy_marked(&mut self, k: usize, entry: u32) {
+        // $06:E92C calls X then tail-jumps Y; $05:F9ED calls both
+        // axes and returns. The tail's instructions retain the XY owner.
+        let xy = if entry == 0x06e93e { 0x06e92c } else { 0x05f9ed };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xy));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(xy);
+        self.sprite_move_x_marked(k, entry);
+        blocks.block(xy + 3);
+        if entry == 0x06e93e {
+            self.sprite_move_axis_marked_body(k, false, entry);
+        } else {
+            self.sprite_move_y_marked(k, entry);
+            blocks.block(xy + 6);
+        }
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_move_x_marked(&mut self, k: usize, entry: u32) {
+        // $06:E932..E93D / $05:F9F4..F9FF: X-array offset and
+        // child JSR, then restore the slot index and RTS.
+        let x = entry - 12;
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(x));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(x);
+        self.sprite_move_axis_marked(k, true, entry);
+        blocks.block(x + 8);
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_move_y_marked(&mut self, k: usize, entry: u32) {
+        self.sprite_move_axis_marked(k, false, entry);
+    }
+
+    fn sprite_move_axis_marked(&mut self, k: usize, horizontal: bool, entry: u32) {
+        assert!(matches!(entry, 0x06e93e | 0x05fa00));
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
+        self.sprite_move_axis_marked_body(k, horizontal, entry);
+    }
+
+    fn sprite_move_axis_marked_body(&mut self, k: usize, horizontal: bool, entry: u32) {
+        // $06:E93E..E96B / $05:FA00..FA2D, M8/X8. X enters
+        // this same body with X+16. All indexed arrays stay in-page.
+        let slot = self.sprite_slot_view(k);
+        let velocity = if horizontal { slot.x_velocity() } else { slot.y_velocity() };
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(entry);
+        if velocity == 0 { blocks.taken(entry + 3); }
+        else {
+            blocks.block(entry + 5);
+            if velocity & 128 == 0 { blocks.taken(entry + 0x1b); }
+            else { blocks.block(entry + 0x1d); }
+            blocks.block(entry + 0x20);
+        }
+        blocks.block(entry + 0x2d);
+        if horizontal { self.sprite_move_x(k); } else { self.sprite_move_y(k); }
     }
 
     // ----- Common sprite-AI helpers (round-3 agent) -----
@@ -1327,7 +1387,8 @@ impl ZeldaState {
     //   return 0;
     // }
     pub(in crate::zelda_rtl) fn sprite_bounce_from_tile_collision(&mut self, k: usize) -> u8 {
-        let j = self.sprite_check_tile_collision(k);
+        // ROM $1D:C751 -> $1D:8094 -> $06:E496
+        let j = self.sprite_check_tile_collision_long(k);
         if (j & 3) != 0 {
             let value = self.sprite_slot_view(k).x_velocity().wrapping_neg();
             self.sprite_slot_view_mut(k).set_x_velocity(value);

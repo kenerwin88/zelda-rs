@@ -229,7 +229,8 @@ impl ZeldaState {
                     let y_idx = usize::from(self.get_random_number() & 7);
                     self.sprite_set_y(k, org_y.wrapping_add(SURFACE_XY[y_idx] as i16 as u16));
                     self.sprite_get16_bit_coords(k);
-                    self.sprite_check_tile_collision(k);
+                    // ROM $05:979A -> $05:B88D -> $06:E496
+                    self.sprite_check_tile_collision_long(k);
                     let spawn_anyway = self.game_state.sprites.workspace.tile()
                         == NativeTile::DEEP_WATER
                         || (self.game_state.sprites.workspace.tile() == NativeTile::SHALLOW_WATER
@@ -634,7 +635,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_aux3() != 0 {
             self.oam_allocate_from_region_c(8);
         }
-        self.sprite_draw_single_large(k);
+        // ROM $1D:DF81 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -1326,7 +1328,8 @@ impl ZeldaState {
                 crate::cycle_ledger::charge(642 + if sign8(self.sprite_slot_view(k).y_velocity()) { 200 } else { 6 + 178 } + 194 + if segment == 3 { 0 } else { 6 });
             }
             self.swamola_prepare_segment(k, segment);
-            self.sprite_draw_single_large(k);
+            // ROM $1D:9F88, $1D:A02D JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
             self.sprite_workspace_mut().set_shared_scratch_a(segment as u8 + 1);
         }
         if self.lag_free { crate::cycle_ledger::charge(42); } // $1D:A03B RTS.
@@ -1463,7 +1466,8 @@ impl ZeldaState {
             let value =
                 (self.sprite_slot_view(k).oam_flags() & 0x3f) | KYAMERON_DRAW_FLAGS[usize::from(j)];
             self.sprite_slot_view_mut(k).set_oam_flags(value);
-            self.sprite_draw_single_large(k);
+            // ROM $1E:A16E JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
             let value = bak;
             self.sprite_slot_view_mut(k).set_oam_flags(value);
         } else {
@@ -1497,7 +1501,8 @@ impl ZeldaState {
             self.sprite_workspace_mut().set_current_sprite_y(y);
             self.sprite_draw_single_small(k);
         } else {
-            self.sprite_draw_single_large(k);
+            // ROM $1E:A97A JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
         }
     }
 

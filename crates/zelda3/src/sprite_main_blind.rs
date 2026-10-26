@@ -44,7 +44,8 @@ impl ZeldaState {
             .wrapping_add_signed(i16::from(self.sprite_slot_view(k).y_velocity() as i8));
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
-        if self.sprite_check_tile_collision(k) != 0 {
+        // ROM $1D:A2BD -> $1D:8094 -> $06:E496
+        if self.sprite_check_tile_collision_long(k) != 0 {
             self.sprite_slot_view_mut(k).set_delay_main(12);
         }
         self.blind_laser_spawn_trail_garnish(k);
@@ -126,7 +127,8 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_blind_head(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority_bits(48);
-        self.sprite_draw_single_large(k);
+        // ROM $1D:A120 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         // OamEnt *oam = GetOamCurPtr(); oam->charnum = ...; oam->flags = ...;
         self.blind_head_apply_oam_for_blind(k);
 

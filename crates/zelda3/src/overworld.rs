@@ -8005,6 +8005,10 @@ impl ZeldaState {
 
     /// ROM: `Overworld_GetMap16OfLink_Mult8`
     pub(super) fn overworld_get_map16_of_link_mult8(&self) -> [u16; 4] {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0e_de9a));
+        // $0E:DE9A..DECD enters M16/X16 from both callers. The
+        // asset lookup below represents the caller's map8-table reads.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0ede9a);
         let xc = self.game_state.player.follower_link.x().wrapping_add(8) >> 3;
         let yc = self.game_state.player.follower_link.y().wrapping_add(12);
         let pos = self.overworld_bg2_byte_pos(xc, yc);

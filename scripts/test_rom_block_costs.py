@@ -40,5 +40,17 @@ class BlockCosts(unittest.TestCase):
             self.fixture([0xd0, 2, 0xc2, 0x20, 0x60])
 
 
+    def test_paired_status_restore_tracks_widths_and_rejects_stack_aliases(self):
+        blocks = self.fixture([0x08, 0xc2, 0x20, 0x28, 0xa9, 1, 0x60])
+        instructions = [i for b in blocks for i in b]
+        self.assertFalse(instructions[2].m8)
+        self.assertTrue(instructions[3].m8)
+        self.assertEqual(instructions[3].length, 2)
+        with self.assertRaisesRegex(ValueError, 'stack mutation'):
+            self.fixture([0x08, 0x48, 0x28, 0x60])
+        with self.assertRaisesRegex(ValueError, 'unbalanced saved status'):
+            self.fixture([0x08, 0x60])
+
+
 if __name__ == '__main__':
     unittest.main()

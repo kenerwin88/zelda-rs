@@ -372,6 +372,10 @@ impl ZeldaState {
     //     Link_SetupHitBox(hb);
     // }
     pub(in crate::zelda_rtl) fn link_setup_hit_box_conditional(&self, hb: &mut SpriteHitBox) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f705));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:F705..F72E: conditional entry falls through the shared body.
+        blocks.block(0x06f705);
         if self
             .game_state
             .player
@@ -379,9 +383,11 @@ impl ZeldaState {
             .sprite_damage_disable_timer()
             != 0
         {
+            blocks.taken(0x06f708);
+            blocks.block(0x06f72a);
             hb.r9_yhi = 0x80;
         } else {
-            self.link_setup_hit_box(hb);
+            self.link_setup_hit_box_body(hb);
         }
     }
 
@@ -395,6 +401,13 @@ impl ZeldaState {
     //   hb->r9_yhi = y >> 8;
     // }
     pub(in crate::zelda_rtl) fn link_setup_hit_box(&self, hb: &mut SpriteHitBox) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f70a));
+        self.link_setup_hit_box_body(hb);
+    }
+
+    fn link_setup_hit_box_body(&self, hb: &mut SpriteHitBox) {
+        // $06:F70A..F729, M8/X8: complete shared body and RTS.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06f70a);
         hb.r2 = 8;
         hb.r3 = 8;
         let x = self.game_state.player.follower_link.x().wrapping_add(4);
@@ -597,6 +610,16 @@ impl ZeldaState {
         }
 
         self.sprite_check_damage_from_link_getting_out(k)
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_check_damage_from_link_long(&mut self, k: usize) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f2aa));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:F2AA..F2B3: bank/return-value wrapper, excluding F2B4.
+        blocks.block(0x06f2aa);
+        let result = self.sprite_check_damage_from_link(k);
+        blocks.block(0x06f2b0);
+        result
     }
 
     fn sprite_check_damage_from_link_getting_out(&mut self, k: usize) -> u8 {
@@ -1905,7 +1928,8 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_x_velocity(value);
             let bump = self.sprite_slot_view(k).bump_damage();
             let t = if (bump as i8) >= 0 {
-                self.sprite_check_tile_collision(k) & 0xf
+                // ROM $06:FFC7 JSL $06:E496
+                self.sprite_check_tile_collision_long(k) & 0xf
             } else {
                 0
             };
@@ -1942,6 +1966,17 @@ impl ZeldaState {
     pub(in crate::zelda_rtl) fn sprite_check_tile_collision(&mut self, k: usize) -> u8 {
         self.sprite_check_tile_collision2(k);
         self.sprite_slot_view(k).wall_collision()
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_check_tile_collision_long(&mut self, k: usize) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e496));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E496..E4A0: bank wrapper and result load; E4AB owns
+        // collision. $0E70,X stays in-page for all sixteen sprite slots.
+        blocks.block(0x06e496);
+        let result = self.sprite_check_tile_collision(k);
+        blocks.block(0x06e49c);
+        result
     }
 
     /// `Sprite_CheckTileCollision` on the single-layer path through its

@@ -1008,10 +1008,20 @@ impl ZeldaState {
     }
 
     fn ancilla_setup_hit_box(&self, k: usize) -> SpriteHitBox {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08_8ead));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $08:8EAD..8EEB, M8/X8: full hitbox setup; only $0BFA,X
+        // crosses a page for the ten ancilla slots. Tables stay in-page.
+        blocks.block(0x088ead);
         let mut j = self.ancilla_slot_view(k).direction() as usize;
         if self.ancilla_slot_view(k).ancilla_type() == 0x0c {
+            blocks.block(0x088eba);
             j |= 8;
+        } else {
+            blocks.taken(0x088eb8);
         }
+        blocks.block(0x088ec0);
+        if k >= 6 { blocks.crossing(0x088ed0); }
         let x = self
             .ancilla_get_x(k)
             .wrapping_add(ANCILLA_SETUP_HIT_BOX_ANCILLA_HIT_BOX_X[j] as i16 as u16);
@@ -1308,7 +1318,9 @@ impl ZeldaState {
     fn ancilla_probe_tile(&mut self, k: usize, x: u16, y: u16) -> (NativeTile, u16) {
         let floor = self.ancilla_slot_view(k).floor();
         let (tile, x) = if self.game_state.world.location.is_indoors() {
-            self.probe_entity_tile(floor, x, y)
+            // $08:8A59 / $08:8C9B JSL $06:E87B. Both indoor
+            // paths call the same complete lookup; neither caller prices it.
+            self.probe_entity_tile_long(floor, x, y)
         } else {
             self.entity_tile_at(floor, x, y)
         };
@@ -1447,4 +1459,27 @@ impl ZeldaState {
         self.ancilla_slot_view_mut(k).set_y(y);
     }
 
+}
+
+#[cfg(test)]
+mod marker31_tests {
+
+#[test]
+fn marker31_ancilla_hitbox_matches_rom() {
+    for k in 0..10 {
+        for kind in [1u8, 12] {
+            for direction in 0..4 {
+                let mut native = super::super::tests::marker29_state();
+                native.write_wram_byte(0xc4a + k, kind);
+                native.write_wram_byte(0xc72 + k, direction);
+                native.sync_native_game_state_from_ram();
+                let Some(machine) = super::super::tests::marker29_machine(&native, 0x088ead, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x088ead, machine,
+                    |s| s.cpu.k == 8 && (0x8ead..0x8eec).contains(&s.cpu.pc), || {
+                        native.ancilla_setup_hit_box(k);
+                    });
+            }
+        }
+    }
+}
 }

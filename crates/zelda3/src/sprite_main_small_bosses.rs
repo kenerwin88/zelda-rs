@@ -1859,7 +1859,8 @@ impl ZeldaState {
                 0
             };
         self.sprite_slot_view_mut(k).set_graphics(graphics);
-        self.sprite_draw_single_large(k);
+        // ROM $1D:E414 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) || self.sprite_slot_view(k).delay_main() != 0 {
             return;
         }
@@ -2047,7 +2048,8 @@ impl ZeldaState {
             .wrapping_add_signed(i16::from(VITREOUS_EYE_DRAW_Y_DELTAS[j]));
         self.sprite_workspace_mut().set_current_sprite_x(cur_x);
         self.sprite_workspace_mut().set_current_sprite_y(cur_y);
-        self.sprite_draw_single_large(k);
+        // ROM $1D:E794 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -2055,7 +2057,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).graphics() != 0 {
             return;
         }
-        self.sprite_check_damage_from_link(k);
+        // ROM $1D:E7A4 JSL $06:F2AA
+        self.sprite_check_damage_from_link_long(k);
         self.sprite_check_damage_to_link(k);
         if self.sprite_slot_view(k).f() == 14 {
             self.sprite_slot_view_mut(k).set_f(5);
@@ -2393,7 +2396,8 @@ impl ZeldaState {
         if self.sprite_slot_view(k).a() == 0 {
             self.sprite_slot_view_mut(k).set_x_velocity(1);
             self.sprite_slot_view_mut(k).set_y_velocity(1);
-            if self.sprite_check_tile_collision(k) != 0 {
+            // ROM $1E:C38C -> $1E:8B2E -> $06:E496
+            if self.sprite_check_tile_collision_long(k) != 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
                 return;
             }
@@ -2644,7 +2648,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_check_damage_from_link(k) != 0
+        // ROM $1D:F080 JSL $06:F2AA
+        if self.sprite_check_damage_from_link_long(k) != 0
             && self.game_state.inventory.items.sword_type() < 2
         {
             self.sprite_slot_view_mut(k).set_hit_timer(0);

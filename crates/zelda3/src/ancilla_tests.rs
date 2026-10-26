@@ -582,7 +582,7 @@ fn native_receipt_oam_preserves_semantic_tiles_and_all_body_return_cycles() {
     println!("native receipt OAM semantics: 1536 fixtures, full tiles and body/XY-helper return cycles match");
 }
 
-fn marker29_machine(native: &ZeldaState, entry: u32, slot: usize) -> Option<snes::Snes> {
+pub(super) fn marker29_machine(native: &ZeldaState, entry: u32, slot: usize) -> Option<snes::Snes> {
     use snes::{CartType, Snes};
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -602,7 +602,7 @@ fn marker29_machine(native: &ZeldaState, entry: u32, slot: usize) -> Option<snes
     Some(machine)
 }
 
-fn marker29_state() -> ZeldaState {
+pub(super) fn marker29_state() -> ZeldaState {
     let mut native = ZeldaState::new();
     let mut image = native.wram_image().into_owned();
     image[0x10] = 7;

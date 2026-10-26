@@ -85,7 +85,8 @@ impl ZeldaState {
             if self.sprite_slot_view(k).delay_main() == 1 {
                 self.sprite_slot_view_mut(k).clear();
             }
-            self.sprite_draw_single_large(k);
+            // ROM $1E:8049 JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
@@ -158,7 +159,8 @@ impl ZeldaState {
         let c = self.sprite_slot_view(k).c();
         self.sprite_slot_view_mut(k).set_e(c);
 
-        self.sprite_check_damage_from_link(k);
+        // ROM $1E:8145 JSL $06:F2AA
+        self.sprite_check_damage_from_link_long(k);
         self.helmasaur_king_swing_tail(k);
         self.helmasaur_king_attempt_damage(k);
         self.helmasaur_king_check_mask_damage_from_hammer(k);

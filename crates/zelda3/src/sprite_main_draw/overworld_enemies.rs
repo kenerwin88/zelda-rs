@@ -433,7 +433,8 @@ impl ZeldaState {
             let value = SPRITE_HOARDER_COVERED_LOCAL_Y_VELOCITIES[dir] as u8;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
             if self.sprite_slot_view(k).wall_collision() == 0 {
-                self.sprite_move_xy(k);
+                // ROM $06:A8AD
+                self.sprite_move_xy_marked(k, 0x06e93e);
             }
             self.sprite_check_tile_collision2(k);
             self.sprite_check_damage_from_link(k);
@@ -505,7 +506,8 @@ impl ZeldaState {
             let value = SPRITE_HOARDER_FRANTIC_LOCAL_Y_VELOCITIES[j] as u8;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
         } else {
-            self.sprite_move_xy(k);
+            // ROM $06:A96B
+            self.sprite_move_xy_marked(k, 0x06e93e);
         }
         self.sprite_check_tile_collision2(k);
         if self.sprite_slot_view(k).delay_aux4() == 0
@@ -682,7 +684,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
             }
         }
-        self.sprite_move_xy(k);
+        // ROM $06:D716
+        self.sprite_move_xy_marked(k, 0x06e93e);
         if self.sprite_check_damage_to_link(k) {
             self.octoballoon_recoil_link(k);
         }
@@ -718,7 +721,8 @@ impl ZeldaState {
             let value = 16;
             self.sprite_slot_view_mut(k).set_z_velocity(value);
         }
-        self.sprite_move_xy(k);
+        // ROM $06:D882
+        self.sprite_move_xy_marked(k, 0x06e93e);
         let _ = self.sprite_check_tile_collision(k);
         self.sprite_bounce_off_wall(k);
         self.sprite_check_damage_to_and_from_link(k);
@@ -769,7 +773,8 @@ impl ZeldaState {
                     return;
                 }
             }
-            self.sprite_move_xy(k);
+            // ROM $06:D8E2
+            self.sprite_move_xy_marked(k, 0x06e93e);
         }
         self.buzzblob_after_movement(k);
     }
@@ -806,7 +811,8 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        self.sprite_move_xy(k);
+        // ROM $06:D3AD
+        self.sprite_move_xy_marked(k, 0x06e93e);
         self.sprite_check_damage_to_and_from_link(k);
         if (self.sprite_slot_view(k).ai_state() & 1) == 0 {
             self.sprite_slot_view_mut(k).add_subtype2(1);
@@ -891,7 +897,8 @@ impl ZeldaState {
                 return;
             }
             self.sprite_check_damage_to_link(k);
-            self.sprite_move_xy(k);
+            // ROM $06:D5DD
+            self.sprite_move_xy_marked(k, 0x06e93e);
             if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0
                 && self.sprite_check_tile_collision(k) != 0
             {
@@ -1149,12 +1156,15 @@ impl ZeldaState {
                         & self.sprite_slot_view(k).b())
                         != 0
                     {
-                        let _ = self.sprite_check_tile_collision(k);
+                        // ROM $05:B88D JSL $06:E496
+                        let _ = self.sprite_check_tile_collision_long(k);
                         return;
                     }
-                    self.sprite_move_xy(k);
+                    // ROM $05:B885
+                    self.sprite_move_xy_marked(k, 0x05fa00);
                     if self.sprite_slot_view(k).wall_collision() == 0 {
-                        let _ = self.sprite_check_tile_collision(k);
+                        // ROM $05:B88D JSL $06:E496
+                        let _ = self.sprite_check_tile_collision_long(k);
                         return;
                     }
                 }
@@ -1252,7 +1262,8 @@ impl ZeldaState {
     pub(super) fn toppo_verify_tile(&mut self, k: usize) {
         let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
-        if self.probe_entity_tile(0, x, y).0 != NativeTile::GRASS {
+        // ROM $05:BB88 JSL $06:E87B
+        if self.probe_entity_tile_long(0, x, y).0 != NativeTile::GRASS {
             let value = 5;
             self.sprite_slot_view_mut(k).set_ai_state(value);
         }

@@ -318,7 +318,8 @@ impl ZeldaState {
         {
             self.sprite_draw_water_ripple_with_oam_adjust(k);
         }
-        self.sprite_draw_single_large(k);
+        // ROM $05:EF79 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -407,7 +408,8 @@ impl ZeldaState {
                 return;
             }
         }
-        self.sprite_draw_single_large(k);
+        // ROM $05:F030 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -415,14 +417,16 @@ impl ZeldaState {
             return;
         }
 
-        if (self.sprite_check_tile_collision(k) & 3) != 0 {
+        // ROM $05:F03D -> $05:B88D -> $06:E496
+        if (self.sprite_check_tile_collision_long(k) & 3) != 0 {
             let value = 0u8.wrapping_sub(self.sprite_slot_view(k).x_velocity());
             self.sprite_slot_view_mut(k).set_x_velocity(value);
         }
 
         self.sprite_slot_view_mut(k).subtract_z_velocity(1);
         self.sprite_move_z(k);
-        self.sprite_move_xy(k);
+        // ROM $05:F056
+        self.sprite_move_xy_marked(k, 0x05fa00);
         if sign8(self.sprite_slot_view(k).z()) {
             let value = 0;
             self.sprite_slot_view_mut(k).set_z(value);
@@ -487,7 +491,8 @@ impl ZeldaState {
         if self.sprite_handle_dragging_by_ancilla(k) {
             return;
         }
-        self.sprite_move_xy(k);
+        // ROM $06:CECC
+        self.sprite_move_xy_marked(k, 0x06e93e);
         self.sprite_move_z(k);
         if sign8(self.sprite_slot_view(k).z()) {
             let value = 0;
@@ -636,7 +641,8 @@ impl ZeldaState {
             return;
         }
         self.sprite_move_z(k);
-        self.sprite_move_xy(k);
+        // ROM $06:D057
+        self.sprite_move_xy_marked(k, 0x06e93e);
         if matches!(self.sprite_main_cpu_boundary,
             Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }) if slot == k as u8)
         {
@@ -794,7 +800,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(value);
         let value = (self.sprite_slot_view(k).oam_flags() & !0x40) | BOT_DRAW_FLAGS[j];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
-        self.sprite_draw_single_large(k);
+        // ROM $05:B8AE JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
     }
 
     // -----------------------------------------------------------------------
@@ -1063,7 +1070,8 @@ impl ZeldaState {
     pub(super) fn shopkeeper_standard_clerk(&mut self, k: usize) {
         if self.game_state.world.region.is_in_dark_world() {
             self.oam_allocate_defer_to_player(k);
-            self.sprite_draw_single_large(k);
+            // ROM $1E:EF1B JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
             if self.sprite_return_if_inactive(k) {
                 return;
             }
@@ -1106,7 +1114,8 @@ impl ZeldaState {
     // void ChestGameGuy(int k) {  // 9eef90
     pub(super) fn chest_game_guy(&mut self, k: usize) {
         self.oam_allocate_defer_to_player(k);
-        self.sprite_draw_single_large(k);
+        // ROM $1E:EF94 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -1495,7 +1504,8 @@ impl ZeldaState {
     // void Sprite_Apple(int k) {  // 9ef57c
     pub(super) fn sprite_apple(&mut self, k: usize) {
         if self.sprite_slot_view(k).a() >= 16 || (self.game_state.frame.frame_counter & 2) != 0 {
-            self.sprite_draw_single_large(k);
+            // ROM $1E:F589 JSL $06:DBF0
+            self.sprite_draw_single_large_long(k);
         }
         if self.sprite_return_if_inactive(k) {
             return;

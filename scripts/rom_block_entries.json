@@ -8,5 +8,21 @@
   {"entry": "08f702", "end": "08f72f"},
   {"entry": "1ec26b", "end": "1ec270"},
   {"entry": "06f121", "end": "06f129"},
-  {"entry": "06d288", "end": "06d28a"}
+  {"entry": "06d288", "end": "06d28a"},
+  {"entry": "06f705", "end": "06f72f"},
+  {"entry": "088ead", "end": "088eec"},
+  {"entry": "06dbf0", "end": "06dbf8"},
+  {"entry": "06f2aa", "end": "06f2b4"},
+  {"entry": "06e496", "end": "06e4a1"},
+  {"entry": "06e92c", "end": "06e96c"},
+  {"entry": "05f9ed", "end": "05fa2e"},
+  {"entry": "0db871", "end": "0db8f1"},
+  {"entry": "0ede9a", "end": "0edece", "m8": false, "x8": false},
+  {"entry": "07cec9", "end": "07cf0a"},
+  {"entry": "05fe6f", "end": "05ff39"},
+  {"entry": "06e87b", "end": "06e883"},
+  {"entry": "06e886", "end": "06e8d6"},
+  {"entry": "06e932", "end": "06e93e"},
+  {"entry": "05f9f4", "end": "05fa00"},
+  {"entry": "05fa00", "end": "05fa2e"}
 ]

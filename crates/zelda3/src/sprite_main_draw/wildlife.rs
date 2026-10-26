@@ -86,7 +86,8 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_raven(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
-        self.sprite_draw_single_large(k);
+        // ROM $1D:DD8D JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -887,11 +888,13 @@ impl ZeldaState {
                 0x40
             };
         self.sprite_slot_view_mut(k).set_oam_flags(value);
-        self.sprite_draw_single_large(k);
+        // ROM $05:9422 JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xy(k);
+        // ROM $05:9429
+        self.sprite_move_xy_marked(k, 0x05fa00);
         self.sprite_move_z(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -930,11 +933,13 @@ impl ZeldaState {
                 0x40
             };
         self.sprite_slot_view_mut(k).set_oam_flags(value);
-        self.sprite_draw_single_large(k);
+        // ROM $05:947C JSL $06:DBF0
+        self.sprite_draw_single_large_long(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        self.sprite_move_xy(k);
+        // ROM $05:9483
+        self.sprite_move_xy_marked(k, 0x05fa00);
         self.sprite_move_z(k);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         if sign8(self.sprite_slot_view(k).z()) {
@@ -960,8 +965,10 @@ impl ZeldaState {
             return;
         }
         self.sprite_check_damage_to_and_from_link(k);
-        self.sprite_move_xy(k);
-        if self.sprite_check_tile_collision(k) != 0 || self.sprite_slot_view(k).delay_main() == 0 {
+        // ROM $05:94C1
+        self.sprite_move_xy_marked(k, 0x05fa00);
+        // ROM $05:94C4 -> $05:B88D -> $06:E496
+        if self.sprite_check_tile_collision_long(k) != 0 || self.sprite_slot_view(k).delay_main() == 0 {
             // ROM Sprite_58_Crab $05:94CE: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
             let value = self.get_random_number_with_carry().masked_adc(63, 32);
             self.sprite_slot_view_mut(k).set_delay_main(value);

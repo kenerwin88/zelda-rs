@@ -11825,3 +11825,76 @@ The candidate default binary matches every state/display/SRAM/PCM/input/context 
 Default retains only the known spotlight caller-return fixture failure; reduced passes entirely. The first optimized-suite run also exposed two pre-existing marker guard tests whose expected debug-assert panics were disabled by the parity profile. Two line replacements make those assertions active under `cfg(test)` as well as debug builds. Both ordinary binaries rebuilt byte-identically (`test-guard-build-equivalence.json`), so the complete census and 200k receipts remain bound to the final binaries. The two affected tests and all marker API/ROM fixtures were rerun on the rebuilt test binaries. The final shard manifest preserves the original complete, disjoint test union and these explicit replacements; original failing logs remain retained. Both CPU-only SNES lib suites, the five block generator/worklist Python tests (including exact regeneration), routine-coverage Python tests and `git diff --check` pass. `verification.json` binds the final source, builds, gates, metrics and library evidence; `artifact-sha256.json` records artifact identities.
 
 No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Supplied ledger/cache metadata remained unchanged across all 1,512 input files. This batch stops at the verified CPU-only pricing point above.
+
+## Continuation on `codex/cost-pacing31` (main `512f553d`)
+
+### Fresh joint main baseline
+
+The joint baseline is ROM **4,907 missing / 0 excess / 0 FP**, live **5,606 / 592 / 132**. Fresh main controls reproduce it. Main was built from the initially clean tree before pricing edits and recorded a fresh default 200k ledger. `target/cost-pacing31/main-provenance.json` binds that build; all batch evidence is under `target/cost-pacing31/`. Scratch drivers remain in `/tmp`. Historical batch deltas are not added.
+
+| Census | Missing before / after | Excess before / after | FP before / after |
+| --- | ---: | ---: | ---: |
+| rom | 4,907 / 4,812 | 0 / 0 | 0 / 0 |
+| live | 5,606 / 5,508 | 592 / 589 | 132 / 131 |
+
+### Zero-native source entries
+
+The largest near-zero row, `$06:DC10`, is an ownership alias: its coordinate JSR is already charged at DC10, drawing instructions at DC13, coordinate work at E41E and shadow work at DC66. No second drawing price is added. The inactive helper at `$1D:E8A2` is likewise already charged through the shared bank-6 predicate. Existing SetOam_XY scalar prices remain intact. `ownership-audit.json` records these exclusions.
+
+The additions price whole executed entries at statically confirmed ROM callers. Far drawing, damage and collision wrappers exclude their already-priced children. The far tile lookup has its own E886 body; the scalar-priced E883 entry continues using the unmarked semantic helper. Movement retains the XY tail-jump owner and its separately called X/Y bodies. Raw movers and partial CPU continuations retain their existing accounting. Bank-1D/1E movement and the batch-30 owners are untouched. Some source callers remain unpriced; a complete entry price does not imply complete route coverage for that entry.
+
+All prices come from `scripts/rom_block_costs.py --emit-rust`: 57 new blocks containing 405 ROM instructions. Entry M/X, actual branch outcomes and the actual ancilla slot determine charges. The generator now follows statically paired PHP/PLP width restores and rejects unknown or aliased status stacks; its regression is identical to the parallel batch-30 generator change. No scalar price is converted. No lag count, fitted residual, scene threshold, multiplier or scene table supplies a charge. Every new runtime marker and scope is gated by `lag_free`.
+
+Clocks below are independent new-marker receipts. The frozen cohort contains 2,825 iterations; whole-route clocks cover 1,473,123 iterations. Lines are gross native additions including address comments and replaced caller lines, excluding fixtures, generated rows, manifest and documentation. Shared helper lines are listed once in the shared row.
+
+| Source owner / work | Frozen-cohort clocks | Whole-route clocks | Native lines added |
+| --- | ---: | ---: | ---: |
+| `$06:DBF0` far large-draw wrapper | 1,608,160 | 272,453,540 | 110 |
+| `$08:8EAD` ancilla hitbox | 1,835,734 | 38,662,088 | 10 |
+| `$06:F2AA` far damage wrapper | 284,054 | 21,306,448 | 42 |
+| `$06:E496` far collision wrapper | 694,860 | 139,935,924 | 127 |
+| `$06:F70A` Link hitbox | 1,406,240 | 296,322,592 | 7 |
+| `$06:F705` conditional Link hitbox | 814,504 | 36,718,888 | 7 |
+| `$06:E886` entity tile body | 1,458,000 | 84,698,208 | shared |
+| `$06:E87B` far entity tile wrapper | 380,000 | 22,652,750 | shared |
+| `$05:FA00` bank-5 Y movement | 615,712 | 115,256,848 | shared |
+| `$06:E92C` XY movement | 621,450 | 54,163,212 | 32 |
+| `$06:E932` X movement | 306,694 | 39,307,740 | shared |
+| `$06:E93E` Y movement | 475,672 | 49,108,912 | 4 |
+| `$05:FE6F` both tree-top drawing paths | 1,600,368 | 6,331,198 | 21 |
+| `$07:CEC9` horizontal-slope setup | 1,293,182 | 187,088,528 | 9 |
+| `$0E:DE9A` map16 coordinate body | 838,656 | 229,360,768 | 4 |
+| `$0D:B871` property reset body | 774,330 | 81,204,480 | 4 |
+| `$05:F9ED` bank-5 XY wrapper | 103,314 | 24,003,018 | 50 |
+| `$05:F9F4` bank-5 X wrapper | 137,238 | 32,086,458 | 2 |
+| shared XY helper | included above | included above | 17 |
+| shared X helper | included above | included above | 11 |
+| shared axis helpers | included above | included above | 28 |
+| shared far tile lookup and caller rewiring | included above | included above | 39 |
+
+Native additions: **524 lines**; fixtures: **309**; generated table: **114**; generator/tests: **41**; entry manifest: **17 added / 1 removed**. `lines-added.json` retains every counted line and owner/shared group.
+
+The frozen instruction gap changes from **200,256,886** to **185,008,718** master clocks: **15,248,168 clocks closed**. Whole-route additions total **1,730,661,600** clocks. Marker sums reconcile independently to the change in main instruction counters; routine-exclusive changes and source comparisons are retained in `routine-cohort-before-after.json`. Native exclusive sums reconcile to the main counter on every full-route iteration.
+
+Eighteen `assert_rom_marker_work` fixtures exercise the new entries with the unmodified ROM and the in-repo CPU: hitbox branches, ancilla page crossings, complete bank wrappers, both movement signs and zero velocities at boundary slots, tail-jump ownership, tile lookup floor/indoor branches, all tree drawing states, slope directions and reset/map16 bodies. The XY fixture includes PHP's temporary stack byte when identifying its tail owner. These verify instruction charges; they do not establish semantic equivalence or A/V parity.
+
+### CPU-only verification
+
+Both fresh main and both final full census gates PASS: **1,473,123 iterations per lane**, unexplained zero. Every candidate runtime hold equals P2. Missing/excess count lag NMIs; FP counts iterations. These are periodically seeded logical gates.
+
+ROM closes 95 previously missing iterations and introduces 0 newly missing iterations. Newly introduced FP iterations: ROM 0, live 7. Complete before/after predictor CSVs, category metrics and shifted-row lists are retained; totals above include both introduced and removed rows.
+
+All eight crystal/pendant windows keep every measured phase within one frame of source. Phase and rupee-refill measurements are identical to fresh main. Stable outcomes are identical. `phase-verification.json`, `final-probe-metrics.json` and `final-stable-outcomes.json` retain the checks.
+
+The final default binary matches every state/display/SRAM/PCM/input/context record and EOF in the fresh main 200k ledger. Default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; existing lib-test-only fixture warnings are separate.
+
+| Zelda library | Pass | Fail | Ignored |
+| --- | ---: | ---: | ---: |
+| default | 2,567 | 1 | 3 |
+| reduced | 2,102 | 0 | 2 |
+
+Default retains only the known spotlight caller-return failure; reduced passes entirely. The complete, disjoint library test union is bound in `library-shards.json`. Both CPU-only SNES library suites, all seven block-generator/worklist Python tests, routine-coverage tests, exact table regeneration and `git diff --check` pass. Eighteen focused marker fixtures pass on the final reduced test binary; the full default suite exercises them as well.
+
+Preliminary candidates are retained separately: `trial1/` records the rejected broad damage-wrapper alias, while `trial2/` and `trial3/` record partial-coverage checks below the frozen 15M target. None supplies a final gate or acceptance claim. The final verification binds the corrected source and binaries independently.
+
+`verification.json` and `artifact-sha256.json` bind the final evidence. Supplied ledger/cache size and mtime metadata remain unchanged across 1,512 files. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. This batch stops at the verified CPU-only pricing point above.
