@@ -93,10 +93,22 @@ impl ZeldaState {
     //                (sprite_oam_flags[j] | sprite_obj_prio[j]) & 0xf0 | 4, 0);
     // }
     pub(in crate::zelda_rtl) fn garnish_sparkle_common(&mut self, k: usize, shift: u8) {
+        if self.lag_free {
+            // $09:B520/B526..B531: LDA countdown, BRA or third LSR,
+            // two LSRs, STA $0f and JSR prep. These are RTS-dispatched
+            // tails inside $09:B0B6, not new call frames.
+            crate::cycle_ledger::charge(40 + if shift == 2 { 22 } else { 14 } + 28 + 24 + 46);
+        }
         let t = usize::from(self.garnish_slot_view(k).countdown() >> shift);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
+        }
+        if self.lag_free {
+            // $09:B532..B558 -> B5D6..B5DD: four OAM bytes, flags,
+            // ext byte and RTS (702). The four character indices and
+            // sixteen sprite indices do not cross their table pages.
+            crate::cycle_ledger::charge(702);
         }
         let oam = self.game_state.oam.current_pointer_usize();
         let j = usize::from(self.garnish_slot_view(k).sprite());
@@ -124,11 +136,21 @@ impl ZeldaState {
     //   SetOamPlain(oam, pt.x, pt.y, kRunningManDust_Char[tmp_counter], 0x24, 0);
     // }
     pub(in crate::zelda_rtl) fn garnish_dust_common(&mut self, k: usize, shift: u8) {
+        if self.lag_free {
+            // $09:B3BC/B3C2..B3CE: LDA countdown, BRA or third LSR,
+            // two LSRs, STA $0fb5 and JSR the separately priced prep.
+            crate::cycle_ledger::charge(40 + if shift == 2 { 22 } else { 14 } + 28 + 32 + 46);
+        }
         let counter = self.garnish_slot_view(k).countdown() >> shift;
         self.temp_counter_mut().set(counter);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
+        }
+        if self.lag_free {
+            // $09:B3CF..B3E7 -> B5D6..B5DD: successful draw + RTS.
+            // All three $B3B9 character indices stay in the same page.
+            crate::cycle_ledger::charge(526);
         }
         let oam = self.game_state.oam.current_pointer_usize();
         self.set_oam_plain_at(
@@ -170,10 +192,14 @@ impl ZeldaState {
     //   SetOamPlain(GetOamCurPtr(), pt.x, pt.y, kLaserBeamTrail_Char[garnish_oam_flags[k]], 0x25, 0);
     // }
     pub(in crate::zelda_rtl) fn garnish04_laser_trail(&mut self, k: usize) {
+        // $09:B5BB JSR prep; the helper owns its body and reject unwind.
+        if self.lag_free { crate::cycle_ledger::charge(46); }
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        // $09:B5BE..B5DD: successful draw + RTS; $B5B9,Y has two entries.
+        if self.lag_free { crate::cycle_ledger::charge(524); }
         let oam = self.game_state.oam.current_pointer_usize();
         self.set_oam_plain_at(
             oam,
@@ -194,10 +220,15 @@ impl ZeldaState {
     //   SetOamPlain(GetOamCurPtr(), pt.x, pt.y, 0x75, sprite_oam_flags[j] | sprite_obj_prio[j], 0);
     // }
     pub(in crate::zelda_rtl) fn garnish06_zoro_trail(&mut self, k: usize) {
+        // $09:B4FB JSR prep, excluding the separately priced child body.
+        if self.lag_free { crate::cycle_ledger::charge(46); }
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        // $09:B4FE..B51B -> B5D6..B5DD: successful draw + RTS (580).
+        // The sixteen sprite flag/priority indices do not cross a page.
+        if self.lag_free { crate::cycle_ledger::charge(580); }
         let oam = self.game_state.oam.current_pointer_usize();
         let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at(
@@ -218,10 +249,15 @@ impl ZeldaState {
     //   SetOamPlain(GetOamCurPtr(), pt.x, pt.y, 0x28, sprite_oam_flags[j] | sprite_obj_prio[j], 2);
     // }
     pub(in crate::zelda_rtl) fn garnish01_fire_snake_tail(&mut self, k: usize) {
+        // $09:B6C0 JSR prep, excluding the separately priced child body.
+        if self.lag_free { crate::cycle_ledger::charge(46); }
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        // $09:B6C3..B6E0 -> B70C..B713: successful big draw + RTS (580).
+        // The sixteen sprite flag/priority indices do not cross a page.
+        if self.lag_free { crate::cycle_ledger::charge(580); }
         let oam = self.game_state.oam.current_pointer_usize();
         let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at(

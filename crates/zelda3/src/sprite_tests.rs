@@ -2585,3 +2585,100 @@ fn sprite_projection_price_matches_executed_rom_paths() {
         }
     }
 }
+
+#[test]
+fn garnish_drawing_self_prices_match_executed_rom_paths() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut cases = 0;
+    for (kind, entry, shift, frames) in [(1, 0xb6c0, 0, 1), (4, 0xb5bb, 0, 2),
+        (5, 0xb526, 3, 4), (6, 0xb4fb, 0, 1), (11, 0xb3c2, 3, 3),
+        (18, 0xb520, 2, 4), (20, 0xb3bc, 2, 3)] {
+        for slot in [0usize, 29] {
+            for frame in 0..frames {
+                for (x, y) in [(0u16, 0u16), (255, 255), (256, 32), (32, 256),
+                    (65535, 32), (32, 65535)] {
+                    for j in [0usize, 15] {
+                        let mut native = ZeldaState::new();
+                        let mut image = native.wram_image().into_owned();
+                        image[0x800..0xaa0].fill(0xa5);
+                        image[0x90..0x92].copy_from_slice(&0x8fcu16.to_le_bytes());
+                        image[0x92..0x94].copy_from_slice(&0xa5fu16.to_le_bytes());
+                        image[0x1f800 + slot] = kind;
+                        image[0x1f83c + slot] = x as u8;
+                        image[0x1f878 + slot] = (x >> 8) as u8;
+                        image[0x1f81e + slot] = y as u8;
+                        image[0x1f85a + slot] = (y >> 8) as u8;
+                        image[0x1f92c + slot] = j as u8;
+                        image[0x1f90e + slot] = frame << shift;
+                        image[0x1f9fe + slot] = frame;
+                        image[0xf50 + j] = 0x87;
+                        image[0xb89 + j] = 0x30;
+                        native.import_wram_image(&image);
+                        native.sync_native_game_state_from_ram();
+                        native.set_lag_free(true);
+                        let mut machine = Snes::new();
+                        machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                        machine.ram.copy_from_slice(&native.wram_image());
+                        machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                        machine.cpu.e = false;
+                        machine.cpu.unpack_flags(0x30);
+                        machine.cpu.k = 9;
+                        machine.cpu.db = 9;
+                        machine.cpu.pc = entry;
+                        machine.cpu.sp = 0x1fc;
+                        machine.cpu.x = slot as u16;
+                        machine.cpu.y = 0;
+                        let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                        let mut source = RomCpuTimingProbe::new(machine, clock,
+                            SourcePpuReadState::snes9x_reset()).unwrap();
+                        let mut measured = 0;
+                        let mut owned = 0;
+                        for _ in 0..100 {
+                            let pc = source.snes().cpu.pc;
+                            let step = source.step().unwrap();
+                            let work = step.transactions.iter()
+                                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                            measured += work;
+                            // The first unwind PLA belongs to the prep child; the
+                            // second PLA and RTS complete its caller's tail frame.
+                            if !(0xb5de..=0xb612).contains(&pc) || matches!(pc, 0xb609 | 0xb60a) {
+                                owned += work;
+                            }
+                            if source.snes().cpu.pc == 0x8000 { break; }
+                        }
+                        assert_eq!(source.snes().cpu.pc, 0x8000);
+                        let run = |s: &mut ZeldaState| match kind {
+                            1 => s.garnish01_fire_snake_tail(slot),
+                            4 => s.garnish04_laser_trail(slot),
+                            5 => s.garnish_simple_sparkle(slot),
+                            6 => s.garnish06_zoro_trail(slot),
+                            11 => s.garnish_water_trail(slot),
+                            18 => s.garnish12_sparkle(slot),
+                            20 => s.garnish14_kak_kid_dash_dust(slot),
+                            _ => unreachable!(),
+                        };
+                        let started = crate::cycle_ledger::master();
+                        let actual = crate::cycle_ledger::measure_routine_self_work(0x09_b0b6, || {
+                            let _parent = crate::cycle_ledger::routine(0x09_b0b6);
+                            run(&mut native);
+                        });
+                        assert_eq!(actual, owned, "kind={kind} slot={slot} frame={frame} x={x} y={y}");
+                        assert_eq!(crate::cycle_ledger::master() - started, measured);
+                        assert_eq!(&native.ram[0x800..0xaa0], &source.snes().ram[0x800..0xaa0]);
+                        assert_eq!(native.garnish_slot_view(slot).garnish_type(), source.snes().ram[0x1f800 + slot]);
+                        native.set_lag_free(false);
+                        let started = crate::cycle_ledger::master();
+                        run(&mut native);
+                        assert_eq!(crate::cycle_ledger::master(), started);
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("garnish drawing: {cases} executed-ROM cases");
+}
