@@ -52,6 +52,79 @@ fn load_price_rom_work_on_bus(entry: u32, image: &[u8], y: u16, long_return: boo
 }
 
 #[test]
+fn cardinal_selection_self_prices_match_executed_rom() {
+    use crate::game_state::CollisionAxis;
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    for (entry, end, indoor_tail, outdoor_tail, axis, velocity_address, position_address) in [
+        (0x07_ba0a, 0x07_ba34, 0xba35, 0xbeaf, CollisionAxis::Vertical, 0x30, 0x20),
+        (0x07_c4d4, 0x07_c4fe, 0xc4ff, 0xc8e9, CollisionAxis::Horizontal, 0x31, 0x22),
+    ] {
+        for indoors in [0u8, 1] {
+            for doorway in [0u8, 1, 2] {
+                for velocity in [0u8, 1, 0x7f, 0x80, 0xff] {
+                    for position in [0u8, 0x7f, 0x80, 0xff] {
+                        let mut native = base.clone();
+                        let mut image = native.wram_image().into_owned();
+                        image[0x1b] = indoors;
+                        image[0x6c] = doorway;
+                        image[velocity_address] = velocity;
+                        image[position_address] = position;
+                        image[0xec..0xee].copy_from_slice(&0x01ffu16.to_le_bytes());
+                        native.import_wram_image(&image);
+                        native.sync_native_game_state_from_ram();
+                        let mut machine = snes::Snes::new();
+                        machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                        machine.ram.copy_from_slice(&image);
+                        machine.ram[0x1fc..0x200].copy_from_slice(&[0xff, 0x7f, 0, 0]);
+                        machine.cpu.e = false;
+                        machine.cpu.unpack_flags(0x30);
+                        machine.cpu.k = 7;
+                        machine.cpu.db = 7;
+                        machine.cpu.pc = entry as u16;
+                        machine.cpu.sp = 0x1fb;
+                        let clock = CpuMasterTimeline::at_raster(0,
+                            CpuRasterPosition::new(0, 0), CpuBusWorkload::default(),
+                            CpuFieldTiming::non_interlace(false));
+                        let mut source = RomCpuTimingProbe::new(machine, clock,
+                            SourcePpuReadState::snes9x_reset()).unwrap();
+                        let mut own = 0;
+                        let mut completed = false;
+                        for _ in 0..100_000 {
+                            let cpu = &source.snes().cpu;
+                            if cpu.k == 7 && [indoor_tail, outdoor_tail, 0x8000].contains(&cpu.pc) {
+                                completed = true;
+                                break;
+                            }
+                            let pc = (u32::from(cpu.k) << 16) | u32::from(cpu.pc);
+                            let step = source.step().unwrap();
+                            if (entry..=end).contains(&pc) {
+                                own += step.transactions.iter()
+                                    .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                            }
+                        }
+                        assert!(completed);
+                        for lagless in [false, true] {
+                            let mut state = native.clone();
+                            state.set_lag_free(lagless);
+                            let actual = crate::cycle_ledger::measure_routine_self_work(entry,
+                                || state.start_movement_collision_checks(axis));
+                            assert_eq!(actual, if lagless { own } else { 0 },
+                                "entry={entry:06x} indoors={indoors} doorway={doorway} velocity={velocity:02x} position={position:02x} lagless={lagless}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn player_probe_and_acceleration_self_prices_match_executed_rom() {
     use crate::game_state::{CollisionAxis, CollisionDirection, MovementProbeKind};
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

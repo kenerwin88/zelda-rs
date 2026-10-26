@@ -696,6 +696,10 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn start_movement_collision_checks(&mut self, axis: CollisionAxis) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(match axis {
+            CollisionAxis::Vertical => 0x07_ba0a,
+            CollisionAxis::Horizontal => 0x07_c4d4,
+        }));
         let player = &self.game_state.player.follower_link;
         let (velocity, position_low, in_aligned_doorway) = match axis {
             CollisionAxis::Vertical => (
@@ -710,6 +714,8 @@ impl ZeldaState {
             ),
         };
         if velocity == 0 {
+            // $07:BA0A..BA0E / C4D4..C4D8: LDA, untaken BNE, RTS.
+            if self.lag_free { crate::cycle_ledger::charge(82); }
             return;
         }
         let negative = if in_aligned_doorway {
@@ -718,9 +724,25 @@ impl ZeldaState {
             (velocity as i8).is_negative()
         };
         let direction = CollisionDirection::along(axis, negative);
+        if self.lag_free {
+            // $07:BA0A..BA2D / C4D4..C4F7, M8/X8. Taken entry
+            // BNE; doorway comparison; selected LDY/LDA/sign branch;
+            // TYA/LSR/STA and the JSR opcode. The probe owns its body.
+            let selection = if in_aligned_doorway {
+                72 + if negative { 6 } else { 22 + 16 }
+            } else {
+                6 + 56 + if negative { 6 } else { 16 }
+            };
+            crate::cycle_ledger::charge(46 + 56 + selection + 98);
+        }
         self.follower_link_state_mut()
             .set_last_direction_moved_towards(direction.legacy_value());
         self.detect_player_movement(axis, direction, MovementProbeKind::Cardinal);
+        if self.lag_free {
+            // $07:BA2E..BA34 / C4F8..C4FE: LDA $1B, BNE and
+            // the outdoor BRL when selected. Response tails remain unpriced.
+            crate::cycle_ledger::charge(if self.game_state.world.location.is_indoors() { 46 } else { 70 });
+        }
         self.finish_movement_collision_response(axis);
     }
 
