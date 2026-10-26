@@ -18,6 +18,7 @@
 //!        [--audio-state-at ITERATION:DIR] (audio snapshots and SPC instruction trace)
 //!        [--audio-only] (continuous observation, skips WRAM/command census checks)
 //!        [--pacing-predictor PATH] (diagnostic per-iteration cost/count CSV)
+//!        [--audio-timing-trace PATH] (zstd JSONL command/poll observations)
 //!
 //! The cartridge's `$2140` reads (song-end polls) are replayed per iteration
 //! like the RNG: their values depend on elapsed SPC time, which lag changes.
@@ -1172,6 +1173,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut routine_profile_iterations: Vec<(u64, u64)> = Vec::new();
     let mut audio_pcm: Option<BufWriter<fs::File>> = None;
     let mut audio_map: Option<BufWriter<fs::File>> = None;
+    let mut audio_timing: Option<Box<dyn std::io::Write>> = None;
     let mut audio_only = false;
     let mut audio_state_at: Vec<(u64, PathBuf)> = Vec::new();
     let mut audio_pairs = 0u64;
@@ -1243,6 +1245,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             }
             "--audio-map" => {
                 audio_map = Some(BufWriter::new(fs::File::create(value(index)).expect("create audio map")));
+            }
+            "--audio-timing-trace" => {
+                let file = fs::File::create(value(index)).expect("create audio timing trace");
+                audio_timing = Some(Box::new(BufWriter::new(
+                    zstd::Encoder::new(file, 3).expect("audio timing compressor").auto_finish())));
             }
             "--audio-only" => { audio_only = true; index += 1; continue; }
             "--audio-state-at" => {
@@ -1325,6 +1332,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             "--audio-only omits WRAM/command census outputs");
     }
     let ledger = PathBuf::from(ledger);
+    if audio_timing.is_some() {
+        assert!(offset == 0 && start_at == 0 && windows.is_empty() && !audio_only,
+            "audio timing trace requires a full-prefix census without offset/windows/audio-only");
+    }
     let records = fs::File::open(ledger.join("iterations.jsonl")).unwrap_or_else(|error| {
         eprintln!("failed to open ledger: {error}");
         process::exit(2);
@@ -1609,11 +1620,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let mut first_callback = true;
         let audio_start = audio_pairs;
         let mut audio_callbacks = 0u64;
-        let entry_audio_context = audio_map.as_ref().map(|_| {
+        let entry_audio_context = (audio_map.is_some() || audio_timing.is_some()).then(|| {
             let ram = game.wram_image();
             (ram[0x10], ram[0x11], u16::from_le_bytes([ram[0xa0], ram[0xa1]]), ram[0x130])
         });
         let mut engine_commands = Vec::new();
+        let mut timing_pushes = Vec::new();
+        let mut timing_lost_pushes = 0u64;
         let last_apu_push_before = last_apu_push;
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let profiling = routine_profile.is_some() && iteration.is_some_and(|iteration|
@@ -1704,6 +1717,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 }
                 let (pushes, ports) = game.zelda_last_pushed_apu_ports();
                 if pushes != last_apu_push {
+                    if audio_timing.is_some() {
+                        timing_lost_pushes += u64::from(pushes.wrapping_sub(last_apu_push).saturating_sub(1));
+                        timing_pushes.push((audio_pairs / AUDIO_SAMPLES as u64 - 1, ports));
+                    }
                     engine_commands.extend(port_commands((0..4u8).zip(ports), &mut engine_ports));
                 }
                 last_apu_push = pushes;
@@ -1725,6 +1742,26 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             continue;
         }
         let observed_polls = game.take_song_end_poll_observations();
+        if let (Some(output), Some(iteration), Some(context)) =
+            (audio_timing.as_mut(), iteration, entry_audio_context)
+        {
+            use std::io::Write;
+            serde_json::to_writer(&mut *output, &serde_json::json!({
+                "schema": 1, "iteration": iteration.index,
+                "source_start": iteration.open_host,
+                "source_end": iterations.get(iteration_index as usize + 1).map(|row| row.open_host),
+                "source_context": [images.image[0x10] as u16, images.image[0x11] as u16,
+                    u16::from_le_bytes([images.image[0xa0], images.image[0xa1]]), images.image[0x130] as u16],
+                "native_context": context,
+                "native_start": audio_start / AUDIO_SAMPLES as u64,
+                "callbacks": audio_callbacks, "held": native_held, "masked": native_elapsed,
+                "reseeded": audio_reseeded, "cartridge_apu_answers": apu_read_replay,
+                "source_writes": iteration.apu_writes, "native_pushes": timing_pushes,
+                "lost_pushes": timing_lost_pushes,
+                "source_reads": iteration.apu_reads, "native_polls": observed_polls,
+            })).expect("write audio timing observation");
+            writeln!(output).expect("audio timing newline");
+        }
         if zelda3::debug_env::var_os("ZELDA3_DEBUG_LAGLESS_SONG_POLL").is_some()
             && (!observed_polls.is_empty() || iteration.is_some_and(|i| !i.apu_reads.is_empty()))
         {
