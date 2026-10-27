@@ -233,6 +233,18 @@ fn main() {
             process::exit(2);
         }
     }
+    if args.get(1).map(String::as_str) == Some("--render-original-audio-cpu") {
+        #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
+        {
+            pcm_windows::run_original(&args[2..]);
+            return;
+        }
+        #[cfg(not(all(feature = "parity-debug", feature = "rom-timing")))]
+        {
+            eprintln!("--render-original-audio-cpu requires parity-debug and rom-timing");
+            process::exit(2);
+        }
+    }
     if args.get(1).map(String::as_str) == Some("--sram-smoke") {
         run_sram_smoke();
         return;
@@ -2201,6 +2213,12 @@ extern "C" fn libretro_environment(cmd: c_uint, data: *mut c_void) -> bool {
     const RETRO_ENVIRONMENT_GET_VARIABLE: c_uint = 15;
     const RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: c_uint = 31;
     match cmd & !0x10000 {
+        47 if crate::libretro_core::LIBRETRO_AUDIO_ONLY.load(Ordering::Relaxed) => {
+            if data.is_null() { return false; }
+            // Libretro GET_AUDIO_VIDEO_ENABLE: audio on, video off.
+            unsafe { *(data as *mut c_uint) = 2; }
+            true
+        }
         RETRO_ENVIRONMENT_SET_PIXEL_FORMAT => {
             if !data.is_null() {
                 let pixel_format = unsafe { *(data as *const c_uint) };
@@ -2260,6 +2278,9 @@ extern "C" fn libretro_video_refresh(
     height: c_uint,
     pitch: usize,
 ) {
+    if crate::libretro_core::LIBRETRO_AUDIO_ONLY.load(Ordering::Relaxed) {
+        return;
+    }
     if !LIBRETRO_CAPTURE_ENABLED.load(Ordering::Relaxed) {
         return;
     }

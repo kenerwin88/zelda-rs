@@ -1177,6 +1177,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut audio_only = false;
     let mut audio_state_at: Vec<(u64, PathBuf)> = Vec::new();
     let mut audio_pairs = 0u64;
+    #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
+    let mut note_capture = crate::pcm_windows::NoteCapture::from_env();
     let mut classification_trace: Option<BufWriter<fs::File>> = None;
     let mut poly_uploads: Option<PolyUploads> = None;
     let mut dump_wram: Option<(u64, PathBuf)> = None;
@@ -1698,6 +1700,16 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 // The audio side consumes the frame's commands and takes the
                 // SPC acknowledgements before the next main or held callback.
                 let audio_events = game.zelda_render_audio(&mut audio_buffer, AUDIO_SAMPLES as i32, 2);
+                #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
+                if let Some(capture) = note_capture.as_mut() {
+                    let ram = game.wram_image();
+                    let writes: Vec<_> = audio_events.events.iter().filter_map(|event| event.parity_dsp)
+                        .map(|w| (capture.samples as i64 + i64::from(w.sample_offset), w.timer_cycles, w.addr, w.value)).collect();
+                    capture.record(iteration.map_or(frame, |row| row.index), audio_reseeded && audio_callbacks == 0,
+                        [ram[0x10] as u16, ram[0x11] as u16, u16::from_le_bytes([ram[0xa0], ram[0xa1]])],
+                        serde_json::to_value(&audio_events.music).expect("music context"), &writes, &audio_buffer, false)
+                        .expect("record live note stream");
+                }
                 audio_pairs += AUDIO_SAMPLES as u64;
                 if let Some(dir) = state_dir {
                     fs::write(dir.join(format!("{audio_callbacks}-events.json")),
@@ -2226,6 +2238,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 shown.join("\n  "),
             );
         }
+    }
+    #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
+    if let Some(capture) = note_capture {
+        capture.finish(false, serde_json::json!({"seed_every": seed_every, "live_apu_reads": !apu_read_replay,
+            "first_wram_divergence": first_divergence})).expect("finish live note stream");
     }
     if audio_only {
         use std::io::Write;

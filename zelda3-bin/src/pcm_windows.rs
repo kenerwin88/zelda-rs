@@ -1,4 +1,4 @@
-//! CPU-only cold PCM observation. Never installs receipts or restores state.
+//! CPU-only PCM observation: cold captures and explicitly marked census seeds.
 //! ZELDA3_DEBUG_PCM_WINDOWS is a JSON plan: output directory and inclusive
 //! zero-based host ranges. Existing output files are never overwritten.
 use std::{fs::{self, File}, io::{BufRead, BufReader, BufWriter, Write}, path::PathBuf};
@@ -28,6 +28,182 @@ struct OracleFrame {
 
 fn create(path: PathBuf) -> Result<BufWriter<File>> {
     Ok(BufWriter::new(File::options().write(true).create_new(true).open(path)?))
+}
+
+/// The same raw live-register observer for the original and seeded native lane.
+/// A reset is explicit: no note can continue across a fresh SPC driver.
+pub(crate) struct NoteCapture {
+    output: PathBuf,
+    events: zstd::stream::write::Encoder<'static, BufWriter<File>>,
+    notes: zstd::stream::write::Encoder<'static, BufWriter<File>>,
+    hashes: zstd::stream::write::Encoder<'static, BufWriter<File>>,
+    pcm: BufWriter<File>,
+    metadata: BufWriter<File>,
+    ranges: Vec<[u32; 2]>,
+    registers: [u8; 128],
+    pub(crate) samples: u64,
+    frames: u64,
+    writes: u64,
+    edges: u64,
+    bytes: u64,
+}
+
+impl NoteCapture {
+    pub(crate) fn from_env() -> Option<Self> {
+        let path = debug_env::var_os("ZELDA3_DEBUG_PCM_WINDOWS")?;
+        Some(Self::open(&serde_json::from_slice::<Plan>(&fs::read(path).expect("read capture plan")).expect("parse capture plan"))
+            .expect("open note capture"))
+    }
+
+    fn open(plan: &Plan) -> Result<Self> {
+        if plan.ranges.iter().any(|[lo, hi]| lo > hi) { return Err("invalid PCM range".into()); }
+        fs::create_dir_all(&plan.output)?;
+        Ok(Self {
+            output: plan.output.clone(),
+            events: zstd::stream::write::Encoder::new(create(plan.output.join("dsp.jsonl.zst"))?, 3)?,
+            notes: zstd::stream::write::Encoder::new(create(plan.output.join("notes.jsonl.zst"))?, 3)?,
+            hashes: zstd::stream::write::Encoder::new(create(plan.output.join("hashes.jsonl.zst"))?, 3)?,
+            pcm: create(plan.output.join("windows.s16le"))?,
+            metadata: create(plan.output.join("frames.jsonl"))?,
+            ranges: plan.ranges.clone(), registers: [0; 128], samples: 0,
+            frames: 0, writes: 0, edges: 0, bytes: 0,
+        })
+    }
+
+    pub(crate) fn record(&mut self, iteration: u64, reset: bool, context: [u16; 3],
+        music: serde_json::Value, writes: &[(i64, u8, u8, u8)], audio: &[i16], oracle_match: bool) -> Result<()> {
+        if reset { self.registers.fill(0); }
+        let host = self.frames;
+        for &(sample, phase, address, value) in writes {
+            if address >= 128 { continue; }
+            self.registers[usize::from(address)] = value;
+            if address != 0x4c && address != 0x5c { continue; }
+            for voice in 0..8 {
+                if value & (1 << voice) == 0 { continue; }
+                let b = voice * 16;
+                serde_json::to_writer(&mut self.notes, &serde_json::json!({
+                    "host": host, "iteration": iteration, "sample": sample, "phase": phase,
+                    "kind": if address == 0x4c { "on" } else { "off" }, "voice": voice,
+                    "source": self.registers[b + 4],
+                    "pitch": u16::from_le_bytes([self.registers[b + 2], self.registers[b + 3] & 63]),
+                    "volume": [self.registers[b] as i8, self.registers[b + 1] as i8],
+                    "adsr": [self.registers[b + 5], self.registers[b + 6]], "gain": self.registers[b + 7]
+                }))?;
+                self.notes.write_all(b"\n")?;
+                self.edges += 1;
+            }
+        }
+        // Include empty callbacks: resets and route context must not disappear
+        // just because the chip wrote no register in that callback.
+        serde_json::to_writer(&mut self.events, &serde_json::json!({
+            "host": host, "iteration": iteration, "sample": self.samples,
+            "reset": reset, "context": context, "music": music, "writes": writes
+        }))?;
+        self.events.write_all(b"\n")?;
+        let mut hash = parity::hash::Sha256Digest::new();
+        hash.update_i16_le(audio);
+        let hash = hash.finish();
+        serde_json::to_writer(&mut self.hashes, &serde_json::json!({
+            "host": host, "sample_frames": audio.len() / 2, "sha256": hash, "oracle_match": oracle_match
+        }))?;
+        self.hashes.write_all(b"\n")?;
+        if self.ranges.iter().any(|[lo, hi]| u64::from(*lo) <= host && host <= u64::from(*hi)) {
+            if self.bytes + audio.len() as u64 * 2 > 256 * 1024 * 1024 { return Err("PCM cap exceeded".into()); }
+            for sample in audio { self.pcm.write_all(&sample.to_le_bytes())?; }
+            serde_json::to_writer(&mut self.metadata, &serde_json::json!({
+                "host": host, "iteration": iteration, "sample": self.samples,
+                "byte_offset": self.bytes, "sample_frames": audio.len() / 2, "sha256": hash,
+                "oracle_match": oracle_match, "context": context
+            }))?;
+            self.metadata.write_all(b"\n")?;
+            self.bytes += audio.len() as u64 * 2;
+        }
+        self.samples += audio.len() as u64 / 2;
+        self.frames += 1;
+        self.writes += writes.len() as u64;
+        Ok(())
+    }
+
+    pub(crate) fn finish(mut self, reference: bool, extra: serde_json::Value) -> Result<()> {
+        self.events.finish()?.flush()?;
+        self.notes.finish()?.flush()?;
+        self.hashes.finish()?.flush()?;
+        self.pcm.flush()?;
+        self.metadata.flush()?;
+        fs::write(self.output.join("complete.json"), serde_json::to_vec_pretty(&serde_json::json!({
+            "frames": self.frames, "sample_frames": self.samples, "dsp_writes": self.writes,
+            "note_edges": self.edges, "pcm_bytes": self.bytes, "reference_verified": reference,
+            "lag_free": !reference, "sample_rate": 32000, "channels": 2, "extra": extra
+        }))?)?;
+        Ok(())
+    }
+}
+
+fn original(args: &[String]) -> Result<()> {
+    use crate::libretro_core::{LibretroCore, LIBRETRO_AUDIO_ONLY, RETRO_MEMORY_SYSTEM_RAM};
+    use std::sync::atomic::Ordering;
+    if args.len() != 4 { return Err("usage: --render-original-audio-cpu CACHE CORE ROM FRAMES".into()); }
+    let cache = PathBuf::from(&args[0]);
+    let manifest: serde_json::Value = serde_json::from_slice(&fs::read(cache.join("cache-manifest.json"))?)?;
+    for (path, expected) in [(PathBuf::from(&args[1]), &manifest["cache_identity"]["core_sha256"]),
+        (PathBuf::from(&args[2]), &manifest["cache_identity"]["rom_sha256"]),
+        (cache.join("initial.srm"), &manifest["artifact_sha256"]["initial.srm"]),
+        (cache.join("oracle-av-hashes.jsonl"), &manifest["artifact_sha256"]["oracle-av-hashes.jsonl"])] {
+        if parity::hash::sha256_file(&path)? != expected.as_str().ok_or("missing bound hash")? {
+            return Err(format!("provenance hash mismatch: {}", path.display()).into());
+        }
+    }
+    let plan: Plan = serde_json::from_slice(&fs::read(debug_env::var_os("ZELDA3_DEBUG_PCM_WINDOWS")
+        .ok_or("missing capture plan")?)?)?;
+    let mut capture = NoteCapture::open(&plan)?;
+    let frames: u32 = args[3].parse()?;
+    // Conservative exclusive lock, even though this mode never renders.
+    let _lock = crate::oracle_lock::acquire_snes9x_compare_lock_mode(true);
+    LIBRETRO_AUDIO_ONLY.store(true, Ordering::Relaxed);
+    let sram = fs::read(cache.join("initial.srm"))?;
+    let mut core = LibretroCore::load_with_sram(&args[1], &args[2], Some(&sram))?;
+    if core.library_name != "Snes9x" || !core.library_version.starts_with("1.63")
+        || !(32000.0..32100.0).contains(&core.av_info.timing.sample_rate) {
+        return Err(format!("unexpected core identity/timing: {} {} {}", core.library_name,
+            core.library_version, core.av_info.timing.sample_rate).into());
+    }
+    // Serialization affects the pinned DSP. Match the cache's initial
+    // serialization exactly once, before any retro_run; never checkpoint.
+    let initial = core.serialize_state()?;
+    if parity::hash::sha256_bytes(&initial) != manifest["artifact_sha256"]["oracle_initial.state"].as_str().ok_or("initial state hash")? {
+        return Err("initial original state differs from cache".into());
+    }
+    let mut ledger = BufReader::new(File::open(cache.join("oracle-av-hashes.jsonl"))?).lines();
+    let started = std::time::Instant::now();
+    for host in 0..frames {
+        let row: OracleFrame = serde_json::from_str(&ledger.next().ok_or("oracle EOF")??)?;
+        if row.frame != host { return Err("oracle host sequence".into()); }
+        let input = u16::from_str_radix(row.input.trim_start_matches("0x"), 16)?;
+        let audio = core.run_frame_with_input(input).audio;
+        let mut hash = parity::hash::Sha256Digest::new();
+        hash.update_i16_le(&audio);
+        if hash.finish() != row.audio.sha256 || audio.len() as u64 / 2 != row.audio.sample_frames {
+            capture.finish(false, serde_json::json!({"failure_host": host, "kind": "oracle_pcm_mismatch"}))?;
+            return Err(format!("original PCM mismatch at {host}").into());
+        }
+        let raw = core.debug_dsp_register_writes().ok_or("core lacks DSP register trace")?;
+        // The pinned buffer holds 1024 writes; a full buffer is ambiguous.
+        if raw.len() >= 1024 { return Err("DSP trace capacity reached".into()); }
+        let writes: Vec<_> = raw.iter().map(|w| (capture.samples as i64 + i64::from(w.output_sample),
+            w.dsp_phase as u8, w.register as u8, w.value as u8)).collect();
+        let ram = core.memory_bytes(RETRO_MEMORY_SYSTEM_RAM).ok_or("missing WRAM")?;
+        capture.record(u64::from(host), false, [ram[0x10] as u16, ram[0x11] as u16,
+            u16::from_le_bytes([ram[0xa0], ram[0xa1]])], serde_json::json!({
+                "music_control": ram[0x130], "last_music_control": ram[0x133]
+            }), &writes, &audio, true)?;
+        if host % 10000 == 0 { eprintln!("original host={host} seconds={:.1}", started.elapsed().as_secs_f64()); }
+    }
+    capture.finish(true, serde_json::json!({"oracle_eof": ledger.next().is_none(),
+        "core_sha256": manifest["cache_identity"]["core_sha256"], "seconds": started.elapsed().as_secs_f64()}))
+}
+
+pub(crate) fn run_original(args: &[String]) {
+    if let Err(error) = original(args) { eprintln!("original CPU audio: {error}"); std::process::exit(2); }
 }
 
 fn render(args: &[String]) -> Result<()> {

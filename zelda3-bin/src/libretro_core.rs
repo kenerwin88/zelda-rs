@@ -90,6 +90,7 @@ pub(crate) struct LibretroCapture {
 pub(crate) static LIBRETRO_CAPTURE: OnceLock<Mutex<LibretroCapture>> = OnceLock::new();
 pub(crate) static LIBRETRO_INPUT_STATE: OnceLock<Mutex<u16>> = OnceLock::new();
 pub(crate) static LIBRETRO_CAPTURE_ENABLED: AtomicBool = AtomicBool::new(true);
+pub(crate) static LIBRETRO_AUDIO_ONLY: AtomicBool = AtomicBool::new(false);
 pub(crate) static LIBRETRO_SYSTEM_DIR: OnceLock<CString> = OnceLock::new();
 pub(crate) static LIBRETRO_SAVE_DIR: OnceLock<CString> = OnceLock::new();
 

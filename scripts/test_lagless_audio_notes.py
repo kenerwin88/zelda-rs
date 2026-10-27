@@ -2,6 +2,8 @@ import unittest
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import hashlib
 
 import lagless_audio_notes as notes
 
@@ -16,6 +18,47 @@ def note(source=1, time=0, voice=0, pitch=4096):
 
 
 class NoteTests(unittest.TestCase):
+    def test_sparse_pcm_slice_preserves_alignment_and_rejects_gaps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            blocks = [bytes(range(16)), bytes(range(16, 32))]
+            (root / 'windows.s16le').write_bytes(b''.join(blocks))
+            metadata = [dict(sample=i * 4, sample_frames=4, byte_offset=i * 16,
+                             sha256=hashlib.sha256(block).hexdigest()) for i, block in enumerate(blocks)]
+            (root / 'frames.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in metadata))
+            self.assertEqual(notes.read_pcm_window(root, 3, 3), bytes(range(12, 24)))
+            metadata[1]['sample'] = 5
+            (root / 'frames.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in metadata))
+            with self.assertRaisesRegex(ValueError, 'uncaptured gap'):
+                notes.read_pcm_window(root, 3, 3)
+
+    def test_segment_comparison_carries_registers_and_marks_seed_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for side in ('original', 'lagless'):
+                capture = root / side
+                capture.mkdir()
+                data = [dict(frame([[0, 0, 4, 7], [1, 0, 0x4c, 1]]), sample=0),
+                        dict(frame([[100, 0, 0x4c, 1]], host=1), sample=100)]
+                subprocess.run(['zstd', '-q', '-o', str(capture / 'dsp.jsonl.zst')],
+                               input=''.join(json.dumps(r) + '\n' for r in data).encode(), check=True)
+            bounds = [dict(original_host=i, lagless_host=i, original_sample=i * 100,
+                           lagless_sample=i * 100, kind='reset' if i == 1 else 'start')
+                      for i in range(3)]
+            result = notes.compare_segments(root / 'original', root / 'lagless', bounds, root / 'out')
+            self.assertEqual(result['counts']['exact'], 2)
+            self.assertEqual(result['resets'], 1)
+            self.assertEqual([s['seeded'] for s in result['segments']], [False, True])
+            rows = list(notes.rows(root / 'out/alignment.jsonl.gz'))
+            self.assertEqual([r['original']['source'] for r in rows], [7, 7])
+
+    def test_seed_reset_ends_old_notes_and_clears_registers(self):
+        first = frame([[0, 0, 4, 7], [1, 0, 0x4c, 1]])
+        second = dict(frame([[100, 0, 0x4c, 1]], host=1), reset=True, sample=90)
+        on, _ = notes.extract_notes([first, second])
+        self.assertEqual((on[0]['end'], on[0]['end_kind']), (90, 'reset'))
+        self.assertEqual(on[1]['source'], 0)
+
     def test_register_snapshots_signed_volume_and_subsample_phase(self):
         on, edges = notes.extract_notes([frame([
             [0, 0, 0, 255], [0, 1, 1, 64], [0, 2, 2, 52],
