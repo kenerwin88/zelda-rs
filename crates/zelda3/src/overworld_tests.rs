@@ -1,6 +1,118 @@
 use super::*;
 
 #[test]
+fn marker44_overworld_transition_body_matches_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    // Interior, both edges on both axes, mismatched direction, eligibility
+    // rejection, music/pearl paths and the two final palette/mosaic returns.
+    for (x, y, vx, vy, direction) in [
+        (0x100u16, 0x100u16, 0, 0, 0),
+        (0x100, 0x100, 8, 8, 15),
+        (0, 0x100, 8, 0, 2), (0x204, 0x100, 8, 0, 1),
+        (0x100, 0, 0, 8, 8), (0x100, 0x200, 0, 8, 4),
+        (0, 0x100, 8, 0, 1), (0x100, 0, 0, 8, 4),
+    ] {
+        for (screen, dark, pearl, immobilized) in [
+            (0u8, 0, 0, 0), (3, 0, 0, 0), (0x2a, 0, 0, 0),
+            (3, 0x40, 0, 0), (3, 0x40, 1, 0), (3, 0, 0, 1),
+        ] {
+            let mut n = ZeldaState::new();
+            n.set_assets(&assets).unwrap();
+            for (address, value) in [(0x10, 9), (0x8a, screen), (0x30, vy), (0x31, vx),
+                (0x67, direction), (0xf3ca, dark), (0xf357, pearl), (0x2e4, immobilized)] {
+                n.write_wram_byte(if address >= 0xf000 { address+0x10000 } else { address }, value);
+            }
+            // A central area keeps every adjacent table index inside the
+            // physical world map; a west exit from area zero wraps into code.
+            let table_word = |address: usize| {
+                let offset = 2*0x8000 + (address & 0x7fff) + 0x22;
+                u16::from_le_bytes([rom[offset], rom[offset+1]])
+            };
+            n.write_wram_word(0x20, table_word(0xa8c4).wrapping_add(y));
+            n.write_wram_word(0x22, table_word(0xa944).wrapping_add(x));
+            n.write_wram_word(0x700, 0x22);
+            n.write_wram_word(0x716, 0x200);
+            n.write_wram_word(0x84, 0x882);
+            n.sync_native_game_state_from_ram();
+            n.set_lag_free(true);
+            let mut s = snes::Snes::new();
+            s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+            s.ram.copy_from_slice(&n.wram_image());
+            s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+            s.cpu.e = false;
+            s.cpu.unpack_flags(0x30);
+            s.cpu.k = 2;
+            s.cpu.db = 2;
+            s.cpu.pc = 0xa9c4;
+            s.cpu.sp = 0x1fa;
+            crate::cycle_ledger::assert_rom_marker_work(0x02a9c4, s,
+                |s| s.cpu.k == 2 && (0xa9c4..0xab08).contains(&s.cpu.pc), || {
+                    n.OverworldHandleTransitions();
+                });
+        }
+    }
+}
+
+fn marker44_map_edge_body_matches_rom(entry: u32, end: u32) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    // Rejected edges, zero/one/multiple normalization passes, both map sizes,
+    // and two destination offsets. The original stripe children run unchanged.
+    for src in [0u16, 2, 0x5e, 0x60, 0x7e, 0x80, 0x882, 0x17fe, 0x1800] {
+        for screen in [0u8, 2] {
+            for dst in [0usize, 6] {
+                let mut n = ZeldaState::new();
+                n.set_assets(&assets).unwrap();
+                n.write_wram_byte(0x8a, screen);
+                n.write_wram_word(0x84, src);
+                n.write_wram_word(0x86, 0x1f);
+                n.write_wram_word(0x88, 0);
+                n.sync_native_game_state_from_ram();
+                n.set_lag_free(true);
+                let mut s = snes::Snes::new();
+                s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                s.ram.copy_from_slice(&n.wram_image());
+                s.ram[0x0e..0x10].copy_from_slice(&((dst * 2) as u16).to_le_bytes());
+                s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+                s.cpu.e = false;
+                s.cpu.unpack_flags(0x30);
+                s.cpu.k = 2;
+                s.cpu.db = 2;
+                s.cpu.pc = entry as u16;
+                s.cpu.sp = 0x1fa;
+                let source = crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                    |s| s.cpu.k == 2 && (entry as u16..end as u16).contains(&s.cpu.pc), || {
+                        match entry {
+                            0x02f2dd => { n.check_for_newly_loaded_map_areas_north(dst); }
+                            0x02f311 => { n.check_for_newly_loaded_map_areas_south(dst); }
+                            0x02f345 => { n.check_for_newly_loaded_map_areas_west(dst); }
+                            0x02f37f => { n.check_for_newly_loaded_map_areas_east(dst); }
+                            _ => unreachable!(),
+                        }
+                    });
+                for address in [0x84, 0x86, 0x88] {
+                    assert_eq!(n.read_wram_image_word(address, 2),
+                        u16::from_le_bytes([source.snes().ram[address], source.snes().ram[address+1]]),
+                        "entry={entry:06x} src={src:04x} screen={screen} dst={dst} address={address:04x}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn marker44_north_map_edge_matches_rom() { marker44_map_edge_body_matches_rom(0x02f2dd, 0x02f311); }
+#[test]
+fn marker44_south_map_edge_matches_rom() { marker44_map_edge_body_matches_rom(0x02f311, 0x02f345); }
+#[test]
+fn marker44_west_map_edge_matches_rom() { marker44_map_edge_body_matches_rom(0x02f345, 0x02f37f); }
+#[test]
+fn marker44_east_map_edge_matches_rom() { marker44_map_edge_body_matches_rom(0x02f37f, 0x02f3b9); }
+
+#[test]
 fn load5_conditional_mosaic_markers_match_rom() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();

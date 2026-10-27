@@ -683,20 +683,38 @@ impl ZeldaState {
     /// `LaserEye_Draw` before its `Sprite_DrawMultiple`: the graphics and
     /// object-priority stores.
     pub(in crate::zelda_rtl) fn laser_eye_draw_prologue(&mut self, k: usize) {
+        // $1E:A549 JSR $A708; source drawing is split at these publication
+        // stores, so each continuation retires only its own instructions.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ea708));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ea708);
         if self.sprite_slot_view(k).head_direction() != 0 {
+            b.block(0x1ea70d);
+            if self.sprite_slot_view(k).delay_aux4() == 0 { b.taken(0x1ea715); }
+            else { b.block(0x1ea717); }
             let value = u8::from(self.sprite_slot_view(k).delay_aux4() == 0);
             self.sprite_slot_view_mut(k).set_graphics(value);
+        } else {
+            b.taken(0x1ea70b);
         }
+        b.block(0x1ea71a);
         let value = 0x30;
         self.sprite_slot_view_mut(k).set_object_priority(value);
     }
 
     /// `LaserEye_Draw`'s `Sprite_DrawMultiple`.
     pub(in crate::zelda_rtl) fn laser_eye_draw_multiple(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ea708));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1E:A71F..A73E JMP $87F0; that tail stays in this source frame.
+        // Sprite_DrawMultiple ($05:DF6C) owns preparation and the draw loop.
+        b.block(0x1ea71f);
         let base = (usize::from(self.sprite_slot_view(k).graphics())
             + usize::from(self.sprite_slot_view(k).direction()) * 2)
             * 3;
+        b.block(0x1e87f0);
         self.sprite_draw_multiple(k, &LASER_EYE_DRAW_FRAMES[base..base + 3]);
+        b.block(0x1e87f4);
     }
 
     // -----------------------------------------------------------------------

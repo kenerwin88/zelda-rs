@@ -1580,24 +1580,59 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn thrown_sprite_check_damage_to_sprites(&mut self, k: usize) {
-        if self.sprite_slot_view(k).delay_aux4() != 0
-            || (self.sprite_slot_view(k).x_velocity() | self.sprite_slot_view(k).y_velocity()) == 0
-        {
+        // $06:E160 JSR $E172. Own the complete scan, not its $E1B2 child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e172));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06e172);
+        if self.sprite_slot_view(k).delay_aux4() != 0 {
+            b.taken(0x06e175);
+            b.block(0x06e1b1);
             return;
         }
+        b.block(0x06e177);
+        if (self.sprite_slot_view(k).x_velocity() | self.sprite_slot_view(k).y_velocity()) == 0 {
+            b.taken(0x06e17d);
+            b.block(0x06e1b1);
+            return;
+        }
+        b.block(0x06e17f);
         for i in (0..=15usize).rev() {
-            if i != self.game_state.sprites.system.cur_object_index() as usize
-                && self.sprite_slot_view(k).sprite_type() != 0xd2
-                && self.sprite_slot_view(i).state() >= 9
-                && ((((i as u8) ^ self.game_state.frame.frame_counter) & 3)
-                    | self.sprite_slot_view(i).ignore_projectile()
-                    | self.sprite_slot_view(i).hit_timer())
-                    == 0
-                && self.sprite_slot_view(k).floor() == self.sprite_slot_view(i).floor()
-            {
+            'candidate: {
+                b.block(0x06e181);
+                if i == self.game_state.sprites.system.cur_object_index() as usize {
+                    b.taken(0x06e185);
+                    break 'candidate;
+                }
+                b.block(0x06e187);
+                if self.sprite_slot_view(k).sprite_type() == 0xd2 {
+                    b.taken(0x06e18c);
+                    break 'candidate;
+                }
+                b.block(0x06e18e);
+                if self.sprite_slot_view(i).state() < 9 {
+                    b.taken(0x06e193);
+                    break 'candidate;
+                }
+                b.block(0x06e195);
+                if ((((i as u8) ^ self.game_state.frame.frame_counter) & 3)
+                        | self.sprite_slot_view(i).ignore_projectile()
+                        | self.sprite_slot_view(i).hit_timer())
+                    != 0 {
+                    b.taken(0x06e1a0);
+                    break 'candidate;
+                }
+                b.block(0x06e1a2);
+                if self.sprite_slot_view(k).floor() != self.sprite_slot_view(i).floor() {
+                    b.taken(0x06e1a8);
+                    break 'candidate;
+                }
+                b.block(0x06e1aa);
                 self.thrown_sprite_check_damage_to_single_sprite(k, i as i32);
             }
+            b.block(0x06e1ad);
+            if i != 0 { b.taken(0x06e1af); }
         }
+        b.block(0x06e1b1);
     }
 
     // void ThrownSprite_CheckDamageToSingleSprite(int k, int j) {  // 86e1b2

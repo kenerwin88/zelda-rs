@@ -4,6 +4,35 @@ use crate::zelda_rtl::sprite::{
     SpriteShadowEntry,
 };
 use super::*;
+
+#[test]
+fn marker44_laser_eye_draw_matches_rom() {
+    for k in [0usize, 15] {
+        for head in [0, 1] {
+            for delay in [0, 1] {
+                for direction in 0..4 {
+                    for y in [0x40u16, 0xf8, 0x200] {
+                        let mut n = marker29_state();
+                        for (address, value) in [(0xe20, 0x95), (0xdd0, 9),
+                            (0xeb0, head), (0xf10, delay), (0xde0, direction),
+                            (0xdc0, 1), (0xcaa, 0x80)] {
+                            n.write_wram_byte(address+k, value);
+                        }
+                        n.write_wram_word(0xfda, y);
+                        n.sync_native_game_state_from_ram();
+                        let Some(s) = marker29_machine(&n, 0x1ea708, k) else { return };
+                        crate::cycle_ledger::assert_rom_marker_work(0x1ea708, s,
+                            |s| s.cpu.k == 0x1e && ((0xa708..0xa73f).contains(&s.cpu.pc)
+                                || (0x87f0..0x87f5).contains(&s.cpu.pc)), || {
+                                    n.laser_eye_draw_prologue(k);
+                                    n.laser_eye_draw_multiple(k);
+                                });
+                    }
+                }
+            }
+        }
+    }
+}
 use crate::rom_random::RomRandomResult;
 
 fn fresh_state() -> ZeldaState {

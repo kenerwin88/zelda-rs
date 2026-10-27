@@ -6603,77 +6603,135 @@ impl ZeldaState {
 
     /// ROM: `CheckForNewlyLoadedMapAreas_North`
     pub(super) fn check_for_newly_loaded_map_areas_north(&mut self, dst: usize) -> usize {
+        // $02:F2C8/$F2CF JSR $F2DD; stripe construction is a separate child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f2dd));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02f2dd);
         let src = self.overworld_map16_src_off();
         if (src as i16).wrapping_sub(0x80) < 0 {
+            b.taken(0x02f2e4);
+            b.block(0x02f310);
             return dst;
         }
+        b.block(0x02f2e6);
         let mut dst = dst;
         if !self.overworld_map_is_small() {
+            b.block(0x02f2f1);
             self.write_overworld_vram_word(dst, 0x0080);
             dst = self.buffer_and_build_map16_stripes_y(dst + 1);
+        } else {
+            b.taken(0x02f2ef);
         }
+        b.block(0x02f300);
         self.set_overworld_map16_src_off(src.wrapping_sub(0x80));
         let y_unit = self.overworld_map16_y_unit().wrapping_sub(1) & 0x1f;
         self.set_overworld_map16_y_unit(y_unit);
+        b.block(0x02f310);
         dst
     }
 
     /// ROM: `CheckForNewlyLoadedMapAreas_South`
     pub(super) fn check_for_newly_loaded_map_areas_south(&mut self, dst: usize) -> usize {
+        // $02:F2B3/$F2BA JSR $F311; only this caller's executed instructions.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f311));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02f311);
         let src = self.overworld_map16_src_off();
         if src >= 0x1800 {
+            b.taken(0x02f318);
+            b.block(0x02f344);
             return dst;
         }
+        b.block(0x02f31a);
         let mut dst = dst;
         if !self.overworld_map_is_small() {
+            b.block(0x02f325);
             self.write_overworld_vram_word(dst, 0x0080);
             dst = self.buffer_and_build_map16_stripes_y(dst + 1);
+        } else {
+            b.taken(0x02f323);
         }
+        b.block(0x02f334);
         self.set_overworld_map16_src_off(src.wrapping_add(0x80));
         let y_unit = self.overworld_map16_y_unit().wrapping_add(1) & 0x1f;
         self.set_overworld_map16_y_unit(y_unit);
+        b.block(0x02f344);
         dst
     }
 
     /// ROM: `CheckForNewlyLoadedMapAreas_West`
     pub(super) fn check_for_newly_loaded_map_areas_west(&mut self, dst: usize) -> usize {
+        // $02:F2AC JSR $F345, including each executed normalization pass.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f345));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02f345);
         let mut pos = self.overworld_map16_src_off();
+        b.block(0x02f349);
         while pos >= 0x80 {
+            b.block(0x02f34e);
             pos = pos.wrapping_sub(0x80);
+            b.block(0x02f349);
         }
+        b.taken(0x02f34c);
+        b.block(0x02f353);
         if pos == 0 {
+            b.taken(0x02f356);
+            b.block(0x02f37e);
             return dst;
         }
+        b.block(0x02f358);
         let mut dst = dst;
         if !self.overworld_map_is_small() {
+            b.block(0x02f363);
             self.write_overworld_vram_word(dst, 0x8040);
             dst = self.buffer_and_build_map16_stripes_x(dst + 1);
+        } else {
+            b.taken(0x02f361);
         }
+        b.block(0x02f372);
         let src = self.overworld_map16_src_off().wrapping_sub(2);
         self.set_overworld_map16_src_off(src);
         let off = self.overworld_map16_dst_off().wrapping_sub(1) & 0x1f;
         self.set_overworld_map16_dst_off(off);
+        b.block(0x02f37e);
         dst
     }
 
     /// ROM: `CheckForNewlyLoadedMapAreas_East`
     pub(super) fn check_for_newly_loaded_map_areas_east(&mut self, dst: usize) -> usize {
+        // $02:F2A5 JSR $F37F; the $F3B9 stripe child keeps its own cost.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f37f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02f37f);
         let mut pos = self.overworld_map16_src_off();
+        b.block(0x02f383);
         while pos >= 0x80 {
+            b.block(0x02f388);
             pos = pos.wrapping_sub(0x80);
+            b.block(0x02f383);
         }
+        b.taken(0x02f386);
+        b.block(0x02f38d);
         if pos >= 0x60 {
+            b.taken(0x02f390);
+            b.block(0x02f3b8);
             return dst;
         }
+        b.block(0x02f392);
         let mut dst = dst;
         if !self.overworld_map_is_small() {
+            b.block(0x02f39d);
             self.write_overworld_vram_word(dst, 0x8040);
             dst = self.buffer_and_build_map16_stripes_x(dst + 1);
+        } else {
+            b.taken(0x02f39b);
         }
+        b.block(0x02f3ac);
         let src = self.overworld_map16_src_off().wrapping_add(2);
         self.set_overworld_map16_src_off(src);
         let off = self.overworld_map16_dst_off().wrapping_add(1) & 0x1f;
         self.set_overworld_map16_dst_off(off);
+        b.block(0x02f3b8);
         dst
     }
 
@@ -6985,9 +7043,18 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldHandleTransitions(&mut self) {
+        // $02:A5E1 JSR $A9C4. Complete self body, excluding map scrolling,
+        // edge eligibility, room reset, graphics and palette children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02a9c4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02a9c4);
         if self.has_screen_transition_direction_bits() {
+            b.block(0x02a9c9);
             self.OverworldHandleMapScroll();
+        } else {
+            b.taken(0x02a9c7);
         }
+        b.block(0x02a9cc);
 
         let current_area = self.game_state.world.region.current_area_of_player_word();
         let area_half = (self.game_state.world.region.current_area_of_player() >> 1) as usize;
@@ -6995,6 +7062,7 @@ impl ZeldaState {
         let mut transition: Option<(u8, usize)> = None;
 
         if self.game_state.player.follower_link.y_velocity() != 0 {
+            b.block(0x02a9d5);
             let dir = self.game_state.player.follower_link.direction() & 12;
             let t = self
                 .game_state
@@ -7003,41 +7071,78 @@ impl ZeldaState {
                 .y()
                 .wrapping_sub(OVERWORLD_AREA_BASE_Y[area_half]);
             if t < 4 {
+                b.taken(0x02a9ed);
                 transition = Some((dir, 3));
-            } else if t >= bounds {
-                transition = Some((dir, 2));
+            } else {
+                b.block(0x02a9ef);
+                if t >= bounds {
+                    b.taken(0x02a9f6);
+                    transition = Some((dir, 2));
+                }
             }
+        } else {
+            b.taken(0x02a9d3);
         }
 
-        if transition.is_none() && self.game_state.player.follower_link.x_velocity() != 0 {
-            let dir = self.game_state.player.follower_link.direction() & 3;
-            let t = self
-                .game_state
-                .player
-                .follower_link
-                .x()
-                .wrapping_sub(OVERWORLD_AREA_BASE_X[area_half]);
-            if t < 6 {
-                transition = Some((dir, 1));
-            } else if t >= bounds.wrapping_add(4) {
-                transition = Some((dir, 0));
+        if transition.is_none() {
+            b.block(0x02a9f8);
+            if self.game_state.player.follower_link.x_velocity() != 0 {
+                b.block(0x02a9ff);
+                let dir = self.game_state.player.follower_link.direction() & 3;
+                let t = self
+                    .game_state
+                    .player
+                    .follower_link
+                    .x()
+                    .wrapping_sub(OVERWORLD_AREA_BASE_X[area_half]);
+                if t < 6 {
+                    b.taken(0x02aa20);
+                    transition = Some((dir, 1));
+                } else {
+                    b.block(0x02aa22);
+                    if t >= bounds.wrapping_add(4) {
+                        transition = Some((dir, 0));
+                    } else {
+                        b.taken(0x02aa28);
+                    }
+                }
+            } else {
+                b.taken(0x02a9fd);
             }
         }
 
         let Some((dir, y_idx)) = transition else {
             // ROM $02:AA2E
+            b.block(0x02aa2e);
             self.overworld_check_special_switch_area_marked();
+            b.block(0x02aa32);
             return;
         };
 
+        b.block(0x02aa2a);
         let expected_dir = [1u8, 2, 4, 8][y_idx];
-        if expected_dir != dir || self.link_check_for_edge_screen_transition() {
+        let rejected = if expected_dir != dir {
+            true
+        } else {
+            b.taken(0x02aa2c);
+            b.block(0x02aa33);
+            let rejected = self.link_check_for_edge_screen_transition();
+            b.block(0x02aa39);
+            if rejected { b.taken(0x02aa39); }
+            rejected
+        };
+        if rejected {
             // ROM $02:AA2E
+            // JSL/RTS have the same work in either incoming accumulator width.
+            b.block(0x02aa2e);
             self.overworld_check_special_switch_area_marked();
+            b.block(0x02aa32);
             return;
         }
 
+        b.block(0x02aa3b);
         self.dungeon_reset_torch_background_and_player_inner();
+        b.block(0x02aa42);
         let mut map16 = self.overworld_map16_src_off();
         map16 &= SPECIAL_SWITCH_MAP16_MASKS[y_idx];
         let pushed = (current_area.wrapping_add_signed(SPECIAL_SWITCH_AREA_DELTAS[y_idx]) >> 1)
@@ -7049,30 +7154,60 @@ impl ZeldaState {
 
         let old_screen = self.game_state.world.location.overworld_screen_index();
         if old_screen == 0x2a {
+            b.block(0x02aa78);
             self.set_ambient_sound_effect(0x80);
+        } else {
+            b.taken(0x02aa76);
         }
 
+        b.block(0x02aa7d);
         let new_area = OVERWORLD_AREA_TILEMAP_HEADS[pushed]
             | self.game_state.inventory.save_progress.dark_world_state();
         self.set_overworld_screen(new_area);
         self.set_overworld_area_index(new_area);
-        if self.game_state.inventory.save_progress.dark_world_state() == 0
-            || self.game_state.inventory.items.moon_pearl() != 0
-        {
+        let has_music = if self.game_state.inventory.save_progress.dark_world_state() == 0 {
+            b.taken(0x02aa8f);
+            true
+        } else {
+            b.block(0x02aa91);
+            let has_pearl = self.game_state.inventory.items.moon_pearl() != 0;
+            if !has_pearl { b.taken(0x02aa95); }
+            has_pearl
+        };
+        if has_music {
+            b.block(0x02aa97);
             let music = self.overworld_config_table().music(new_area as usize);
             if music & 0xf0 == 0 {
+                b.block(0x02aaa1);
                 self.set_ambient_sound_effect(5);
+            } else {
+                b.taken(0x02aa9f);
             }
+            b.block(0x02aaa6);
             if !self.zelda_is_playing_music_track(music & 0x0f) {
+                b.block(0x02aab1);
                 self.set_music_control(0xf1);
+            } else {
+                b.taken(0x02aaaf);
             }
         }
 
+        b.block(0x02aab6);
         self.overworld_load_gfx_and_screen_size();
+        b.block(0x02aab9);
         self.set_submodule(1);
         self.set_edge_transition_direction_bits(dir);
         self.set_screen_transition_direction_bits(dir);
         let dir_enum = self.DirToEnum(dir as i32) as u8;
+        // $02:AAC7 shifts the actual direction until its first set bit.
+        let mut remaining = dir;
+        loop {
+            b.block(0x02aac7);
+            if remaining & 1 != 0 { break; }
+            b.taken(0x02aac9);
+            remaining >>= 1;
+        }
+        b.block(0x02aacb);
         self.set_transition_direction_enum(dir_enum);
         self.set_screen_transition(dir_enum);
         self.set_ow_entrance_value(0);
@@ -7088,20 +7223,31 @@ impl ZeldaState {
             .set_big_rock_starting_address(big_rock & 0xff00);
         self.set_transition_counter(0);
 
-        if old_screen & 0x3f == 0
-            || self.game_state.world.location.overworld_screen_index() & 0xbf == 0
-        {
+        let mosaic = if old_screen & 0x3f == 0 {
+            b.taken(0x02aadd);
+            true
+        } else {
+            b.block(0x02aadf);
+            let mosaic = self.game_state.world.location.overworld_screen_index() & 0xbf == 0;
+            if !mosaic { b.taken(0x02aae3); }
+            mosaic
+        };
+        if mosaic {
+            b.block(0x02aae5);
             self.set_subsubmodule(0);
             self.set_submodule(13);
             self.set_mosaic_copy(0);
             self.clear_mosaic_level();
         } else {
+            b.block(0x02aaf4);
             let sc = self.game_state.world.location.overworld_screen_index() as usize;
             self.overworld_load_palettes(
                 self.GetOverworldBgPalette(sc as u8),
                 self.overworld_config_table().sprite_palette(sc),
             );
+            b.block(0x02ab04);
             self.overworld_copy_palettes_to_cache();
+            b.block(0x02ab07);
         }
     }
 

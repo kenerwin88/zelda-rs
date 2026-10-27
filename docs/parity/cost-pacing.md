@@ -13363,3 +13363,42 @@ The full live seeded census also **passes**, **1,473,123 iterations**, unexplain
 Both ordinary builds are warning-free. The default **200k ledger matches every record and EOF**. Seven generator tests, exact table regeneration and diff checks pass. Both corrected receipt selections pass **913 unmodified-ROM cases per feature configuration**: 305 head cases and 608 suffix cases. An initial fixture left the receipt slot free, allowing a nested cutscene allocation to overwrite it; the corrected fixture establishes the real allocation prefix's occupied receipt slot. The post-build source difference is exactly that one `#[cfg(test)]` fixture statement, with production line counts unchanged; `post-build-fixture-only.json` binds the proof. Final full Zelda libraries: default **2,712 passed / 1 known spotlight failure / 3 ignored**, reduced **2,247 / 0 / 2**. The sole final failure remains `closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`, `Some(1047868)` versus `Some(170442)`. Both CPU SNES libraries pass **504 / 0 / 7 ignored**. Existing lib-test warnings are separate from ordinary build results. Earlier invalid-fixture runs remain diagnostic logs and are superseded by the final full suites.
 
 All **1,502 ledger files** retain size, nanosecond mtime and SHA-256, with none added or removed. All new prices/scopes are lagless-only. Default/ROM-timing charges and the default ledger are unchanged. No protected load/transition or sprite owner was edited. No GPU run, --video, cached-av, oracle-cache/ledger write, cargo fmt, commit, push or one-off repository script was used. Retained output remains below **3 GB**. `census-totals.json`, the three gate logs, `first-original-verification.json`, `first-prefix-comparison.json`, `second-before-after.json`, `ledger-integrity.json` and `verification.json` retain the stopping point.
+
+
+## Cost-pacing batch 44 — verified partial stop
+
+On `codex/cost-pacing44`, main `eb7b221c`: **43 predicted / 43 actual ordinary-gameplay flips**. The **>=120 predicted-frame aim remains unmet**. Seven complete self bodies are priced. Evidence: `target/cost-pacing44/`.
+
+The supplied **3,464 / 0 / 0** main ROM baseline is reused; no full main control was rerun. The gap audit's ranked `owner-worklist-after.json` supplies the owner worklist. Its retained canonical predictor supplies 2,218 candidate IDs; bounded current-main probes using `full-v2` refresh the inverse and retain **2,213 missing iterations** (1,390 dungeon, 823 overworld). Every current shortfall is retained in `cohort.json`. These bounded probes are diagnostic, not a replacement full-census authority. `raw-owner-ranking.json` preserves the current exclusive-gap ranking; its closure counts still require alias/scalar/continuation admission.
+
+`admission-notes.json` records the larger candidates' proof boundaries. SingleLarge and shadow already retire their instructions under DC13/DC66; the raw DC10/DC64 gaps cannot be added. Existing tile/velocity/dispatch prices and child bodies remain separate. Module09 scroll restoration is republished across native continuations and needs exact once-only ownership before admission. Fireball trail allocation's no-free-slot path diverges from the ROM and needs a behavior repair. Pending batch-43 Beamos/proximity/Thief and continuous-4 receipt work receive no duplicate price. No aggregate raw gap becomes a routine tax.
+
+One bounded-before row, **884,881**, has a **27,900-clock unrelated seed-history difference** after the bounded run's first WRAM divergence at 884,327. `baseline-row-reconciliation.json` preserves both rows and uses the retained unsharded main inverse (**26,014**), independently corroborated by another complete seeded recorded-answer run. No price-changing instruction from the two intervening main commits executes on this iteration, and their completed-main P2 rules are unchanged. This changes no independent or joint prediction (the row remains unflipped). The before raw ownership ranking omits this row; the final remaining ranking uses the full candidate census.
+
+**73 new blocks / 300 instructions** are generated from the ROM by `scripts/rom_block_costs.py`; all **1,975 existing rows remain identical**. `pricing-audit.json` checks every cited ROM call. The seven `assert_rom_marker_work` fixtures pass **304 unmodified-ROM cases** in each feature configuration. They cover scan rejection/child-call paths, all four map edges, both map sizes, normalization loops, direction and eligibility branches, music/pearl paths, clipping and both LaserEye continuation halves.
+
+| Complete owner | ROM caller | Old self scalar clocks | New marker clocks on cohort | Independent predicted flips |
+| --- | --- | ---: | ---: | ---: |
+| Overworld transitions `$02:A9C4` | `$02:A5E1` JSR | 0 | 764,600 | 9 |
+| Thrown-sprite scan `$06:E172` | `$06:E160` JSR | 0 | 388,520 | 8 |
+| East map edge `$02:F37F` | `$02:F2A5` JSR | 0 | 271,868 | 8 |
+| LaserEye draw `$1E:A708` + JMP tail `$87F0` | `$1E:A549` JSR | 0 | 100,796 | 8 |
+| West map edge `$02:F345` | `$02:F2AC` JSR | 0 | 121,436 | 5 |
+| North map edge `$02:F2DD` | `$02:F2C8/$F2CF` JSR | 0 | 76,664 | 2 |
+| South map edge `$02:F311` | `$02:F2B3/$F2BA` JSR | 0 | 17,150 | 0 |
+
+Independent counts overlap; their joint prediction is **43** (16 dungeon, 27 overworld). All 2,213 cohort rows match their admitted source work, measured marker clocks and signed main-counter increases, using the explicit baseline reconciliation below. Actual ordinary-gameplay gains are **16 dungeon + 27 overworld**, exactly the joint prediction, with no cohort holds lost. Overall ROM missing falls by **45 net holds**. The **1,741,034 new marker clocks** are disjoint from existing children. These seven self bodies contain no scalar calls to replace; existing child prices and default/ROM-timing accounting remain intact. The width-independent JSL/RTS tail `$02:AA2E` is shared once across its M8/M16 entries. LaserEye's `$A71A` priority store retires in the prologue; `$A71F` pointer setup retires in the resumed draw. Its JMP `$87F0` tail remains in the caller's source frame. No fitted constant, scene threshold, multiplier, table or classifier changed.
+
+The final ROM census uses recorded APU answers, `full-v2` and `--seed-every 2000`, unsharded. It **PASSes all 1,473,123 iterations (unexplained=0, complete=True)**, with every runtime hold equal to P2 and all WRAM iterations clean. Counts are missing / excess / false-positive iterations:
+
+| Scope | Before | After |
+| --- | --- | --- |
+| ROM full | 3,464 / 0 / 0 | **3,419 / 0 / 0** |
+| ROM `07/00` | 1,390 / 0 / 0 in refreshed cohort | **1,374 / 0 / 0** |
+| ROM `09/00` | 823 / 0 / 0 in refreshed cohort | **796 / 0 / 0** |
+
+These periodically seeded CPU checks establish neither continuous-route nor A/V acceptance. The source/native/threshold matrix is in `frame-flips.json`; full metrics and the refreshed remaining raw owner ranking are retained separately.
+
+All **263 filtered touched-area tests** pass (sprite helpers 117, sprite drawing 103, overworld 43), along with the **19 Python generator/worklist, inverse and routine-coverage tests**, exact regeneration and `git diff --check`. The **default 200k state ledger matches every record and EOF**. Both ordinary builds are warning-free; existing lib-test warnings remain separate. The transition owner prices existing music-publication instructions in source order; no audio, APU, SPC-clock or pacing-rule implementation changed. No live-sound census, full default/reduced library suites or CPU SNES suites were run.
+
+All **1,512 ledger/cache input files** retain size and nanosecond mtime; none were added. Retained evidence is about **99 MiB**. Large raw predictors and profiles are hashed and deleted after writing summaries and compact marker receipts. Evidence remains below 3 GB; disk space was checked before the full census. There were no GPU runs, `--video`, cached-av, Snes9x execution, cargo GPU tests, oracle-cache/shared-ledger writes, `cargo fmt`, commits, pushes or one-off repository scripts.

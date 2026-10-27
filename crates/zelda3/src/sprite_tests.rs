@@ -6,6 +6,41 @@ use crate::zelda_rtl::sprite::{
 use super::*;
 
 #[test]
+fn marker44_thrown_sprite_scan_matches_rom() {
+    // Every rejection stage, the $E1B2 child call, early returns, and the
+    // descending slot loop. Child hit boxes are far apart to isolate the scan.
+    for k in [0usize, 15] {
+        for case in 0..8 {
+            let mut n = marker31_state();
+            n.write_wram_byte(0xfa0, k as u8);
+            n.write_wram_byte(0x1a, 0);
+            for j in 0..16 {
+                n.write_wram_byte(0xdd0+j, if case == 3 { 8 } else { 9 });
+                n.write_wram_byte(0xba0+j, u8::from(case == 4));
+                n.write_wram_byte(0xef0+j, u8::from(case == 5));
+                n.write_wram_byte(0xf20+j, u8::from(case == 6));
+                n.write_wram_byte(0xd30+j, 0x80);
+                n.write_wram_byte(0xd20+j, 0x80);
+            }
+            n.write_wram_byte(0xe20+k, if case == 2 { 0xd2 } else { 0x12 });
+            n.write_wram_byte(0xf10+k, u8::from(case == 0));
+            n.write_wram_byte(0xd50+k, if case == 1 { 0 } else { 16 });
+            n.write_wram_byte(0xd40+k, 0);
+            n.write_wram_byte(0xf20+k, 0);
+            n.write_wram_byte(0xd30+k, 0);
+            n.write_wram_byte(0xd20+k, 0);
+            n.sync_native_game_state_from_ram();
+            let Some(s) = marker31_machine(&n, 0x06e172, k) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x06e172, s,
+                |s| s.cpu.k == 6 && (0xe172..0xe1b2).contains(&s.cpu.pc)
+                    && (s.cpu.pc != 0xe1b1 || s.cpu.sp == 0x1fa), || {
+                        n.thrown_sprite_check_damage_to_sprites(k);
+                    });
+        }
+    }
+}
+
+#[test]
 fn damage_gate_prefix_prices_match_executed_rom_paths() {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
