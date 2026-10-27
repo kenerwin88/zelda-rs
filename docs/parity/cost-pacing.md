@@ -13402,3 +13402,126 @@ These periodically seeded CPU checks establish neither continuous-route nor A/V 
 All **263 filtered touched-area tests** pass (sprite helpers 117, sprite drawing 103, overworld 43), along with the **19 Python generator/worklist, inverse and routine-coverage tests**, exact regeneration and `git diff --check`. The **default 200k state ledger matches every record and EOF**. Both ordinary builds are warning-free; existing lib-test warnings remain separate. The transition owner prices existing music-publication instructions in source order; no audio, APU, SPC-clock or pacing-rule implementation changed. No live-sound census, full default/reduced library suites or CPU SNES suites were run.
 
 All **1,512 ledger/cache input files** retain size and nanosecond mtime; none were added. Retained evidence is about **99 MiB**. Large raw predictors and profiles are hashed and deleted after writing summaries and compact marker receipts. Evidence remains below 3 GB; disk space was checked before the full census. There were no GPU runs, `--video`, cached-av, Snes9x execution, cargo GPU tests, oracle-cache/shared-ledger writes, `cargo fmt`, commits, pushes or one-off repository scripts.
+
+## Prefix closure 1
+
+**Verified partial CPU-only stop on `codex/prefix1`, base `15435fd9`.**
+Evidence: `target/prefix1/`. The fresh reduced main predictor has **139 missing
+frames in 127 iterations** before 94,853, including **61 in 09/00**; the prompt
+specified 137 / 59. The retained older predictor has 140. All comparisons here
+use the fresh same-build baseline rather than silently substituting the prompt's
+counts. This batch restores **20 prefix frames**, leaving **119**.
+The goal of closing the entire prefix remains unfinished.
+
+### Cohort, ranking and prices
+
+`cohort.json` retains every original missing row and its full-count inverse.
+`owner-ranking.json` is the fresh raw exclusive source/native ranking, using
+retained ROM receipts covering all 127 rows. It is not an additive price list.
+Large draw/shadow scopes overlap through JMP tails: grouping `$06:DC10`, `$DC13`,
+`$DC64` and `$DC66` reduces their raw 33-closure lead to five diagnostic closures.
+Distress's `$06:A72F` / `$A733` aliases reduce ten apparent closures to zero.
+Module routing, sprite dispatch, existing instruction models and object parents
+still require ownership admission; they receive no aggregate tax.
+`alias-audit.json` and `remaining-owner-ranking.json` preserve these limits.
+
+Seven complete self bodies are priced from `scripts/rom_block_costs.py`, with
+source-address comments. Their old self scalar total is **zero**; existing child
+scalars and instruction models remain separate. No legacy scalar is retained in
+any newly priced self body. No price uses lag counts, a scene threshold,
+multiplier or scene table. No classifier changed.
+
+| Owner | Source entry | New clocks on frozen prefix cohort | Independent predicted frames |
+| --- | --- | ---: | ---: |
+| checkerboard | `$0C:CE1B` | 4,173,316 | 7 |
+| transition_cache | `$09:C176` | 412,404 | 6 |
+| sram_validation | `$02:8054` | 820,156 | 2 |
+| file_graphics_caller | `$00:E4E9` | 665,622 | 2 |
+| face_link | `$06:EAA4` | 34,716 | 2 |
+| barrier | `$1E:F4F3` | 28,886 | 2 |
+| track_body | `$05:DCA2` | 22,882 | 2 |
+
+The checkerboard prices the actual 1,024-word loop. The file-graphics caller
+prices its inline 2,048-word font copy and 768-word 2bpp copy, excluding the
+existing conversion children; its decompression remains open. SRAM validation
+uses actual primary/backup checksums, copy/erase branches and the three-slot
+loop. Transition caching uses actual slot state/pause branches. Facing, turning
+and barrier helpers price their complete self instructions and exclude children.
+
+**58 new blocks / 285 instructions** are added; all **1,975 existing generated
+rows remain byte-identical**. The independent predictions overlap. The joint
+prediction is **20 restored frames**: 16 complete closures and four partially
+restored frames in iteration 729's 13-frame file-select deficit. That row's
+no-worker/no-bus P2 is independently reproduced before evaluating its source
+body additions; other rows use the retained full-count inverse.
+
+Measured cohort marker clocks: **6,157,982**. Every main-counter change
+equals its added markers exactly. Source/marker work and prediction versus actual
+agree on all 127 rows. `frame-flips.json` retains every row, including any
+mismatch rather than fitting prices to the result. These are source work and
+logical scheduling receipts, not physical CPU/NMI or A/V equivalence proof.
+
+### Full ROM and continuous live checks
+
+The single final ROM census uses read-only corrected **full-v2**, `--report 0`
+and `--seed-every 2000`. Its unchanged gate **PASSes all 1,473,123 iterations**,
+unexplained zero; every runtime hold equals P2. Final missing / excess / FP:
+
+| Scope | Before | After |
+| --- | ---: | ---: |
+| ROM full | No new full main control | **3,375 / 0 / 0** |
+| ROM prefix 0..94,852 | **139 / 0 / 0** | **119 / 0 / 0** |
+
+The fresh main live baseline is cold, explicitly omits `--seed-every`, and is
+clean through all **94,854 tested iterations**, including the 94,853 poll. Its
+first later divergence is not established by this bounded control. Thus the
+older supplied 94,853 first-divergence receipt is not reproduced on this base.
+An initial baseline probe mistakenly retained the seed option; it had zero
+actual reseeds, is retained as `before-live-seeded-diagnostic.*`, and is excluded
+from continuous acceptance. The corrected unseeded run reproduces its command
+clock exactly. No full seeded live census was run.
+
+The final cold live lane uses `--logical-replay full-v2 ... --report 0
+--live-apu-reads --frames 200000`, with **no `--seed-every`**. Its first
+song-poll difference is **142,086**, room `$0033`; native polls zero while source
+still reports `$13`. The unchanged strict gate **FAILS with 35 song-state
+comparisons**. Ordinary WRAM, RNG, APU consumption and command comparisons are
+clean. This is a completed 200k cold prefix with a known failing comparison;
+complete continuous live ending acceptance remains unfinished.
+
+The source's first pendant `$13` command arrives at iteration **94,216**; its
+native request is delivered during producer iteration **94,215**. It is the
+command whose first song-end poll frontier is 94,853. This names the command
+boundary precisely rather than treating a callback-sized PCM buffer as an
+absolute clock.
+
+| `$13` delivery clock | Source | Before | After |
+| --- | ---: | ---: | ---: |
+| Absolute SPC cycles | 1,758,669,007 | 1,754,815,882 | 1,755,174,120 |
+| Native minus source, SPC cycles | — | -3,853,125 | -3,494,887 |
+| Native minus source, master-clock equivalents | — | -80,714,162.451 | -73,209,895.102 |
+
+The recovered elapsed time is **358,238 SPC cycles**, or
+**7,504,267.349 master-clock equivalents**. `command-clocks.json` retains
+exact rational master units using the pinned **328125/15664** conversion.
+These are absolute SPC delivery timestamps expressed in master-clock units,
+not a separately captured physical CPU bus timestamp. Source delivery is
+reconstructed from the retained original port receipt (sample 54,958,405 × 32
++ 47); native delivery comes from observational `spc_port_write` records. No
+SPC, APU, driver tempo/timer, audio publication, or pacing-rule code changed.
+
+### Verification and stopping boundary
+
+All **seven `assert_rom_marker_work` fixtures / 216 ROM cases** pass. The
+selected touched-area tests pass: **6 file-menu tests and 116 sprite
+tests**. The **nine Python generator/worklist tests**, exact regeneration and
+`git diff --check` pass. The **default 200k ledger matches every record and EOF**.
+Both production builds are warning-free; the default lib-test build retains
+its 24 existing warnings. Full library suites and cargo GPU tests were not run.
+
+All **1,512 ledger/cache files** retain size and nanosecond mtime,
+with none added. Commands, source/binary hashes, source/marker receipts and the
+uncommitted patch bind this stop. Output is **294.0 MB**, below 3 GB.
+There were no GPU runs, `--video`, cached-av or Snes9x execution, oracle-cache or
+shared-ledger writes, cargo fmt, commits, pushes, or one-off repository scripts.
+The batch-43 and continuous-4 owners and batch-44's in-flight files were excluded.

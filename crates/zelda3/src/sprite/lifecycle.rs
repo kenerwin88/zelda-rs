@@ -186,20 +186,33 @@ impl ZeldaState {
     //   return true;
     // }
     pub(in crate::zelda_rtl) fn sprite_track_body_to_head(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05dca2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $05:DCA2..DCDD: complete far-call body, no children or old scalar.
+        b.block(0x05dca2);
         if self.sprite_slot_view(k).head_direction() != self.sprite_slot_view(k).direction() {
+            b.block(0x05dcaa);
             if (self.game_state.frame.frame_counter & 0x1f) != 0 {
+                b.taken(0x05dcae); b.block(0x05dcd4);
                 return false;
             }
+            b.block(0x05dcb0);
             if ((self.sprite_slot_view(k).head_direction() ^ self.sprite_slot_view(k).direction())
                 & 2)
                 == 0
             {
+                b.block(0x05dcba);
                 let value = ((((k as u8) ^ self.game_state.frame.frame_counter) >> 5) | 2) & 3
                     ^ (self.sprite_slot_view(k).head_direction() & 2);
                 self.sprite_slot_view_mut(k).set_direction(value);
+                b.block(0x05dcd4);
                 return false;
             }
+            b.taken(0x05dcb8);
+        } else {
+            b.taken(0x05dca8);
         }
+        b.block(0x05dcd6);
         let value = self.sprite_slot_view(k).head_direction();
         self.sprite_slot_view_mut(k).set_direction(value);
         true

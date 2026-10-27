@@ -2,6 +2,44 @@
 
 use super::*;
 
+#[cfg(test)]
+mod prefix1_tests {
+    use super::*;
+
+    #[test]
+    fn prefix1_transition_cache_markers_match_rom_branches() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).expect("ROM fixture");
+        for indoors in [0u8, 1] {
+            for variant in 0..4usize {
+                let mut native = ZeldaState::new();
+                native.write_wram_byte(0x1b, indoors);
+                for k in 0..16usize {
+                    native.write_wram_byte(0xdd0 + k, [0, 4, 9, 10][(k + variant) % 4]);
+                    native.write_wram_byte(0xf00 + k, u8::from(variant == 3 || k == variant));
+                }
+                native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = 9;
+                machine.cpu.db = 9;
+                machine.cpu.dp = 0;
+                machine.cpu.pc = 0xc176;
+                machine.cpu.sp = 0x1fc;
+                crate::cycle_ledger::assert_rom_marker_work(0x09c176, machine,
+                    |s| s.cpu.k == 9 && (0xc175..0xc22f).contains(&s.cpu.pc), || {
+                        native.dungeon_cache_trans_sprites();
+                    });
+            }
+        }
+    }
+}
+
 impl ZeldaState {
 
     // void Sprite_InitializeSlots() {  // 89afd6
@@ -2462,14 +2500,38 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn dungeon_cache_trans_sprites(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09c176));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $09:C176..C22E, M8/X8: complete cache loop, excluding no children.
+        b.block(0x09c176);
         if self.game_state.world.location.is_outdoors() {
+            b.taken(0x09c178);
+            b.block(0x09c175);
             return;
         }
+        b.block(0x09c17a);
         let value = self.game_state.world.location.indoor_flag();
         self.sprite_system_mut().set_alt_sprites_flag(value);
         for k in (0..16usize).rev() {
+            b.block(0x09c17f);
+            if self.sprite_slot_view(k).pause() != 0 {
+                b.taken(0x09c1a9);
+            } else {
+                b.block(0x09c1ab);
+                if self.sprite_slot_view(k).state() == 4 {
+                    b.taken(0x09c1b0);
+                } else {
+                    b.block(0x09c1b2);
+                    if self.sprite_slot_view(k).state() == 10 { b.taken(0x09c1b4); }
+                    else { b.block(0x09c1b6); }
+                }
+            }
             self.dungeon_cache_trans_sprite_fields(k, None, self.dungeon_cache_last_field(k));
+            b.block(0x09c228);
+            if k == 0 { b.taken(0x09c229); }
+            else { b.block(0x09c22b); }
         }
+        b.block(0x09c22e);
     }
 
     fn dungeon_cache_trans_sprites_through_cpu_progress(

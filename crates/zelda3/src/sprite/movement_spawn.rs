@@ -1099,8 +1099,18 @@ impl ZeldaState {
     /// signed byte offset from Link (positive when the sprite is right of or
     /// below Link).
     pub(in crate::zelda_rtl) fn sprite_direction_and_offset_to_face_link(&mut self, k: usize) -> (u8, PointU8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eaa4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:EAA4..EACC: self body only; EAD1 and EAE8 own their work.
+        b.block(0x06eaa4);
         let below = self.sprite_is_below_link(k);
         let right = self.sprite_is_right_of_link(k);
+        b.block(0x06eaa7);
+        b.block(0x06eaac);
+        if sign8(right.b) { b.block(0x06eab2); } else { b.taken(0x06eab0); }
+        b.block(0x06eab5);
+        if sign8(below.b) { b.block(0x06eabc); } else { b.taken(0x06eaba); }
+        b.block(0x06eabf);
         let ym = if sign8(below.b) {
             0u8.wrapping_sub(below.b)
         } else {
@@ -1116,6 +1126,8 @@ impl ZeldaState {
             x: right.b,
             y: below.b,
         };
+        if xm >= ym { b.block(0x06eac4); }
+        else { b.taken(0x06eac2); b.block(0x06eac7); }
         (if xm >= ym { right.a } else { below.a + 2 }, offset)
     }
 
@@ -1637,13 +1649,24 @@ impl ZeldaState {
     //   sprite_flags4[k] = bak;
     // }
     pub(in crate::zelda_rtl) fn sprite_behave_as_barrier(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ef4f3));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1E:F4F3..F507: preserve/restore flags and call opcodes only.
+        // Damage and movement-halt children retain their separate ownership.
+        b.block(0x1ef4f3);
         let bak = self.sprite_slot_view(k).flags4();
         let value = 0;
         self.sprite_slot_view_mut(k).set_flags4(value);
         // ROM $1E:F4FA
-        if self.sprite_check_damage_same_layer_long_marked(k) {
+        let hit = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x1ef4fe);
+        if hit {
+            b.block(0x1ef500);
             self.sprite_halt_all_movement();
+        } else {
+            b.taken(0x1ef4fe);
         }
+        b.block(0x1ef503);
         let value = bak;
         self.sprite_slot_view_mut(k).set_flags4(value);
     }
@@ -1836,3 +1859,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------
 
 }
+
+#[cfg(test)]
+#[path = "prefix1_tests.rs"]
+mod prefix1_tests;

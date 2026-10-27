@@ -242,43 +242,102 @@ impl ZeldaState {
     }
 
     pub(super) fn load_file_select_graphics(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00e4e9));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $00:E4E9..E555: caller and inline font/2bpp copies only. Existing
+        // conversion children own their complete work; decompression stays open.
+        b.block(0x00e4e9);
         let data = self
             .decompressed_sprite_graphics_data(0x5e)
             .expect("file select sprite sheet 0x5e must decompress");
         self.copy_to_primary_decompression_buffer(&data);
+        b.block(0x00e503);
         self.do3_to_4_high_to_vram(0x5000, &data, crate::chr_source::CHR_KIND_SPRITE, 0x5e);
 
+        // Do3To4High returns M8/X8, including the second caller entry.
+        b.block(0x00e50a);
         let data = self
             .decompressed_sprite_graphics_data(0x5f)
             .expect("file select sprite sheet 0x5f must decompress");
         self.copy_to_primary_decompression_buffer(&data);
+        b.block(0x00e50f);
         self.do3_to_4_high_to_vram(0x5400, &data, crate::chr_source::CHR_KIND_SPRITE, 0x5f);
 
+        b.block(0x00e516);
+        // $E52B..E535 is the inline 0x800-word font transfer, not a JSR.
+        for word in 0..0x800 {
+            b.block(0x00e52b);
+            if word + 1 != 0x800 { b.taken(0x00e535); }
+        }
         self.transfer_font_to_vram();
 
+        b.block(0x00e537);
         let data = self
             .decompressed_sprite_graphics_data(0x6b)
             .expect("file select sprite sheet 0x6b must decompress");
         self.copy_to_primary_decompression_buffer(&data);
+        b.block(0x00e541);
         for i in 0..0x300 {
+            b.block(0x00e546);
+            if i + 1 != 0x300 { b.taken(0x00e550); }
             self.ppu.vram[0x7800 + i] = read_word_from_slice(&data, i * 2);
         }
+        b.block(0x00e552);
     }
 
     pub(super) fn intro_validate_sram(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x028054));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $02:8054..8115: checksums, conditional backup/erase loops, low-WRAM
+        // clear and RTL. The actual SRAM checks choose the same ROM branches.
+        b.block(0x028054);
         for i in 0..3 {
+            b.block(0x028058);
+            for word in 0..0x280 {
+                b.block(0x028064);
+                if word + 1 != 0x280 { b.taken(0x02806f); }
+            }
+            b.block(0x028071);
             let slot = i * 0x500;
             let backup = slot + 0x0f00;
-            if !Self::intro_check_cksum_slice(&self.sram[slot..slot + 0x500]) {
+            if Self::intro_check_cksum_slice(&self.sram[slot..slot + 0x500]) {
+                b.taken(0x028075);
+            } else {
+                b.block(0x028077);
+                for word in 0..0x280 {
+                    b.block(0x02807c);
+                    if word + 1 != 0x280 { b.taken(0x028087); }
+                }
+                b.block(0x028089);
                 if Self::intro_check_cksum_slice(&self.sram[backup..backup + 0x500]) {
+                    b.block(0x02808f);
+                    for word in 0..0x80 {
+                        b.block(0x028092);
+                        if word + 1 != 0x80 { b.taken(0x0280c0); }
+                    }
                     let backup_data = self.sram[backup..backup + 0x500].to_vec();
                     self.sram[slot..slot + 0x500].copy_from_slice(&backup_data);
                 } else {
+                    b.taken(0x02808d);
+                    b.block(0x0280e0);
+                    for word in 0..0x80 {
+                        b.block(0x0280e4);
+                        if word + 1 != 0x80 { b.taken(0x028112); }
+                    }
+                    b.block(0x028114);
                     self.sram[slot..slot + 0x500].fill(0);
                     self.sram[backup..backup + 0x500].fill(0);
                 }
             }
+            b.block(0x0280c2);
+            if i != 2 { b.taken(0x0280cb); }
         }
+        b.block(0x0280cd);
+        for word in 0..0x80 {
+            b.block(0x0280d0);
+            if word + 1 != 0x80 { b.taken(0x0280db); }
+        }
+        b.block(0x0280dd);
         self.sprite_system_mut().clear_live_table_pages();
     }
 
@@ -346,18 +405,26 @@ impl ZeldaState {
     }
 
     pub(super) fn select_file_func1(&mut self) -> usize {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cce1b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $0C:CE1B..CE52, M16/X16: header, actual checkerboard loop and RTS.
+        // Callers own their JSR; this body has no priced children or scalar.
+        b.block(0x0cce1b);
         let mut dst = self.game_state.display.vram_upload_buffer_base();
         self.write_vram_upload_absolute_word(dst, 0x0010);
         dst += 2;
         self.write_vram_upload_absolute_word(dst, 0xff07);
         dst += 2;
         for i in 0..SELECT_FILE_CHECKERBOARD_TILE_COUNT {
+            b.block(0x0cce2c);
+            if i + 1 != SELECT_FILE_CHECKERBOARD_TILE_COUNT { b.taken(0x0cce50); }
             self.write_vram_upload_absolute_word(
                 dst,
                 SELECT_FILE_FUNC1_BACKGROUND_CHECKERBOARD_TILES[((i & 0x20) >> 4) + (i & 1)],
             );
             dst += 2;
         }
+        b.block(0x0cce52);
         dst
     }
 
