@@ -715,6 +715,18 @@ impl ZeldaState {
             // $8E39 LDA/JSL; JumpTableLocal and selected bodies are children.
             crate::cycle_ledger::blocks(self.lag_free).block(0x028e39);
         }
+        // $02:8E3B JSL $00:8781. STY/PLY precedes the pulled return;
+        // the remaining pointer dispatch belongs to the falling caller.
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            crate::cycle_ledger::blocks(self.lag_free).block(0x008781);
+        }
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x028e27));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(0x008784);
+            b.block(0x008799);
+        }
         match self.game_state.frame.subsubmodule {
             0 => self.module07_07_00_handle_music_and_reset_room(),
             1 => self.apply_palette_filter_bounce(),

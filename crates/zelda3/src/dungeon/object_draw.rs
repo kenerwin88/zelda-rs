@@ -560,6 +560,33 @@ impl ZeldaState {
         self.room_draw_rightwards2x2(src, dsto);
     }
 
+    /// $01:8F62 and the retained $93B7/$9456/etc. JSR $B0AC, M16/X16.
+    /// Native callers compute the size directly; this prices that actual child.
+    pub(super) fn price_room_draw_size_1to16(&self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b0ac));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b0ac);
+        b.block(0x01b0af);
+    }
+
+    /// $01:8DDF JSR $B0AF: the caller supplies A, excluding B0AC's LDA.
+    pub(super) fn price_room_draw_size_ato_aplus15(&self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b0af));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x01b0af);
+    }
+
+    /// $01:8F68 (and $8EEB/$8EF0/$8EC3) JSR $B191, M16/X16.
+    /// The native caller already read the tile; equality selects the real CLC tail.
+    pub(super) fn price_room_draw_small_rail_corner(&self, equal: bool) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b191));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b191);
+        if equal {
+            b.taken(0x01b19a);
+            b.block(0x01b18f);
+        } else { b.block(0x01b19c); }
+    }
+
     /// ROM: `Object_SizeAtoAplus15`
     pub(super) fn object_size_ato_aplus15(&mut self, a: u8) {
         let draw_width = (self.game_state.dungeon.room_load.draw_width_indicator() << 2
@@ -1455,30 +1482,60 @@ impl ZeldaState {
 
     /// ROM: `Object_Hole`
     pub(super) fn object_hole(&mut self, src: usize, dsto: u16, width: u8, height: u8) {
+        // $01:8200 subtype-1 table word $8348 selects $8DDC, M16/X16.
+        // Price the complete square/edge builder, excluding real size/fill JSRs.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x018ddc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x018ddc);
         self.dungeon_room_load_mut().set_draw_width_indicator(width);
         self.dungeon_room_load_mut()
             .set_draw_height_indicator(height);
         self.object_size_ato_aplus15(4);
+        self.price_room_draw_size_ato_aplus15();
+        b.block(0x018de2);
         let width = self.game_state.dungeon.room_load.draw_width_indicator() as u16;
         for y in 0..width {
-            self.object_fill_nx1(width, src, dsto + y * 64);
+            b.block(0x018de7);
+            self.room_object_fill_row_width(width, src, dsto + y * 64);
+            b.block(0x018dea);
+            if y + 1 != width { b.taken(0x018df4); }
         }
 
+        b.block(0x018df6);
         let edge_src = 0x063c;
-        self.room_write_current(dsto, self.tile_word(edge_src, 0));
-        self.object_fill_nx1(width - 2, edge_src + 2, dsto + 1);
-        self.room_write_current(dsto + width - 1, self.tile_word(edge_src, 2));
-
-        let bottom = dsto + (width - 1) * 64;
-        self.room_write_current(bottom, self.tile_word(edge_src, 3));
-        self.object_fill_nx1(width - 2, edge_src + 8, bottom + 1);
-        self.room_write_current(bottom + width - 1, self.tile_word(edge_src, 5));
-
-        let side_src = 0x0648;
-        for y in 1..width - 1 {
-            self.room_write_current(dsto + y * 64, self.tile_word(side_src, 0));
-            self.room_write_current(dsto + width - 1 + y * 64, self.tile_word(side_src, 1));
+        for row in 0..2u16 {
+            b.block(0x018e01);
+            let dst = dsto + if row == 0 { 0 } else { (width - 1) * 64 };
+            let src = edge_src + usize::from(row) * 6;
+            self.room_write_current(dst, self.tile_word(src, 0));
+            for i in 0..width - 2 {
+                b.block(0x018e0f);
+                self.room_write_current(dst + i + 1, self.tile_word(src, 1));
+                if i + 1 != width - 2 { b.taken(0x018e15); }
+            }
+            b.block(0x018e17);
+            self.room_write_current(dst + width - 1, self.tile_word(src, 2));
+            if row == 0 { b.taken(0x018e26); }
         }
+        b.block(0x018e28);
+        for step in 0..width - 1 {
+            b.block(0x018e35);
+            if step + 1 != width - 1 { b.taken(0x018e38); }
+        }
+        b.block(0x018e3a);
+        // Source $8E4B..8E64 traverses each complete vertical edge in turn.
+        for side in 0..2u16 {
+            b.block(0x018e4b);
+            for y in 1..width - 1 {
+                b.block(0x018e4f);
+                self.room_write_current(dsto + side * (width - 1) + y * 64,
+                    self.tile_word(0x0648, usize::from(side)));
+                if y + 1 != width - 1 { b.taken(0x018e5c); }
+            }
+            b.block(0x018e5e);
+            if side == 0 { b.taken(0x018e64); }
+        }
+        b.block(0x018e66);
     }
 
     #[track_caller]

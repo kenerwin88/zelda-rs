@@ -162,6 +162,170 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x00ffb4, 0x00ffb7, true, true, 66, 0x000000, &[]),
     // $01:8916: fixed cost
     (0x018916, 0x01893c, false, false, 506, 0x000000, &[]),
+    // $01:8DDC: fixed cost
+    (0x018ddc, 0x018de2, false, false, 70, 0x000000, &[]),
+    // $01:8DE2: fixed cost
+    (0x018de2, 0x018de7, false, false, 94, 0x000000, &[]),
+    // $01:8DE7: fixed cost
+    (0x018de7, 0x018dea, false, false, 46, 0x000000, &[]),
+    // $01:8DEA: 018df4 taken +6
+    (0x018dea, 0x018df6, false, false, 172, 0x018df4, &[]),
+    // $01:8DF6: fixed cost
+    (0x018df6, 0x018e01, false, false, 148, 0x000000, &[]),
+    // $01:8E01: fixed cost
+    (0x018e01, 0x018e0f, false, false, 240, 0x000000, &[]),
+    // $01:8E0F: 018e15 taken +6
+    (0x018e0f, 0x018e17, false, false, 154, 0x018e15, &[]),
+    // $01:8E17: 018e26 taken +6
+    (0x018e17, 0x018e28, false, false, 270, 0x018e26, &[]),
+    // $01:8E28: fixed cost
+    (0x018e28, 0x018e35, false, false, 202, 0x000000, &[]),
+    // $01:8E35: 018e38 taken +6
+    (0x018e35, 0x018e3a, false, false, 58, 0x018e38, &[]),
+    // $01:8E3A: fixed cost
+    (0x018e3a, 0x018e4b, false, false, 196, 0x000000, &[]),
+    // $01:8E4B: fixed cost
+    (0x018e4b, 0x018e4f, false, false, 64, 0x000000, &[]),
+    // $01:8E4F: 018e5c taken +6
+    (0x018e4f, 0x018e5e, false, false, 238, 0x018e5c, &[]),
+    // $01:8E5E: 018e64 taken +6
+    (0x018e5e, 0x018e66, false, false, 130, 0x018e64, &[]),
+    // $01:8E66: fixed cost
+    (0x018e66, 0x018e67, false, false, 42, 0x000000, &[]),
+    // $01:8F62: fixed cost
+    (0x018f62, 0x018f65, false, false, 46, 0x000000, &[]),
+    // $01:8F65: fixed cost
+    (0x018f65, 0x018f6b, false, false, 70, 0x000000, &[]),
+    // $01:8F6B: 018f6b taken +6
+    (0x018f6b, 0x018f6d, false, false, 16, 0x018f6b, &[]),
+    // $01:8F6D: 018f70 taken +6
+    (0x018f6d, 0x018f72, false, false, 40, 0x018f70, &[]),
+    // $01:8F72: 018f75 taken +6
+    (0x018f72, 0x018f77, false, false, 40, 0x018f75, &[]),
+    // $01:8F77: 018f7a taken +6
+    (0x018f77, 0x018f7c, false, false, 40, 0x018f7a, &[]),
+    // $01:8F7C: fixed cost
+    (0x018f7c, 0x018f81, false, false, 102, 0x000000, &[]),
+    // $01:8F81: fixed cost
+    (0x018f81, 0x018f84, false, false, 46, 0x000000, &[]),
+    // $01:8F84: fixed cost
+    (0x018f84, 0x018f8a, false, false, 144, 0x000000, &[]),
+    // $01:A8FA: fixed cost
+    (0x01a8fa, 0x01a907, false, false, 198, 0x000000, &[]),
+    // $01:A90F: 01a914 taken +6
+    (0x01a90f, 0x01a916, false, false, 72, 0x01a914, &[]),
+    // $01:A916: fixed cost
+    (0x01a916, 0x01a929, false, false, 288, 0x000000, &[]),
+    // $01:A929: fixed cost
+    (0x01a929, 0x01a932, false, false, 176, 0x000000, &[]),
+    // $01:A932: fixed cost
+    (0x01a932, 0x01a93d, false, false, 142, 0x000000, &[]),
+    // $01:A93D: 01a93d taken +6
+    (0x01a93d, 0x01a93f, false, false, 16, 0x01a93d, &[]),
+    // $01:A93F: 01a945 taken +6
+    (0x01a93f, 0x01a947, false, false, 64, 0x01a945, &[]),
+    // $01:A947: 01a94d taken +6
+    (0x01a947, 0x01a94f, false, false, 64, 0x01a94d, &[]),
+    // $01:A94F: fixed cost
+    (0x01a94f, 0x01a95e, false, false, 212, 0x000000, &[]),
+    // $01:A95E: fixed cost
+    (0x01a95e, 0x01a968, false, false, 134, 0x000000, &[]),
+    // $01:A968: 01a981 taken +6
+    (0x01a968, 0x01a983, false, false, 470, 0x01a981, &[]),
+    // $01:A983: fixed cost
+    (0x01a983, 0x01a984, false, false, 42, 0x000000, &[]),
+    // $01:AA66: 01aa69 taken +6
+    (0x01aa66, 0x01aa6b, false, false, 40, 0x01aa69, &[]),
+    // $01:AA6B: fixed cost
+    (0x01aa6b, 0x01aa73, false, false, 98, 0x000000, &[]),
+    // $01:AA73: fixed cost
+    (0x01aa73, 0x01aa75, false, false, 22, 0x000000, &[]),
+    // $01:AA75: 01aa78 taken +6
+    (0x01aa75, 0x01aa7a, false, false, 40, 0x01aa78, &[]),
+    // $01:AA7A: fixed cost
+    (0x01aa7a, 0x01aa7d, false, false, 46, 0x000000, &[]),
+    // $01:AA7D: fixed cost
+    (0x01aa7d, 0x01aa80, false, false, 24, 0x000000, &[]),
+    // $01:AA80: fixed cost
+    (0x01aa80, 0x01aa8b, false, false, 142, 0x000000, &[]),
+    // $01:AA8B: 01aa8b taken +6
+    (0x01aa8b, 0x01aa8d, false, false, 16, 0x01aa8b, &[]),
+    // $01:AA8D: 01aa93 taken +6
+    (0x01aa8d, 0x01aa95, false, false, 64, 0x01aa93, &[]),
+    // $01:AA95: 01aa98 taken +6
+    (0x01aa95, 0x01aa9a, false, false, 40, 0x01aa98, &[]),
+    // $01:AA9A: 01aaa0 taken +6
+    (0x01aa9a, 0x01aaa2, false, false, 64, 0x01aaa0, &[]),
+    // $01:AAA2: fixed cost
+    (0x01aaa2, 0x01aab1, false, false, 212, 0x000000, &[]),
+    // $01:AAB1: fixed cost
+    (0x01aab1, 0x01aabb, false, false, 134, 0x000000, &[]),
+    // $01:AABB: 01aad4 taken +6
+    (0x01aabb, 0x01aad6, false, false, 470, 0x01aad4, &[]),
+    // $01:AAD6: fixed cost
+    (0x01aad6, 0x01aad7, false, false, 42, 0x000000, &[]),
+    // $01:AB1F: 01ab24 taken +6
+    (0x01ab1f, 0x01ab26, false, false, 72, 0x01ab24, &[]),
+    // $01:AB26: fixed cost
+    (0x01ab26, 0x01ab39, false, false, 288, 0x000000, &[]),
+    // $01:AB39: fixed cost
+    (0x01ab39, 0x01ab42, false, false, 176, 0x000000, &[]),
+    // $01:AB42: fixed cost
+    (0x01ab42, 0x01ab4d, false, false, 142, 0x000000, &[]),
+    // $01:AB4D: 01ab4d taken +6
+    (0x01ab4d, 0x01ab4f, false, false, 16, 0x01ab4d, &[]),
+    // $01:AB4F: 01ab55 taken +6
+    (0x01ab4f, 0x01ab57, false, false, 64, 0x01ab55, &[]),
+    // $01:AB57: 01ab5d taken +6
+    (0x01ab57, 0x01ab5f, false, false, 64, 0x01ab5d, &[]),
+    // $01:AB5F: fixed cost
+    (0x01ab5f, 0x01ab6e, false, false, 212, 0x000000, &[]),
+    // $01:AB6E: fixed cost
+    (0x01ab6e, 0x01ab78, false, false, 134, 0x000000, &[]),
+    // $01:AB78: 01ab96 taken +6
+    (0x01ab78, 0x01ab98, false, false, 572, 0x01ab96, &[]),
+    // $01:AB98: fixed cost
+    (0x01ab98, 0x01ab99, false, false, 42, 0x000000, &[]),
+    // $01:ABC8: 01abcb taken +6
+    (0x01abc8, 0x01abcd, false, false, 40, 0x01abcb, &[]),
+    // $01:ABCD: fixed cost
+    (0x01abcd, 0x01abd5, false, false, 98, 0x000000, &[]),
+    // $01:ABD5: fixed cost
+    (0x01abd5, 0x01abd7, false, false, 22, 0x000000, &[]),
+    // $01:ABD7: 01abda taken +6
+    (0x01abd7, 0x01abdc, false, false, 40, 0x01abda, &[]),
+    // $01:ABDC: fixed cost
+    (0x01abdc, 0x01abdf, false, false, 46, 0x000000, &[]),
+    // $01:ABDF: fixed cost
+    (0x01abdf, 0x01abe2, false, false, 24, 0x000000, &[]),
+    // $01:ABE2: fixed cost
+    (0x01abe2, 0x01abed, false, false, 142, 0x000000, &[]),
+    // $01:ABED: 01abed taken +6
+    (0x01abed, 0x01abef, false, false, 16, 0x01abed, &[]),
+    // $01:ABEF: 01abf5 taken +6
+    (0x01abef, 0x01abf7, false, false, 64, 0x01abf5, &[]),
+    // $01:ABF7: 01abfd taken +6
+    (0x01abf7, 0x01abff, false, false, 64, 0x01abfd, &[]),
+    // $01:ABFF: fixed cost
+    (0x01abff, 0x01ac0e, false, false, 212, 0x000000, &[]),
+    // $01:AC0E: fixed cost
+    (0x01ac0e, 0x01ac1a, false, false, 162, 0x000000, &[]),
+    // $01:AC1A: 01ac38 taken +6
+    (0x01ac1a, 0x01ac3a, false, false, 572, 0x01ac38, &[]),
+    // $01:AC3A: fixed cost
+    (0x01ac3a, 0x01ac3b, false, false, 42, 0x000000, &[]),
+    // $01:ADC7: fixed cost
+    (0x01adc7, 0x01add4, false, false, 198, 0x000000, &[]),
+    // $01:AE33: fixed cost
+    (0x01ae33, 0x01ae40, false, false, 198, 0x000000, &[]),
+    // $01:AEE3: fixed cost
+    (0x01aee3, 0x01aef0, false, false, 198, 0x000000, &[]),
+    // $01:AF72: fixed cost
+    (0x01af72, 0x01af7f, false, false, 198, 0x000000, &[]),
+    // $01:B0AC: fixed cost
+    (0x01b0ac, 0x01b0af, false, false, 24, 0x000000, &[]),
+    // $01:B0AF: fixed cost
+    (0x01b0af, 0x01b0be, false, false, 262, 0x000000, &[]),
     // $01:B0DA: 01b0f1 taken +6
     (0x01b0da, 0x01b0f3, false, false, 324, 0x01b0f1, &[]),
     // $01:B0F3: 01b0f9 taken +6
@@ -200,6 +364,22 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x01b18d, 0x01b18f, false, false, 56, 0x000000, &[]),
     // $01:B18F: fixed cost
     (0x01b18f, 0x01b191, false, false, 56, 0x000000, &[]),
+    // $01:B191: 01b19a taken +6
+    (0x01b191, 0x01b19c, false, false, 160, 0x01b19a, &[]),
+    // $01:B19C: fixed cost
+    (0x01b19c, 0x01b19e, false, false, 56, 0x000000, &[]),
+    // $01:B1A4: fixed cost
+    (0x01b1a4, 0x01b1aa, false, false, 70, 0x000000, &[]),
+    // $01:B1AA: 01b1de taken +6
+    (0x01b1aa, 0x01b1e0, false, false, 616, 0x01b1de, &[]),
+    // $01:B1E0: fixed cost
+    (0x01b1e0, 0x01b1e1, false, false, 42, 0x000000, &[]),
+    // $01:B1E7: fixed cost
+    (0x01b1e7, 0x01b1ed, false, false, 70, 0x000000, &[]),
+    // $01:B1ED: 01b21d taken +6
+    (0x01b1ed, 0x01b21f, false, false, 578, 0x01b21d, &[]),
+    // $01:B21F: fixed cost
+    (0x01b21f, 0x01b220, false, false, 42, 0x000000, &[]),
     // $01:B2CA: fixed cost
     (0x01b2ca, 0x01b2ce, false, false, 56, 0x000000, &[]),
     // $01:B2CE: fixed cost
@@ -398,6 +578,46 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x02aec5, 0x02aecb, true, true, 78, 0x000000, &[]),
     // $02:AECB: fixed cost
     (0x02aecb, 0x02aece, true, true, 80, 0x000000, &[]),
+    // $02:B0D2: 02b0d7 taken +6
+    (0x02b0d2, 0x02b0d9, true, true, 70, 0x02b0d7, &[]),
+    // $02:B0D9: fixed cost
+    (0x02b0d9, 0x02b0e4, true, true, 110, 0x000000, &[]),
+    // $02:B0E4: fixed cost
+    (0x02b0e4, 0x02b0e7, true, true, 46, 0x000000, &[]),
+    // $02:B0E7: fixed cost
+    (0x02b0e7, 0x02b0ed, true, true, 86, 0x000000, &[]),
+    // $02:B0F3: fixed cost
+    (0x02b0f3, 0x02b103, true, true, 190, 0x000000, &[]),
+    // $02:B103: fixed cost
+    (0x02b103, 0x02b105, true, true, 22, 0x000000, &[]),
+    // $02:B105: 02b10f taken +6
+    (0x02b105, 0x02b111, true, true, 120, 0x02b10f, &[]),
+    // $02:B111: 02b113 taken +6
+    (0x02b111, 0x02b115, true, true, 32, 0x02b113, &[]),
+    // $02:B115: 02b11f taken +6
+    (0x02b115, 0x02b121, true, true, 136, 0x02b11f, &[]),
+    // $02:B121: fixed cost
+    (0x02b121, 0x02b123, true, true, 16, 0x000000, &[]),
+    // $02:B123: 02b12f taken +6
+    (0x02b123, 0x02b131, true, true, 136, 0x02b12f, &[]),
+    // $02:B131: fixed cost
+    (0x02b131, 0x02b134, true, true, 32, 0x000000, &[]),
+    // $02:B134: 02b140 taken +6
+    (0x02b134, 0x02b142, true, true, 144, 0x02b140, &[]),
+    // $02:B142: fixed cost
+    (0x02b142, 0x02b14f, true, true, 128, 0x000000, &[]),
+    // $02:B14F: fixed cost
+    (0x02b14f, 0x02b150, true, true, 42, 0x000000, &[]),
+    // $02:B171: fixed cost
+    (0x02b171, 0x02b175, true, true, 62, 0x000000, &[]),
+    // $02:B175: fixed cost
+    (0x02b175, 0x02b195, true, true, 366, 0x000000, &[]),
+    // $02:B195: fixed cost
+    (0x02b195, 0x02b199, true, true, 62, 0x000000, &[]),
+    // $02:B199: fixed cost
+    (0x02b199, 0x02b19d, true, true, 62, 0x000000, &[]),
+    // $02:B19D: fixed cost
+    (0x02b19d, 0x02b19e, true, true, 42, 0x000000, &[]),
     // $02:B1FF: fixed cost
     (0x02b1ff, 0x02b208, true, true, 132, 0x000000, &[]),
     // $02:B217: 02b21b taken +6

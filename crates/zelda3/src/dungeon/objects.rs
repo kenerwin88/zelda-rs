@@ -167,8 +167,8 @@ impl ZeldaState {
                     // $01:8EF0..8F0B: size/corner calls, actual corner
                     // branch, line call and tail; child bodies excluded.
                     crate::cycle_ledger::charge(156 + if preserve_corner { 6 } else { 102 } + 190);
-                    crate::cycle_ledger::charge_routine(0x01_b0af, 262);
-                    crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                    self.price_room_draw_size_ato_aplus15();
+                    self.price_room_draw_small_rail_corner(preserve_corner);
                 }
                 if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
@@ -177,15 +177,37 @@ impl ZeldaState {
                 self.room_write_current(dsto + count + 1, self.tile_word(src, 2));
             }
             0x23..=0x2e | 0x3f..=0x46 | 0xb3 | 0xb4 => {
+                // $01:893C JMP ($0E), subtype-1 table $8200: IDs $23..$2E
+                // select $8F62. The size, corner and row-fill JSRs are children.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x018f62));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x018f62);
                 let count = size_1to16(width, height);
+                self.price_room_draw_size_1to16();
+                b.block(0x018f65);
                 let tile = self.room_read_current(dsto) & 0x03ff;
-                if tile != 0x01db && tile != 0x01a6 && tile != 0x01dd && tile != 0x01fc {
-                    self.room_write_current(dsto, self.tile_word(src, 0));
+                self.price_room_draw_small_rail_corner(tile == 0x01db);
+                b.block(0x018f6b);
+                if tile == 0x01db { b.taken(0x018f6b); }
+                else {
+                    b.block(0x018f6d);
+                    if tile == 0x01a6 { b.taken(0x018f70); }
+                    else {
+                        b.block(0x018f72);
+                        if tile == 0x01dd { b.taken(0x018f75); }
+                        else {
+                            b.block(0x018f77);
+                            if tile == 0x01fc { b.taken(0x018f7a); }
+                            else {
+                                b.block(0x018f7c);
+                                self.room_write_current(dsto, self.tile_word(src, 0));
+                            }
+                        }
+                    }
                 }
-                let fill = self.tile_word(src, 1);
-                for i in 1..=count {
-                    self.room_write_current(dsto + i, fill);
-                }
+                b.block(0x018f81);
+                self.room_object_fill_row_advance(count, src + 2, dsto + 1);
+                b.block(0x018f84);
                 self.room_write_current(dsto + count + 1, self.tile_word(src, 2));
             }
             0x2f => {
@@ -305,7 +327,7 @@ impl ZeldaState {
                     // pointer steps and actual loop branches; children excluded.
                     crate::cycle_ledger::charge(46 + 420 * u64::from(count)
                         + 6 * u64::from(count - 1) + 42);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 for i in 0..count {
                     let dst = dsto + i * 4;
@@ -320,7 +342,7 @@ impl ZeldaState {
                     // actual DEC/BNE and RTS; child bodies excluded.
                     crate::cycle_ledger::charge(46 + 168 * u64::from(count)
                         + 6 * u64::from(count - 1) + 42);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 for i in 0..count {
                     self.room_draw_downwards2x2(src, dsto + i * 14);
@@ -354,7 +376,7 @@ impl ZeldaState {
                     // $01:94B4: JSR $B0AC, spacing and JMP $B220.
                     // The real size-helper child retains its own call frame.
                     crate::cycle_ledger::charge(94);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 self.room_draw_downwards4x2_variable_spacing(4, src, dsto, count);
             }
@@ -399,7 +421,7 @@ impl ZeldaState {
                     // $01:96F9: JSR $B0AC, spacing and JMP $B220.
                     // The real size-helper child retains its own call frame.
                     crate::cycle_ledger::charge(94);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 self.room_draw_downwards4x2_variable_spacing(12, src, dsto, count);
             }
@@ -433,8 +455,8 @@ impl ZeldaState {
                     // $01:8EEB -> 8EF3..8F0B: alternate size entry and
                     // actual corner branch; children own their bodies.
                     crate::cycle_ledger::charge(178 + if preserve_corner { 6 } else { 102 } + 190);
-                    crate::cycle_ledger::charge_routine(0x01_b0af, 262);
-                    crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                    self.price_room_draw_size_ato_aplus15();
+                    self.price_room_draw_small_rail_corner(preserve_corner);
                 }
                 if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
@@ -474,7 +496,7 @@ impl ZeldaState {
                     // triples per block, vertical step, actual loop and RTS.
                     crate::cycle_ledger::charge(88 + 1272 * u64::from(count)
                         + 6 * u64::from(count - 1) + 42);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 for i in 0..count {
                     self.object_draw_4x2_both_bgs(src, dsto + i * 2 * 64);
@@ -486,7 +508,7 @@ impl ZeldaState {
                     // $01:8C4F: JSR $B0AC, spacing and JMP $B220.
                     // The real size-helper child retains its own call frame.
                     crate::cycle_ledger::charge(94);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 self.room_draw_downwards4x2_variable_spacing(6 * 64, src, dsto, count);
             }
@@ -497,7 +519,7 @@ impl ZeldaState {
                     // actual DEC/BNE and RTS; child bodies excluded.
                     crate::cycle_ledger::charge(68 + 116 * u64::from(count)
                         + 6 * u64::from(count - 1) + 42);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 for i in 0..count {
                     self.room_draw_downwards2x2(src, dsto + i * 2 * 64);
@@ -557,8 +579,8 @@ impl ZeldaState {
                         // branch, vertical stores/control and final tile/RTS.
                         crate::cycle_ledger::charge(156 + if preserve_corner { 6 } else { 102 }
                             + 238 * u64::from(count) + 6 * u64::from(count - 1) + 144);
-                        crate::cycle_ledger::charge_routine(0x01_b0af, 262);
-                        crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                        self.price_room_draw_size_ato_aplus15();
+                        self.price_room_draw_small_rail_corner(preserve_corner);
                     }
                     if !preserve_corner {
                         self.room_write_current(dsto, self.tile_word(src, 0));
@@ -660,7 +682,7 @@ impl ZeldaState {
                     // actual DEC/BNE and RTS; child bodies excluded.
                     crate::cycle_ledger::charge(46 + 168 * u64::from(count)
                         + 6 * u64::from(count - 1) + 42);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 for i in 0..count {
                     self.room_draw_downwards2x2(src, dsto + i * 14 * 64);
@@ -673,7 +695,7 @@ impl ZeldaState {
                     // actual DEC/BNE and RTS; child bodies excluded.
                     crate::cycle_ledger::charge(46 + 168 * u64::from(count)
                         + 6 * u64::from(count - 1) + 42);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 for i in 0..count {
                     self.room_draw_downwards2x2(src, dsto + i * 4 * 64);
@@ -687,8 +709,8 @@ impl ZeldaState {
                     // actual corner branch, vertical stores/control and RTS.
                     crate::cycle_ledger::charge(178 + if preserve_corner { 6 } else { 102 }
                         + 238 * u64::from(count) + 6 * u64::from(count - 1) + 144);
-                    crate::cycle_ledger::charge_routine(0x01_b0af, 262);
-                    crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
+                    self.price_room_draw_size_ato_aplus15();
+                    self.price_room_draw_small_rail_corner(preserve_corner);
                 }
                 if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
@@ -706,7 +728,7 @@ impl ZeldaState {
                     // stores and loop, tail JMP $8D80; child bodies excluded.
                     crate::cycle_ledger::charge(158 + 340 * u64::from(count)
                         + 6 * u64::from(count - 1) + 104);
-                    crate::cycle_ledger::charge_routine(0x01_b0ac, 286);
+                    self.price_room_draw_size_1to16();
                 }
                 let mut dst = dsto;
                 self.room_draw_downwards2x2(src, dst);

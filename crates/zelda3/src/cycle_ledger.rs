@@ -532,13 +532,21 @@ pub(crate) fn assert_rom_marker_work(
         CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
     let mut source = RomCpuTimingProbe::new(machine, clock, SourcePpuReadState::snes9x_reset()).unwrap();
     let mut expected = 0;
+    let mut source_work = BTreeMap::<u32, (u64, u64)>::new();
     // Complete loader fixtures also execute their unmodified decompression
     // children, even when the ownership predicate excludes those children.
     for _ in 0..1_000_000 {
         let owned = owns(source.snes());
+        let pc = (u32::from(source.snes().cpu.k) << 16) | u32::from(source.snes().cpu.pc);
         let step = source.step().unwrap();
-        if owned { expected += step.transactions.iter()
-            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>(); }
+        if owned {
+            let clocks = step.transactions.iter()
+                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+            expected += clocks;
+            let row = source_work.entry(pc).or_default();
+            row.0 += 1;
+            row.1 += clocks;
+        }
         if source.snes().cpu.pc == 0x8000 { break; }
     }
     assert_eq!(source.snes().cpu.pc, 0x8000, "ROM fixture did not return");
@@ -546,7 +554,8 @@ pub(crate) fn assert_rom_marker_work(
     native();
     let trail = MARKER_TRAIL.with(|t| t.borrow_mut().take().unwrap());
     let actual: u64 = trail.iter().filter(|t| t.0 == routine).map(|t| t.3).sum();
-    assert_eq!(actual, expected, "routine {routine:06x}: native marker trail {trail:?}");
+    assert_eq!(actual, expected,
+        "routine {routine:06x}: native marker trail {trail:?}; source instruction work {source_work:x?}");
     source
 }
 

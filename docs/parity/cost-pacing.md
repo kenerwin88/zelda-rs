@@ -13159,3 +13159,62 @@ The recorded continuous lane has **1,473,123 clean WRAM iterations**, clean ordi
 Final asset-backed Zelda libraries: default **2,709 passed / 1 known spotlight failure / 3 ignored**; reduced **2,244 / 0 / 2**. The sole failure remains `closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`, `Some(1047868)` versus `Some(170442)`. All **1,502 ledger files** retain size, nanosecond mtime and SHA-256; none were added or removed. `census-totals.json`, the three gate logs, `source-pricing-verification.json`, `producer-prefix-proof.json`, `ledger-after-integrity.json` and `verification.json` retain the handoff.
 
 The final default 200k ledger matches every record and EOF. Both ordinary builds are warning-free; existing library-test warnings remain separate. Seven block-generator tests pass. Both CPU SNES libraries pass **504 / 0 / 7 ignored**. No GPU execution, `--video`, cached-av, cache/ledger write, cargo fmt, commit or push occurred. Output and retained evidence are under `target/continuous3/`, below 3 GB. No one-off repository script was created.
+
+## Load/transition batch 6
+
+**Verified on `codex/load-pacing6`, main `f4feec79`.** The ≥60 prediction aim is met: **63 complete predicted closures, 64 restored holds in matched windows**, no lost holds or new overcounts. Canonical ROM missing/excess/FP: **3,736 / 0 / 0 → 3,673 / 0 / 0** (63 restored). Live after: **4,319 / 527 / 100**. Supplied main controls are reused; no full main controls rerun. Evidence: `target/load-pacing6/`.
+
+The stale native inverse/owner profile is refreshed on **1,164 missing iterations** in the fourteen requested modules, using `full-v2` and the hash-verified retained ROM profile. Raw rankings remain subject to tail/alias admission. Whole local dispatch, door/shutter, hole and edged-row bodies lead the admitted group; protected sprite/player/ancilla/garnish owners, masked song polling, iris waits and existing VWF work receive no price. Local dispatch's STY/PLY child and post-pull caller work are grouped once, excluding selected state bodies. Dispatcher prefixes precede their palette/graphics children; return work follows completion.
+
+**110 blocks / 447 instructions** are added; all **1,795 existing rows** remain identical. **20 ROM-marker fixtures / 382 unmodified-ROM cases** cover the admitted bodies and the falling call. Eighteen separately scoped size/corner scalar aliases are replaced. Other parents' existing aggregate scalars remain disjoint and unchanged. The cohort's **5,422,718 marker clocks − 1,093,804 removed scalar clocks = 4,328,914 net clocks**, exactly matching every main-counter delta.
+
+Four priority tails are inline copies, not A8FA child calls. Final markers use `$01:ADC7`, `$AE33`, `$AEE3` and `$AF72` in their caller frames. All five variants have byte-identical instructions, the same **198 clocks**, identical state-writing code and unchanged charge placement. `priority-price-equivalence.json` binds the timing cohort to this address/ownership correction; both final census gates and final checks use the corrected binary.
+
+The table excludes unchanged prior marker executions. Predictions independently reach the frozen full source-count threshold; **joint gains overlap and must not be summed**. The 64 gains comprise 63 complete closures and one partial `06/00` gain: accepted/masked **57/23 → 58/22**, source accepted count 59; total callbacks there stay unchanged. Prices were never fitted to these counts.
+
+| Complete body / source entry | Old scalar | New markers | Net closed | Predicted | Joint gains on added-body executions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `$00:8781` Local table dispatcher | 0 | 134,964 | 134,964 | 18 | 29 |
+| `$01:aa80` South shutter builder | 0 | 481,148 | 481,148 | 6 | 25 |
+| `$01:a932` North shutter builder | 0 | 475,378 | 475,378 | 6 | 28 |
+| `$02:b0d2` Mosaic fade dispatcher + self tails | 0 | 43,078 | 43,078 | 6 | 16 |
+| `$01:8ddc` Hole square + edges | 0 | 474,320 | 474,320 | 5 | 10 |
+| `$01:abe2` East shutter builder | 0 | 420,716 | 420,716 | 5 | 27 |
+| `$01:b2ca` Advance/fill child reuse | 0 | 695,232 | 695,232 | 4 | 15 |
+| `$01:b2ce` Width/fill child reuse | 0 | 326,144 | 326,144 | 4 | 10 |
+| `$01:ab1f` West mirror + shutter builder | 0 | 386,610 | 386,610 | 3 | 26 |
+| `$01:8f62` Edged room row | 0 | 301,856 | 301,856 | 3 | 15 |
+| `$01:b0ac` Size 1–16 child | 296,868 | 458,172 | 161,304 | 1 | 15 |
+| `$01:b1a4` Door priority Y | 0 | 147,180 | 147,180 | 1 | 5 |
+| `$01:b1e7` Door priority X | 0 | 24,208 | 24,208 | 1 | 2 |
+| `$02:c2f6` Mosaic register child | 0 | 16,362 | 16,362 | 1 | 16 |
+| `$01:b191` Rail-corner child | 360,444 | 482,310 | 121,866 | 0 | 15 |
+| `$01:a90f` North mirrored-door prefix | 0 | 47,348 | 47,348 | 0 | 28 |
+| `$01:b0af` Size A–A+15 child | 436,492 | 462,168 | 25,676 | 0 | 10 |
+| `$01:aa66` South dispatch | 0 | 19,236 | 19,236 | 0 | 25 |
+| `$01:abc8` East dispatch | 0 | 17,774 | 17,774 | 0 | 27 |
+| `$01:a8fa` Door priority + four inline aliases | 0 | 8,514 | 8,514 | 0 | 1 |
+| `$02:b171` Mosaic graphics caller | 0 | 0 | 0 | 0 | 0 |
+
+Both full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; all runtime holds equal P2. These are periodically seeded logical checks, not A/V or unseeded-route acceptance.
+
+| Entry | ROM missing before → after | Live missing after | Excess ROM / live | FP ROM / live |
+| --- | ---: | ---: | ---: | ---: |
+| `07/07` | 225 → 212 | 212 | 0 / 0 | 0 / 0 |
+| `07/02` | 209 → 183 | 183 | 0 / 0 | 0 / 0 |
+| `09/23` | 164 → 164 | 164 | 0 / 0 | 0 / 0 |
+| `07/0E` | 85 → 82 | 82 | 0 / 0 | 0 / 0 |
+| `09/16` | 71 → 59 | 59 | 0 / 0 | 0 / 0 |
+| `09/0D` | 67 → 67 | 67 | 0 / 0 | 0 / 0 |
+| `06/00` | 67 → 62 | 62 | 0 / 0 | 0 / 0 |
+| `07/15` | 62 → 62 | 62 | 0 / 0 | 0 / 0 |
+| `0F/01` | 55 → 55 | 55 | 0 / 0 | 0 / 0 |
+| `07/0F` | 55 → 55 | 55 | 0 / 0 | 0 / 0 |
+| `01/00` | 48 → 48 | 48 | 0 / 0 | 0 / 0 |
+| `0E/02` | 40 → 40 | 310 | 0 / 181 | 0 / 71 |
+| `0E/05` | 33 → 33 | 33 | 0 / 0 | 0 / 0 |
+| `0B/29` | 28 → 24 | 24 | 0 / 0 | 0 / 0 |
+
+All **48 crystal/pendant phases remain within one**; stable engine/save outcomes match the retained main control. Four stable iteration labels differ and are retained separately. The **default 200k ledger matches all records and EOF**; default/ROM-timing accounting is unchanged. Ordinary builds are warning-free; existing library-build warnings remain separate. Default library pass/fail/ignored: **2,722/1/3**, only the known spotlight failure. Reduced: **2,257/0/2**. The complete reduced run exposed an omitted shared JMP tail in the test ownership predicate; all load-6 fixtures were rerun after the test-only correction, with raw results retained. Production source, prices and census binary stayed identical. Both CPU SNES suites: **504/0/7**. Block/worklist, routine-coverage, inverse, exact regeneration and diff checks pass.
+
+The remaining worklist retains **1,101 diagnostic missing iterations**; its raw residuals still need source ownership admission. All **1,512 supplied ledger/cache files** retain size/mtime, with none added. Raw profiles, full predictors and large traces are summarized, hashed and deleted or compacted; evidence is about **286.0 MB**, below 3 GB. Disk space was checked before each full census. No classifier, scene threshold/multiplier/table, GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Scratch programs stayed in `/tmp`.

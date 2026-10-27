@@ -1849,3 +1849,78 @@ fn mirror_initialization_matches_rom_markers_scroll_values() {
         }
     }
 }
+
+
+#[test]
+fn load6_fade_mosaic_dispatch_and_tails_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for (phase, screen, module, countdown) in [
+        (0u8, 1u8, 9u8, 2u16), (0, 0x40, 11, 3),
+        (1, 1, 9, 2), (1, 1, 11, 3),
+        (2, 1, 9, 2), (2, 0x80, 11, 3), (2, 0x2a, 9, 2),
+    ] {
+        let mut n = ZeldaState::new(); n.set_assets(&assets).unwrap();
+        n.write_wram_byte(0x10, module); n.write_wram_byte(0x11, 0x16);
+        n.write_wram_byte(0xb0, phase); n.write_wram_byte(0x8a, screen);
+        n.write_wram_word(0xc007, countdown); n.write_wram_word(0xc011, 0x80);
+        n.write_wram_word(0xc009, 0xff);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2; s.cpu.db = 2; s.cpu.pc = 0xb0d2; s.cpu.sp = 0x1fa;
+        crate::cycle_ledger::assert_rom_marker_work(0x02b0d2, s,
+            |s| {
+                let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                (0x02b0d2..0x02b0ed).contains(&pc)
+                    || (0x02b0f3..0x02b150).contains(&pc)
+                    || (0x02b195..0x02b19e).contains(&pc)
+                    || (0x008784..0x00879c).contains(&pc)
+            }, || n.module09_fade_back_in_from_mosaic());
+    }
+}
+
+#[test]
+fn load6_mosaic_graphics_caller_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for request in [0u8, 1, 8] {
+        let mut n = ZeldaState::new(); n.set_assets(&assets).unwrap();
+        n.write_wram_byte(0xa0c, request); n.write_wram_byte(0x8a, 1);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let mut s = snes::Snes::new(); s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2; s.cpu.db = 2; s.cpu.pc = 0xb171; s.cpu.sp = 0x1fa;
+        crate::cycle_ledger::assert_rom_marker_work(0x02b171, s,
+            |s| s.cpu.k == 2 && (0xb171..0xb195).contains(&s.cpu.pc),
+            || n.overworld_mosaic_transition_load_sprite_graphics_and_set_mosaic());
+    }
+}
+
+#[test]
+fn load6_mosaic_register_child_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for countdown in [0u16, 1, 2, 255] {
+        let mut n = ZeldaState::new(); n.set_assets(&assets).unwrap();
+        n.write_wram_byte(0xb0, 2); n.write_wram_byte(0x8a, 0x80);
+        n.write_wram_word(0xc007, countdown);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let mut s = snes::Snes::new(); s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2; s.cpu.db = 2; s.cpu.pc = 0xc2f6; s.cpu.sp = 0x1fa;
+        crate::cycle_ledger::assert_rom_marker_work(0x02c2f6, s,
+            |s| s.cpu.k == 2 && (0xc2f6..0xc303).contains(&s.cpu.pc),
+            || n.module09_fade_back_in_from_mosaic());
+    }
+}

@@ -166,23 +166,43 @@ impl ZeldaState {
         dsto: u16,
         position: usize,
     ) {
+        // $01:A85F JMP $A90F, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01a90f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01a90f);
         if position >= 6 {
+            b.block(0x01a916);
             if let Some(&down_dsto_bytes) = DOOR_POSITION_DOWN.get(position - 6) {
                 let saved = self.game_state.dungeon.doors.current_door_index();
                 self.dungeon_doors_mut()
                     .set_current_door_index(saved | 0x10);
                 self.room_draw_check_if_lower_layer_doors_y(door_type, down_dsto_bytes / 2);
+                b.block(0x01a929);
                 self.dungeon_doors_mut().set_current_door_index(saved);
             }
         }
+        if position < 6 { b.taken(0x01a914); }
         self.room_draw_one_sided_shutters_north(door_type, dsto);
     }
 
     /// ROM: `RoomDraw_OneSidedShutters_North`
     pub(super) fn room_draw_one_sided_shutters_north(&mut self, door_type: u8, dsto: u16) {
+        // $01:A914 BCC $A932 (shared shutter tail), M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01a932));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01a932);
         let mut final_type = self.room_draw_flag_doors_and_get_final_type(0, door_type, dsto);
+        b.block(0x01a93d);
         if final_type & 0x100 != 0 {
+            b.taken(0x01a93d);
+            b.block(0x01a983);
             return;
+        }
+        b.block(0x01a93f);
+        if final_type as u8 == DOOR_TYPE_36 { b.taken(0x01a945); }
+        else {
+            b.block(0x01a947);
+            if final_type as u8 != DOOR_TYPE_38 { b.taken(0x01a94d); }
         }
         if final_type as u8 == DOOR_TYPE_36 || final_type as u8 == DOOR_TYPE_38 {
             final_type = if final_type as u8 == DOOR_TYPE_36 {
@@ -190,8 +210,10 @@ impl ZeldaState {
             } else {
                 DOOR_TYPE_REGULAR
             } as u16;
+            b.block(0x01a94f);
             self.room_rewrite_last_door_type(final_type as u8);
         }
+        b.block(0x01a95e);
         if let Some(&src) = DOOR_TYPE_SRC_UP.get(final_type as usize >> 1) {
             self.room_data_draw_object_door_up_4x3(src as usize, dsto);
         }
@@ -335,13 +357,26 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_CheckIfLowerLayerDoors_Y`
     pub(super) fn room_draw_check_if_lower_layer_doors_y(&mut self, door_type: u8, dsto: u16) {
+        // $01:A926 JSR $AA66, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01aa66));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01aa66);
         if door_type == DOOR_TYPE_REGULAR2 {
+            b.block(0x01aa6b);
             self.room_draw_make_door_parts_high_priority_y(dsto + xy(0, 4) as u16);
+            b.block(0x01aa73);
             self.door_draw_helper4(door_type, dsto);
         } else if door_type == DOOR_TYPE_WATERFALL_TUNNEL {
+            b.taken(0x01aa69);
+            b.block(0x01aa75);
+            b.block(0x01aa7a);
             self.door_draw_helper4(door_type, dsto);
+            b.block(0x01aa7d);
             self.door_prioritize_cur_door();
         } else {
+            b.taken(0x01aa69);
+            b.block(0x01aa75);
+            b.taken(0x01aa78);
             self.door_draw_helper4(door_type, dsto);
         }
     }
@@ -353,19 +388,36 @@ impl ZeldaState {
         dsto: u16,
         position: usize,
     ) {
+        // $01:AB0A BRA / $AB11 JSR $AB1F, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01ab1f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01ab1f);
         if position >= 6 {
+            b.block(0x01ab26);
             if let Some(&right_dsto_bytes) = DOOR_POSITION_RIGHT.get(position - 6) {
                 let saved = self.game_state.dungeon.doors.current_door_index();
                 self.dungeon_doors_mut()
                     .set_current_door_index(saved | 0x10);
                 self.room_draw_normal_ranged_doors_east(door_type, right_dsto_bytes / 2);
+                b.block(0x01ab39);
                 self.dungeon_doors_mut().set_current_door_index(saved);
             }
         }
 
+        if position < 6 { b.taken(0x01ab24); }
+        b.block(0x01ab42);
         let mut t = self.room_draw_flag_doors_and_get_final_type(2, door_type, dsto);
+        b.block(0x01ab4d);
         if t & 0x100 != 0 {
+            b.taken(0x01ab4d);
+            b.block(0x01ab98);
             return;
+        }
+        b.block(0x01ab4f);
+        if t as u8 == DOOR_TYPE_36 { b.taken(0x01ab55); }
+        else {
+            b.block(0x01ab57);
+            if t as u8 != DOOR_TYPE_38 { b.taken(0x01ab5d); }
         }
         if t as u8 == DOOR_TYPE_36 || t as u8 == DOOR_TYPE_38 {
             let new_type = if t as u8 == DOOR_TYPE_36 {
@@ -373,9 +425,11 @@ impl ZeldaState {
             } else {
                 DOOR_TYPE_REGULAR
             };
+            b.block(0x01ab5f);
             self.room_rewrite_last_door_type(new_type);
             t = new_type as u16;
         }
+        b.block(0x01ab6e);
         if let Some(&src) = DOOR_TYPE_SRC_LEFT.get(t as usize >> 1) {
             self.room_data_draw_object_door_left_3x4(src as usize, dsto);
         }
@@ -383,22 +437,45 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_NormalRangedDoors_East`
     pub(super) fn room_draw_normal_ranged_doors_east(&mut self, door_type: u8, dsto: u16) {
+        // $01:AB36 JSR $ABC8, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01abc8));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01abc8);
         if door_type == DOOR_TYPE_REGULAR2 {
+            b.block(0x01abcd);
             self.room_draw_make_door_parts_high_priority_x(dsto + xy(4, 0) as u16);
-        }
+            b.block(0x01abd5);
+        } else { b.taken(0x01abcb); }
+        b.block(0x01abd7);
         if door_type == DOOR_TYPE_WATERFALL_TUNNEL {
+            b.block(0x01abdc);
             self.room_draw_one_sided_shutters_east(door_type, dsto);
+            b.block(0x01abdf);
             self.door_prioritize_cur_door();
         } else {
+            b.taken(0x01abda);
             self.room_draw_one_sided_shutters_east(door_type, dsto);
         }
     }
 
     /// ROM: `RoomDraw_OneSidedShutters_East`
     pub(super) fn room_draw_one_sided_shutters_east(&mut self, door_type: u8, dsto: u16) {
+        // $01:ABDA BNE / $ABDC JSR $ABE2, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01abe2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01abe2);
         let mut t = self.room_draw_flag_doors_and_get_final_type(3, door_type, dsto);
+        b.block(0x01abed);
         if t & 0x100 != 0 {
+            b.taken(0x01abed);
+            b.block(0x01ac3a);
             return;
+        }
+        b.block(0x01abef);
+        if t as u8 == DOOR_TYPE_36 { b.taken(0x01abf5); }
+        else {
+            b.block(0x01abf7);
+            if t as u8 != DOOR_TYPE_38 { b.taken(0x01abfd); }
         }
         if t as u8 == DOOR_TYPE_36 || t as u8 == DOOR_TYPE_38 {
             let new_type = if t as u8 == DOOR_TYPE_36 {
@@ -406,9 +483,11 @@ impl ZeldaState {
             } else {
                 DOOR_TYPE_SHUTTERS_TWO_WAY
             };
+            b.block(0x01abff);
             self.room_rewrite_last_door_type(new_type);
             t = new_type as u16;
         }
+        b.block(0x01ac0e);
         if let Some(&src) = DOOR_TYPE_SRC_RIGHT.get(t as usize >> 1) {
             self.room_data_draw_object_door_right_3x4(src as usize, dsto);
         }
@@ -586,17 +665,26 @@ impl ZeldaState {
 
     /// ROM: `RoomData_DrawObject_Door_up_4x3`
     pub(super) fn room_data_draw_object_door_up_4x3(&mut self, src: usize, dsto: u16) {
+        // ROM $01:A968 inline tile-copy tail, including its return.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         for x in 0..4 {
+            b.block(0x01a968);
+            if x + 1 != 4 { b.taken(0x01a981); }
             for y in 0..3 {
                 let tile = self.tile_word(src, (x * 3 + y) as usize);
                 self.room_write_current(dsto + x + y * 64, tile);
             }
         }
+        b.block(0x01a983);
     }
 
     /// ROM: `RoomData_DrawObject_Door_left_3x4`
     pub(super) fn room_data_draw_object_door_left_3x4(&mut self, src: usize, dsto: u16) {
+        // ROM $01:AB78 inline tile-copy tail, including its return.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         for x in 0..3 {
+            b.block(0x01ab78);
+            if x + 1 != 3 { b.taken(0x01ab96); }
             for y in 0..4 {
                 self.room_write_current(
                     dsto + x + y * 64,
@@ -604,11 +692,16 @@ impl ZeldaState {
                 );
             }
         }
+        b.block(0x01ab98);
     }
 
     /// ROM: `RoomData_DrawObject_Door_right_3x4`
     pub(super) fn room_data_draw_object_door_right_3x4(&mut self, src: usize, dsto: u16) {
+        // ROM $01:AC1A inline tile-copy tail, including its return.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         for x in 0..3 {
+            b.block(0x01ac1a);
+            if x + 1 != 3 { b.taken(0x01ac38); }
             for y in 0..4 {
                 self.room_write_current(
                     dsto + 1 + x + y * 64,
@@ -616,10 +709,20 @@ impl ZeldaState {
                 );
             }
         }
+        b.block(0x01ac3a);
     }
 
     /// ROM: `Door_PrioritizeCurDoor`
     pub(super) fn door_prioritize_cur_door(&mut self) {
+        // $01:AA7D / $ABDF JMP $A8FA, M16/X16; JSR children price themselves.
+        // JMP keeps this return in the actual caller's profiling frame.
+        self.door_prioritize_cur_door_at(0x01a8fa);
+    }
+
+    /// The high-range drawers inline these same five instructions. Their
+    /// source entry remains in the caller's frame rather than calling A8FA.
+    pub(super) fn door_prioritize_cur_door_at(&mut self, source_entry: u32) {
+        crate::cycle_ledger::blocks(self.lag_free).block(source_entry);
         let index = (self
             .game_state
             .dungeon
@@ -686,7 +789,8 @@ impl ZeldaState {
         if door_type != DOOR_TYPE_WARP_ROOM_DOOR {
             self.room_draw_make_door_high_priority_north(dsto);
         }
-        self.door_prioritize_cur_door();
+        // $01:ADC7..$01ADD3: inline priority stores and RTS.
+        self.door_prioritize_cur_door_at(0x01adc7);
     }
 
     /// ROM: `RoomDraw_OneSidedLowerShutters_South`
@@ -712,7 +816,8 @@ impl ZeldaState {
             self.room_write_bg2(d + 192, self.tile_word(src, x as usize * 3 + 2));
         }
         self.room_draw_make_door_high_priority_south(dsto + xy(0, 4) as u16);
-        self.door_prioritize_cur_door();
+        // $01:AE33..$01AE3F: inline priority stores and RTS.
+        self.door_prioritize_cur_door_at(0x01ae33);
     }
 
     /// ROM: `RoomDraw_HighRangeDoor_West`
@@ -758,7 +863,8 @@ impl ZeldaState {
             }
         }
         self.room_draw_make_door_high_priority_west(dsto);
-        self.door_prioritize_cur_door();
+        // $01:AEE3..$01AEEF: inline priority stores and RTS.
+        self.door_prioritize_cur_door_at(0x01aee3);
     }
 
     /// ROM: `RoomDraw_OneSidedLowerShutters_East`
@@ -794,7 +900,8 @@ impl ZeldaState {
             );
         }
         self.room_draw_make_door_high_priority_east(dsto + xy(4, 0) as u16);
-        self.door_prioritize_cur_door();
+        // $01:AF72..$01AF7E: inline priority stores and RTS.
+        self.door_prioritize_cur_door_at(0x01af72);
     }
 
     /// ROM: `RoomDraw_MakeDoorHighPriority_North`
@@ -859,24 +966,38 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_MakeDoorPartsHighPriority_Y`
     pub(super) fn room_draw_make_door_parts_high_priority_y(&mut self, dsto: u16) {
+        // $01:AA70 JSR $B1A4, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b1a4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b1a4);
         for y in 0..7 {
+            b.block(0x01b1aa);
+            if y + 1 != 7 { b.taken(0x01b1de); }
             for x in 0..4 {
                 let pos = dsto + x + y * 64;
                 let tile = self.room_read_bg2(pos) | 0x2000;
                 self.room_write_bg2(pos, tile);
             }
         }
+        b.block(0x01b1e0);
     }
 
     /// ROM: `RoomDraw_MakeDoorPartsHighPriority_X`
     pub(super) fn room_draw_make_door_parts_high_priority_x(&mut self, dsto: u16) {
+        // $01:ABD2 JSR $B1E7, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b1e7));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b1e7);
         for x in 0..5 {
+            b.block(0x01b1ed);
+            if x + 1 != 5 { b.taken(0x01b21d); }
             for y in 0..4 {
                 let pos = dsto + x + y * 64;
                 let tile = self.room_read_bg2(pos) | 0x2000;
                 self.room_write_bg2(pos, tile);
             }
         }
+        b.block(0x01b21f);
     }
 
     pub(super) fn room_prioritize_throne_room_door_edge(&mut self) {
@@ -944,29 +1065,51 @@ impl ZeldaState {
 
     /// ROM: `Door_Draw_Helper4`
     pub(super) fn door_draw_helper4(&mut self, door_type: u8, dsto: u16) {
+        // $01:AA78 BNE / $AA7A JSR $AA80, M16/X16; JSR children price themselves.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01aa80));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01aa80);
         let mut t = self.room_draw_flag_doors_and_get_final_type(1, door_type, dsto);
+        b.block(0x01aa8b);
         if t & 0x100 != 0 {
+            b.taken(0x01aa8b);
+            b.block(0x01aad6);
             return;
         }
 
+        b.block(0x01aa8d);
+        if t == DOOR_TYPE_1E as u16 { b.taken(0x01aa93); }
+        else {
+            b.block(0x01aa95);
+            if t == DOOR_TYPE_36 as u16 { b.taken(0x01aa98); }
+            else {
+                b.block(0x01aa9a);
+                if t != DOOR_TYPE_38 as u16 { b.taken(0x01aaa0); }
+            }
+        }
         if t == DOOR_TYPE_1E as u16 || t == DOOR_TYPE_36 as u16 || t == DOOR_TYPE_38 as u16 {
             let new_type = if t == DOOR_TYPE_38 as u16 {
                 DOOR_TYPE_SHUTTERS_TWO_WAY
             } else {
                 DOOR_TYPE_REGULAR
             };
+            b.block(0x01aaa2);
             self.room_rewrite_last_door_type(new_type);
             t = new_type as u16;
         }
 
+        b.block(0x01aab1);
         if let Some(&src) = DOOR_TYPE_SRC_DOWN.get(t as usize >> 1) {
             for i in 0..4 {
+                b.block(0x01aabb);
+                if i != 3 { b.taken(0x01aad4); }
                 let d = dsto + i as u16;
                 self.room_write_current(d + 64, self.tile_word(src as usize, i * 3));
                 self.room_write_current(d + 128, self.tile_word(src as usize, i * 3 + 1));
                 self.room_write_current(d + 192, self.tile_word(src as usize, i * 3 + 2));
             }
         }
+        b.block(0x01aad6);
     }
 
     pub(super) fn GetRoomDoorInfo(&self, room: usize) -> Option<&[u8]> {

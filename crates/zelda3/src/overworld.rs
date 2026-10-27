@@ -7875,39 +7875,81 @@ impl ZeldaState {
 
     /// ROM: `Module09_FadeBackInFromMosaic`
     pub(super) fn module09_fade_back_in_from_mosaic(&mut self) {
+        // Module09 table words $02:A439/$A45F select $B0D2. The local
+        // dispatcher pulls its return; price the caller prefix before palettes.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b0d2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02b0d2);
+        if self.game_state.display.palette_filter.countdown() & 1 != 0 {
+            b.block(0x02b0d9);
+        } else { b.taken(0x02b0d7); }
+        b.block(0x02b0e4);
+        // $C2F6 is a real child of this caller; the same native stores are
+        // inline in Overworld_ResetMosaicDown, so give that child its scope.
+        {
+            let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c2f6));
+            b.block(0x02c2f6);
+        }
         self.overworld_reset_mosaic_down();
+        b.block(0x02b0e7);
+        {
+            let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        b.block(0x008784);
+        b.block(0x008799);
         match self.game_state.frame.subsubmodule {
             0 => {
+                b.block(0x02b0f3);
                 let sc = self.game_state.world.location.overworld_screen_index() as usize;
                 let bg = self.GetOverworldBgPalette(sc as u8);
                 let spr = self.overworld_config_table().sprite_palette(sc);
                 self.overworld_load_palettes(bg, spr);
+                b.block(0x02b103);
                 self.overworld_mosaic_transition_load_sprite_graphics_and_set_mosaic();
             }
             1 => {
+                b.block(0x02b195);
                 self.graphics_incremental_vram_upload();
+                b.block(0x02b199);
                 self.apply_palette_filter_bounce();
+                b.block(0x02b19d);
             }
             _ => {
+                b.block(0x02b105);
                 self.save_current_music_as_last();
+                let screen = self.game_state.world.location.overworld_screen_index();
+                if screen == 0x80 { b.taken(0x02b10f); }
+                else {
+                    b.block(0x02b111);
+                    if screen == 0x2a { b.taken(0x02b113); }
+                }
                 if self.game_state.world.location.overworld_screen_index() != 0x80
                     && self.game_state.world.location.overworld_screen_index() != 0x2a
                 {
                     let m = self
                         .overworld_config_table()
                         .music(self.game_state.world.location.overworld_screen_index() as usize);
+                    b.block(0x02b115);
+                    if m >> 4 != 0 { b.taken(0x02b11f); }
+                    else { b.block(0x02b121); }
+                    b.block(0x02b123);
                     self.set_ambient_sound_effect(if m >> 4 != 0 { m >> 4 } else { 5 });
                     if !self.zelda_is_playing_music_track(m & 0x0f) {
+                        b.block(0x02b131);
                         self.set_music_control(m & 0x0f);
-                    }
+                    } else { b.taken(0x02b12f); }
                 }
+                b.block(0x02b134);
                 self.set_submodule(8);
                 self.set_subsubmodule(0);
                 if self.game_state.frame.main_module == 11 {
+                    b.block(0x02b142);
                     self.set_main_module(9);
                     self.set_submodule(31);
                     self.set_overworld_transition_countdown(12);
-                }
+                } else { b.taken(0x02b140); }
+                b.block(0x02b14f);
             }
         }
     }
@@ -8071,6 +8113,10 @@ impl ZeldaState {
 
     /// ROM: `OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic`
     pub(super) fn overworld_mosaic_transition_load_sprite_graphics_and_set_mosaic(&mut self) {
+        // $02:B103 BRA $B171 (also $B150's selected state 0): the JSL
+        // precedes the resumable graphics load; its return owns the suffix.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b171));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x02b171);
         self.LoadNewSpriteGFXSet();
         if self.rom_startup_timing() {
             // The source stays inside the sprite conversion across three
@@ -8085,6 +8131,8 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_overworld_mosaic_sprite_graphics(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b171));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x02b175);
         self.set_screen_brightness(0x0f);
         self.set_hdma_enable_mask(0x80);
         let countdown = self.game_state.display.mosaic_target_level.wrapping_sub(1);

@@ -3855,8 +3855,234 @@ fn load4_falling_dispatch_markers_match_rom() {
         n.set_lag_free(true);
         let s = load4_rom_machine(&n, 0x028e27, 0x30);
         crate::cycle_ledger::assert_rom_marker_work(0x028e27, s,
-            |s| s.cpu.k == 2 && (0x8e27..0x8e3f).contains(&s.cpu.pc), || {
+            |s| (s.cpu.k == 2 && (0x8e27..0x8e3f).contains(&s.cpu.pc))
+                || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)), || {
                 n.module07_07_falling_transition();
             });
+    }
+}
+
+
+fn load6_door_fixture(entry: u32, own_end: u16) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for kind in [0u8, 2, 8, 0x18, 0x1a, 0x1e, 0x36, 0x38, 0x40, 0x44, 0x46] {
+        for (slot, opened, trap, position) in [(0u16, 0u16, 0u8, 0usize),
+            (1, 0xffff, 0, 6), (4, 0, 1, 11), (8, 0xffff, 1, 0)] {
+            let mut n = ZeldaState::new();
+            n.set_assets(&assets).unwrap();
+            for row in 0..11 {
+                let pos = crate::rom_cpu_timing::lorom_offset(0x018719 + row * 3).unwrap();
+                for byte in 0..3 { n.write_wram_byte(0xbf + row as usize * 3 + byte, rom[pos + byte]); }
+            }
+            n.write_wram_word(0x460, slot * 2);
+            n.write_wram_word(0x68c, opened);
+            n.write_wram_byte(0x468, trap);
+            n.write_wram_byte(0x2f, 2);
+            n.write_wram_word(2, position as u16 * 2);
+            n.write_wram_word(4, u16::from(kind));
+            n.write_wram_word(0xa, u16::from(kind));
+            n.sync_native_game_state_from_ram();
+            n.set_lag_free(true);
+            let mut source = load4_rom_machine(&n, entry, 0);
+            // The room builder retains DB=$00: door tables are $00:CD9E,
+            // $CE06/$CE66/$CEC6, rather than code bank $01's instructions.
+            source.cpu.db = 0;
+            source.cpu.a = u16::from(kind);
+            source.cpu.y = 0x200;
+            crate::cycle_ledger::assert_rom_marker_work(entry, source,
+                // $01:AA7D / $01:ABDF JMP $A8FA: the shared tail retains
+                // this caller's frame, unlike the separately scoped JSR child.
+                |s| s.cpu.k == 1 && ((entry as u16..own_end).contains(&s.cpu.pc)
+                    || (matches!(entry, 0x01aa66 | 0x01abc8)
+                        && (0xa8fa..0xa907).contains(&s.cpu.pc))), || {
+                    match entry {
+                        0x01a90f => n.room_draw_normal_ranged_doors_north(kind, 0x100, position),
+                        0x01a932 => n.room_draw_one_sided_shutters_north(kind, 0x100),
+                        0x01aa66 => n.room_draw_check_if_lower_layer_doors_y(kind, 0x100),
+                        0x01aa80 => n.door_draw_helper4(kind, 0x100),
+                        0x01ab1f => n.room_draw_normal_ranged_doors_west(kind, 0x100, position),
+                        0x01abc8 => n.room_draw_normal_ranged_doors_east(kind, 0x100),
+                        0x01abe2 => n.room_draw_one_sided_shutters_east(kind, 0x100),
+                        _ => unreachable!(),
+                    }
+                });
+        }
+    }
+}
+
+#[test]
+fn load6_north_mirrored_prefix_markers_match_rom() { load6_door_fixture(0x01a90f, 0xa932); }
+
+#[test]
+fn load6_north_shutters_markers_match_rom() { load6_door_fixture(0x01a932, 0xa984); }
+
+#[test]
+fn load6_south_dispatch_markers_match_rom() { load6_door_fixture(0x01aa66, 0xaa80); }
+
+#[test]
+fn load6_south_shutters_markers_match_rom() { load6_door_fixture(0x01aa80, 0xaad7); }
+
+#[test]
+fn load6_west_mirror_and_shutters_markers_match_rom() { load6_door_fixture(0x01ab1f, 0xab99); }
+
+#[test]
+fn load6_east_dispatch_markers_match_rom() { load6_door_fixture(0x01abc8, 0xabe2); }
+
+#[test]
+fn load6_east_shutters_markers_match_rom() { load6_door_fixture(0x01abe2, 0xac3b); }
+
+#[test]
+fn load6_door_priority_y_markers_match_rom() {
+    load6_priority_fixture(0x01b1a4, 0xb1e1);
+}
+#[test]
+fn load6_door_priority_x_markers_match_rom() {
+    load6_priority_fixture(0x01b1e7, 0xb220);
+}
+#[test]
+fn load6_current_door_priority_markers_match_rom() {
+    for slot in [1u16, 4, 8, 15] {
+        let mut n = ZeldaState::new();
+        n.write_wram_word(0x460, slot * 2);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let s = load4_rom_machine(&n, 0x01a8fa, 0);
+        crate::cycle_ledger::assert_rom_marker_work(0x01a8fa, s,
+            |s| s.cpu.k == 1 && (0xa8fa..0xa907).contains(&s.cpu.pc),
+            || {
+                let _caller = crate::cycle_ledger::routine(0x01a8fa);
+                n.door_prioritize_cur_door();
+            });
+    }
+}
+fn load6_priority_fixture(entry: u32, end: u16) {
+    for dsto in [0u16, 0x100, 0x1fe, 0x300] {
+        let mut n = ZeldaState::new(); n.set_lag_free(true);
+        let mut s = load4_rom_machine(&n, entry, 0);
+        s.cpu.a = dsto * 2;
+        crate::cycle_ledger::assert_rom_marker_work(entry, s,
+            |s| s.cpu.k == 1 && (entry as u16..end).contains(&s.cpu.pc), || {
+                if entry == 0x01b1a4 { n.room_draw_make_door_parts_high_priority_y(dsto); }
+                else { n.room_draw_make_door_parts_high_priority_x(dsto); }
+            });
+    }
+}
+
+
+#[test]
+fn load6_edged_row_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for (width, height) in [(0u8, 0u8), (1, 2), (3, 3)] {
+        for tile in [0u16, 0x01db, 0x01a6, 0x01dd, 0x01fc] {
+            let mut n = ZeldaState::new(); n.set_assets(&assets).unwrap();
+            n.write_wram_word(0xbf, 0x2000); n.write_wram_byte(0xc1, 0x7e);
+            n.write_wram_word(0xb2, u16::from(width)); n.write_wram_word(0xb4, u16::from(height));
+            n.write_wram_word(0x2080, tile);
+            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+            let mut source = load4_rom_machine(&n, 0x018f62, 0);
+            source.cpu.db = 0;
+            source.cpu.x = 0x063c; source.cpu.y = 0x80;
+            crate::cycle_ledger::assert_rom_marker_work(0x018f62, source,
+                |s| s.cpu.k == 1 && (0x8f62..0x8f8a).contains(&s.cpu.pc),
+                || n.LoadType1ObjectSubtype1(0x23, width, height, 0x40));
+        }
+    }
+    // The ROM's indirect table binds every admitted alias to this same body.
+    for idx in (0x23u8..=0x2e).chain(0x3f..=0x46).chain([0xb3, 0xb4]) {
+        let at = crate::rom_cpu_timing::lorom_offset(0x018200 + u32::from(idx) * 2).unwrap();
+        assert_eq!(&rom[at..at + 2], &0x8f62u16.to_le_bytes());
+    }
+}
+
+#[test]
+fn load6_size_child_markers_match_rom() {
+    for (width, height) in [(0u16, 0u16), (1, 2), (3, 3)] {
+        let mut n = ZeldaState::new();
+        n.write_wram_word(0xb2, width); n.write_wram_word(0xb4, height);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let source = load4_rom_machine(&n, 0x01b0ac, 0);
+        crate::cycle_ledger::assert_rom_marker_work(0x01b0ac, source,
+            |s| s.cpu.k == 1 && (0xb0ac..0xb0be).contains(&s.cpu.pc),
+            || n.price_room_draw_size_1to16());
+    }
+}
+
+#[test]
+fn load6_corner_child_markers_match_rom() {
+    for tile in [0u16, 0x01db, 0x41db] {
+        let mut n = ZeldaState::new();
+        n.write_wram_word(0xbf, 0x2000); n.write_wram_byte(0xc1, 0x7e);
+        n.write_wram_word(0x2080, tile);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let mut source = load4_rom_machine(&n, 0x01b191, 0);
+        source.cpu.a = 0x01db; source.cpu.y = 0x80;
+        crate::cycle_ledger::assert_rom_marker_work(0x01b191, source,
+            |s| s.cpu.k == 1 && (0xb18f..0xb19e).contains(&s.cpu.pc),
+            || n.price_room_draw_small_rail_corner(tile & 0x3ff == 0x01db));
+    }
+}
+
+
+#[test]
+fn load6_hole_square_and_edges_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let at = crate::rom_cpu_timing::lorom_offset(0x018348).unwrap();
+    assert_eq!(&rom[at..at + 2], &0x8ddcu16.to_le_bytes());
+    for (width, height) in [(0u8, 0u8), (1, 2), (3, 3)] {
+        for plane in [0x2000u16, 0x4000] {
+            let mut n = ZeldaState::new(); n.set_assets(&assets).unwrap();
+            for row in 0..11 {
+                let at = crate::rom_cpu_timing::lorom_offset(0x018719 + row * 3).unwrap();
+                let ptr = u16::from_le_bytes([rom[at], rom[at + 1]]) - 0x4000 + plane;
+                n.write_wram_word(0xbf + row as usize * 3, ptr);
+                n.write_wram_byte(0xc1 + row as usize * 3, 0x7e);
+            }
+            n.write_wram_word(8, 0x200);
+            n.write_wram_word(0xb2, u16::from(width)); n.write_wram_word(0xb4, u16::from(height));
+            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+            let mut source = load4_rom_machine(&n, 0x018ddc, 0);
+            source.cpu.db = 0; source.cpu.x = 0x0110; source.cpu.y = 0x200;
+            crate::cycle_ledger::assert_rom_marker_work(0x018ddc, source,
+                |s| s.cpu.k == 1 && (0x8ddc..0x8e67).contains(&s.cpu.pc),
+                || n.object_hole(0x0110, 0x100, width, height));
+        }
+    }
+}
+
+#[test]
+fn load6_size_a_child_markers_match_rom() {
+    for (width, height, base) in [(0u16, 0u16, 2u16), (1, 2, 4), (3, 3, 6)] {
+        let mut n = ZeldaState::new();
+        n.write_wram_word(0xb2, width); n.write_wram_word(0xb4, height);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let mut source = load4_rom_machine(&n, 0x01b0af, 0);
+        source.cpu.a = base;
+        crate::cycle_ledger::assert_rom_marker_work(0x01b0af, source,
+            |s| s.cpu.k == 1 && (0xb0af..0xb0be).contains(&s.cpu.pc),
+            || n.price_room_draw_size_ato_aplus15());
+    }
+}
+
+
+#[test]
+fn load6_inline_door_priority_markers_match_rom() {
+    for entry in [0x01adc7u32, 0x01ae33, 0x01aee3, 0x01af72] {
+        for slot in [1u16, 4, 8, 15] {
+            let mut n = ZeldaState::new(); n.write_wram_word(0x460, slot * 2);
+            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+            let mut source = load4_rom_machine(&n, entry, 0); source.cpu.db = 0;
+            // These are inline caller instructions, so the fixture names the
+            // enclosing caller frame without inventing an A8FA child call.
+            crate::cycle_ledger::assert_rom_marker_work(entry, source,
+                |s| s.cpu.k == 1 && (entry as u16..entry as u16 + 13).contains(&s.cpu.pc), || {
+                    let _caller = crate::cycle_ledger::routine(entry);
+                    n.door_prioritize_cur_door_at(entry);
+                });
+        }
     }
 }
