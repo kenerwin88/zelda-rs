@@ -1717,3 +1717,28 @@ fn load_pacing2_mirror_table_body_matches_rom(dewaving: bool) {
         }
     }
 }
+
+#[test]
+fn mirror_initialization_matches_rom_markers_scroll_values() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for scroll in [0u16, 0x1ff, 0xff00] {
+        let mut n = ZeldaState::new();
+        n.write_wram_word(0xe2, scroll);
+        n.sync_native_game_state_from_ram();
+        n.set_lag_free(true);
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+        s.cpu.k = 0; s.cpu.db = 0; s.cpu.pc = 0xfdee; s.cpu.sp = 0x1fc;
+        s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+        let source = crate::cycle_ledger::assert_rom_marker_work(0x00fdee, s,
+            |s| s.cpu.k == 0 && (0xfdee..0xfe5e).contains(&s.cpu.pc),
+            || n.InitializeMirrorHDMA());
+        for i in 0..224 {
+            assert_eq!(n.spotlight_hdma_table_dynamic_entry(i),
+                u16::from_le_bytes([source.snes().ram[0x1b00+i*2], source.snes().ram[0x1b01+i*2]]));
+        }
+    }
+}

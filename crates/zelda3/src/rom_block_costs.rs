@@ -10,6 +10,12 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x008784, 0x008799, true, true, 314, 0x000000, &[]),
     // $00:8799: fixed cost
     (0x008799, 0x00879c, true, true, 48, 0x000000, &[]),
+    // $00:FDEE: fixed cost
+    (0x00fdee, 0x00fe3e, true, true, 918, 0x000000, &[]),
+    // $00:FE3E: 00fe55 taken +6
+    (0x00fe3e, 0x00fe57, false, true, 366, 0x00fe55, &[]),
+    // $00:FE57: fixed cost
+    (0x00fe57, 0x00fe5d, false, true, 62, 0x000000, &[]),
     // $00:FE5D: fixed cost
     (0x00fe5d, 0x00fe5e, true, true, 44, 0x000000, &[]),
     // $00:FE64: fixed cost
@@ -178,6 +184,26 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x01b82f, 0x01b838, false, false, 126, 0x000000, &[]),
     // $01:B838: fixed cost
     (0x01b838, 0x01b83e, false, false, 78, 0x000000, &[]),
+    // $01:F764: 01f778 taken +6
+    (0x01f764, 0x01f77a, false, false, 240, 0x01f778, &[]),
+    // $01:F77A: fixed cost
+    (0x01f77a, 0x01f77c, false, false, 54, 0x000000, &[]),
+    // $01:F77C: 01f7aa taken +6
+    (0x01f77c, 0x01f7ac, false, false, 640, 0x01f7aa, &[]),
+    // $01:F7AC: fixed cost
+    (0x01f7ac, 0x01f7cb, false, false, 406, 0x000000, &[]),
+    // $01:F7CB: fixed cost
+    (0x01f7cb, 0x01f7e4, false, false, 390, 0x000000, &[]),
+    // $01:F7E4: 01f7ec taken +6
+    (0x01f7e4, 0x01f7ee, false, false, 136, 0x01f7ec, &[]),
+    // $01:F7EE: fixed cost
+    (0x01f7ee, 0x01f7f1, false, false, 74, 0x000000, &[]),
+    // $01:F980: 01f9a5 taken +6
+    (0x01f980, 0x01f9a7, false, false, 534, 0x01f9a5, &[]),
+    // $01:F9A7: fixed cost
+    (0x01f9a7, 0x01f9fa, false, false, 1020, 0x000000, &[]),
+    // $01:F9FA: fixed cost
+    (0x01f9fa, 0x01fa4a, false, false, 1034, 0x000000, &[]),
     // $01:FE41: fixed cost
     (0x01fe41, 0x01fe48, false, false, 88, 0x000000, &[]),
     // $01:FE48: fixed cost

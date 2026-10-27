@@ -183,5 +183,9 @@
   {"entry": "00fe5d", "end": "00fe5e"},
   {"entry": "00fe64", "end": "00ff2f"},
   {"entry": "00ff2f", "end": "00ffb4"},
-  {"entry": "00ffb4", "end": "00ffb7"}
+  {"entry": "00ffb4", "end": "00ffb7"},
+  {"entry": "01f764", "end": "01f7f1", "m8": false, "x8": false},
+  {"entry": "01f77c", "end": "01f7f1", "m8": false, "x8": false},
+  {"entry": "01f980", "end": "01fa4a", "m8": false, "x8": false},
+  {"entry": "00fdee", "end": "00fe5d", "data_bank": 0}
 ]

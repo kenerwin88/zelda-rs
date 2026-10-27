@@ -665,35 +665,59 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_prep_overlay_dma_next_prep(&mut self, dst: usize, r8: u16) -> usize {
-        let r6 = 0x0880 + u16::from((r8 & 0x003f) >= 0x003a);
-        self.dungeon_prep_overlay_dma_watergate(dst, r8, r6, 4)
+        // $01:B88E JSR $F764 (also door/torch callers): M16/X16.
+        // $01:F764..F77B selects four rows and the horizontal/vertical header;
+        // the shared $F77C body is a fallthrough, not another source call.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01f764));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01f764);
+        let vertical = (r8 & 0x003f) >= 0x003a;
+        if vertical { b.block(0x01f77a); } else { b.taken(0x01f778); }
+        let r6 = 0x0880 + u16::from(vertical);
+        self.dungeon_prep_overlay_dma_body(dst, r8, r6, 4)
+    }
+
+    pub(super) fn dungeon_prep_overlay_dma_watergate(&mut self, dst: usize, r8: u16, r6: u16, loops: usize) -> usize {
+        // $01:F396/$F650 JSR $F77C, M16/X16; callers supply row count/header.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01f77c));
+        self.dungeon_prep_overlay_dma_body(dst, r8, r6, loops)
     }
 
     #[rustfmt::skip]
-    pub(super) fn dungeon_prep_overlay_dma_watergate(&mut self, dst: usize, r8: u16, r6: u16, loops: usize) -> usize {
+    fn dungeon_prep_overlay_dma_body(&mut self, dst: usize, r8: u16, r6: u16, loops: usize) -> usize {
+        // $01:F77C..F7F0: address packing, four tile words per row,
+        // actual orientation and row branches, shared STY/RTS exactly once.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         let mut dst = dst;
         let mut r8 = r8;
-        for _ in 0..loops {
+        for row in 0..loops {
+            b.block(0x01f77c);
             let x = (r8 >> 1) as usize;
             self.set_overworld_tile_upload_word(dst, ((r8 & 0x40) << 4) | ((r8 & 0x303f) >> 1) | ((r8 & 0x0f80) >> 2));
             self.set_overworld_tile_upload_word(dst + 1, r6);
             let attr0 = self.overworld_tile_attribute_word(x);
             self.set_overworld_tile_upload_word(dst + 2, attr0);
             if r6 & 1 == 0 {
+                b.block(0x01f7ac);
                 for j in 1..=3 {
                     let attr = self.overworld_tile_attribute_word(x + j);
                     self.set_overworld_tile_upload_word(dst + 2 + j, attr);
                 }
                 r8 = r8.wrapping_add(128);
             } else {
+                b.taken(0x01f7aa);
+                b.block(0x01f7cb);
                 for (j, offset) in [64usize, 128, 192].into_iter().enumerate() {
                     let attr = self.overworld_tile_attribute_word(x + offset);
                     self.set_overworld_tile_upload_word(dst + 3 + j, attr);
                 }
                 r8 = r8.wrapping_add(2);
             }
+            b.block(0x01f7e4);
             dst += 6;
+            if row + 1 != loops { b.taken(0x01f7ec); }
         }
+        b.block(0x01f7ee);
         self.terminate_overworld_tile_upload_words(dst);
         dst
     }

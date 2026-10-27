@@ -1627,42 +1627,55 @@ impl ZeldaState {
             if marker == 0xffff {
                 break;
             }
-            let p = (src[offset] as u16 >> 2) | ((src[offset + 1] as u16 >> 2) << 6);
-            let kind = src[offset + 2];
-            if kind == 0xa4 {
-                let mid = self.tile_word(0x05aa, 0);
-                let top = self.tile_word(0x063c, 1);
-                let bottom = self.tile_word(0x0642, 1);
+            self.dungeon_draw_overlay_one(&src[offset..]);
+            offset += 3;
+        }
+    }
+
+    fn dungeon_draw_overlay_one(&mut self, src: &[u8]) {
+        // $01:F978 JSR $F980, M16/X16: decode one three-byte object,
+        // then write its complete 4x4 tile body ($01:F980..FA49).
+        // $F9A7 and $F9FA each include their own RTS; no priced child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01f980));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01f980);
+        let p = (src[0] as u16 >> 2) | ((src[1] as u16 >> 2) << 6);
+        let kind = src[2];
+        if kind == 0xa4 {
+            b.block(0x01f9a7);
+            let mid = self.tile_word(0x05aa, 0);
+            let top = self.tile_word(0x063c, 1);
+            let bottom = self.tile_word(0x0642, 1);
+            for x in 0..4u16 {
+                self.dungeon_room_tilemaps_mut()
+                    .set_bg2_tile((p + x) as usize, top);
+                self.dungeon_room_tilemaps_mut()
+                    .set_bg2_tile((p + x + 64) as usize, mid);
+                self.dungeon_room_tilemaps_mut()
+                    .set_bg2_tile((p + x + 128) as usize, mid);
+                self.dungeon_room_tilemaps_mut()
+                    .set_bg2_tile((p + x + 192) as usize, bottom);
+            }
+        } else {
+            b.taken(0x01f9a5);
+            b.block(0x01f9fa);
+            let floor = self
+                .game_state
+                .dungeon
+                .room_parser
+                .floor_2_filler_tile_source() as u16 as usize;
+            for y in 0..4u16 {
                 for x in 0..4u16 {
-                    self.dungeon_room_tilemaps_mut()
-                        .set_bg2_tile((p + x) as usize, top);
-                    self.dungeon_room_tilemaps_mut()
-                        .set_bg2_tile((p + x + 64) as usize, mid);
-                    self.dungeon_room_tilemaps_mut()
-                        .set_bg2_tile((p + x + 128) as usize, mid);
-                    self.dungeon_room_tilemaps_mut()
-                        .set_bg2_tile((p + x + 192) as usize, bottom);
-                }
-            } else {
-                let floor = self
-                    .game_state
-                    .dungeon
-                    .room_parser
-                    .floor_2_filler_tile_source() as u16 as usize;
-                for y in 0..4u16 {
-                    for x in 0..4u16 {
-                        let idx = match (x & 1, y & 1) {
-                            (0, 0) => 0,
-                            (1, 0) => 1,
-                            (0, 1) => 4,
-                            _ => 5,
-                        };
-                        let tile = self.tile_word(floor, idx);
-                        self.room_write_bg2(p + x + y * 64, tile);
-                    }
+                    let idx = match (x & 1, y & 1) {
+                        (0, 0) => 0,
+                        (1, 0) => 1,
+                        (0, 1) => 4,
+                        _ => 5,
+                    };
+                    let tile = self.tile_word(floor, idx);
+                    self.room_write_bg2(p + x + y * 64, tile);
                 }
             }
-            offset += 3;
         }
     }
 
@@ -1698,5 +1711,76 @@ impl ZeldaState {
             p += 64;
         }
         b.block(0x01feab);
+    }
+}
+
+#[cfg(test)]
+mod load_pacing3_tests {
+    use super::*;
+
+    fn native() -> ZeldaState {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut n = ZeldaState::new();
+        n.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+        n.set_lag_free(true);
+        n
+    }
+
+    fn source(n: &ZeldaState, pc: u16) -> snes::Snes {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.cpu.e = false; s.cpu.unpack_flags(0);
+        s.cpu.k = 1; s.cpu.db = 1; s.cpu.pc = pc; s.cpu.sp = 0x1fd;
+        s.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+        s
+    }
+
+    #[test]
+    fn overlay_dma_matches_rom_markers_orientation_and_address_edges() {
+        for address in [0x0000u16, 0x0038, 0x003a, 0x003e, 0x0040, 0x01d8, 0x1fba, 0x303e] {
+            let mut n = native();
+            let mut s = source(&n, 0xf764);
+            s.ram[8..10].copy_from_slice(&address.to_le_bytes());
+            s.ram[12..14].copy_from_slice(&12u16.to_le_bytes());
+            crate::cycle_ledger::assert_rom_marker_work(0x01f764, s,
+                |s| s.cpu.k == 1 && (0xf764..0xf7f1).contains(&s.cpu.pc),
+                || { assert_eq!(n.dungeon_prep_overlay_dma_next_prep(6, address), 30); });
+        }
+    }
+
+    #[test]
+    fn watergate_dma_matches_rom_markers_supplied_rows_and_header() {
+        for (address, header, rows) in [(0x01d8u16, 0x0881u16, 8usize),
+            (0x0040, 0x0881, 4), (0x0038, 0x0880, 4), (0x1040, 0x0880, 1)] {
+            let mut n = native();
+            let mut s = source(&n, 0xf77c);
+            s.cpu.y = 12;
+            s.ram[6..8].copy_from_slice(&header.to_le_bytes());
+            s.ram[8..10].copy_from_slice(&address.to_le_bytes());
+            s.ram[10..12].copy_from_slice(&(rows as u16).to_le_bytes());
+            crate::cycle_ledger::assert_rom_marker_work(0x01f77c, s,
+                |s| s.cpu.k == 1 && (0xf77c..0xf7f1).contains(&s.cpu.pc),
+                || { assert_eq!(n.dungeon_prep_overlay_dma_watergate(6, address, header, rows), 6 + rows * 6); });
+        }
+    }
+
+    #[test]
+    fn overlay_drawing_matches_rom_markers_both_tile_bodies() {
+        for encoded in [[0, 0, 0xa4], [0x7c, 0x7c, 0xa4],
+            [0x40, 0x20, 0], [0x7c, 0x7c, 0x23]] {
+            let mut n = native();
+            let mut s = source(&n, 0xf980);
+            s.ram[0..2].copy_from_slice(&encoded[..2]);
+            // [$B7],Y names the three-byte object; the parent retained its
+            // second byte in $01 before JSR $F980.
+            s.ram[0xb7..0xba].copy_from_slice(&[0, 0x18, 0x7e]);
+            s.ram[0x1800..0x1803].copy_from_slice(&encoded);
+            crate::cycle_ledger::assert_rom_marker_work(0x01f980, s,
+                |s| s.cpu.k == 1 && (0xf980..0xfa4a).contains(&s.cpu.pc),
+                || n.dungeon_draw_overlay_one(&encoded));
+        }
     }
 }

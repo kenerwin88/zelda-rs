@@ -2892,6 +2892,11 @@ impl ZeldaState {
     pub(super) fn overworld_weathervane_explosion(&mut self) {}
 
     pub(super) fn InitializeMirrorHDMA(&mut self) {
+        // $02:B232 JSL $00:FDEE, M8/X8, DB=$00: initialize wave
+        // scratch/channel registers and the ROM's 224-word table prefix.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00fdee));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x00fdee);
         self.clear_hdma_enable_mask();
 
         self.mirror_warp_scratch_mut().initialize_hdma_wave_state();
@@ -2899,10 +2904,21 @@ impl ZeldaState {
         self.hdma_set_transfer_only(0x42, 0x0d, 0x0f);
 
         let value = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
-        for i in 0..240 {
+        // $00:FE3E..FE55: X=$3E down to zero, seven interleaved stores.
+        for i in (0..32).rev() {
+            b.block(0x00fe3e);
+            for stripe in 0..7 {
+                self.set_spotlight_hdma_table_dynamic_entry(i + stripe * 32, value);
+            }
+            if i != 0 { b.taken(0x00fe55); }
+        }
+        // Preserve native off-screen padding; it has no ROM instructions.
+        for i in 224..240 {
             self.set_spotlight_hdma_table_dynamic_entry(i, value);
         }
+        b.block(0x00fe57);
         self.set_hdma_enable_mask(0xc0);
+        b.block(0x00fe5d);
     }
 
     /// ROM: `MirrorWarp_BuildWavingHDMATable`

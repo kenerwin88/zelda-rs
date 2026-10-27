@@ -1926,7 +1926,7 @@ impl ZeldaState {
                 let addr = self.game_state.dungeon.doors.door_tilemap_address(j);
                 crate::cycle_ledger::charge(46);
                 {
-                    let _scope = crate::cycle_ledger::routine(0x01_f764);
+                    let _scope = (!self.lag_free).then(|| crate::cycle_ledger::routine(0x01_f764));
                     self.dungeon_prep_overlay_dma_next_prep(0, addr);
                 }
                 crate::cycle_ledger::charge(86);
@@ -2125,7 +2125,7 @@ impl ZeldaState {
 
         crate::cycle_ledger::charge(46);
         {
-            let _scope = crate::cycle_ledger::routine(0x01_f764);
+            let _scope = (!self.lag_free).then(|| crate::cycle_ledger::routine(0x01_f764));
             self.dungeon_prep_overlay_dma_next_prep(0, addr);
         }
         crate::cycle_ledger::charge(138);

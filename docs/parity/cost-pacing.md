@@ -12549,3 +12549,39 @@ The retained **default 200k ledger matches every record and EOF**, before and af
 **Deferred loader/transition families:** `filter_majorly_whiten_bg` / marked entry; `overworld_check_special_switch_area` / marked entry; `draw_mire_body`; bank-02 decompression wrappers; `dungeon_load_basic_attribute_body`; crystal-peg bank/continuation entries; `tile_map_prep_not_water_on_tag_body`; `room_draw_a_many_32x32_blocks_body`; `room_draw_floor_chunks_body`; pre-dungeon song-bank/reset, module09 long-load and straight-interroom sprite-reset continuations. Broader ending, NMI, game-loop and player-OAM continuation bodies remain separate. None of their files or callers was edited. Remaining sprite/player/ancilla families are listed in `wrapper-inventory.md`, with the complete literal matches and 292 matching definitions beside it; this partial batch does not claim their consolidation or formatting.
 
 All **1,512 supplied ledger/cache files** retain size and mtime. `verification.json` binds source/binary hashes, library manifests, checks and file/line totals. Evidence remains below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit, push or one-off repository script was used.
+
+## Load/transition batch 3
+
+**Verified partial stop on `codex/load-pacing3`, main `19a803cd`.** ROM missing/excess/FP: **4,025 / 0 / 0 → 3,983 / 0 / 0** (42 frames restored). Measured live after: **4,686 / 596 / 133**. Supplied joint main control reused; no full main controls rerun. Evidence: `target/load-pacing3/`.
+
+Refreshed the stale native worklist against retained, hash-matched source receipts: **1,108 missing iterations / 1,156 frames**, with **0** rows lacking retained source coverage. Ranking uses each missing iteration's P2 inverse and exclusive owner work, with FE64/FF2F tail aliases folded into B1FF and the F762 inline F764 body normalized for ranking. The inherited uppercase-module selector was corrected by replaying only supplemental 07/0E and 09/0D windows. Seeded windows remain diagnostic; canonical census results are separate.
+
+Four complete entries add **13 blocks / 171 ROM instructions**; all **1,440** existing rows remain unchanged. `$01:B88E → F764`, `$01:F396/F650 → F77C`, `$01:F978 → F980`, and `$02:B232 → $00:FDEE` statically bind the callers. F764 falls through its shared body without a child charge; direct watergate calls own F77C. Drawing charges the actual A4/floor branch. Mirror initialization prices the ROM's 224 words in source store order; native off-screen padding remains free. No classifier, scene threshold/multiplier/table or protected gameplay source was changed.
+
+Four `assert_rom_marker_work` fixtures pass **19 unmodified-ROM cases**, covering DMA address/orientation branches, supplied watergate rows/headers, both drawing bodies, and mirror scroll values/table equality. Existing scalars in these four routines total **zero**: no conversion was needed and no scalar was added.
+
+| Complete entry | Old scalar clocks on matched cohort | New marker clocks | Predicted flips | Actual gains on body iterations |
+| --- | ---: | ---: | ---: | ---: |
+| `$00:fdee` Mirror initialization | 0 | 0 | 0 | 0 |
+| `$01:f764` Overlay DMA preparation | 0 | 3,495,580 | 37 | 42 |
+| `$01:f77c` Direct watergate DMA | 0 | 0 | 0 | 0 |
+| `$01:f980` Overlay drawing | 0 | 1,076,052 | 25 | 42 |
+
+Matched windows gain **42 frames**, with **zero** iterations losing holds. **4,571,632 new clocks** equal the signed main-counter increase on every affected iteration. Per-body actuals count gains on that body's executions under the joint candidate; overlapping executions are not isolated marginal effects and must not be summed. Prefix markers execute before caller continuation/queue reads. The F762 fallthrough contributes its F764 body once; its separate 32-clock STZ prefix remains unpriced. After this tail normalization, new marker totals also equal retained source-body work. Canonical ROM improvement is **42 frames**.
+
+Both final full CPU census gates **PASS**, **1,473,123 iterations** each, unexplained zero; runtime holds equal P2 throughout. These are periodically seeded logical checks.
+
+| Entry | ROM missing after | Live missing after | Excess ROM / live | FP ROM / live |
+| --- | ---: | ---: | ---: | ---: |
+| `09/23` | 201 | 201 | 0 / 0 | 0 / 0 |
+| `07/02` | 242 | 242 | 0 / 0 | 0 / 0 |
+| `07/07` | 231 | 231 | 0 / 0 | 0 / 0 |
+| `07/0E` | 98 | 98 | 0 / 0 | 0 / 0 |
+| `09/0D` | 81 | 81 | 0 / 0 | 0 / 0 |
+| `06/00` | 74 | 74 | 0 / 0 | 0 / 0 |
+| `09/16` | 71 | 71 | 0 / 0 | 0 / 0 |
+| `07/03` | 3 | 3 | 0 / 0 | 0 / 0 |
+
+All **48 crystal/pendant phases** remain within one; stable outcomes match the retained control. The default **200k ledger matches every record and EOF**. Ordinary default/reduced builds are warning-free; existing lib-test warnings remain. Default library: **2,677 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,212 pass / 0 failures / 2 ignored**. Both CPU SNES libraries: **504 / 0 / 7**. Generator/worklist, routine-coverage, inverse/regeneration and `git diff --check` pass.
+
+The refreshed `remaining-worklist.json` retains **1,066 diagnostic missing iterations**. Mirror finalization/dispatch, iris and room/door ownership remain open. Source tail aliases are candidate groups rather than unpriced whole routines; protected sprite/player/ancilla/garnish owners were skipped. All **1,512** supplied ledger/cache file sizes/mtimes are unchanged. Raw profiles/predictors were summarized and deleted; evidence is **214.3 MB**, below 3 GB. No GPU run, oracle-cache write, cargo fmt, commit/push or one-off repository script was used.
