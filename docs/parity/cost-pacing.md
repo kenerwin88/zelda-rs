@@ -13218,3 +13218,99 @@ Both full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplai
 All **48 crystal/pendant phases remain within one**; stable engine/save outcomes match the retained main control. Four stable iteration labels differ and are retained separately. The **default 200k ledger matches all records and EOF**; default/ROM-timing accounting is unchanged. Ordinary builds are warning-free; existing library-build warnings remain separate. Default library pass/fail/ignored: **2,722/1/3**, only the known spotlight failure. Reduced: **2,257/0/2**. The complete reduced run exposed an omitted shared JMP tail in the test ownership predicate; all load-6 fixtures were rerun after the test-only correction, with raw results retained. Production source, prices and census binary stayed identical. Both CPU SNES suites: **504/0/7**. Block/worklist, routine-coverage, inverse, exact regeneration and diff checks pass.
 
 The remaining worklist retains **1,101 diagnostic missing iterations**; its raw residuals still need source ownership admission. All **1,512 supplied ledger/cache files** retain size/mtime, with none added. Raw profiles, full predictors and large traces are summarized, hashed and deleted or compacted; evidence is about **286.0 MB**, below 3 GB. Disk space was checked before each full census. No classifier, scene threshold/multiplier/table, GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit or push was used. Scratch programs stayed in `/tmp`.
+
+## Cost-pacing batch 43 — verified partial stop
+
+On `codex/cost-pacing43`, main `35569d04`: **32 predicted / 32 actual
+ordinary-gameplay flips**, with **54 restored holds across the full ROM lane**
+and none lost. The **>=120 predicted-frame aim was not reached**. This batch
+admits six complete bodies; the larger unresolved ownership families remain
+work, not replacement prices. Evidence: `target/cost-pacing43/`.
+
+### Ranking and admitted work
+
+The retained unsharded main predictor in
+`target/sharded-census/rom/accepted/predictor.csv` matches the supplied
+**3,535 / 0 / 0** baseline. No main census control was repeated. Its
+`cost_shortfall` supplies the inverse on **2,218 remaining 07/00 + 09/00
+iterations**. `cohort.json` retains every inverse. Source instruction clocks
+for complete, uncharged self bodies are compared with each inverse; independent
+predictions overlap, and combinations can close a shortfall that no individual
+owner covers.
+
+The gap audit's SingleLarge, movement, tile-property, guard-drawing and dispatcher
+rows require folding their separately charged instruction models, scalar bodies
+and JMP/state tails. Their raw gaps were not admitted as extra parent charges.
+The retained diagnostic rankings are explicitly upper bounds;
+`ranking-provenance.json` also identifies the older native profile's batch-42
+coverage limitation. Only the six ranges in `source-predictions.json` are admitted
+here. Fireball trail allocation still needs its no-free-slot return reconciled,
+and Swamola's split CPU-boundary entries need ownership work before a whole-body
+price can be admitted.
+
+| Complete owner | ROM caller | Old self scalar clocks | New marker clocks | Independent predicted flips |
+| --- | --- | ---: | ---: | ---: |
+| Beamos body `$05:9068` | `$05:8F63` JSR | 0 | 276,624 | 9 |
+| Proximity dispatch `$09:C58F` | `$06:833B` JSL | 0 | 344,032 | 8 |
+| Thief target scan `$1D:CA4C` | `$1D:CA3B` JSR | 0 | 187,414 | 8 |
+| Beamos eye `$05:9151` | `$05:90CD` JSR | 0 | 152,256 | 3 |
+| Thief search `$1D:CA24` | `$1D:C9E2` JSR | 0 | 114,640 | 1 |
+| Thief grab `$1D:CA9E` | `$1D:CA97` JSR | 0 | 21,168 | 0 |
+
+All clocks above are on the frozen missing cohort. The **1,096,134 new marker
+clocks** equal the admitted source instruction work and the signed native
+main-counter increase on **every cohort iteration**. The joint prediction is
+**32**, matching **12 actual 07/00 flips + 20 actual 09/00 flips**, with no
+prediction/work mismatches. `frame-flips.json` retains the complete matrix.
+
+**51 new blocks / 224 instructions** are derived by
+`scripts/rom_block_costs.py`; all **1,795 existing generated rows** remain
+identical. `pricing-audit.json` verifies each real ROM call site. Coordinate
+preparation, OAM allocation/correction, drawing, projection, sound and proximity
+scan children retain their existing separate charges. None of these six self
+bodies contained a scalar call to replace; their old scalar totals are zero.
+No existing child scalar or default/ROM-timing accounting was changed.
+
+The eye's `$05:9173 LDA $90F1,X` page crossing uses the actual
+`X=direction/2`, including the six clocks when `X + $F1 > $FF`. Thief grab's
+width-independent `$1D:CAEF SEP #$20; RTS` tail is generated separately so both
+M16 rejection and M8 success entries share one price. Six proportionate
+`assert_rom_marker_work` fixtures pass **176 unmodified-ROM cases**, including
+clipping/double returns, page crossings, all scan rejection/type branches,
+overlap outcomes and toggler wraparound.
+
+### CPU-only verification
+
+The single final ROM census uses corrected **full-v2**, recorded APU answers
+and `--seed-every 2000`, unsharded. It **PASSes all 1,473,123 iterations**, with
+unexplained zero and every runtime hold equal to P2. Counts are missing /
+excess / FP:
+
+| Scope | Retained main | Batch 43 |
+| --- | --- | --- |
+| ROM full | 3,535 / 0 / 0 | **3,481 / 0 / 0** |
+| ROM 07/00 | 1,391 / 0 / 0 | **1,379 / 0 / 0** |
+| ROM 09/00 | 827 / 0 / 0 | **807 / 0 / 0** |
+
+The complete before/after predictor comparison shows **54 holds gained, zero
+lost**, no negative main-counter deltas and no module/submodule/source-lag
+context changes. The other **22 restored holds** are outside the target
+ordinary-gameplay categories; `full-effects.json` lists each one. Every HDMA
+lease/decline flag remains identical. These periodically seeded logical checks
+are not continuous-route or exact A/V acceptance.
+
+All **239 filtered touched-area tests** pass: sprite drawing 108, dungeon NPCs
+15 and sprite helpers 116. The **19 Python generator/worklist, inverse and
+routine-coverage tests** pass, as do exact regeneration and `git diff --check`.
+The **default 200k state ledger matches all records and EOF**. Both ordinary
+builds are warning-free; pre-existing lib-test warnings are separate. No audio,
+APU, SPC-clock or pacing-rule code changed. No live-sound census, full
+library suites or CPU SNES suites were run.
+
+All **1,512 ledger/cache input files** retain size and nanosecond mtime, with
+none added. Disk space was checked before the full census. Large raw predictors,
+profiles and per-iteration diagnostic rankings were summarized, hashed and
+deleted; compact marker receipts and the per-iteration proof matrices remain.
+Evidence is below **0.1 GiB**, well under 3 GB. There were no GPU runs,
+`--video`, cached-av, Snes9x execution, oracle-cache/shared-ledger writes,
+`cargo fmt`, commits, pushes or one-off repository scripts.

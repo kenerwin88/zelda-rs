@@ -35,6 +35,17 @@ impl ZeldaState {
     //   sprite_main.c:2509 — 32-entry eyeball cycle drawn over a base offset.
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_beamos_eyeball(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        // $05:90CD JSR $9151: complete eye writer; FEB4 correction is a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059151));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059151);
+        if self.sprite_slot_view(k).direction() >= 0x20 { b.taken(0x059158); }
+        else { b.block(0x05915a); }
+        b.block(0x05915c);
+        // $05:9173 LDA $90F1,X, with X=direction/2 (M8/X8).
+        if u16::from(self.sprite_slot_view(k).direction() >> 1) + 0xf1 > 0xff {
+            b.crossing(0x059173);
+        }
         let n: usize = if self.sprite_slot_view(k).direction() < 0x20 {
             0
         } else {
@@ -66,6 +77,7 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(n as u16));
         self.sprite_correct_oam_entries(k, 0, 0);
+        b.block(0x0591b0);
     }
 
     // -----------------------------------------------------------------------
@@ -221,19 +233,35 @@ impl ZeldaState {
     //   Draw the two 16x16 body tiles, then overlay the rotating eyeball.
     // }
     pub(super) fn beamos_draw(&mut self, k: usize) {
+        // $05:8F63 JSR $9068: whole two-tile body, excluding prep/allocation/eye.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059068));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059068);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x05906b);
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
         let spr_offs = if self.sprite_slot_view(k).direction() < 0x20 {
+            b.block(0x059074);
             self.oam_allocate_from_region_b(12);
+            b.block(0x05907a);
             1
         } else {
+            b.taken(0x059072); b.block(0x05907e);
             self.oam_allocate_from_region_c(12);
+            b.block(0x059084);
             0
         };
+        b.block(0x059086);
         let mut oam = self.game_state.oam.current_pointer_usize() + spr_offs * 4;
         for i in (0..2).rev() {
+            b.block(0x059089);
+            if info.y.wrapping_add(BEAMOS_DRAW_Y_OFFSETS[i] as i16 as u16)
+                .wrapping_add(16) < 256 { b.taken(0x0590aa); }
+            else { b.block(0x0590ac); }
+            b.block(0x0590b0);
+            if i != 0 { b.taken(0x0590ca); }
             self.set_oam_helper0_at(
                 oam,
                 info.x,
@@ -244,7 +272,9 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x0590cc);
         self.sprite_draw_beamos_eyeball(k, &info);
+        b.block(0x0590d0);
     }
 
     // -----------------------------------------------------------------------

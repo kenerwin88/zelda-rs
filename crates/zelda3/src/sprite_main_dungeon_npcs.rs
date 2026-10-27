@@ -2148,15 +2148,32 @@ impl ZeldaState {
 
     // uint8 Thief_ScanForBooty(int k) {  // 9dca24
     pub(super) fn thief_scan_for_booty(&mut self, k: usize) -> u8 {
+        // $1D:C9E2 JSR $CA24: complete search, with TargetBooty separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dca24));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dca24);
         for j in (0..=15usize).rev() {
+            b.block(0x1dca26);
             if self.sprite_slot_view(j).state() != 0 {
+                b.block(0x1dca2b);
                 let t = self.sprite_slot_view(j).sprite_type();
+                if t == 0xdc { b.taken(0x1dca30); }
+                else {
+                    b.block(0x1dca32);
+                    if t == 0xe1 { b.taken(0x1dca34); }
+                    else { b.block(0x1dca36); if t != 0xd9 { b.taken(0x1dca38); } }
+                }
                 if t == 0xdc || t == 0xe1 || t == 0xd9 {
+                    b.block(0x1dca3a);
                     self.thief_target_booty(k, j);
+                    b.block(0x1dca3e);
                     return j as u8;
                 }
-            }
+            } else { b.taken(0x1dca29); }
+            b.block(0x1dca40);
+            if j != 0 { b.taken(0x1dca41); }
         }
+        b.block(0x1dca43);
         self.sprite_slot_view_mut(k).set_ai_state(0);
         self.sprite_slot_view_mut(k).set_delay_main(64);
         0xff
@@ -2176,27 +2193,57 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn thief_target_booty(&mut self, k: usize, j_in: usize) {
+        // $1D:CA3B JSR $CA4C: full 16-slot scan; projection/grab bodies separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dca4c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dca4c);
         let fc = self.game_state.frame.frame_counter as usize;
         if (k ^ fc) & 3 == 0 {
+            b.block(0x1dca53);
             let tx = self.sprite_get_x(j_in);
             let ty = self.sprite_get_y(j_in);
             // ROM $1D:CA69
             let pt = self.sprite_project_speed_towards_location_long_marked(k, tx, ty, 19);
+            b.block(0x1dca6d);
             self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
             self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
-        }
+        } else { b.taken(0x1dca51); }
+        b.block(0x1dca77);
         for j in (0..=15usize).rev() {
+            b.block(0x1dca79);
             // Note: C uses `!((j ^ fc) & 3 | sprite_delay_aux4[j])` — `|` has
             // lower precedence than `&`, so the parens evaluate to
             // `((j^fc)&3) | aux4[j]`.
             let cond = (((j ^ fc) & 3) as u8) | self.sprite_slot_view(j).delay_aux4();
+            if cond != 0 { b.taken(0x1dca81); }
+            else {
+                b.block(0x1dca83);
+                if self.sprite_slot_view(j).state() == 0 { b.taken(0x1dca86); }
+                else {
+                    b.block(0x1dca88);
+                    let t = self.sprite_slot_view(j).sprite_type();
+                    if t == 0xdc { b.taken(0x1dca8d); }
+                    else {
+                        b.block(0x1dca8f);
+                        if t == 0xe1 { b.taken(0x1dca91); }
+                        else {
+                            b.block(0x1dca93);
+                            if t != 0xd9 { b.taken(0x1dca95); }
+                        }
+                    }
+                    if t == 0xdc || t == 0xe1 || t == 0xd9 { b.block(0x1dca97); }
+                }
+            }
             if cond == 0 && self.sprite_slot_view(j).state() != 0 {
                 let t = self.sprite_slot_view(j).sprite_type();
                 if t == 0xdc || t == 0xe1 || t == 0xd9 {
                     self.thief_grab_booty(k, j);
                 }
             }
+            b.block(0x1dca9a);
+            if j != 0 { b.taken(0x1dca9b); }
         }
+        b.block(0x1dca9d);
     }
 
     // void Thief_GrabBooty(int k, int j) {  // sprite_main.c:17344
@@ -2209,19 +2256,28 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn thief_grab_booty(&mut self, k: usize, j: usize) {
+        // $1D:CA97 JSR $CA9E: whole overlap/removal body; sound remains a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dca9e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dca9e);
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let dx = self.sprite_get_x(j).wrapping_sub(cur_x).wrapping_add(8);
         let dy = self.sprite_get_y(j).wrapping_sub(cur_y).wrapping_add(12);
+        if dx >= 16 { b.taken(0x1dcac1); }
+        else { b.block(0x1dcac3); if dy >= 24 { b.taken(0x1dcad0); } }
         if dx < 16 && dy < 24 {
+            b.block(0x1dcad2);
             self.sprite_slot_view_mut(j).set_state(0);
             let t = self.sprite_slot_view(j).sprite_type().wrapping_sub(0xd8) as usize;
             // Original passes `t` (item index) to QueueSfx3WithPan; the
             // helper uses it to index `sprite_x_lo` for panning — we keep
             // the same semantics by passing the slot index `t`.
             self.sprite_sfx_queue_sfx3_with_pan(t, ABSORPTION_SFX[t]);
+            b.block(0x1dcae9);
             self.sprite_slot_view_mut(k).set_delay_main(14);
         }
+        b.block(0x1dcaef);
     }
 
     // void Thief_CheckCollisionWithLink(int k) {  // sprite_main.c:17355

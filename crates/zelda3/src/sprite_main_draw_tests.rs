@@ -2384,3 +2384,141 @@ fn marker42_knight_crumble_complete_body_matches_rom() {
         }
     }
 }
+
+#[test]
+fn marker43_beamos_body_matches_rom() {
+    for k in [0usize, 15] {
+        for direction in [0, 31, 32, 63] {
+            for (x, y) in [(0x40u16, 0x40u16), (0x100, 0xfff8), (0x400, 0x40)] {
+                let mut native = marker29_state();
+                for (a, v) in [(0xe20, 0x61), (0xdd0, 9), (0xcaa, 0x80), (0xde0, direction)] {
+                    native.write_wram_byte(a + k, v);
+                }
+                native.write_wram_word(0xfd8, x);
+                native.write_wram_word(0xfda, y);
+                native.write_wram_byte(0xfa0, k as u8);
+                native.sync_native_game_state_from_ram();
+                let Some(machine) = marker29_machine(&native, 0x059068, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x059068, machine,
+                    |s| s.cpu.k == 5 && (0x9068..0x90d1).contains(&s.cpu.pc), || native.beamos_draw(k));
+            }
+        }
+    }
+}
+
+#[test]
+fn marker43_beamos_eye_matches_rom() {
+    for k in [0usize, 15] {
+        for direction in [0, 31, 32, 63] {
+            for (x, y) in [(0x40u16, 0x40u16), (0xff, 0xfff8)] {
+                let mut native = marker29_state();
+                for (a, v) in [(0xe20, 0x61), (0xdd0, 9), (0xcaa, 0x80), (0xde0, direction)] {
+                    native.write_wram_byte(a + k, v);
+                }
+                native.write_wram_word(0, x);
+                native.write_wram_word(2, y);
+                native.write_wram_byte(5, 0x20);
+                native.write_wram_byte(0xfa0, k as u8);
+                native.sync_native_game_state_from_ram();
+                let Some(machine) = marker29_machine(&native, 0x059151, k) else { return };
+                let info = PrepOamCoordsRet { x, y, r4: 0, flags: 0x20 };
+                crate::cycle_ledger::assert_rom_marker_work(0x059151, machine,
+                    |s| s.cpu.k == 5 && (0x9151..0x91b1).contains(&s.cpu.pc), || {
+                        native.sprite_draw_beamos_eyeball(k, &info);
+                    });
+            }
+        }
+    }
+}
+
+#[test]
+fn marker43_thief_target_matches_rom() {
+    for k in [0usize, 15] {
+        for frame in [0, 1, 2, 3] {
+            for item in [0u8, 0xdc, 0xe1, 0xd9, 0x40] {
+                let mut native = marker29_state();
+                native.write_wram_byte(0x1a, frame);
+                native.write_wram_byte(0xfa0, k as u8);
+                native.write_wram_byte(0xe20 + k, 0xc4);
+                for j in 0..16 {
+                    native.write_wram_byte(0xdd0 + j, u8::from(item != 0));
+                    native.write_wram_byte(0xe20 + j, item);
+                    native.write_wram_byte(0xf10 + j, u8::from(j % 3 == 0));
+                    native.write_wram_byte(0xd10 + j, if j % 2 == 0 { 0x40 } else { 0x80 });
+                    native.write_wram_byte(0xd00 + j, if j % 2 == 0 { 0x40 } else { 0x80 });
+                }
+                native.sync_native_game_state_from_ram();
+                let Some(mut machine) = marker29_machine(&native, 0x1dca4c, k) else { return };
+                machine.cpu.y = 8;
+                crate::cycle_ledger::assert_rom_marker_work(0x1dca4c, machine,
+                    |s| s.cpu.k == 0x1d && (0xca4c..0xca9e).contains(&s.cpu.pc), || {
+                        native.thief_target_booty(k, 8);
+                    });
+            }
+        }
+    }
+}
+
+#[test]
+fn marker43_thief_scan_matches_rom() {
+    for k in [0usize, 15] {
+        for item in [0u8, 0xdc, 0xe1, 0xd9, 0x40] {
+            for j in [0usize, 8, 15] {
+                let mut native = marker29_state();
+                native.write_wram_byte(0xdd0 + j, u8::from(item != 0));
+                native.write_wram_byte(0xe20 + j, item);
+                native.write_wram_byte(0xd10 + j, 0x80);
+                native.write_wram_byte(0xd00 + j, 0x80);
+                native.write_wram_byte(0xfa0, k as u8);
+                native.sync_native_game_state_from_ram();
+                let Some(machine) = marker29_machine(&native, 0x1dca24, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x1dca24, machine,
+                    |s| s.cpu.k == 0x1d && (0xca24..0xca4c).contains(&s.cpu.pc), || {
+                        native.thief_scan_for_booty(k);
+                    });
+            }
+        }
+    }
+}
+
+#[test]
+fn marker43_thief_grab_matches_rom() {
+    for k in [0usize, 15] {
+        for j in [0usize, 8, 15] {
+            for item in [0xdc, 0xe1, 0xd9] {
+                for (x, y) in [(0x40, 0x40), (0x80, 0x40), (0x40, 0x80)] {
+                    let mut native = marker29_state();
+                    native.write_wram_byte(0xe20 + j, item);
+                    native.write_wram_byte(0xd10 + j, x);
+                    native.write_wram_byte(0xd00 + j, y);
+                    native.write_wram_byte(0xfa0, k as u8);
+                    native.sync_native_game_state_from_ram();
+                    let Some(mut machine) = marker29_machine(&native, 0x1dca9e, k) else { return };
+                    machine.cpu.y = j as u16;
+                    crate::cycle_ledger::assert_rom_marker_work(0x1dca9e, machine,
+                        |s| s.cpu.k == 0x1d && (0xca9e..0xcaf2).contains(&s.cpu.pc), || {
+                            native.thief_grab_booty(k, j);
+                        });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn marker43_proximity_dispatch_matches_rom() {
+    for submodule in [0u8, 1, 2] {
+        for toggler in [0u8, 1, 254, 255] {
+            let mut native = marker29_state();
+            native.write_wram_byte(0x1b, 0);
+            native.write_wram_byte(0x11, submodule);
+            native.write_wram_byte(0xfb7, toggler);
+            native.sync_native_game_state_from_ram();
+            let Some(machine) = marker29_machine(&native, 0x09c58f, 0) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x09c58f, machine,
+                |s| s.cpu.k == 9 && (0xc58f..0xc5b7).contains(&s.cpu.pc), || {
+                    native.sprite_proximity_activation();
+                });
+        }
+    }
+}

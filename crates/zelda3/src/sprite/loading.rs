@@ -899,16 +899,28 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_proximity_activation(&mut self) {
+        // $06:833B JSL $09:C58F: wrapper self work; both scan bodies are children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09c58f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09c58f);
         if self.game_state.frame.submodule != 0 {
+            b.block(0x09c596);
             self.sprite_activate_when_proximal();
+            b.block(0x09c599);
             self.sprite_activate_when_proximal_big();
+            b.block(0x09c59c);
         } else {
+            b.taken(0x09c594); b.block(0x09c59e);
             if self.game_state.sprites.system.ranged_based_toggler() & 1 == 0 {
+                b.block(0x09c5a5);
                 self.sprite_activate_when_proximal();
-            }
+            } else { b.taken(0x09c5a3); }
+            b.block(0x09c5a8);
             if self.game_state.sprites.system.ranged_based_toggler() & 1 != 0 {
+                b.block(0x09c5af);
                 self.sprite_activate_when_proximal_big();
-            }
+            } else { b.taken(0x09c5ad); }
+            b.block(0x09c5b2);
             self.sprite_system_mut().increment_ranged_based_toggler();
         }
     }
