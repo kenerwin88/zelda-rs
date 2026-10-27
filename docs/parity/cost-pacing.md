@@ -12964,3 +12964,150 @@ ROM gains **207 holds on 207 iterations**, loses **zero**, and retains **every m
 The candidate **default 200k ledger matches every record and EOF**, as does the fresh main control. Default/ROM-timing instruction accounting is unchanged. Both ordinary builds are warning-free; existing lib-test warnings remain separate. Default library: **2,698 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,233 pass / 0 failures / 2 ignored**. Both CPU SNES libraries: **504 pass / 0 failures / 7 ignored** each. Complete final manifests are under `candidate/`. Initial asset-path test failures are superseded by these full final suites using the valid flat pack and ignored local asset symlink. This is the verified stopping point.
 
 Source subset gzip files retain the original selected routine, structural and instruction receipts with verified decompression hashes. The supplied 1,512-file ledger/cache snapshot matches the pre-existing batch-42 reference. Evidence remains below **3 GB**. No GPU execution, --video, cached-av, external Snes9x, GPU test, oracle-cache/shared-ledger write, cargo fmt, commit/push or scratch repository script was used. These periodically seeded CPU gates and selected source probes do not establish continuous-route or exact A/V acceptance.
+
+## Sharded census
+
+`scripts/sharded_census.py` runs CPU-only logical censuses and audits whether
+periodic segments can be run independently. **Both current lanes must remain
+unsharded.** A 2,000-iteration reporting boundary is not necessarily a reseed.
+The replay deliberately continues a clean native engine, including its handler
+history, pending work and live SPC state. A nonzero `--start` instead creates a
+fresh engine and forces a foreign-memory seed. Those seeds do not contain the
+complete native state. `--eager-seed`, synthetic handler values, dropping a
+boundary's predictor row, or removing `seeded=` from comparison would change
+the census being measured; this tool does none of those.
+
+```sh
+LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
+CACHE=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+python3 scripts/sharded_census.py "$LEDGER" "$CACHE/initial.srm" \
+  --binary target/parity/zelda3 --output target/sharded-census/new-rom
+# Add --live-apu-reads for the live lane, using a fresh output directory.
+```
+
+Normal execution warns and runs a full unsharded control. `stdout.log`,
+`predictor.csv` and `gate.txt` at the output root are the accepted artifacts.
+They are hard links to the selected run, preserving every byte and avoiding a
+second predictor copy. `verdict.json` records the binary/input identities,
+plan and wall time. Existing output directories are refused. The oracle cache,
+logical ledger and SRAM inputs are read-only; each subprocess has a separate
+save directory. Only `--logical-replay` is launched; there is no GPU mode or
+binary `--help` invocation.
+
+To reproduce the independence test, add `--audit-shards --shards 4`. This
+first runs the unsharded control and its unchanged summary gate, then runs the
+candidate shards in parallel. This is an expensive diagnostic, not an accepted
+speedup. Without `--shards`, the plan uses performance-core count minus two,
+with a minimum of one; if macOS hardware discovery is unavailable it uses one.
+`--frames 4001` provides a short boundary/last-partial-segment audit while
+retaining the full ledger's input lookahead. Do not truncate `iterations.jsonl`
+for a prefix: Main consumes the next iteration's latched input.
+
+Planning balances complete 2,000-iteration units; only the final shard can end
+at a partial unit. `--frames` in the underlying replay is an **absolute exclusive
+end**, not a length. Post-polygon `seeds/resync.txt` points are conditional:
+a clean engine may continue through one without starting a segment. They are
+not forced shard boundaries. Inside each candidate range, the original replay
+continues to own that decision.
+
+The merger orders ranges, rejects overlap/gaps and duplicate records, verifies
+predictor headers and every iteration, and preserves predictor bytes. It removes
+only the empty startup segment block from nonzero-start subprocesses and sums
+process-local category/clean-count footers. It preserves semantic diagnostics,
+including repeated deferred-work reports, and all seed/handler fields. There
+are **no timing/progress stdout lines excluded from equality** in this replay
+mode. Candidate stderr and commands remain separate per-process artifacts.
+`merged/stdout.diff` lists every changed stdout line;
+`merged/predictor-differences.json` counts differing rows and columns;
+`verdict.json` contains the first exact log/CSV/gate differences. Publication of
+merged artifacts requires byte-identical stdout, complete predictor CSV and
+summary gate output, and a passing gate. Any difference retains the control;
+failed candidate runs or malformed output also retain it. A failed control
+never publishes accepted artifacts.
+
+### Independence failure on main fcdef0e9
+
+The full-v2 boundary-2000 probes in `target/sharded-census/{rom,live}/boundary-2000/`
+prove the failure in **both** lanes. At iteration 2,000 the uninterrupted
+control has `preceding_nmi_master=28520`, `cost_entry_handler=29400` and
+`cost_lag_handler=3110`; a `--start 2000` process has zero for all three.
+`cost_elapsed_p2` changes **108874 → 78468**, `cost_refresh_main`
+**2360 → 2320**, and `cost_main_hdma` **1848 → 882**. The log's corresponding
+segment changes `seeded=false` to `seeded=true`. These are semantic changes,
+not timing noise. Even a passing summary gate cannot certify predictor
+identity. The ROM lane already fails without needing a live-SPC explanation.
+
+The cause is in `zelda3-bin/src/logical_replay.rs`: the `continues` branch in
+`run_logical_replay` retains `game` and starts a reporting segment with
+`continued=true`. Nonzero `--start` excludes that branch, calls
+`load_romless_play_state`, and then `seed_game`. That seed installs foreign
+WRAM/VRAM/CGRAM/OAM/SRAM/PPU/DMA, not retained native handler history;
+`ZeldaState` initializes `last_nmi_handler_master_cycles` to `None`, which
+`preceding_nmi_master` reports as zero. Full native checkpoints or a different
+census definition would be needed before claiming independent seed shards.
+No gameplay, timing-price, audio or replay behavior was changed here.
+
+Run the tool's unit suite with:
+
+```sh
+python3 -m unittest discover -s scripts -p test_sharded_census.py -v
+```
+
+A preceding-segment warmup is insufficient too: replaying 2,000–5,999 and
+comparing only 4,000–5,999 still changes two predictor rows in **both** lanes.
+The first is 4,309: entry handler **32492 → 32446**, lag handler
+**3110 → 3064**, and P2 elapsed **404554 → 404462**. These receipts are in
+`{rom,live}/warmup-2000/comparison.json`. Therefore simply discarding the first
+row or adding one segment of warmup does not meet byte identity.
+
+The actual four-shard plan first splits at **368,000**. Both full-route lanes
+first differ on exactly that predictor row: `main_master=198552` is unchanged,
+but `preceding_nmi_master` changes **34480 → 0**, `cost_entry_handler`
+**35520 → 0**, `cost_lag_handler` **3110 → 0**, and `cost_elapsed_p2`
+**246336 → 209626**. Thus the full-plan failure has the same native-history
+cause as the short boundary probe, even with identical main work.
+
+### Full-v2 verification and wall times
+
+Both full controls and both four-shard candidates complete **1,473,123**
+iterations and pass the unchanged census gate (unexplained zero). However,
+ROM changes **2,339 predictor rows** and live changes **2,790**. Their summary
+**text also differs**, despite both gates passing. Neither candidate is
+accepted. `target/sharded-census/{rom,live}/accepted/` contains the unsharded
+log, complete predictor and gate text, with SHA-256 equality to each control
+recorded in `verification.json`.
+
+| Lane | Unsharded wall | Four-shard wall, rejected |
+| --- | ---: | ---: |
+| ROM | 55m 05s | 21m 57s |
+| Live APU reads | 54m 46s | 22m 03s |
+
+These runs overlapped on the loaded machine; this is not an isolated speedup
+benchmark. Control wall times use stdout creation through its final write;
+this avoids counting the supervisor's wait for ROM as extra live runtime.
+Shard times measure launching the parallel group through its last child exit.
+The underlying commands, process times and unrounded values are retained.
+
+There are **58 replaced stdout lines in ROM and 24 in live**. Every original
+and replacement line, with source line numbers, is listed in
+`{rom,live}/verified-merged/stdout.diff`; none is excluded as timing/progress
+noise. The complete changed-line families and causes are:
+
+| Line family | ROM replacements | Live replacements | Why it changes |
+| --- | ---: | ---: | --- |
+| `logical-segment` | 4 | 4 | Forced fresh seeds change `seeded` and retained comparison/audio context. |
+| `logical-segment-pacing` | 47 | 14 | Fresh native handler/SPC/worker state changes holds, equality or masked callback totals. These are simulated work, not host wall time. |
+| `logical-segment-poly` | 1 | 2 | Restarted worker/comparison context changes polygon classification counters. |
+| `logical-segment-song` | 0 | 1 | Restarted audio/poll context changes song classification counters. |
+| `logical-song-poll` | 0 | 2 | Live polling feedback follows the restarted audio state. |
+| `logical-pacing-category` | 5 | 1 | Aggregates of the changed per-iteration pacing data. |
+| `logical replay:` | 1 | 0 | Aggregate clean classification count changes; ROM loses 1,999 clean classifications to the polygon lane. |
+
+Column-level predictor counts are in `verified-merged/predictor-differences.json`;
+`verification.json` retains the first exact CSV/log/gate difference and all
+accepted/control hashes. The default **200,000-frame** state ledger matches
+all records and EOF; the ordinary build is warning-free, all **14 tool tests**
+pass, and `git diff --check` passes. All **3,261** recorded ledger/cache input
+files retain size and nanosecond mtime. Evidence uses about **1.0 GiB**, below
+3 GB. Changes are confined to this tool, its tests and this documentation;
+there are no native/runtime edits, GPU runs, cargo fmt, commits or pushes.
