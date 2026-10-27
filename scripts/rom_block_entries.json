@@ -209,5 +209,20 @@
   {"entry":"06a733","end":"06a78e"},
   {"entry":"059683","end":"059725"},
   {"entry":"0598f5","end":"05995b"},
-  {"entry":"07f4d0","end":"07f4f1"}
+  {"entry":"07f4d0","end":"07f4f1"},
+  {"entry": "0ae5bc", "end": "0ae61c"},
+  {"entry": "0ae61c", "end": "0ae629", "m8": false, "x8": false},
+  {"entry": "0ae629", "end": "0ae7f3", "x8": false},
+  {"entry": "00879c", "end": "00879f"},
+  {"entry": "00879f", "end": "0087c0", "terminal_dispatch": true},
+  {"entry": "02b1ff", "end": "02b208"},
+  {"entry": "02b217", "end": "02b260"},
+  {"entry": "02b260", "end": "02b2d4", "data_bank": 2},
+  {"entry": "00fe5e", "end": "00fe64"},
+  {"entry": "02c2e4", "end": "02c303"},
+  {"entry": "02ae5e", "end": "02ae67"},
+  {"entry": "02ae6d", "end": "02aece"},
+  {"entry": "02ae86", "end": "02aece"},
+  {"entry": "028ca9", "end": "028cac"},
+  {"entry": "02a2a0", "end": "02a2a5"}
 ]

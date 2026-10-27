@@ -1,5 +1,112 @@
 use super::*;
 
+#[test]
+fn load5_conditional_mosaic_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for countdown in [0u8, 1, 2, 255] {
+        let mut n = ZeldaState::new();
+        n.write_wram_byte(0xc007, countdown);
+        n.sync_native_game_state_from_ram();
+        n.set_lag_free(true);
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+        s.cpu.e = false;
+        s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2;
+        s.cpu.db = 2;
+        s.cpu.pc = 0xc2e4;
+        s.cpu.sp = 0x1fa;
+        crate::cycle_ledger::assert_rom_marker_work(0x02c2e4, s,
+            |s| s.cpu.k == 2 && (0xc2e4..0xc303).contains(&s.cpu.pc), || {
+                n.ConditionalMosaicControl();
+            });
+    }
+}
+
+#[test]
+fn load5_mosaic_start_dispatch_and_tails_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for (phase, screen, area, module) in [
+        (0, 1, 1, 9), (0, 0x80, 0, 9), (1, 1, 1, 9),
+        (2, 1, 1, 9), (2, 0, 0, 9), (2, 1, 0, 9),
+        (2, 1, 1, 11),
+    ] {
+        let mut n = ZeldaState::new();
+        n.set_assets(&assets).unwrap();
+        n.write_wram_byte(0x10, module);
+        n.write_wram_byte(0x11, if module == 11 { 0x24 } else { 0x0d });
+        n.write_wram_byte(0xb0, phase);
+        n.write_wram_byte(0x8a, screen);
+        n.write_wram_word(0x40a, area);
+        n.write_wram_word(0xc007, 2);
+        n.sync_native_game_state_from_ram();
+        n.set_lag_free(true);
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+        s.cpu.e = false;
+        s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2;
+        s.cpu.db = 2;
+        s.cpu.pc = 0xae5e;
+        s.cpu.sp = 0x1fa;
+        crate::cycle_ledger::assert_rom_marker_work(0x02ae5e, s,
+            |s| {
+                let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                (0x02ae5e..0x02ae67).contains(&pc)
+                    || (0x02ae6d..0x02aece).contains(&pc)
+                    || (0x028ca9..0x028cac).contains(&pc)
+                    || (0x02a2a0..0x02a2a5).contains(&pc)
+                    || (0x008784..0x00879c).contains(&pc)
+            }, || { n.overworld_start_mosaic_transition(); });
+    }
+}
+
+#[test]
+fn load5_mirror_dispatch_and_selected_tails_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for (phase, screen) in [(0, 0x80), (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (4, 0x40)] {
+        let mut n = ZeldaState::new();
+        n.set_assets(&assets).unwrap();
+        n.write_wram_byte(0x10, 9);
+        n.write_wram_byte(0x11, 0x23);
+        n.write_wram_byte(0xb0, phase);
+        n.write_wram_byte(0x8a, screen);
+        n.write_wram_byte(0x1a, 1);
+        n.write_wram_byte(0x6bb, 1);
+        n.write_wram_word(0xc009, 0xff);
+        n.write_wram_word(0xc007, 65);
+        n.sync_native_game_state_from_ram();
+        n.set_lag_free(true);
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.ram[0x1fa..0x1fd].copy_from_slice(&[0xff, 0x7f, 0]);
+        s.cpu.e = false;
+        s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2;
+        s.cpu.db = 2;
+        s.cpu.pc = 0xb1ff;
+        s.cpu.sp = 0x1f9;
+        crate::cycle_ledger::assert_rom_marker_work(0x02b1ff, s,
+            |s| {
+                let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                (0x02b1ff..0x02b208).contains(&pc)
+                    || (0x02b217..0x02b2d4).contains(&pc)
+                    || (0x00879f..0x0087c0).contains(&pc)
+                    || (0x00fe5e..0x00fe64).contains(&pc)
+            }, || { n.module09_mirror_warp(); });
+    }
+}
+
 // CPU-only ROM execution; count bus/internal transactions, excluding raster
 // refresh and interrupts. The range selects caller self instructions only.
 fn load_price_rom_work(entry: u32, image: &[u8], y: u16, long_return: bool,

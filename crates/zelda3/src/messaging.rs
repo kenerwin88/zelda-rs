@@ -860,6 +860,50 @@ impl<W: NativeDialogueCallerWork> ClockedDialogueCaller<W> {
 #[path = "messaging_clock_tests.rs"]
 mod clock_tests;
 
+#[test]
+fn load5_dungeon_map_room_row_markers_match_rom() {
+    use crate::zelda_rtl::ZeldaState;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for dungeon in 0..13u16 {
+        for flags in [0u16, 15] {
+            for map in [0u16, 0xffff] {
+                for row in 0..5u16 {
+                    let mut n = ZeldaState::new();
+                    n.set_assets(&assets).unwrap();
+                    n.write_wram_word(0x40c, dungeon * 2);
+                    // Start at the actual lowest floor. Dungeon 8 has no
+                    // ground floor: zero would read past its ROM layout.
+                    let basement_count = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON
+                        [usize::from(dungeon)] & 0x0f;
+                    n.write_wram_word(0x20e, 0u16.wrapping_sub(basement_count));
+                    n.write_wram_word(0xf368, map);
+                    for room in 0..320 { n.write_wram_word(0xf000 + room * 2, flags); }
+                    n.sync_native_game_state_from_ram();
+                    n.set_lag_free(true);
+                    let mut s = snes::Snes::new();
+                    s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    s.ram.copy_from_slice(&n.wram_image());
+                    s.ram[..2].copy_from_slice(&row.to_le_bytes());
+                    s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+                    s.cpu.e = false;
+                    s.cpu.unpack_flags(0x30);
+                    s.cpu.k = 0x0a;
+                    s.cpu.db = 0x0a;
+                    s.cpu.pc = 0xe5bc;
+                    s.cpu.x = 0x200;
+                    s.cpu.sp = 0x1fa;
+                    crate::cycle_ledger::assert_rom_marker_work(0x0ae5bc, s,
+                        |s| s.cpu.k == 0x0a && (0xe5bc..0xe7f3).contains(&s.cpu.pc), || {
+                            n.dungeon_map_draw_single_row_of_rooms(i32::from(row), 0x100);
+                        });
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod fast_forward_cycle_tests {
     use super::{
@@ -5403,6 +5447,10 @@ impl ZeldaState {
 
     /// ROM: `DungeonMap_DrawSingleRowOfRooms`
     pub(super) fn dungeon_map_draw_single_row_of_rooms(&mut self, i: i32, mut arg_x: i32) {
+        // $0A:E58B JSR $E5BC. The complete row body has no called children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ae5bc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ae5bc);
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
             .min(DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON.len() - 1);
         let t5 = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung];
@@ -5415,6 +5463,7 @@ impl ZeldaState {
             .has_dungeon_map_mask(dungmask);
 
         for j in 0..5 {
+            b.block(0x0ae5c0);
             let mut r14 = self
                 .game_state
                 .dungeon_map_display
@@ -5423,64 +5472,123 @@ impl ZeldaState {
             let room_index = usize::from(r14) * 25 + (i as usize) * 5 + j as usize;
             let v = curp.get(room_index).copied().unwrap_or(0x0f);
             let yv = if v == 0x0f {
+                b.block(0x0ae5f6);
+                b.block(0x0ae616);
                 0x51
             } else {
+                b.taken(0x0ae5f4);
+                b.block(0x0ae5fd);
+                b.block(0x0ae61c);
                 r14 = (self.saved_room_flags(usize::from(v)) & 0x0f) as u8;
                 let mut k = 0usize;
                 let mut count = 0usize;
                 while k < curp.len() && curp[k] != v {
+                    b.block(0x0ae629);
+                    if curp[k] == 0x0f {
+                        b.block(0x0ae631);
+                    } else {
+                        b.taken(0x0ae62f);
+                        b.block(0x0ae634);
+                        b.block(0x0ae638);
+                    }
                     count += usize::from(curp[k] != 0x0f);
                     k += 1;
                 }
+                b.block(0x0ae629);
+                b.taken(0x0ae62f);
+                b.block(0x0ae634);
+                b.taken(0x0ae636);
+                b.block(0x0ae63d);
                 self.GetOtherDungmapInfo(count)
             };
 
             let base = usize::from(yv) * 4;
             let av0 =
-                self.dungeon_map_room_tile(DUNGEON_MAP_ROOM_QUADRANT_TILES[base], r14, 8, has_map);
+                self.dungeon_map_room_tile(DUNGEON_MAP_ROOM_QUADRANT_TILES[base], r14, 8, has_map, 0);
             let av1 = self.dungeon_map_room_tile(
                 DUNGEON_MAP_ROOM_QUADRANT_TILES[base + 1],
                 r14,
                 4,
                 has_map,
+                1,
             );
             let av2 = self.dungeon_map_room_tile(
                 DUNGEON_MAP_ROOM_QUADRANT_TILES[base + 2],
                 r14,
                 2,
                 has_map,
+                2,
             );
             let av3 = self.dungeon_map_room_tile(
                 DUNGEON_MAP_ROOM_QUADRANT_TILES[base + 3],
                 r14,
                 1,
                 has_map,
+                3,
             );
             let idx = arg_x as usize;
             self.set_messaging_render_buffer_word(idx, av0);
             self.set_messaging_render_buffer_word(idx + 1, av1);
             self.set_messaging_render_buffer_word(idx + 32, av2);
             self.set_messaging_render_buffer_word(idx + 33, av3);
+            b.block(0x0ae7de);
+            if j == 4 {
+                b.taken(0x0ae7ed);
+                b.block(0x0ae7f2);
+            } else {
+                b.block(0x0ae7ef);
+            }
             arg_x += 2;
         }
     }
 
-    fn dungeon_map_room_tile(&self, mut r12: u16, r14: u8, bit: u8, has_map: bool) -> u16 {
+    fn dungeon_map_room_tile(&self, mut r12: u16, r14: u8, bit: u8, has_map: bool, quadrant: u32) -> u16 {
+        // $0A:E651..E7DD repeats the same tile-selection instructions at
+        // $64-byte intervals. Each later header also stores the previous tile.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let pc = 0x0ae651 + quadrant * 0x64;
+        b.block(if quadrant == 0 { pc } else { pc - 3 });
+        if r12 == 0x0b00 { b.taken(pc + 10); }
+        else {
+            b.block(pc + 12);
+            if r14 & bit != 0 { b.taken(pc + 17); }
+        }
         let r12_org = r12;
         if r12 != 0x0b00 && (r14 & bit) == 0 {
+            b.block(pc + 19);
             if (r12 & 0x1000) == 0 {
+                b.block(pc + 26);
                 r12 = 0x0400;
-            } else if has_map {
-                return (r12 & !0x1c00) | 0x0c00;
             } else {
-                r12 = 0;
+                b.taken(pc + 24);
+                b.block(pc + 33);
+                if has_map {
+                    b.block(pc + 47);
+                    return (r12 & !0x1c00) | 0x0c00;
+                } else {
+                    b.taken(pc + 45);
+                    b.block(pc + 59);
+                    b.block(pc + 60);
+                    r12 = 0;
+                }
             }
         } else {
+            b.block(pc + 60);
             r12 = 0;
         }
+        b.block(pc + 62);
+        if has_map { b.taken(pc + 80); }
+        else {
+            b.block(pc + 82);
+            if r14 & bit != 0 { b.taken(pc + 87); }
+        }
         if has_map || (r14 & bit) != 0 {
+            b.block(pc + 94);
+            b.block(pc + 96);
             r12.wrapping_add(r12_org)
         } else {
+            b.block(pc + 89);
+            b.block(pc + 96);
             0x0b00
         }
     }

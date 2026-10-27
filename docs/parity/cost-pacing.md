@@ -12702,3 +12702,48 @@ The full recorded predictor reports **3,838 missing / 0 excess / 0 false-positiv
 The summary's `wram=clean` / `first WRAM divergence None` fields exclude classified lag differences; its final clean-iteration count and required gate expose them. With one continuous segment starting at zero, the gate includes all four. No summary or classifier was widened to pass them.
 
 The fresh **default 200k comparison matches every record and EOF**. No runtime source, pricing marker, default/ROM-timing charge or ledger changed; no fix or new regression test is claimed. Seeded censuses were not rerun because there was no runtime change; their earlier passes are separate from this failing continuous gate. Commands, binary provenance, selected outcomes/predictor rows, pruning hashes and gate logs retain the stopping point. Raw WRAM/VRAM dumps and large raw predictors/outcomes were summarized and deleted. All 1,512 supplied ledger/cache files retain size and mtime; retained evidence is below 3 GB. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit, push or one-off repository script was used.
+
+## Load/transition batch 5
+
+**Verified partial stop on `codex/load-pacing5`, main `628e4cea`.** ROM missing/excess/FP: **3,923 / 0 / 0 → 3,857 / 0 / 0** (66 restored frames). Measured live after: **4,560 / 596 / 133**. Supplied joint main control reused; no full main controls rerun. Evidence: `target/load-pacing5/`.
+
+The inherited tail/continuation audit excludes already priced map/decompression aliases, masked song polling, raster waits, VWF work and protected gameplay owners. A fresh matched-window cohort covers **1,215 missing iterations** in all fifteen requested modules against the retained, hash-verified ROM profile. Ranking uses each iteration's P2 shortfall after ownership review. The admitted group predicts **66 joint flips** (65 independent, overlapping closures) and gains **66 matched-window frames**, with no lost holds or new overcounts. The >=80 joint-prediction aim remains unfinished. Forced-window results are diagnostic; canonical census gains are separate.
+
+**106 blocks / 429 instructions** price four complete self owners, with existing local-helper blocks reused. All **1,510 existing rows** remain unchanged. ROM call sites/table bindings are retained in `source-pricing-audit.json`; four `assert_rom_marker_work` fixtures pass **278 unmodified-ROM cases**. The test-only stepping bound rises from 100k to 1M instructions so complete graphics children can return. Mirror and mosaic prefixes precede suspending loads; return markers follow the actual completed child. The inline mirror reset is not charged as an F427 child. Shared jump helpers retain only their STY/PLY head scopes after pulling their returns.
+
+| Owner | Old scalar clocks | New marker clocks | Predicted closures | Joint gains on executions |
+| --- | ---: | ---: | ---: | ---: |
+| `$0a:e5bc` Dungeon-map room row | 0 | 9,681,760 | 23 | 23 |
+| `$02:b1ff` Mirror dispatcher + selected self tails | 0 | 290,532 | 18 | 18 |
+| `$02:ae5e` Mosaic start + selected self tails | 0 | 96,876 | 17 | 25 |
+| `$02:c2e4` Conditional mosaic | 0 | 47,396 | 6 | 25 |
+| `$00:879c` Long dispatch child head | 0 | 9,724 | 1 | 18 |
+| `$00:8781` Local dispatch child head | 0 | 8,424 | 0 | 25 |
+
+New markers total **10,134,712 clocks**, exactly the signed main-counter increase on every cohort row. The priced self bodies contain no scalar calls: old scalar work is **0**, and no scalar conversion receives credit. Existing reset, palette/filter, graphics and song-child scalars remain disjoint and untouched. Map, mosaic-start and conditional-mosaic marker work equals complete source-exclusive work on every cohort row; the mirror tail-normalized source gap closes exactly. Independent closures overlap, and combined work can cross thresholds no body reaches alone. Per-owner joint gains overlap and must not be summed; they are not isolated marginal reruns. No classifier, fitted price, scene threshold/multiplier/table or protected sprite/player/ancilla/garnish code changed.
+
+Both full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; all holds equal P2. These are periodically seeded logical checks.
+
+| Entry | ROM missing before → after | Live missing after | Excess ROM / live | FP ROM / live |
+| --- | ---: | ---: | ---: | ---: |
+| `07/02` | 221 → 221 | 221 | 0 / 0 | 0 / 0 |
+| `07/07` | 225 → 225 | 225 | 0 / 0 | 0 / 0 |
+| `09/23` | 187 → 169 | 169 | 0 / 0 | 0 / 0 |
+| `07/0E` | 86 → 86 | 86 | 0 / 0 | 0 / 0 |
+| `06/00` | 67 → 67 | 67 | 0 / 0 | 0 / 0 |
+| `09/0D` | 81 → 67 | 67 | 0 / 0 | 0 / 0 |
+| `09/16` | 71 → 71 | 71 | 0 / 0 | 0 / 0 |
+| `0F/01` | 55 → 55 | 55 | 0 / 0 | 0 / 0 |
+| `0B/24` | 50 → 48 | 48 | 0 / 0 | 0 / 0 |
+| `01/00` | 48 → 48 | 48 | 0 / 0 | 0 / 0 |
+| `0E/02` | 40 → 40 | 367 | 0 / 223 | 0 / 96 |
+| `0E/03` | 37 → 14 | 14 | 0 / 0 | 0 / 0 |
+| `0E/05` | 33 → 33 | 33 | 0 / 0 | 0 / 0 |
+| `0B/17` | 31 → 22 | 22 | 0 / 0 | 0 / 0 |
+| `0B/29` | 28 → 28 | 28 | 0 / 0 | 0 / 0 |
+
+Live drift outside the priced bodies remains open: `07/00` excess **106 → 109**, and `0E/02` missing **364 → 367**. No protected gameplay owner or classifier was changed to suppress it.
+
+All **48 crystal/pendant phases** remain within one; stable outcomes match batch 4. The retained **default 200k ledger matches every record and EOF**. Its pruned old path was replaced with the retained local copy, SHA-256 `18b58a3f887457d770918497218eaf7eb39360e1d04ed789c8b04b0ff4d8ba77`, identical to the second retained block-worklist copy. Default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; lib-test builds retain the baseline 24/default and 1/reduced warning groups. Default library: **2,687 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,222 pass / 0 failures / 2 ignored**. Both CPU SNES suites and block/worklist, inverse, routine-coverage, exact regeneration and diff checks pass.
+
+The refreshed targeted worklist retains **1,149 diagnostic missing iterations**; remaining raw deficits still need tail/alias/continuation admission. All **1,512 supplied ledger/cache files** retain size/mtime, with none added. Summarized raw profiles/predictors and duplicate fixture binaries are deleted; evidence is **216.1 MB**, below 3 GB. No GPU execution, --video, cached-av, Snes9x, GPU test, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.

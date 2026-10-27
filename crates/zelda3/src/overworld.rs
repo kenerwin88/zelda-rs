@@ -3140,6 +3140,15 @@ impl ZeldaState {
 
     /// ROM: `MirrorWarp_FinalizeAndLoadDestination`
     pub(super) fn mirror_warp_finalize_and_load_destination(&mut self) {
+        // $02:B214's long table target $B260: inline reset, not a call to F427.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b1ff));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02b260);
+        for i in 0..32 {
+            b.block(0x02b26d);
+            if i != 31 { b.taken(0x02b284); }
+        }
+        b.block(0x02b286);
         self.hdma_retarget_channel7_window();
         self.iris_spotlight_reset_table();
         self.set_countdown_word(0);
@@ -3150,19 +3159,33 @@ impl ZeldaState {
     }
 
     fn complete_mirror_warp_finalize_after_reload(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b1ff));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $02:B297 follows the completed $B293 JSL, including on continuation.
+        b.block(0x02b297);
         self.overworld_set_song_list();
+        b.block(0x02b29b);
         self.set_hdma_enable_mask(0x80);
 
         let screen = self.game_state.world.location.overworld_screen_index() as usize;
         let music = self.overworld_config_table().music(screen);
         self.set_music_control(music & 0x0f);
         self.set_ambient_sound_effect(music >> 4);
+        if self.game_state.world.location.overworld_screen_index() < 0x40 {
+            b.taken(0x02b2b7);
+        } else {
+            b.block(0x02b2b9);
+            if self.game_state.inventory.items.moon_pearl() != 0 {
+                b.taken(0x02b2bd);
+            } else { b.block(0x02b2bf); }
+        }
         if self.game_state.world.location.overworld_screen_index() >= 0x40
             && self.game_state.inventory.items.moon_pearl() == 0
         {
             self.set_music_control(4);
         }
 
+        b.block(0x02b2c4);
         self.save_submodule_for_menu();
         self.set_submodule(0);
         self.set_subsubmodule(0);
@@ -3172,19 +3195,34 @@ impl ZeldaState {
 
     /// ROM: `Module09_MirrorWarp`
     pub(super) fn module09_mirror_warp(&mut self) {
+        // $02:B1FA JSL $B1FF (Module09/$23's $A453 table word). JumpTableLong pulls
+        // its return: only STY/PLY remain in that child; the rest is this frame.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b1ff));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02b1ff);
+        {
+            let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x00879c));
+            b.block(0x00879c);
+        }
+        b.block(0x00879f);
         self.increment_core_update_disable_flag();
         match self.game_state.frame.subsubmodule {
             0 => {
+                b.block(0x02b217);
                 if self.game_state.world.location.overworld_screen_index() >= 0x80 {
+                    b.block(0x02b21d);
                     self.set_submodule(0);
                     self.set_subsubmodule(0);
                     self.set_overworld_map_state(0);
                     return;
                 }
+                b.taken(0x02b21b);
+                b.block(0x02b225);
                 self.set_music_control(8);
                 self.set_flag_overworld_area_changed(8);
                 self.follower_link_state_mut().set_blink_countdown(0x90);
                 self.InitializeMirrorHDMA();
+                b.block(0x02b236);
                 self.save_progress_mut().xor_dark_world_state(0x40);
                 self.set_overworld_peg_puzzle_progress(0);
                 let screen = (self.game_state.world.location.overworld_screen_index() & 0x3f)
@@ -3193,10 +3231,13 @@ impl ZeldaState {
                 self.set_overworld_area_index(screen);
                 self.set_overworld_map_state(0);
                 self.palette_filter_initialize_white_filter();
+                b.block(0x02b25a);
                 self.overworld_load_gfx_and_screen_size();
+                b.block(0x02b25d);
                 self.increment_subsubmodule();
             }
             1 => {
+                b.block(0x00fe5e);
                 self.increment_subsubmodule();
                 self.set_hdma_enable_mask(0xc0);
                 self.mirror_warp_build_waving_hdma_table();
@@ -5207,9 +5248,15 @@ impl ZeldaState {
     }
 
     pub(super) fn ConditionalMosaicControl(&mut self) {
+        // $02:AE5E JSR $C2E4: conditional increment and the shared register tail.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c2e4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02c2e4);
         if self.game_state.display.palette_filter.countdown() & 1 != 0 {
+            b.block(0x02c2eb);
             self.increment_mosaic_level_by(0x10);
-        }
+        } else { b.taken(0x02c2e9); }
+        b.block(0x02c2f6);
         self.set_bg_mode(9);
         self.set_mosaic_copy_from_level_or(7);
     }
@@ -7892,21 +7939,44 @@ impl ZeldaState {
 
     /// ROM: `Overworld_StartMosaicTransition`
     pub(super) fn overworld_start_mosaic_transition(&mut self) {
+        // Module09/$0D table word $02:A427 selects $AE5E. The local jump
+        // helper pulls its return; only its first STY/PLY is a child frame.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02ae5e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02ae5e);
         self.ConditionalMosaicControl();
+        b.block(0x02ae61);
+        {
+            let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        b.block(0x008784);
+        b.block(0x008799);
         match self.game_state.frame.subsubmodule {
             0 => {
+                b.block(0x02ae6d);
                 if self.game_state.world.location.overworld_screen_index() != 0x80 {
+                    b.block(0x02ae73);
                     let music = self
                         .overworld_config_table()
                         .music(self.game_state.world.location.overworld_screen_index() as usize);
                     if !self.zelda_is_playing_music_track(music & 0x0f) {
+                        b.block(0x02ae7e);
                         self.set_music_control(0xf1);
-                    }
-                }
+                    } else { b.taken(0x02ae7c); }
+                } else { b.taken(0x02ae71); }
+                b.block(0x02ae83);
+                // The tail's initial STZ is outside the already priced 8CAC body.
+                b.block(0x028ca9);
                 self.reset_transition_props_and_advance_reset_interface();
             }
-            1 => self.apply_palette_filter_bounce(),
+            1 => {
+                b.block(0x02a2a0);
+                self.apply_palette_filter_bounce();
+                b.block(0x02a2a4);
+            }
             _ => {
+                b.block(0x02ae86);
                 let special_exit = self.game_state.frame.main_module == 0x0b
                     && self.game_state.frame.submodule == 0x24;
                 let restored = special_exit
@@ -7920,6 +7990,7 @@ impl ZeldaState {
                 self.set_screen_brightness(0x80);
                 self.set_subsubmodule(0);
                 if u16::from(self.game_state.world.location.overworld_screen_index()) & 0x3f == 0 {
+                    b.block(0x02ae92);
                     self.decode_animated_sprite_tile_variable(0x1e);
                     if self.rom_startup_timing() && !restored && !returned {
                         self.game_execution_scheduler.schedule_work(
@@ -7928,7 +7999,7 @@ impl ZeldaState {
                         );
                         return;
                     }
-                }
+                } else { b.taken(0x02ae90); }
                 if restored {
                     assert!(self.publish_overworld_special_exit_mosaic_restore_prefix());
                     self.game_execution_scheduler.schedule_work(
@@ -7943,9 +8014,19 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_overworld_start_mosaic_after_animated_sprite_tile(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02ae5e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02ae98);
+        if self.game_state.world.region.overworld_area_index() == 0 {
+            b.taken(0x02ae9b);
+        } else {
+            b.block(0x02ae9d);
+            if self.game_state.frame.main_module == 11 { b.taken(0x02aea1); }
+        }
         if self.game_state.world.region.overworld_area_index() != 0
             && self.game_state.frame.main_module != 11
         {
+            b.block(0x02aea3);
             self.set_main_screen_layers(0x16);
             self.set_sub_screen_layers(1);
             self.set_color_window_selection(0x82);
@@ -7953,11 +8034,17 @@ impl ZeldaState {
             self.increment_submodule();
             return;
         }
-        if self.game_state.frame.submodule == 36
-            && self.publish_overworld_special_exit_mosaic_restore_prefix()
-        {
-            self.decode_animated_sprite_tile_variable(0x1e);
-        }
+        b.block(0x02aeb6);
+        if self.game_state.frame.submodule == 36 {
+            b.block(0x02aebc);
+            let decode_again = self.publish_overworld_special_exit_mosaic_restore_prefix();
+            b.block(0x02aebf);
+            if decode_again {
+                b.block(0x02aec5);
+                self.decode_animated_sprite_tile_variable(0x1e);
+            } else { b.taken(0x02aec3); }
+        } else { b.taken(0x02aeba); }
+        b.block(0x02aecb);
         self.increment_submodule();
     }
 

@@ -532,7 +532,9 @@ pub(crate) fn assert_rom_marker_work(
         CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
     let mut source = RomCpuTimingProbe::new(machine, clock, SourcePpuReadState::snes9x_reset()).unwrap();
     let mut expected = 0;
-    for _ in 0..100000 {
+    // Complete loader fixtures also execute their unmodified decompression
+    // children, even when the ownership predicate excludes those children.
+    for _ in 0..1_000_000 {
         let owned = owns(source.snes());
         let step = source.step().unwrap();
         if owned { expected += step.transactions.iter()
