@@ -1,50 +1,11 @@
 //! Sprite coordinate preparation, OAM correction, multi-draw, single-draw, and shadows.
 
+use crate::zelda_rtl::sprite::{
+    SpriteShadowEntry, SpriteSingleLargeEntry, SpriteSingleSmallEntry,
+};
 use super::*;
 
 impl ZeldaState {
-    pub(in crate::zelda_rtl) fn sprite_draw_single_small_long_marked(&mut self, k: usize) {
-        // $06:DBF8..DBFF: bank wrapper, excluding DCEF's body.
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dbf8));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
-        b.block(0x06dbf8);
-        self.sprite_draw_single_small_marked(k);
-        b.block(0x06dbfe);
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_draw_single_small_marked(&mut self, k: usize) {
-        // $06:DCEF..DD37. Position-prefix resumes retain their raw entry;
-        // only a complete call receives this price. DC66's shadow is a child.
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dcef));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
-        b.block(0x06dcef);
-        let Some(continuation) = self.sprite_draw_single_small_position_prefix(k) else { return; };
-        b.block(0x06dcf2);
-        if continuation.visible {
-            b.block(0x06dd0f);
-            let ty = self.sprite_slot_view(k).sprite_type();
-            if 4 + usize::from(ty) > 255 { b.crossing(0x06dd17); }
-            let base = SINGLE_LARGE_SPRITE_CHAR_BASE_BY_TYPE.get(usize::from(ty)).copied().unwrap_or(0);
-            let index = base.wrapping_add(self.sprite_slot_view(k).graphics());
-            if 9 + usize::from(index) > 255 { b.crossing(0x06dd1f); }
-        } else { b.taken(0x06dd0d); }
-        b.block(0x06dd2b);
-        if self.sprite_slot_view(k).flags3() & 0x10 == 0 {
-            b.taken(0x06dd30); b.block(0x06dd37);
-        } else { b.block(0x06dd32); }
-        self.sprite_draw_single_small_after_position(k, continuation);
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_draw_shadow_long_marked(&mut self, k: usize, info: &mut PrepOamCoordsRet, size: u8) {
-        // $06:DC54..DC5B is a far wrapper; DC64/DC66 remain unchanged.
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dc54));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
-        b.block(0x06dc54);
-        self.sprite_draw_shadow_custom(k, info, size);
-        b.block(0x06dc5a);
-    }
-
-
 
     // void Oam_ResetRegionBases() {  // 8683d3
     //   memcpy(oam_region_base, kOam_ResetRegionBases, 12);
@@ -869,19 +830,28 @@ impl ZeldaState {
     //     return;
     //   Sprite_PrepAndDrawSingleLargeNoPrep(k, &info);
     // }
-    pub(in crate::zelda_rtl) fn sprite_draw_single_large(&mut self, k: usize) {
-        let mut work = self.begin_single_large_draw(k);
-        while self.retire_single_large_draw_instruction(&mut work).is_some() {}
-    }
+    pub(in crate::zelda_rtl) fn sprite_draw_single_large(
+        &mut self,
+        k: usize,
+        entry: SpriteSingleLargeEntry,
+    ) {
+        match entry {
+            SpriteSingleLargeEntry::Unpriced => {
+                let mut work = self.begin_single_large_draw(k);
+                while self.retire_single_large_draw_instruction(&mut work).is_some() {}
 
-    pub(in crate::zelda_rtl) fn sprite_draw_single_large_long(&mut self, k: usize) {
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_dbf0));
-        let blocks = crate::cycle_ledger::blocks(self.lag_free);
-        // $06:DBF0..DBF7: bank wrapper only. DC10/DC13, coordinate
-        // prep and the shadow tail already retire their own instructions.
-        blocks.block(0x06dbf0);
-        self.sprite_draw_single_large(k);
-        blocks.block(0x06dbf6);
+            }
+            SpriteSingleLargeEntry::Rom06DBF0 => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_dbf0));
+                let blocks = crate::cycle_ledger::blocks(self.lag_free);
+                // $06:DBF0..DBF7: bank wrapper only. DC10/DC13, coordinate
+                // prep and the shadow tail already retire their own instructions.
+                blocks.block(0x06dbf0);
+                self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
+                blocks.block(0x06dbf6);
+
+            }
+        }
     }
 
     pub(in crate::zelda_rtl) fn begin_single_large_draw(
@@ -975,22 +945,7 @@ impl ZeldaState {
 
     /// The default-offset far entry at $06:DC54, including its bank wrapper.
     /// Same-bank and custom-offset callers have different entry work.
-    pub(in crate::zelda_rtl) fn sprite_draw_shadow_default_long(
-        &mut self,
-        k: usize,
-        info: &mut PrepOamCoordsRet,
-    ) {
-        let _wrapper = crate::cycle_ledger::routine(0x06_dc54);
-        crate::cycle_ledger::charge(118); // PHB : PHK : PLB : JSR.
-        {
-            let _body = crate::cycle_ledger::routine(0x06_dc64);
-            crate::cycle_ledger::charge(16); // LDA #10.
-            if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, 10) {
-                self.finish_shadow_body(tail);
-            }
-        }
-        crate::cycle_ledger::charge(72); // PLB : RTL after the body returns.
-    }
+
 
     // The C helper merges far and same-bank entries. Price their shared
     // $06:DC66 body here; bank-wrapper work belongs to explicit caller entries.
@@ -999,10 +954,39 @@ impl ZeldaState {
         k: usize,
         info: &mut PrepOamCoordsRet,
         a: u8,
+        entry: SpriteShadowEntry,
     ) {
-        let _scope = crate::cycle_ledger::routine(0x06_dc66);
-        if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, a) {
-            self.finish_shadow_body(tail);
+        match entry {
+            SpriteShadowEntry::Unpriced => {
+                let _scope = crate::cycle_ledger::routine(0x06_dc66);
+                if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, a) {
+                    self.finish_shadow_body(tail);
+                }
+
+            }
+            SpriteShadowEntry::Rom06DC54 => {
+                // $06:DC54..DC5B is a far wrapper; DC64/DC66 remain unchanged.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dc54));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x06dc54);
+                self.sprite_draw_shadow_custom(k, info, a, SpriteShadowEntry::Unpriced);
+                b.block(0x06dc5a);
+
+            }
+            // Default-offset entry executes LDA #10 in its DC64 child scope.
+            SpriteShadowEntry::Rom06DC54Default => {
+                let _wrapper = crate::cycle_ledger::routine(0x06_dc54);
+                crate::cycle_ledger::charge(118); // PHB : PHK : PLB : JSR.
+                {
+                    let _body = crate::cycle_ledger::routine(0x06_dc64);
+                    crate::cycle_ledger::charge(16); // LDA #10.
+                    if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, 10) {
+                        self.finish_shadow_body(tail);
+                    }
+                }
+                crate::cycle_ledger::charge(72); // PLB : RTL after the body returns.
+
+            }
         }
     }
 
@@ -1102,11 +1086,61 @@ impl ZeldaState {
     // void SpriteDraw_SingleSmall(int k) {  // 86dcef
     //   ...see sprite.c...
     // }
-    pub(in crate::zelda_rtl) fn sprite_draw_single_small(&mut self, k: usize) {
-        let Some(continuation) = self.sprite_draw_single_small_position_prefix(k) else {
-            return;
-        };
-        self.sprite_draw_single_small_after_position(k, continuation);
+    pub(in crate::zelda_rtl) fn sprite_draw_single_small(
+        &mut self,
+        k: usize,
+        entry: SpriteSingleSmallEntry,
+    ) {
+        match entry {
+            SpriteSingleSmallEntry::Unpriced => {
+                let Some(continuation) = self.sprite_draw_single_small_position_prefix(k) else {
+                    return;
+                };
+                self.sprite_draw_single_small_after_position(k, continuation);
+
+            }
+            SpriteSingleSmallEntry::Rom06DCEF => {
+                // $06:DCEF..DD37. Position-prefix resumes retain their raw entry;
+                // only a complete call receives this price. DC66's shadow is a child.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dcef));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x06dcef);
+                let Some(continuation) = self.sprite_draw_single_small_position_prefix(k) else { return; };
+                b.block(0x06dcf2);
+                if continuation.visible {
+                    b.block(0x06dd0f);
+                    let ty = self.sprite_slot_view(k).sprite_type();
+                    if 4 + usize::from(ty) > 255 {
+                        b.crossing(0x06dd17);
+                    }
+                    let base = SINGLE_LARGE_SPRITE_CHAR_BASE_BY_TYPE.get(usize::from(ty)).copied().unwrap_or(0);
+                    let index = base.wrapping_add(self.sprite_slot_view(k).graphics());
+                    if 9 + usize::from(index) > 255 {
+                        b.crossing(0x06dd1f);
+                    }
+                } else {
+                    b.taken(0x06dd0d);
+                }
+                b.block(0x06dd2b);
+                if self.sprite_slot_view(k).flags3() & 0x10 == 0 {
+                    b.taken(0x06dd30);
+                    b.block(0x06dd37);
+                } else {
+                    b.block(0x06dd32);
+                }
+                self.sprite_draw_single_small_after_position(k, continuation);
+
+            }
+            SpriteSingleSmallEntry::Rom06DBF8 => {
+                // $06:DBF8..DBFF: bank wrapper, excluding DCEF's body.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dbf8));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x06dbf8);
+                self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Rom06DCEF);
+                b.block(0x06dbfe);
+
+            }
+        }
     }
 
     pub(in crate::zelda_rtl) fn sprite_draw_single_small_position_prefix(
@@ -1156,7 +1190,7 @@ impl ZeldaState {
         }
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
             let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
-            self.sprite_draw_shadow_custom(k, &mut info, 2);
+            self.sprite_draw_shadow_custom(k, &mut info, 2, SpriteShadowEntry::Unpriced);
         }
     }
 
@@ -1201,7 +1235,7 @@ impl ZeldaState {
             blocks.taken(0x06dc51);
             blocks.block(0x06dc64);
             let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
-            self.sprite_draw_shadow_custom(k, &mut info, 10);
+            self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
         } else { blocks.block(0x06dc53); }
     }
 

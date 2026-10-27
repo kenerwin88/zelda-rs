@@ -1,5 +1,6 @@
 //! Somaria, Byrna, medallion spells, powder, and lamp effects.
 
+use crate::zelda_rtl::sprite::SpriteHitBoxEntry;
 use super::*;
 const CANE_OF_SOMARIA_PLACEMENT_Y_OFFSETS: [i8; 4] = [-8, 31, 17, 17];
 const CANE_OF_SOMARIA_PLACEMENT_X_OFFSETS: [i8; 4] = [8, 8, -8, 23];
@@ -1851,7 +1852,7 @@ impl ZeldaState {
             }
 
             let mut hb = self.ancilla_setup_basic_hit_box(k);
-            self.sprite_setup_hit_box(j, &mut hb);
+            self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Unpriced);
             if !self.check_if_hit_boxes_overlap(&hb) {
                 continue;
             }

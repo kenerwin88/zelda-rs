@@ -1,5 +1,6 @@
 //! Bomb behaviour, blast walls, explosions, and their drawing.
 
+use crate::zelda_rtl::sprite::SpriteHitBoxEntry;
 use super::*;
 use crate::types::{abs16, sign8, Point16U, ProjectSpeedRet, SpriteHitBox};
 
@@ -94,7 +95,7 @@ impl ZeldaState {
                 r6_spr_xsize: 0,
                 r7_spr_ysize: 0,
             };
-            self.sprite_setup_hit_box(j, &mut hb);
+            self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Unpriced);
             if !self.check_if_hit_boxes_overlap(&hb) {
                 continue;
             }

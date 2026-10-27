@@ -1,3 +1,4 @@
+use crate::zelda_rtl::sprite::SpriteMoveEntry;
 use super::*;
 
 #[test]
@@ -125,7 +126,7 @@ fn buzzblob_x_subpixel_resume_does_not_repeat_its_direction_prefix() {
             panic!("Buzzblob did not preserve the pending X coordinate");
         };
         staged.complete_sprite_move_x_after_subpixel(11, low, high);
-        staged.sprite_move_y(11);
+        staged.sprite_move_y(11, SpriteMoveEntry::Unpriced);
         staged.buzzblob_after_movement(11);
         assert_eq!(staged.game_state, atomic.game_state);
         assert_eq!(*staged.wram_image(), *atomic.wram_image());

@@ -1,3 +1,8 @@
+use crate::zelda_rtl::sprite::{
+    SpriteDamageBothEntry, SpriteDamageFromEntry, SpriteDamageToEntry, SpriteHitBox00Entry,
+    SpriteHitBoxEntry, SpriteInactiveEntry, SpriteMoveEntry, SpriteMoveZEntry, SpritePausedEntry,
+    SpriteShadowEntry, SpriteSingleLargeEntry, SpriteSingleSmallEntry, SpriteTileCollisionEntry,
+};
 use super::*;
 
 #[test]
@@ -66,15 +71,15 @@ fn damage_gate_prefix_prices_match_executed_rom_paths() {
                                     assert!(matches!(source.snes().cpu.pc, 0x8000 | 0xf15c | 0xf2d3));
                                     let actual = crate::cycle_ledger::measure_routine_self_work(
                                         0x06_0000 | u32::from(entry), || {
-                                            if entry == 0xf145 { native.sprite_check_damage_to_link(slot); }
-                                            else { native.sprite_check_damage_from_link(slot); }
+                                            if entry == 0xf145 { native.sprite_check_damage_to_link(slot, SpriteDamageToEntry::Unpriced); }
+                                            else { native.sprite_check_damage_from_link(slot, SpriteDamageFromEntry::Unpriced); }
                                         });
                                     assert_eq!(actual, owned,
                                         "entry={entry:x} slot={slot} frame={frame} hit={hit} disabled={disabled} floor={floor} offset={offset} x={x}");
                                     native.set_lag_free(false);
                                     let start = crate::cycle_ledger::master();
-                                    if entry == 0xf145 { native.sprite_check_damage_to_link(slot); }
-                                    else { native.sprite_check_damage_from_link(slot); }
+                                    if entry == 0xf145 { native.sprite_check_damage_to_link(slot, SpriteDamageToEntry::Unpriced); }
+                                    else { native.sprite_check_damage_from_link(slot, SpriteDamageFromEntry::Unpriced); }
                                     assert_eq!(crate::cycle_ledger::master(), start);
                                     cases += 1;
                                 }
@@ -606,7 +611,7 @@ fn hitbox_and_attribute_prices_match_executed_rom_paths() {
                             assert_eq!(source.snes().cpu.pc, 0x8000);
                             let before = crate::cycle_ledger::master();
                             if entry == 0x06f7ef {
-                                native.sprite_setup_hit_box(slot, &mut empty_sprite_hit_box());
+                                native.sprite_setup_hit_box(slot, &mut empty_sprite_hit_box(), SpriteHitBoxEntry::Unpriced);
                             } else {
                                 native.sprite_get_tile_attribute(slot, 0, 0);
                             }
@@ -931,7 +936,7 @@ fn shadow_work_and_split_publication_match_rom_branches() {
                         let mut info = PrepOamCoordsRet { x: 0x123, y: 0, r4: 0, flags: 0xb7 };
                         let before = crate::cycle_ledger::master();
                         if far_entry {
-                            native.sprite_draw_shadow_default_long(slot, &mut info);
+                            native.sprite_draw_shadow_custom(slot, &mut info, 10, SpriteShadowEntry::Rom06DC54Default);
                         } else {
                             let tail = native.sprite_draw_shadow_custom_before_extended(slot, &mut info, offset);
                             assert_eq!(tail.is_some(), boundary.is_some(), "case {cases}");
@@ -1291,7 +1296,7 @@ fn sprite_move_xyz_updates_z_then_x_then_y_subpixels() {
     s.sprite_slot_view_mut(k).set_y_velocity(0xfe);
     s.sprite_slot_view_mut(k).set_z_velocity(0x02);
 
-    s.sprite_move_xyz(k);
+    s.sprite_move_xyz(k, SpriteMoveEntry::Unpriced);
 
     assert_eq!(s.sprite_get_x(k), 0x0101);
     assert_eq!(s.sprite_slot_view(k).x_subpixel(), 0x10);
@@ -1606,18 +1611,18 @@ fn sprite_setup_hit_box00_uses_current_sprite_link_bounds_and_z() {
     s.follower_link_state_mut().set_x(0x0100);
     s.follower_link_state_mut().set_y(0x0200);
 
-    assert!(s.sprite_setup_hit_box00(k));
+    assert!(s.sprite_setup_hit_box00(k, SpriteHitBox00Entry::Unpriced));
 
     s.follower_link_state_mut().set_x(0x010c);
-    assert!(!s.sprite_setup_hit_box00(k));
+    assert!(!s.sprite_setup_hit_box00(k, SpriteHitBox00Entry::Unpriced));
 
     s.follower_link_state_mut().set_x(0x0100);
     s.follower_link_state_mut().set_y(0x0208);
-    assert!(!s.sprite_setup_hit_box00(k));
+    assert!(!s.sprite_setup_hit_box00(k, SpriteHitBox00Entry::Unpriced));
 
     s.follower_link_state_mut().set_y(0x01f9);
     s.sprite_slot_view_mut(k).set_z(7);
-    assert!(s.sprite_setup_hit_box00(k));
+    assert!(s.sprite_setup_hit_box00(k, SpriteHitBox00Entry::Unpriced));
 }
 
 #[test]
@@ -2228,25 +2233,25 @@ fn sprite_return_if_paused_matches_c_boolean_gates() {
 
     let mut active = fresh_state();
     active.sprite_slot_view_mut(k).set_pause(0);
-    assert!(!active.sprite_return_if_paused(k));
+    assert!(!active.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3));
 
     let mut global_pause = fresh_state();
     global_pause.set_modal_pause_flag(1);
-    assert!(global_pause.sprite_return_if_paused(k));
+    assert!(global_pause.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3));
 
     let mut submodule = fresh_state();
     submodule.set_submodule(2);
-    assert!(submodule.sprite_return_if_paused(k));
+    assert!(submodule.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3));
 
     let mut sprite_pause = fresh_state();
     sprite_pause.sprite_slot_view_mut(k).set_pause(1);
     sprite_pause.sprite_slot_view_mut(k).set_deflection_bits(0);
-    assert!(sprite_pause.sprite_return_if_paused(k));
+    assert!(sprite_pause.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3));
 
     sprite_pause
         .sprite_slot_view_mut(k)
         .set_deflection_bits(0x80);
-    assert!(!sprite_pause.sprite_return_if_paused(k));
+    assert!(!sprite_pause.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3));
 }
 
 #[test]
@@ -2257,20 +2262,20 @@ fn raw_inactive_cost_is_lagless_only_and_priced_entries_are_not_doubled() {
     state.sprite_slot_view_mut(k).set_pause(0);
     state.set_submodule(0);
     let start = crate::cycle_ledger::master();
-    assert!(!state.sprite_return_if_inactive(k));
+    assert!(!state.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC));
     assert_eq!(crate::cycle_ledger::master() - start, 0);
     state.set_lag_free(true);
-    for method in [ZeldaState::sprite_return_if_inactive,
-        ZeldaState::sprite_return_if_inactive_bank5, ZeldaState::sprite_return_if_inactive_bank1a] {
+    for entry in [SpriteInactiveEntry::Rom06D9EC,
+        SpriteInactiveEntry::Rom05F94E, SpriteInactiveEntry::Rom1AF954] {
         let start = crate::cycle_ledger::master();
-        assert!(!method(&state, k));
+        assert!(!state.sprite_return_if_inactive(k, entry));
         // $06:D9EC..DA08, state 9, no modal/submodule/pause: 296.
         assert_eq!(crate::cycle_ledger::master() - start, 64 + 48 + 40 + 48 + 48 + 6 + 42);
     }
     state.set_submodule(2);
-    for method in [ZeldaState::sprite_return_if_paused, ZeldaState::sprite_return_if_paused_bank5] {
+    for entry in [SpritePausedEntry::Rom06D9F3, SpritePausedEntry::Rom05F955] {
         let start = crate::cycle_ledger::master();
-        assert!(method(&state, k));
+        assert!(state.sprite_return_if_paused(k, entry));
         assert_eq!(crate::cycle_ledger::master() - start, 48 + 40 + 6 + 28 + 28 + 42);
     }
 }
@@ -2911,7 +2916,7 @@ fn marker31_large_draw_bank_wrapper_matches_rom() {
             let Some(machine) = marker31_machine(&native, 0x06dbf0, k) else { return };
             crate::cycle_ledger::assert_rom_marker_work(0x06dbf0, machine,
                 |s| s.cpu.k == 6 && (0xdbf0..0xdbf8).contains(&s.cpu.pc), || {
-                    native.sprite_draw_single_large_long(k);
+                    native.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
                 });
         }
     }
@@ -2926,7 +2931,7 @@ fn marker31_damage_bank_wrapper_matches_rom() {
         let Some(machine) = marker31_machine(&native, 0x06f2aa, k) else { return };
         crate::cycle_ledger::assert_rom_marker_work(0x06f2aa, machine,
             |s| s.cpu.k == 6 && (0xf2aa..0xf2b4).contains(&s.cpu.pc), || {
-                assert_eq!(native.sprite_check_damage_from_link_long(k), 0);
+                assert_eq!(native.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA), 0);
             });
     }
 }
@@ -2940,7 +2945,7 @@ fn marker31_tile_collision_bank_wrapper_matches_rom() {
         let Some(machine) = marker31_machine(&native, 0x06e496, k) else { return };
         crate::cycle_ledger::assert_rom_marker_work(0x06e496, machine,
             |s| s.cpu.k == 6 && (0xe496..0xe4a1).contains(&s.cpu.pc), || {
-                native.sprite_check_tile_collision_long(k);
+                native.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
             });
     }
 }
@@ -2972,12 +2977,12 @@ fn marker31_movement(entry: u32) {
                     }
                 }, || {
                     match entry {
-                        0x06e92c => native.sprite_move_xy_marked(k, 0x06e93e),
-                        0x06e932 => native.sprite_move_x_marked(k, 0x06e93e),
-                        0x06e93e => native.sprite_move_y_marked(k, 0x06e93e),
-                        0x05f9ed => native.sprite_move_xy_marked(k, 0x05fa00),
-                        0x05f9f4 => native.sprite_move_x_marked(k, 0x05fa00),
-                        0x05fa00 => native.sprite_move_y_marked(k, 0x05fa00),
+                        0x06e92c => native.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E),
+                        0x06e932 => native.sprite_move_x(k, SpriteMoveEntry::Rom06E93E),
+                        0x06e93e => native.sprite_move_y(k, SpriteMoveEntry::Rom06E93E),
+                        0x05f9ed => native.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00),
+                        0x05f9f4 => native.sprite_move_x(k, SpriteMoveEntry::Rom05FA00),
+                        0x05fa00 => native.sprite_move_y(k, SpriteMoveEntry::Rom05FA00),
                         _ => unreachable!(),
                     }
                 });
@@ -3080,7 +3085,7 @@ fn marker32_z_move(entry: u32) {
             crate::cycle_ledger::assert_rom_marker_work(entry, machine,
                 |s| (u32::from(s.cpu.k) << 16 | u32::from(s.cpu.pc)) >= entry
                     && (u32::from(s.cpu.k) << 16 | u32::from(s.cpu.pc)) < entry + 34, || {
-                        native.sprite_move_z_marked(k, entry);
+                        native.sprite_move_z(k, match entry { 0x06e96c => SpriteMoveZEntry::Rom06E96C, 0x1eff62 => SpriteMoveZEntry::Rom1EFF62, 0x1de98b => SpriteMoveZEntry::Rom1DE98B, _ => unreachable!() });
                     });
         }
     }
@@ -3097,7 +3102,7 @@ fn marker32_xy_wrapper_bank1e_matches_rom() {
         let Some(machine) = marker31_machine(&native, 0x1eff21, k) else { return };
         crate::cycle_ledger::assert_rom_marker_work(0x1eff21, machine,
             |s| s.cpu.k == 0x1e && (0xff21..0xff28).contains(&s.cpu.pc), || {
-                native.sprite_move_xy_bank(k, 0x1eff34);
+                native.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
             });
     }
 }
@@ -3112,7 +3117,7 @@ fn marker32_point_hitbox_matches_rom() {
             let Some(machine) = marker31_machine(&native, 0x06f1f6, 0) else { return };
             crate::cycle_ledger::assert_rom_marker_work(0x06f1f6, machine,
                 |s| s.cpu.k == 6 && (0xf1f6..0xf228).contains(&s.cpu.pc), || {
-                    native.sprite_setup_hit_box00_marked(0);
+                    native.sprite_setup_hit_box00(0, SpriteHitBox00Entry::Rom06F1F6);
                 });
         }
     }
@@ -3137,7 +3142,7 @@ fn marker32_collision_bank1e_wrapper_matches_rom() {
     let Some(machine) = marker31_machine(&native, 0x1e8b2e, 0) else { return };
     crate::cycle_ledger::assert_rom_marker_work(0x1e8b2e, machine,
         |s| s.cpu.k == 0x1e && (0x8b2e..0x8b33).contains(&s.cpu.pc), || {
-            native.sprite_check_tile_collision_bank1e_marked(0);
+            native.sprite_check_tile_collision(0, SpriteTileCollisionEntry::Rom1E8B2E);
         });
 }
 
@@ -3249,7 +3254,7 @@ fn marker32_small_draw_matches_rom() {
             let Some(machine) = marker31_machine(&native, 0x06dcef, 0) else { return };
             crate::cycle_ledger::assert_rom_marker_work(0x06dcef, machine,
                 |s| s.cpu.k == 6 && (0xdcef..0xdd38).contains(&s.cpu.pc), || {
-                    native.sprite_draw_single_small_marked(0);
+                    native.sprite_draw_single_small(0, SpriteSingleSmallEntry::Rom06DCEF);
                 });
         }
     }
@@ -3262,7 +3267,7 @@ fn marker32_small_draw_wrapper_matches_rom() {
     let Some(machine) = marker31_machine(&native, 0x06dbf8, 0) else { return };
     crate::cycle_ledger::assert_rom_marker_work(0x06dbf8, machine,
         |s| s.cpu.k == 6 && (0xdbf8..0xdc00).contains(&s.cpu.pc), || {
-            native.sprite_draw_single_small_long_marked(0);
+            native.sprite_draw_single_small(0, SpriteSingleSmallEntry::Rom06DBF8);
         });
 }
 
@@ -3290,7 +3295,7 @@ fn marker32_shadow_wrapper_matches_rom() {
     let mut info = PrepOamCoordsRet { x: 0x40, y: 0x40, r4: 0, flags: 0 };
     crate::cycle_ledger::assert_rom_marker_work(0x06dc54, machine,
         |s| s.cpu.k == 6 && (0xdc54..0xdc5c).contains(&s.cpu.pc), || {
-            native.sprite_draw_shadow_long_marked(0, &mut info, 10);
+            native.sprite_draw_shadow_custom(0, &mut info, 10, SpriteShadowEntry::Rom06DC54);
         });
 }
 
@@ -3301,7 +3306,7 @@ fn marker32_x_wrapper_bank1e_matches_rom() {
         let Some(machine) = marker31_machine(&native, 0x1eff28, k) else { return };
         crate::cycle_ledger::assert_rom_marker_work(0x1eff28, machine,
             |s| s.cpu.k == 0x1e && (0xff28..0xff34).contains(&s.cpu.pc), || {
-                native.sprite_move_x_bank(k, 0x1eff34);
+                native.sprite_move_x(k, SpriteMoveEntry::Rom1EFF34);
             });
     }
 }
@@ -3345,7 +3350,7 @@ fn marker38_damage_both(entry: u32) {
             |s| {
                 let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
                 (entry..end).contains(&pc)
-            }, || { native.sprite_check_damage_both_marked(k, entry); });
+            }, || { native.sprite_check_damage_to_and_from_link(k, match entry { 0x05ab93 => SpriteDamageBothEntry::Rom05AB93, 0x06d88b => SpriteDamageBothEntry::Rom06D88B, 0x1dc211 => SpriteDamageBothEntry::Rom1DC211, 0x1ec267 => SpriteDamageBothEntry::Rom1EC267, _ => unreachable!() }); });
     }
 }
 

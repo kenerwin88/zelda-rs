@@ -1,5 +1,6 @@
 //! Active-sprite dispatch and shared shadow, projectile, and dust effects.
 
+use crate::zelda_rtl::sprite::SpriteInactiveEntry;
 use super::*;
 use crate::types::sign8;
 
@@ -374,7 +375,7 @@ impl ZeldaState {
     // void Sprite_DustCloud(int k) {  // 85f2b2
     pub(super) fn sprite_dust_cloud(&mut self, k: usize) {
         self.dust_cloud_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         if self.sprite_slot_view(k).delay_main() != 0 {

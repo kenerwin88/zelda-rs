@@ -1,5 +1,9 @@
 //! Sprite inactivity, damage, death, drops, carrying, stunning, and absorption.
 
+use crate::zelda_rtl::sprite::{
+    SpriteDamageFromEntry, SpriteMoveEntry, SpriteMoveZEntry, SpritePausedEntry, SpriteRecoilEntry,
+    SpriteShadowEntry, SpriteSingleLargeEntry, SpriteSingleSmallEntry, SpriteTileCollisionEntry,
+};
 use super::*;
 
 impl ZeldaState {
@@ -232,26 +236,6 @@ impl ZeldaState {
     //           || !(sprite_defl_bits[k] & 0x80) && sprite_pause[k]);
     // }
     // Note: in C this returns true when the caller should bail. Same here.
-    pub(in crate::zelda_rtl) fn sprite_return_if_inactive(&self, k: usize) -> bool {
-        if self.lag_free {
-            // $06:D9EC..DA08, the unpriced raw-call entry. The already
-            // priced bank-5/1A entries bypass this charge below.
-            return self.sprite_return_if_inactive_with_cost(k, 0x06_d9ec);
-        }
-        self.sprite_inactive_predicate(k)
-    }
-
-    fn sprite_inactive_predicate(&self, k: usize) -> bool {
-        if self.sprite_slot_view(k).state() != 9 {
-            return true;
-        }
-        if self.game_state.frame.modal_pause_flag != 0 || self.game_state.frame.submodule != 0 {
-            return true;
-        }
-        (self.sprite_slot_view(k).deflection_bits() & 0x80) == 0
-            && self.sprite_slot_view(k).pause() != 0
-    }
-
     /// `Sprite_ReturnIfInactive_` $05:F94E, the bank-5 double-return wrapper
     /// (cycle ledger only; the result is `sprite_return_if_inactive`'s).
     /// $05:F94E LDA $DD0,x : CMP #$09 : BNE (64; a non-active state takes it
@@ -265,17 +249,27 @@ impl ZeldaState {
     /// RTS (70) are measured in the caller's frame and charged there, as
     /// with the coordinate-prep wrappers (host 2297: wrapper self 186 in a
     /// dialogue submodule, the caller +70).
-    pub(in crate::zelda_rtl) fn sprite_return_if_inactive_bank5(&self, k: usize) -> bool {
-        self.sprite_return_if_inactive_with_cost(k, 0x05_f94e)
-    }
+
 
     /// $1A:F954..F970 has the same branch costs and double-return ownership
     /// as the bank-5 wrapper above.
-    pub(in crate::zelda_rtl) fn sprite_return_if_inactive_bank1a(&self, k: usize) -> bool {
-        self.sprite_return_if_inactive_with_cost(k, 0x1a_f954)
-    }
-
-    fn sprite_return_if_inactive_with_cost(&self, k: usize, address: u32) -> bool {
+    pub(in crate::zelda_rtl) fn sprite_return_if_inactive(
+        &self,
+        k: usize,
+        entry: SpriteInactiveEntry,
+    ) -> bool {
+        if entry == SpriteInactiveEntry::Unpriced
+            || (entry == SpriteInactiveEntry::Rom06D9EC && !self.lag_free) {
+            return self.sprite_inactive_predicate(k);
+        }
+        // Bank 05/1A double-return entries close their scope after the first
+        // PLA; the second PLA/RTS remains charged to the caller.
+        let address = match entry {
+            SpriteInactiveEntry::Rom06D9EC => 0x06d9ec,
+            SpriteInactiveEntry::Rom05F94E => 0x05f94e,
+            SpriteInactiveEntry::Rom1AF954 => 0x1af954,
+            SpriteInactiveEntry::Unpriced => unreachable!(),
+        };
         let inactive = self.sprite_inactive_predicate(k);
         {
             let _wrapper = crate::cycle_ledger::routine(address);
@@ -290,6 +284,17 @@ impl ZeldaState {
             crate::cycle_ledger::charge(28 + 42);
         }
         inactive
+    }
+
+    fn sprite_inactive_predicate(&self, k: usize) -> bool {
+        if self.sprite_slot_view(k).state() != 9 {
+            return true;
+        }
+        if self.game_state.frame.modal_pause_flag != 0 || self.game_state.frame.submodule != 0 {
+            return true;
+        }
+        (self.sprite_slot_view(k).deflection_bits() & 0x80) == 0
+            && self.sprite_slot_view(k).pause() != 0
     }
 
     fn sprite_pause_test_master_cycles(&self, k: usize) -> u64 {
@@ -307,32 +312,36 @@ impl ZeldaState {
     }
 
     /// Resume ReturnIfInactive after its state-9 test, at $05:F955.
-    pub(in crate::zelda_rtl) fn sprite_return_if_paused_bank5(&self, k: usize) -> bool {
-        let paused = self.sprite_paused_predicate(k);
-        {
-            let _wrapper = crate::cycle_ledger::routine(0x05_f955);
-            crate::cycle_ledger::charge(self.sprite_pause_test_master_cycles(k));
-        }
-        if paused { crate::cycle_ledger::charge(28 + 42); }
-        paused
-    }
+
 
     // bool Sprite_ReturnIfPaused(int k) {  // 86d9f3
     //   return (modal_pause_flag || submodule_index || !(sprite_defl_bits[k] & 0x80) && sprite_pause[k]);
     // }
-    pub(in crate::zelda_rtl) fn sprite_return_if_paused(&self, k: usize) -> bool {
-        if self.lag_free {
-            // $06:D9F3..DA08: omit the state-9 test for this entry. The
-            // double-return tail's second PLA/RTS belongs to the caller.
-            let paused = self.sprite_paused_predicate(k);
-            {
-                let _scope = crate::cycle_ledger::routine(0x06_d9f3);
-                crate::cycle_ledger::charge(self.sprite_pause_test_master_cycles(k));
-            }
-            if paused { crate::cycle_ledger::charge(28 + 42); }
-            return paused;
+    pub(in crate::zelda_rtl) fn sprite_return_if_paused(
+        &self,
+        k: usize,
+        entry: SpritePausedEntry,
+    ) -> bool {
+        if entry == SpritePausedEntry::Unpriced
+            || (entry == SpritePausedEntry::Rom06D9F3 && !self.lag_free) {
+            return self.sprite_paused_predicate(k);
         }
-        self.sprite_paused_predicate(k)
+        // These entries omit the state-9 test; double-return tail ownership
+        // is the same as the inactive entry, not an extra predicate call.
+        let address = match entry {
+            SpritePausedEntry::Rom06D9F3 => 0x06d9f3,
+            SpritePausedEntry::Rom05F955 => 0x05f955,
+            SpritePausedEntry::Unpriced => unreachable!(),
+        };
+        let paused = self.sprite_paused_predicate(k);
+        {
+            let _wrapper = crate::cycle_ledger::routine(address);
+            crate::cycle_ledger::charge(self.sprite_pause_test_master_cycles(k));
+        }
+        if paused {
+            crate::cycle_ledger::charge(28 + 42);
+        }
+        paused
     }
 
     fn sprite_paused_predicate(&self, k: usize) -> bool {
@@ -470,7 +479,7 @@ impl ZeldaState {
         if t == 0 {
             blocks.block(0x06d267);
             // ROM $06:D267
-            self.sprite_draw_single_small_marked(k);
+            self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Rom06DCEF);
             return false;
         }
         blocks.taken(0x06d265);
@@ -490,7 +499,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(value);
             } else { blocks.taken(0x06d273); }
             blocks.block(0x06d281);
-            self.sprite_draw_single_large(k);
+            self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
             return false;
         }
         blocks.taken(0x06d26c);
@@ -540,7 +549,7 @@ impl ZeldaState {
         blocks.block(0x06d35f);
         blocks.block(0x06dc64);
         let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 
     // void Sprite_HalveSpeed_XY(int k) {
@@ -915,9 +924,7 @@ impl ZeldaState {
     //   sprite_z_subpos[k] = z;
     //   sprite_z[k] = z >> 8;
     // }
-    pub(in crate::zelda_rtl) fn sprite_move_z(&mut self, k: usize) {
-        self.sprite_slot_view_mut(k).move_z();
-    }
+
 
     // void Sprite_ApplySpeedTowardsLink(int k, uint8 vel) {
     //   ProjectSpeedRet pt = Sprite_ProjectSpeedTowardsLink(k, vel);
@@ -1371,7 +1378,7 @@ impl ZeldaState {
                 self.oam_allocate_from_region_c(8);
             }
             self.sprite_slot_view_mut(k).xor_flags3(16);
-            self.sprite_draw_single_large(k);
+            self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
             let oam = self.game_state.oam.current_pointer_usize();
             let j = self.sprite_slot_view(k).delay_main();
             if j == 1 {
@@ -1391,14 +1398,14 @@ impl ZeldaState {
                 [usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 3)]
                 | 0x24;
             self.oam_state_mut().set_entry_flags(oam, flags);
-            if self.sprite_return_if_paused(k) {
+            if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
                 return;
             }
             self.sprite_slot_view_mut(k).increment_subtype2();
             // $06:85F6 JSR $06:E92C: complete body, caller opcode unchanged.
-            self.sprite_move_xy_marked(k, 0x06e93e);
+            self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
             // ROM $06:85F9
-            self.sprite_move_z_marked(k, 0x06e96c);
+            self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
             let value = self.sprite_slot_view(k).z_velocity().wrapping_sub(2);
             self.sprite_slot_view_mut(k).set_z_velocity(value);
             if sign8(self.sprite_slot_view(k).z()) {
@@ -1409,7 +1416,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).and_flags3(!0x10);
             }
         } else {
-            if self.sprite_return_if_paused(k) {
+            if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
                 return;
             }
             if self.game_state.frame.frame_counter & 1 == 0 {
@@ -1599,17 +1606,14 @@ impl ZeldaState {
         let value = ((self.sprite_slot_view(k).x_recoil() as i8) >> 2) as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         // $06:FCB3 JSR $06:E92C: complete body, caller opcode unchanged.
-        self.sprite_move_xy_marked(k, 0x06e93e);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
     }
 
     // bool Sprite_CheckDamageToAndFromLink(int k) {  // 85ab93
     //   Sprite_CheckDamageFromLink(k);
     //   return Sprite_CheckDamageToLink(k);
     // }
-    pub(in crate::zelda_rtl) fn sprite_check_damage_to_and_from_link(&mut self, k: usize) -> bool {
-        self.sprite_check_damage_from_link(k);
-        self.sprite_check_damage_to_link(k)
-    }
+
 
     // void SpriteModule_Carried(int k) {  // 86de83
     //   ...see sprite.c...
@@ -1785,9 +1789,9 @@ impl ZeldaState {
     // }
     pub(in crate::zelda_rtl) fn throwable_scenery_interact_with_sprites_and_tiles(&mut self, k: usize) {
         // ROM $06:E164
-        self.sprite_move_xy_marked(k, 0x06e93e);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
         if self.sprite_slot_view(k).e() == 0 {
-            self.sprite_check_tile_collision(k);
+            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
         }
         self.thrown_sprite_tile_and_sprite_interaction(k);
     }
@@ -1799,7 +1803,7 @@ impl ZeldaState {
         if !second_entry {
             self.sprite_draw_ripple_if_in_water(k);
             self.sprite_stunned_main_func1(k);
-            if self.sprite_return_if_paused(k) {
+            if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
                 return;
             }
             if self.sprite_slot_view(k).f() != 0 {
@@ -1813,14 +1817,14 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
             }
             if self.sprite_slot_view(k).delay_main() < 0x20 {
-                self.sprite_check_damage_from_link(k);
+                self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
             }
-            if self.sprite_return_if_recoiling(k) {
+            if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
                 return;
             }
-            self.sprite_move_xy(k);
+            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
             if self.sprite_slot_view(k).e() == 0 {
-                self.sprite_check_tile_collision(k);
+                self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
                 if self.sprite_slot_view(k).state() == 0 {
                     return;
                 }
@@ -1848,7 +1852,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).and_flags3(!0x10);
             }
         }
-        self.sprite_move_z(k);
+        self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
         let value = self.sprite_slot_view(k).z_velocity().wrapping_sub(2);
         self.sprite_slot_view_mut(k).set_z_velocity(value);
         if self.sprite_slot_view(k).z().wrapping_sub(1) >= 0xf0 {
@@ -1972,7 +1976,7 @@ impl ZeldaState {
             if t < 0x38 {
                 let value = if (t & 1) != 0 { (-8i8) as u8 } else { 8 };
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
-                self.sprite_move_x(k);
+                self.sprite_move_x(k, SpriteMoveEntry::Unpriced);
             }
             return;
         }

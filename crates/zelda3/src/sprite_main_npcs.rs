@@ -10,6 +10,10 @@
 //! chains) are deliberately not ported here. They are listed near the bottom
 //! with a one-line skip note so the signature-drift scoreboard tells the truth.
 
+use crate::zelda_rtl::sprite::{
+    SpriteDamageFromEntry, SpriteDamageToEntry, SpriteHitBoxEntry, SpriteInactiveEntry,
+    SpriteMoveEntry, SpriteRecoilEntry, SpriteShadowEntry, SpriteSingleSmallEntry,
+};
 use super::*;
 use crate::types::{Point16U, SpriteHitBox};
 use crate::zelda_rtl::sprite::{DrawMultipleData, SpriteSpawnInfo};
@@ -226,12 +230,12 @@ impl ZeldaState {
     pub(super) fn bee_main(&mut self, k: usize) {
         self.bee_handle_z(k);
         // ROM $1E:DD48
-        self.sprite_draw_single_small_long_marked(k);
+        self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Rom06DBF8);
         self.bee_handle_interactions(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
-        if self.sprite_return_if_recoiling_bank(k, 0x1eff34) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1EFE9B) {
             return;
         }
         if self.sprite_slot_view(k).head_direction() != 0 {
@@ -239,14 +243,14 @@ impl ZeldaState {
         }
         self.bee_bzzt(k);
         // ROM $1E:DD61
-        self.sprite_move_xy_bank(k, 0x1eff34);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
         let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         if self.sprite_slot_view(k).delay_aux4() == 0 {
             // $1E:DD72 JSR $1E:C26B: complete body, caller opcode unchanged.
-            self.sprite_check_damage_to_link_bank1e(k);
+            self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom1EC26B);
             // ROM $1E:DD75 JSL $06:F2AA
-            if (self.sprite_check_damage_from_link_long(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
+            if (self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                 != 0
             {
                 self.sprite_show_message_unconditional(0xc8);
@@ -493,13 +497,13 @@ impl ZeldaState {
             1 => {
                 self.sprite_slot_view_mut(k).set_ignore_projectile(1);
                 self.bee_handle_z(k);
-                self.sprite_draw_single_small(k);
+                self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Unpriced);
                 self.bee_handle_interactions(k);
-                if self.sprite_return_if_inactive(k) {
+                if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                     return;
                 }
                 self.bee_bzzt(k);
-                self.sprite_move_xy_bank(k, 0x1eff34);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
                 let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).head_direction() != 0 {
@@ -514,7 +518,7 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_aux4() != 0 {
                     return;
                 }
-                if (self.sprite_check_damage_from_link(k)
+                if (self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced)
                     & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                     != 0
                 {
@@ -619,7 +623,7 @@ impl ZeldaState {
     // }
     pub(super) fn bee_put_in_bottle(&mut self, k: usize) {
         self.bee_handle_interactions(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         if self.multiselect_choice().value() == 0 {
@@ -718,7 +722,7 @@ impl ZeldaState {
     pub(super) fn sprite_bottle_vendor(&mut self, k: usize) {
         let draw_state = self.bottle_vendor_draw(k);
         self.sprite_slot_view_mut(k).set_a(draw_state);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.bottle_merchant_detect_fish(k);
@@ -838,7 +842,7 @@ impl ZeldaState {
             &BOTTLE_VENDOR_DRAW_FRAMES[base..base + 2],
         );
         // ROM $05:EBC2
-        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
+        self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
         ((info.x | info.y) >> 8) as u8
     }
 
@@ -878,7 +882,7 @@ impl ZeldaState {
                     r6_spr_xsize: 0,
                     r7_spr_ysize: 0,
                 };
-                self.sprite_setup_hit_box(i, &mut hb);
+                self.sprite_setup_hit_box(i, &mut hb, SpriteHitBoxEntry::Unpriced);
                 if self.check_if_hit_boxes_overlap(&hb) {
                     self.sprite_slot_view_mut(k).set_e(0x80 | i as u8);
                 }

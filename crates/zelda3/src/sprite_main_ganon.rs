@@ -8,6 +8,10 @@
 //! split module needs an explicit adapter to a shared canonical port or a
 //! local table/OAM emitter.
 
+use crate::zelda_rtl::sprite::{
+    SpriteDamageBothEntry, SpriteDamageToEntry, SpriteInactiveEntry, SpriteMoveEntry,
+    SpriteMoveZEntry, SpriteRecoilEntry,
+};
 use super::sprite::{dmd, DrawMultipleData};
 use super::*;
 use crate::tile_definition::NativeTile;
@@ -370,13 +374,13 @@ impl ZeldaState {
     // void Sprite_GanonTrident(int k) {  // 9d8ab6
     pub(super) fn sprite_ganon_trident(&mut self, k: usize) {
         self.trident_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // $1D:8ABC JSR $1D:C211: both complete damage calls.
-        self.sprite_check_damage_both_marked(k, 0x1dc211);
+        self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1DC211);
         self.swish_every16_frames(k);
-        self.sprite_move_xy_bank(k, 0x1de95d);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
         self.sprite_slot_view_mut(k).decrement_subtype2();
         let j = ((self.sprite_slot_view(k).subtype2() >> 2) & 7) as usize;
         self.sprite_slot_view_mut(k).set_g(GANON_SPIN_G_STATES[j]);
@@ -409,7 +413,7 @@ impl ZeldaState {
     // void Sprite_FireBat_Trailer(int k) {  // 9d8b49
     pub(super) fn sprite_fire_bat_trailer(&mut self, k: usize) {
         self.fire_bat_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.fire_bat_move(k);
@@ -418,7 +422,7 @@ impl ZeldaState {
     // void Sprite_SpiralFireBat(int k) {  // 9d8b52
     pub(super) fn sprite_spiral_fire_bat(&mut self, k: usize) {
         self.fire_bat_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         let x = (u16::from(self.sprite_slot_view(k).b()) << 8)
@@ -439,11 +443,11 @@ impl ZeldaState {
     // void Sprite_FireBat_Launched(int k) {  // 9d8bd7
     pub(super) fn sprite_fire_bat_launched(&mut self, k: usize) {
         self.fire_bat_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // $1D:8BDD JSL $06:F121: complete body, caller opcode unchanged.
-        self.sprite_check_damage_to_link_long(k);
+        self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.get_position_relative_to_the_great_overlord_ganon(k);
@@ -461,7 +465,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
             }
             2 => {
-                self.sprite_move_xy_bank(k, 0x1de95d);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
                 self.sprite_slot_view_mut(k).set_deflection_bits(64);
                 if self.sprite_slot_view(k).delay_aux1() == 0 {
                     if self.sprite_slot_view(k).delay_main() == 0 {
@@ -493,7 +497,7 @@ impl ZeldaState {
     // void Sprite_D6_Ganon(int k) {  // 9d8eb4
     pub(super) fn sprite_d6_ganon(&mut self, k: usize) {
         if sign8(self.sprite_slot_view(k).ai_state()) {
-            if self.sprite_return_if_inactive(k) {
+            if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
             if self.sprite_slot_view(k).delay_main() == 0 {
@@ -524,10 +528,10 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_graphics(15);
             self.ganon_enable_invincibility(k);
             // $1D:8F03 enters $1D:C211; complete two-call body.
-            self.sprite_check_damage_both_marked(k, 0x1dc211);
+            self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1DC211);
             return;
         }
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
 
@@ -548,7 +552,7 @@ impl ZeldaState {
             let delay_aux4 = self.sprite_slot_view(k).delay_aux4();
             self.sprite_slot_view_mut(k)
                 .set_ignore_projectile(delay_aux4);
-            if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
+            if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1DE8C5) {
                 return;
             }
             self.sprite_slot_view_mut(k).set_delay_main(0);
@@ -561,7 +565,7 @@ impl ZeldaState {
             && self.game_state.dungeon.torch.ganon_torch_count() == 2
         {
             // $1D:8F55 enters $1D:C211; complete two-call body.
-            self.sprite_check_damage_both_marked(k, 0x1dc211);
+            self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1DC211);
         }
         self.sprite_slot_view_mut(k).set_ignore_projectile(0);
 
@@ -709,7 +713,7 @@ impl ZeldaState {
                 } else {
                     let pt = self.sprite_project_speed_towards_location(k, x, y, 32);
                     self.sprite_approach_target_speed(k, pt.x, pt.y);
-                    self.sprite_move_xy_bank(k, 0x1de95d);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
                     if self.sprite_slot_view(k).delay_main() == 0
                         || (self.game_state.frame.frame_counter & 1) != 0
                     {
@@ -862,7 +866,7 @@ impl ZeldaState {
                         return;
                     }
                 } else {
-                    self.sprite_move_z(k);
+                    self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
                     self.sprite_slot_view_mut(k).subtract_z_velocity(1);
                     if self.sprite_slot_view(k).z_velocity() == 0 {
                         self.sprite_slot_view_mut(k).set_delay_main(32);
@@ -897,7 +901,7 @@ impl ZeldaState {
                         self.follower_link_state_mut().immobilize();
                     }
                 } else {
-                    self.sprite_move_z(k);
+                    self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
                     if sign8(self.sprite_slot_view(k).z()) {
                         self.sprite_slot_view_mut(k).set_z_velocity(0);
                         self.sprite_slot_view_mut(k).set_z(0);
@@ -989,10 +993,10 @@ impl ZeldaState {
     pub(super) fn sprite_phantom_ganon(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
             self.phantom_ganon_draw(k);
-            if self.sprite_return_if_inactive(k) {
+            if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
-            self.sprite_move_axis_bank(k, false, 0x1de95d);
+            self.sprite_move_axis(k, false, SpriteMoveEntry::Rom1DE95D);
             self.sprite_slot_view_mut(k).increment_subtype2();
             if (self.sprite_slot_view(k).subtype2() & 31) == 0 {
                 let y_velocity = self.sprite_slot_view(k).y_velocity().wrapping_sub(1);
@@ -1020,7 +1024,7 @@ impl ZeldaState {
                 self.dungeon_savegame_state_mut()
                     .set_savegame_state_bits(bits);
             }
-            if self.sprite_return_if_inactive(k) {
+            if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
             let graphics = PHANTOM_GANON_BAT_GRAPHICS
@@ -1067,11 +1071,11 @@ impl ZeldaState {
                     .set_x_velocity(xvel.wrapping_add(pt.x));
                 self.sprite_slot_view_mut(k)
                     .set_y_velocity(yvel.wrapping_add(pt.y));
-                self.sprite_move_xy_bank(k, 0x1de95d);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
                 self.sprite_slot_view_mut(k).set_x_velocity(xvel);
                 self.sprite_slot_view_mut(k).set_y_velocity(yvel);
             } else {
-                self.sprite_move_xy_bank(k, 0x1de95d);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
                 if self.sprite_slot_view(k).x_velocity() != 64 {
                     self.sprite_slot_view_mut(k).add_x_velocity(1);
                     self.sprite_slot_view_mut(k).add_y_velocity((-1i8) as u8);

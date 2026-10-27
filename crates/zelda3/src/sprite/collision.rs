@@ -1,23 +1,13 @@
 //! Sprite and player hit boxes, tile collision, damage checks, and recoil.
 
+use crate::zelda_rtl::sprite::{
+    SpriteDamageFromEntry, SpriteDamageToEntry, SpriteHitBox00Entry, SpriteHitBoxEntry,
+    SpriteMoveEntry, SpriteTileCollisionEntry,
+};
 use super::*;
 
 impl ZeldaState {
-    pub(in crate::zelda_rtl) fn sprite_setup_hit_box00_marked(&self, k: usize) -> bool {
-        // $06:F1F6..F227: the two unsigned bounds, including both returns.
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f1f6));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
-        b.block(0x06f1f6);
-        if self.game_state.player.follower_link.x()
-            .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x()).wrapping_add(11) >= 23 {
-            b.taken(0x06f20c); b.block(0x06f224);
-        } else {
-            b.block(0x06f20e);
-            if self.sprite_setup_hit_box00(k) { b.block(0x06f220); }
-            else { b.taken(0x06f21e); b.block(0x06f224); }
-        }
-        self.sprite_setup_hit_box00(k)
-    }
+
 
     pub(in crate::zelda_rtl) fn sprite_check_damage_same_layer_long_marked(&mut self, k: usize) -> bool {
         // $06:F129..F130; the damage predicate remains a separate child.
@@ -29,18 +19,6 @@ impl ZeldaState {
         hit
     }
 
-    pub(in crate::zelda_rtl) fn sprite_check_tile_collision_bank1e_marked(&mut self, k: usize) -> u8 {
-        // $1E:8B2E..8B32: JSL $06:E496 and RTS; the far child is already priced.
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8b2e));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
-        b.block(0x1e8b2e);
-        let result = self.sprite_check_tile_collision_long(k);
-        b.block(0x1e8b32);
-        result
-    }
-
-
-
     pub(super) fn entity_apply_rumble_to_sprites(&mut self, hb: &mut SpriteHitBox) {
         for j in (0..=15).rev() {
             if self.sprite_slot_view(j).deflection_bits() & 2 == 0
@@ -49,7 +27,7 @@ impl ZeldaState {
                 continue;
             }
             if self.game_state.sprites.system.chr_halfslot_state() != 0x0e {
-                self.sprite_setup_hit_box(j, hb);
+                self.sprite_setup_hit_box(j, hb, SpriteHitBoxEntry::Unpriced);
                 if !self.check_if_hit_boxes_overlap(hb) {
                     continue;
                 }
@@ -71,73 +49,113 @@ impl ZeldaState {
         }
     }
 
-    pub(in crate::zelda_rtl) fn sprite_setup_hit_box_long_marked(&self, k: usize, hb: &mut SpriteHitBox) {
-        // $08:8DB4 JSL $06:83EA. F7EF retains its existing instruction price.
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0683ea));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
-        b.block(0x0683ea);
-        self.sprite_setup_hit_box(k, hb);
-        b.block(0x0683f0);
-    }
+    pub(in crate::zelda_rtl) fn sprite_setup_hit_box(
+        &self,
+        k: usize,
+        hb: &mut SpriteHitBox,
+        entry: SpriteHitBoxEntry,
+    ) {
+        match entry {
+            SpriteHitBoxEntry::Unpriced => {
+                if self.lag_free {
+                    // $06:F7EF..F835, M8/X8: the airborne early exit or the full
+                    // coordinate/size path. Slots <= 15 and hitbox indices <= 31
+                    // cannot cross any of these absolute-indexed table pages.
+                    crate::cycle_ledger::charge_routine(0x06_f7ef,
+                        if (self.sprite_slot_view(k).z() as i8).is_negative() { 48 + 6 + 82 } else { 48 + 758 });
+                }
+                if (self.sprite_slot_view(k).z() as i8).is_negative() {
+                    hb.r10_spr_xhi = 0x80;
+                    return;
+                }
+                let i = (self.sprite_slot_view(k).flags4() & 0x1f) as usize;
+                let t = u16::from(self.sprite_slot_view(k).x_low())
+                    .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XLO[i] as u8));
+                hb.r4_spr_xlo = t as u8;
+                let t_hi = u16::from(self.sprite_slot_view(k).x_high())
+                    .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XHI[i] as u8))
+                    .wrapping_add(t >> 8);
+                hb.r10_spr_xhi = t_hi as u8;
 
-    pub(in crate::zelda_rtl) fn sprite_setup_hit_box(&self, k: usize, hb: &mut SpriteHitBox) {
-        if self.lag_free {
-            // $06:F7EF..F835, M8/X8: the airborne early exit or the full
-            // coordinate/size path. Slots <= 15 and hitbox indices <= 31
-            // cannot cross any of these absolute-indexed table pages.
-            crate::cycle_ledger::charge_routine(0x06_f7ef,
-                if (self.sprite_slot_view(k).z() as i8).is_negative() { 48 + 6 + 82 } else { 48 + 758 });
+                let t = u16::from(self.sprite_slot_view(k).y_low())
+                    .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YLO[i] as u8));
+                let u = t >> 8;
+                let ylo = (t as u8).wrapping_sub(self.sprite_slot_view(k).z());
+                hb.r5_spr_ylo = ylo;
+                let t_hi = u16::from(self.sprite_slot_view(k).y_high())
+                    .wrapping_sub(u16::from((t as u8) < self.sprite_slot_view(k).z()));
+                hb.r11_spr_yhi = t_hi
+                    .wrapping_add(u)
+                    .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YHI[i] as u8))
+                    as u8;
+
+                hb.r6_spr_xsize = SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XSIZE[i];
+                hb.r7_spr_ysize = SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YSIZE[i];
+
+            }
+            SpriteHitBoxEntry::Rom0683EA => {
+                // $08:8DB4 JSL $06:83EA. F7EF retains its existing instruction price.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0683ea));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x0683ea);
+                self.sprite_setup_hit_box(k, hb, SpriteHitBoxEntry::Unpriced);
+                b.block(0x0683f0);
+
+            }
         }
-        if (self.sprite_slot_view(k).z() as i8).is_negative() {
-            hb.r10_spr_xhi = 0x80;
-            return;
-        }
-        let i = (self.sprite_slot_view(k).flags4() & 0x1f) as usize;
-        let t = u16::from(self.sprite_slot_view(k).x_low())
-            .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XLO[i] as u8));
-        hb.r4_spr_xlo = t as u8;
-        let t_hi = u16::from(self.sprite_slot_view(k).x_high())
-            .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XHI[i] as u8))
-            .wrapping_add(t >> 8);
-        hb.r10_spr_xhi = t_hi as u8;
-
-        let t = u16::from(self.sprite_slot_view(k).y_low())
-            .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YLO[i] as u8));
-        let u = t >> 8;
-        let ylo = (t as u8).wrapping_sub(self.sprite_slot_view(k).z());
-        hb.r5_spr_ylo = ylo;
-        let t_hi = u16::from(self.sprite_slot_view(k).y_high())
-            .wrapping_sub(u16::from((t as u8) < self.sprite_slot_view(k).z()));
-        hb.r11_spr_yhi = t_hi
-            .wrapping_add(u)
-            .wrapping_add(u16::from(SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YHI[i] as u8))
-            as u8;
-
-        hb.r6_spr_xsize = SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XSIZE[i];
-        hb.r7_spr_ysize = SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YSIZE[i];
     }
 
     // bool Sprite_SetupHitBox00(int k) {  // 86f1f6
     //   return (uint16)(link_x_coord - cur_sprite_x + 11) < 23 &&
     //          (uint16)(link_y_coord - cur_sprite_y + sprite_z[k] + 16) < 24;
     // }
-    pub(in crate::zelda_rtl) fn sprite_setup_hit_box00(&self, k: usize) -> bool {
-        self.game_state
-            .player
-            .follower_link
-            .x()
-            .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x())
-            .wrapping_add(11)
-            < 23
-            && self
-                .game_state
-                .player
-                .follower_link
-                .y()
-                .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
-                .wrapping_add(self.sprite_slot_view(k).z() as u16)
-                .wrapping_add(16)
-                < 24
+    pub(in crate::zelda_rtl) fn sprite_setup_hit_box00(
+        &self,
+        k: usize,
+        entry: SpriteHitBox00Entry,
+    ) -> bool {
+        match entry {
+            SpriteHitBox00Entry::Unpriced => {
+                self.game_state
+                    .player
+                    .follower_link
+                    .x()
+                    .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x())
+                    .wrapping_add(11)
+                    < 23
+                    && self
+                        .game_state
+                        .player
+                        .follower_link
+                        .y()
+                        .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
+                        .wrapping_add(self.sprite_slot_view(k).z() as u16)
+                        .wrapping_add(16)
+                        < 24
+
+            }
+            SpriteHitBox00Entry::Rom06F1F6 => {
+                // $06:F1F6..F227: the two unsigned bounds, including both returns.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f1f6));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x06f1f6);
+                if self.game_state.player.follower_link.x()
+                    .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x()).wrapping_add(11) >= 23 {
+                    b.taken(0x06f20c);
+                    b.block(0x06f224);
+                } else {
+                    b.block(0x06f20e);
+                    if self.sprite_setup_hit_box00(k, SpriteHitBox00Entry::Unpriced) {
+                        b.block(0x06f220);
+                    } else {
+                        b.taken(0x06f21e);
+                        b.block(0x06f224);
+                    }
+                }
+                self.sprite_setup_hit_box00(k, SpriteHitBox00Entry::Unpriced)
+
+            }
+        }
     }
 
     // void Sprite_PlaceWeaponTink(int k) {  // 86f6ca
@@ -551,143 +569,151 @@ impl ZeldaState {
     // uint8 Sprite_CheckDamageFromLink(int k) {  // 86f2b4
     //   ...see sprite.c...
     // }
-    pub(in crate::zelda_rtl) fn sprite_check_damage_from_link(&mut self, k: usize) -> u8 {
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f2b4));
-        if self.lag_free {
-            // $06:F2B4..F2C6; rejected paths take $F321 JMP $F3AF,
-            // CLC/BRA $F3C7, LDA #0/RTS (24 + 36 + 58).
-            crate::cycle_ledger::charge(if self.sprite_slot_view(k).hit_timer() & 0x80 != 0 {
-                64 + 6 + 22 + 118
-            } else if self.sprite_slot_view(k).floor()
-                != self.game_state.player.follower_link.lower_level_state() {
-                64 + 56 + 22 + 118
-            } else if self.game_state.player.follower_link.has_disabled_oam_offsets() {
-                64 + 56 + 16 + 56 + 6 + 118
-            } else { 64 + 56 + 16 + 56 });
-        }
-        if (self.sprite_slot_view(k).hit_timer() & 0x80) != 0
-            || self.sprite_slot_view(k).floor()
-                != self.game_state.player.follower_link.lower_level_state()
-            || self
-                .game_state
-                .player
-                .follower_link
-                .has_disabled_oam_offsets()
-        {
-            return 0;
-        }
+    pub(in crate::zelda_rtl) fn sprite_check_damage_from_link(
+        &mut self,
+        k: usize,
+        entry: SpriteDamageFromEntry,
+    ) -> u8 {
+        match entry {
+            SpriteDamageFromEntry::Unpriced => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f2b4));
+                if self.lag_free {
+                    // $06:F2B4..F2C6; rejected paths take $F321 JMP $F3AF,
+                    // CLC/BRA $F3C7, LDA #0/RTS (24 + 36 + 58).
+                    crate::cycle_ledger::charge(if self.sprite_slot_view(k).hit_timer() & 0x80 != 0 {
+                        64 + 6 + 22 + 118
+                    } else if self.sprite_slot_view(k).floor()
+                        != self.game_state.player.follower_link.lower_level_state() {
+                        64 + 56 + 22 + 118
+                    } else if self.game_state.player.follower_link.has_disabled_oam_offsets() {
+                        64 + 56 + 16 + 56 + 6 + 118
+                    } else { 64 + 56 + 16 + 56 });
+                }
+                if (self.sprite_slot_view(k).hit_timer() & 0x80) != 0
+                    || self.sprite_slot_view(k).floor()
+                        != self.game_state.player.follower_link.lower_level_state()
+                    || self
+                        .game_state
+                        .player
+                        .follower_link
+                        .has_disabled_oam_offsets()
+                {
+                    return 0;
+                }
 
-        let mut hb = empty_sprite_hit_box();
-        self.player_setup_action_hit_box(&mut hb);
-        self.sprite_setup_hit_box(k, &mut hb);
-        let overlap = self.check_if_hit_boxes_overlap(&hb);
-        if self.lag_free {
-            // $06:F2C8..F2D1: three JSR opcodes and BCC. Each callee
-            // owns its body; a miss takes the same $F321 rejection tail.
-            crate::cycle_ledger::charge(154 + if overlap { 0 } else { 6 + 118 });
-        }
-        if !overlap {
-            return 0;
-        }
+                let mut hb = empty_sprite_hit_box();
+                self.player_setup_action_hit_box(&mut hb);
+                self.sprite_setup_hit_box(k, &mut hb, SpriteHitBoxEntry::Unpriced);
+                let overlap = self.check_if_hit_boxes_overlap(&hb);
+                if self.lag_free {
+                    // $06:F2C8..F2D1: three JSR opcodes and BCC. Each callee
+                    // owns its body; a miss takes the same $F321 rejection tail.
+                    crate::cycle_ledger::charge(154 + if overlap { 0 } else { 6 + 118 });
+                }
+                if !overlap {
+                    return 0;
+                }
 
-        self.sprite_battle_mut().clear_damaging_enemies_timer();
-        if self.game_state.player.follower_link.position_mode_has(0x10) {
-            return CHECK_DAMAGE_FROM_PLAYER_CARRY | CHECK_DAMAGE_FROM_PLAYER_NON_ELEMENTAL;
-        }
+                self.sprite_battle_mut().clear_damaging_enemies_timer();
+                if self.game_state.player.follower_link.position_mode_has(0x10) {
+                    return CHECK_DAMAGE_FROM_PLAYER_CARRY | CHECK_DAMAGE_FROM_PLAYER_NON_ELEMENTAL;
+                }
 
-        if self.game_state.player.follower_link.item_in_hand_has(10) {
-            if self.sprite_slot_view(k).sprite_type() >= 0xd6 {
-                return 0;
+                if self.game_state.player.follower_link.item_in_hand_has(10) {
+                    if self.sprite_slot_view(k).sprite_type() >= 0xd6 {
+                        return 0;
+                    }
+                    if self.sprite_slot_view(k).state() == 11
+                        && self.sprite_slot_view(k).draw_work_byte_5() != 0
+                    {
+                        let value = 2;
+                        self.sprite_slot_view_mut(k).set_state(value);
+                        let value = 32;
+                        self.sprite_slot_view_mut(k).set_delay_main(value);
+                        let value = (self.sprite_slot_view(k).flags2() & 0xe0) | 3;
+                        self.sprite_slot_view_mut(k).set_flags2(value);
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
+                        return CHECK_DAMAGE_FROM_PLAYER_CARRY | CHECK_DAMAGE_FROM_PLAYER_NON_ELEMENTAL;
+                    }
+                }
+
+                let ty = self.sprite_slot_view(k).sprite_type();
+                if ty == 0x7b {
+                    if !sign8(
+                        self.game_state
+                            .player
+                            .follower_link
+                            .button_b_frames()
+                            .wrapping_sub(9),
+                    ) {
+                        return 0;
+                    }
+                } else if ty == 9 {
+                    if self.sprite_slot_view(k).a() == 0 {
+                        self.sprite_apply_recoil_to_link(k, 48);
+                        self.sprite_battle_mut().set_damaging_enemies_timer(144);
+                        self.follower_link_state_mut().set_incapacitated_timer(16);
+                        self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
+                        let value = 48;
+                        self.sprite_slot_view_mut(k).set_delay_aux1(value);
+                        let effect = if self.game_state.enhanced_features.has(4096) {
+                            0x32
+                        } else {
+                            0
+                        };
+                        self.set_sound_effect_2_with_sprite_pan(k, effect);
+                        self.link_place_weapon_tink();
+                        return CHECK_DAMAGE_FROM_PLAYER_CARRY;
+                    }
+                } else if ty == 0x92 {
+                    if self.sprite_slot_view(k).c() >= 3 {
+                        self.sprite_apply_recoil_to_link(k, 32);
+                        self.sprite_battle_mut().set_damaging_enemies_timer(144);
+                        self.follower_link_state_mut().set_incapacitated_timer(16);
+                    } else {
+                        return self.sprite_check_damage_from_link_getting_out(k);
+                    }
+                } else if ty == 0x26 || ty == 0x13 || ty == 2 {
+                    const SPRITE_DAMAGE_FACING_BY_DIRECTION: [u8; 4] = [4, 6, 0, 2];
+                    let cond = (ty == 0x13
+                        && SPRITE_DAMAGE_FACING_BY_DIRECTION
+                            [usize::from(self.sprite_slot_view(k).direction() & 3)]
+                            == self.game_state.player.follower_link.facing())
+                        || ty == 2;
+                    self.sprite_attempt_zap_damage(k);
+                    self.sprite_apply_recoil_to_link(k, 32);
+                    self.sprite_battle_mut().set_damaging_enemies_timer(16);
+                    self.follower_link_state_mut().set_incapacitated_timer(16);
+                    if cond {
+                        let value = 0;
+                        self.sprite_slot_view_mut(k).set_hit_timer(value);
+                        self.link_place_weapon_tink();
+                    }
+                    return 0;
+                } else if matches!(ty, 0xcb | 0xcd | 0xcc | 0xd6 | 0xd7 | 0xce | 0x54) {
+                    self.sprite_apply_recoil_to_link(k, 32);
+                    self.sprite_battle_mut().set_damaging_enemies_timer(144);
+                    self.follower_link_state_mut().set_incapacitated_timer(16);
+                }
+
+                if (self.sprite_slot_view(k).deflection_bits() & 4) == 0 {
+                    self.sprite_attempt_zap_damage(k);
+                    return CHECK_DAMAGE_FROM_PLAYER_CARRY;
+                }
+
+                self.sprite_check_damage_from_link_getting_out(k)
+
             }
-            if self.sprite_slot_view(k).state() == 11
-                && self.sprite_slot_view(k).draw_work_byte_5() != 0
-            {
-                let value = 2;
-                self.sprite_slot_view_mut(k).set_state(value);
-                let value = 32;
-                self.sprite_slot_view_mut(k).set_delay_main(value);
-                let value = (self.sprite_slot_view(k).flags2() & 0xe0) | 3;
-                self.sprite_slot_view_mut(k).set_flags2(value);
-                self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
-                return CHECK_DAMAGE_FROM_PLAYER_CARRY | CHECK_DAMAGE_FROM_PLAYER_NON_ELEMENTAL;
-            }
-        }
-
-        let ty = self.sprite_slot_view(k).sprite_type();
-        if ty == 0x7b {
-            if !sign8(
-                self.game_state
-                    .player
-                    .follower_link
-                    .button_b_frames()
-                    .wrapping_sub(9),
-            ) {
-                return 0;
-            }
-        } else if ty == 9 {
-            if self.sprite_slot_view(k).a() == 0 {
-                self.sprite_apply_recoil_to_link(k, 48);
-                self.sprite_battle_mut().set_damaging_enemies_timer(144);
-                self.follower_link_state_mut().set_incapacitated_timer(16);
-                self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
-                let value = 48;
-                self.sprite_slot_view_mut(k).set_delay_aux1(value);
-                let effect = if self.game_state.enhanced_features.has(4096) {
-                    0x32
-                } else {
-                    0
-                };
-                self.set_sound_effect_2_with_sprite_pan(k, effect);
-                self.link_place_weapon_tink();
-                return CHECK_DAMAGE_FROM_PLAYER_CARRY;
-            }
-        } else if ty == 0x92 {
-            if self.sprite_slot_view(k).c() >= 3 {
-                self.sprite_apply_recoil_to_link(k, 32);
-                self.sprite_battle_mut().set_damaging_enemies_timer(144);
-                self.follower_link_state_mut().set_incapacitated_timer(16);
-            } else {
-                return self.sprite_check_damage_from_link_getting_out(k);
-            }
-        } else if ty == 0x26 || ty == 0x13 || ty == 2 {
-            const SPRITE_DAMAGE_FACING_BY_DIRECTION: [u8; 4] = [4, 6, 0, 2];
-            let cond = (ty == 0x13
-                && SPRITE_DAMAGE_FACING_BY_DIRECTION
-                    [usize::from(self.sprite_slot_view(k).direction() & 3)]
-                    == self.game_state.player.follower_link.facing())
-                || ty == 2;
-            self.sprite_attempt_zap_damage(k);
-            self.sprite_apply_recoil_to_link(k, 32);
-            self.sprite_battle_mut().set_damaging_enemies_timer(16);
-            self.follower_link_state_mut().set_incapacitated_timer(16);
-            if cond {
-                let value = 0;
-                self.sprite_slot_view_mut(k).set_hit_timer(value);
-                self.link_place_weapon_tink();
-            }
-            return 0;
-        } else if matches!(ty, 0xcb | 0xcd | 0xcc | 0xd6 | 0xd7 | 0xce | 0x54) {
-            self.sprite_apply_recoil_to_link(k, 32);
-            self.sprite_battle_mut().set_damaging_enemies_timer(144);
-            self.follower_link_state_mut().set_incapacitated_timer(16);
-        }
-
-        if (self.sprite_slot_view(k).deflection_bits() & 4) == 0 {
-            self.sprite_attempt_zap_damage(k);
-            return CHECK_DAMAGE_FROM_PLAYER_CARRY;
-        }
-
-        self.sprite_check_damage_from_link_getting_out(k)
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_check_damage_from_link_long(&mut self, k: usize) -> u8 {
+            SpriteDamageFromEntry::Rom06F2AA => {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f2aa));
         let blocks = crate::cycle_ledger::blocks(self.lag_free);
         // $06:F2AA..F2B3: bank/return-value wrapper, excluding F2B4.
         blocks.block(0x06f2aa);
-        let result = self.sprite_check_damage_from_link(k);
+        let result = self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
         blocks.block(0x06f2b0);
         result
+                }
+        }
     }
 
     fn sprite_check_damage_from_link_getting_out(&mut self, k: usize) -> u8 {
@@ -700,75 +726,100 @@ impl ZeldaState {
         CHECK_DAMAGE_FROM_PLAYER_CARRY
     }
 
-    pub(in crate::zelda_rtl) fn sprite_check_damage_both_marked(&mut self, k: usize, entry: u32) -> bool {
-        // $05:AB93, $06:D88B, $1D:C211 and $1E:C267: complete two-call bodies.
-        // Each parent owns only its call opcodes; damage children stay separate.
-        assert!(matches!(entry, 0x05ab93 | 0x06d88b | 0x1dc211 | 0x1ec267));
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
-        b.block(entry);
-        if entry == 0x06d88b {
-            self.sprite_check_damage_from_link(k);
-            b.block(entry + 3);
-            let result = self.sprite_check_damage_to_link(k);
-            b.block(entry + 6);
-            result
-        } else {
-            self.sprite_check_damage_from_link_long(k);
-            b.block(entry + 4);
-            let result = self.sprite_check_damage_to_link_long(k);
-            b.block(entry + 8);
-            result
+    pub(in crate::zelda_rtl) fn sprite_check_damage_to_and_from_link(
+        &mut self,
+        k: usize,
+        path: SpriteDamageBothEntry,
+    ) -> bool {
+        if path == SpriteDamageBothEntry::Unpriced {
+        self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
+        self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced)
+            } else {
+            let entry = match path {
+                SpriteDamageBothEntry::Rom05AB93 => 0x05ab93,
+                SpriteDamageBothEntry::Rom06D88B => 0x06d88b,
+                SpriteDamageBothEntry::Rom1DC211 => 0x1dc211,
+                SpriteDamageBothEntry::Rom1EC267 => 0x1ec267,
+                SpriteDamageBothEntry::Unpriced => unreachable!(),
+            };            // $05:AB93, $06:D88B, $1D:C211 and $1E:C267: complete two-call bodies.
+            // Each parent owns only its call opcodes; damage children stay separate.
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(entry);
+            if entry == 0x06d88b {
+                self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
+                b.block(entry + 3);
+                let result = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced);
+                b.block(entry + 6);
+                result
+            } else {
+                self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
+                b.block(entry + 4);
+                let result = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
+                b.block(entry + 8);
+                result
+            }
+
         }
     }
 
     /// $1E:C26B -> $06:F121: bank trampoline and far-call wrapper.
     /// The existing $06:F145 scalar prefix remains owned by that child.
-    pub(in crate::zelda_rtl) fn sprite_check_damage_to_link_bank1e(&mut self, k: usize) -> bool {
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e_c26b));
-        let blocks = crate::cycle_ledger::blocks(self.lag_free);
-        blocks.block(0x1ec26b);
-        let result = self.sprite_check_damage_to_link_long(k);
-        blocks.block(0x1ec26f);
-        result
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_check_damage_to_link_long(&mut self, k: usize) -> bool {
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f121));
-        let blocks = crate::cycle_ledger::blocks(self.lag_free);
-        blocks.block(0x06f121);
-        let result = self.sprite_check_damage_to_link(k);
-        blocks.block(0x06f127);
-        result
-    }
 
     // bool Sprite_CheckDamageToLink(int k) {  // 86f145
     //   if (link_disable_sprite_damage)
     //     return false;
     //   return Sprite_CheckDamageToPlayer_1(k);
     // }
-    pub(in crate::zelda_rtl) fn sprite_check_damage_to_link(&mut self, k: usize) -> bool {
-        if self.lag_free {
-            // $06:F145..F15A falls through the stagger/hit and layer gates.
-            // A rejection takes BNE (+6) then CLC/RTS (56). The successful
-            // prefix stops at $F15C; damage and shield bodies remain open.
-            let clocks = if self.game_state.player.follower_link.sprite_damage_disable_timer() != 0 {
-                48 + 6 + 56
-            } else if (((k as u8) ^ self.game_state.frame.frame_counter) & 3)
-                | self.sprite_slot_view(k).hit_timer() != 0 {
-                48 + 102 + 6 + 56
-            } else if self.game_state.player.follower_link.lower_level_state()
-                != self.sprite_slot_view(k).floor() {
-                48 + 102 + 80 + 6 + 56
-            } else { 48 + 102 + 80 };
-            crate::cycle_ledger::charge_routine(0x06_f145, clocks);
+    pub(in crate::zelda_rtl) fn sprite_check_damage_to_link(
+        &mut self,
+        k: usize,
+        entry: SpriteDamageToEntry,
+    ) -> bool {
+        match entry {
+            SpriteDamageToEntry::Unpriced => {
+                if self.lag_free {
+                    // $06:F145..F15A falls through the stagger/hit and layer gates.
+                    // A rejection takes BNE (+6) then CLC/RTS (56). The successful
+                    // prefix stops at $F15C; damage and shield bodies remain open.
+                    let clocks = if self.game_state.player.follower_link.sprite_damage_disable_timer() != 0 {
+                        48 + 6 + 56
+                    } else if (((k as u8) ^ self.game_state.frame.frame_counter) & 3)
+                        | self.sprite_slot_view(k).hit_timer() != 0 {
+                        48 + 102 + 6 + 56
+                    } else if self.game_state.player.follower_link.lower_level_state()
+                        != self.sprite_slot_view(k).floor() {
+                        48 + 102 + 80 + 6 + 56
+                    } else { 48 + 102 + 80 };
+                    crate::cycle_ledger::charge_routine(0x06_f145, clocks);
+                }
+                self.game_state
+                    .player
+                    .follower_link
+                    .sprite_damage_disable_timer()
+                    == 0
+                    && self.sprite_check_damage_to_player_1(k)
+
+            }
+            SpriteDamageToEntry::Rom06F121 => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_f121));
+                let blocks = crate::cycle_ledger::blocks(self.lag_free);
+                blocks.block(0x06f121);
+                let result = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced);
+                blocks.block(0x06f127);
+                result
+
+            }
+            SpriteDamageToEntry::Rom1EC26B => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e_c26b));
+                let blocks = crate::cycle_ledger::blocks(self.lag_free);
+                blocks.block(0x1ec26b);
+                let result = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
+                blocks.block(0x1ec26f);
+                result
+
+            }
         }
-        self.game_state
-            .player
-            .follower_link
-            .sprite_damage_disable_timer()
-            == 0
-            && self.sprite_check_damage_to_player_1(k)
     }
 
     // bool Sprite_CheckDamageToPlayer_1(int k) {  // 86f14a
@@ -829,14 +880,14 @@ impl ZeldaState {
                 self.link_update_hit_box_with_sword(&mut hitbox);
             }
             b.block(0x06f164);
-            self.sprite_setup_hit_box(k, &mut hitbox);
+            self.sprite_setup_hit_box(k, &mut hitbox, SpriteHitBoxEntry::Unpriced);
             b.block(0x06f167);
             b.block(0x06f16a);
             self.check_if_hit_boxes_overlap(&hitbox)
         } else {
             b.taken(0x06f15f); b.block(0x06f16c);
             // ROM $06:F16C
-            self.sprite_setup_hit_box00_marked(k)
+            self.sprite_setup_hit_box00(k, SpriteHitBox00Entry::Rom06F1F6)
         };
 
         b.block(0x06f16f);
@@ -1000,7 +1051,7 @@ impl ZeldaState {
         let button_neg = sign8(self.game_state.player.follower_link.button_b_frames());
         let action_overlap = self.check_if_hit_boxes_overlap(&hb);
         if button_neg || !action_overlap {
-            self.sprite_setup_hit_box(k, &mut hb);
+            self.sprite_setup_hit_box(k, &mut hb, SpriteHitBoxEntry::Unpriced);
             let body_overlap = self.check_if_hit_boxes_overlap(&hb);
             if !body_overlap {
                 self.sprite_attempt_damage_to_link_with_collision_check(k);
@@ -1575,7 +1626,7 @@ impl ZeldaState {
             r6_spr_xsize: 0,
             r7_spr_ysize: 0,
         };
-        self.sprite_setup_hit_box(j, &mut hb);
+        self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Unpriced);
         if !self.check_if_hit_boxes_overlap(&hb) {
             return;
         }
@@ -2087,23 +2138,28 @@ impl ZeldaState {
     // bool Sprite_ReturnIfRecoiling(int k) {
     //   ...see sprite.c:3143...
     // }
-    pub(in crate::zelda_rtl) fn sprite_return_if_recoiling(&mut self, k: usize) -> bool {
-        self.sprite_return_if_recoiling_from(k, None)
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_return_if_recoiling_bank(&mut self, k: usize, axis: u32) -> bool {
+    pub(in crate::zelda_rtl) fn sprite_return_if_recoiling(
+        &mut self,
+        k: usize,
+        entry: SpriteRecoilEntry,
+    ) -> bool {
+        let axis = match entry {
+            SpriteRecoilEntry::Unpriced => None,
+            SpriteRecoilEntry::Rom1EFE9B => Some(SpriteMoveEntry::Rom1EFF34),
+            SpriteRecoilEntry::Rom1DE8C5 => Some(SpriteMoveEntry::Rom1DE95D),
+        };
         // $1E:FE9B..FF1D / $1D:E8C5..E947 enter their same-bank XY body
         // at $1E:FF05 / $1D:E92F. Only that real movement call is newly priced.
-        let recoiling = self.sprite_return_if_recoiling_from(k, self.lag_free.then_some(axis));
+        let recoiling = self.sprite_return_if_recoiling_from(k, if self.lag_free { axis } else { None });
         // $1E:FF18..FF19: the first PLA closed the recoil frame; this
         // second PLA/RTS belongs to the returning caller (including Pengator).
-        if axis == 0x1eff34 && recoiling {
+        if entry == SpriteRecoilEntry::Rom1EFE9B && recoiling {
             crate::cycle_ledger::blocks(self.lag_free).block(0x1eff18);
         }
         recoiling
     }
 
-    fn sprite_return_if_recoiling_from(&mut self, k: usize, axis: Option<u32>) -> bool {
+    fn sprite_return_if_recoiling_from(&mut self, k: usize, axis: Option<SpriteMoveEntry>) -> bool {
         if self.sprite_slot_view(k).f() == 0 {
             return false;
         }
@@ -2138,7 +2194,7 @@ impl ZeldaState {
             let bump = self.sprite_slot_view(k).bump_damage();
             let t = if (bump as i8) >= 0 {
                 // ROM $06:FFC7 JSL $06:E496
-                self.sprite_check_tile_collision_long(k) & 0xf
+                self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) & 0xf
             } else {
                 0
             };
@@ -2155,8 +2211,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
                 }
             } else {
-                if let Some(entry) = axis { self.sprite_move_xy_bank(k, entry); }
-                else { self.sprite_move_xy(k); }
+                self.sprite_move_xy(k, axis.unwrap_or(SpriteMoveEntry::Unpriced));
             }
         }
         let value = yvbak;
@@ -2173,20 +2228,39 @@ impl ZeldaState {
     //
     // Canonical 1:1 port. Runs the 2-layer collision pass and returns the
     // cached `sprite_wallcoll[k]` byte.
-    pub(in crate::zelda_rtl) fn sprite_check_tile_collision(&mut self, k: usize) -> u8 {
-        self.sprite_check_tile_collision2(k);
-        self.sprite_slot_view(k).wall_collision()
-    }
+    pub(in crate::zelda_rtl) fn sprite_check_tile_collision(
+        &mut self,
+        k: usize,
+        entry: SpriteTileCollisionEntry,
+    ) -> u8 {
+        match entry {
+            SpriteTileCollisionEntry::Unpriced => {
+                self.sprite_check_tile_collision2(k);
+                self.sprite_slot_view(k).wall_collision()
 
-    pub(in crate::zelda_rtl) fn sprite_check_tile_collision_long(&mut self, k: usize) -> u8 {
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e496));
-        let blocks = crate::cycle_ledger::blocks(self.lag_free);
-        // $06:E496..E4A0: bank wrapper and result load; E4AB owns
-        // collision. $0E70,X stays in-page for all sixteen sprite slots.
-        blocks.block(0x06e496);
-        let result = self.sprite_check_tile_collision(k);
-        blocks.block(0x06e49c);
-        result
+            }
+            SpriteTileCollisionEntry::Rom06E496 => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_e496));
+                let blocks = crate::cycle_ledger::blocks(self.lag_free);
+                // $06:E496..E4A0: bank wrapper and result load; E4AB owns
+                // collision. $0E70,X stays in-page for all sixteen sprite slots.
+                blocks.block(0x06e496);
+                let result = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                blocks.block(0x06e49c);
+                result
+
+            }
+            SpriteTileCollisionEntry::Rom1E8B2E => {
+                // $1E:8B2E..8B32: JSL $06:E496 and RTS; the far child is already priced.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8b2e));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x1e8b2e);
+                let result = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+                b.block(0x1e8b32);
+                result
+
+            }
+        }
     }
 
     /// `Sprite_CheckTileCollision` on the single-layer path through its
@@ -2276,7 +2350,7 @@ impl ZeldaState {
     ) -> u8 {
         use crate::SpriteTileCollisionStage as S;
         match stage {
-            S::Entered | S::Cleared => self.sprite_check_tile_collision(k),
+            S::Entered | S::Cleared => self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced),
             S::VerticalProbeDone => {
                 if self.sprite_slot_view(k).x_velocity() != 0 {
                     self.sprite_check_for_tile_in_direction_horizontal(

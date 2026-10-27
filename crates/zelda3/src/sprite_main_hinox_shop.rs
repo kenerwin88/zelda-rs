@@ -8,6 +8,9 @@
 //! the round-2 `_for_blind` pattern. Adapters route to canonical ports when the
 //! shared helper already exists.
 
+use crate::zelda_rtl::sprite::{
+    SpriteDamageFromEntry, SpriteInactiveEntry, SpriteShadowEntry,
+};
 use super::*;
 use crate::zelda_rtl::sprite::{DrawMultipleData};
 
@@ -371,7 +374,7 @@ impl ZeldaState {
         let start = HINOX_DRAW_FRAME_STARTS[j] as usize;
         let count = HINOX_DRAW_FRAME_COUNTS[j] as usize;
         let mut info = self.sprite_draw_multiple(k, &HINOX_DRAW_FRAMES[start..start + count]);
-        self.sprite_draw_shadow_custom(k, &mut info, 10);
+        self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 
     // -----------------------------------------------------------------------
@@ -398,7 +401,7 @@ impl ZeldaState {
     // }
     pub(super) fn shop_item_red_potion150(&mut self, k: usize) {
         self.sprite_draw_shop_item(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_behave_as_barrier(k);
@@ -440,7 +443,7 @@ impl ZeldaState {
     // }
     pub(super) fn shop_item_fighter_shield(&mut self, k: usize) {
         self.sprite_draw_shop_item(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_behave_as_barrier(k);
@@ -488,7 +491,7 @@ impl ZeldaState {
     // }
     pub(super) fn shop_item_fire_shield(&mut self, k: usize) {
         self.sprite_draw_shop_item(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_behave_as_barrier(k);
@@ -529,7 +532,7 @@ impl ZeldaState {
             sprite.set_flags4(0x1c);
         }
         // ROM $1E:F273 JSL $06:F2AA
-        self.sprite_check_damage_from_link_long(k);
+        self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
         self.sprite_slot_view_mut(k).set_flags4(0xa);
     }
 
@@ -552,7 +555,7 @@ impl ZeldaState {
     // }
     pub(super) fn shop_item_heart(&mut self, k: usize) {
         self.sprite_draw_shop_item(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_behave_as_barrier(k);
@@ -591,7 +594,7 @@ impl ZeldaState {
     // }
     pub(super) fn shop_item_arrows(&mut self, k: usize) {
         self.sprite_draw_shop_item(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_behave_as_barrier(k);
@@ -636,7 +639,7 @@ impl ZeldaState {
     // }
     pub(super) fn shop_item_bombs(&mut self, k: usize) {
         self.sprite_draw_shop_item(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_behave_as_barrier(k);
@@ -680,7 +683,7 @@ impl ZeldaState {
     // }
     pub(super) fn shop_item_bee(&mut self, k: usize) {
         self.sprite_draw_shop_item(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_behave_as_barrier(k);

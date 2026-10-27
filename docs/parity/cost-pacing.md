@@ -12585,3 +12585,19 @@ Both final full CPU census gates **PASS**, **1,473,123 iterations** each, unexpl
 All **48 crystal/pendant phases** remain within one; stable outcomes match the retained control. The default **200k ledger matches every record and EOF**. Ordinary default/reduced builds are warning-free; existing lib-test warnings remain. Default library: **2,677 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,212 pass / 0 failures / 2 ignored**. Both CPU SNES libraries: **504 / 0 / 7**. Generator/worklist, routine-coverage, inverse/regeneration and `git diff --check` pass.
 
 The refreshed `remaining-worklist.json` retains **1,066 diagnostic missing iterations**. Mirror finalization/dispatch, iris and room/door ownership remain open. Source tail aliases are candidate groups rather than unpriced whole routines; protected sprite/player/ancilla/garnish owners were skipped. All **1,512** supplied ledger/cache file sizes/mtimes are unchanged. Raw profiles/predictors were summarized and deleted; evidence is **214.3 MB**, below 3 GB. No GPU run, oracle-cache write, cargo fmt, commit/push or one-off repository script was used.
+
+## Marker plumbing cleanup 2
+
+**Verified pure refactor on `codex/marker-cleanup2`, main `6ea303bf`.** Evidence: `target/marker-cleanup2/`.
+
+**17 families folded; 26 fewer functions.** X/Y/XY/XYZ/Z movement (5), damage from/to/both (3), tile collision, general/00 hit boxes (2), single-small/large/shadow drawing (3), inactive/paused predicates (2), and recoil now use explicit ROM-path selectors with `Unpriced`. Existing scalar child costs remain. Bank-06 XY's Y tail, XYZ's XY tail, default/custom shadow scopes, double-return ownership, and distinct predicates/continuations are preserved. Caller ROM comments are unchanged. Twenty body/wrapper token streams are unchanged after selector normalization; marker compounds use multiline style. Remaining families and the complete before/after literal inventory are in `wrapper-inventory.md` and `wrapper-inventory.json`.
+
+**35 source/test files, +2072 / -1712 lines (net +360); 36 files and +376 net lines including this appendix.** No model, generated price, scalar, loader or transition logic changed.
+
+Both fresh main and final full predictors are **BYTE-IDENTICAL**: ROM and `--live-apu-reads`, headers plus **1,473,123 rows per lane**. All four census gates **PASS**, unexplained zero. `predictor-comparison.json` retains byte lengths and SHA-256 hashes; all four CSVs were deleted after byte comparison. These are periodically seeded CPU logical gates.
+
+The retained **default 200k ledger matches every record and EOF**. Library pass/fail/ignored: **default 2673/1/3** (only the known spotlight caller-return failure), **reduced 2208/0/2**. All marker fixtures pass. Both ordinary builds are warning-free; lib-test warning groups match baseline exactly (**24 default / 1 reduced**), with no new dead code or `cfg_attr(not(test))` policy change. All 19 pricing/worklist/coverage/shortfall Python tests, exact table regeneration and `git diff --check` pass.
+
+**Deferred loader families:** `filter_majorly_whiten_bg`; `overworld_check_special_switch_area`, `draw_mire_body`, bank-02 decompression and module09 long-load paths; dungeon basic/crystal-peg attributes; water-tag tile preparation; 32x32/floor-chunk builders; pre-dungeon song/reset and straight-interroom sprite-reset continuations. Their files/callers were not edited. Broader ending, NMI, game-loop and player-OAM continuation bodies remain distinct; ending sprite callers only gained selector arguments.
+
+All **1,512 supplied ledger/cache files** retain size and mtime. Source/binary hashes, test manifests and final counts are in `verification.json`; evidence stays below **3 GB**. No GPU run, oracle-cache write, cargo fmt, commit, push or one-off repository script was used.

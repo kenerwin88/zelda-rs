@@ -9,6 +9,10 @@
 //! wrapped behind local `_for_helmasaur_king` shims until their canonical OAM
 //! paths are ported.
 
+use crate::zelda_rtl::sprite::{
+    SpriteDamageFromEntry, SpriteHitBoxEntry, SpriteInactiveEntry, SpriteMoveEntry,
+    SpriteSingleLargeEntry,
+};
 use super::sprite::PrepOamCoordsRet;
 use super::*;
 use crate::types::{sign8, SpriteHitBox};
@@ -86,8 +90,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).clear();
             }
             // ROM $1E:8049 JSL $06:DBF0
-            self.sprite_draw_single_large_long(k);
-            if self.sprite_return_if_inactive(k) {
+            self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+            if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
             if ((self.game_state.frame.frame_counter & 7) | self.sprite_slot_view(k).delay_aux1())
@@ -95,7 +99,7 @@ impl ZeldaState {
             {
                 self.sprite_slot_view_mut(k).xor_oam_flags(0x40);
             }
-            self.sprite_move_xyz_bank(k, 0x1eff34);
+            self.sprite_move_xyz(k, SpriteMoveEntry::Rom1EFF34);
             self.sprite_slot_view_mut(k).subtract_z_velocity(2);
             if sign8(self.sprite_slot_view(k).z()) {
                 let mut sprite = self.sprite_slot_view_mut(k);
@@ -141,7 +145,7 @@ impl ZeldaState {
             return;
         }
 
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
 
@@ -160,7 +164,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_e(c);
 
         // ROM $1E:8145 JSL $06:F2AA
-        self.sprite_check_damage_from_link_long(k);
+        self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
         self.helmasaur_king_swing_tail(k);
         self.helmasaur_king_attempt_damage(k);
         self.helmasaur_king_check_mask_damage_from_hammer(k);
@@ -269,7 +273,7 @@ impl ZeldaState {
             }
         }
         // ROM $1E:81FC
-        self.sprite_move_xy_bank(k, 0x1eff34);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
     }
 
     // bool HelmasaurKing_MaybeFireball(int k) {  // sprite_main.c:19431
@@ -536,7 +540,7 @@ impl ZeldaState {
         self.player_setup_action_hit_box(&mut hb);
         let bak = self.sprite_slot_view(k).y_low();
         self.sprite_slot_view_mut(k).add_y_low(8);
-        self.sprite_setup_hit_box(k, &mut hb);
+        self.sprite_setup_hit_box(k, &mut hb, SpriteHitBoxEntry::Unpriced);
         self.sprite_slot_view_mut(k).set_y_low(bak);
         if self.check_if_hit_boxes_overlap(&hb) {
             self.sprite_slot_view_mut(k).decrement_health();

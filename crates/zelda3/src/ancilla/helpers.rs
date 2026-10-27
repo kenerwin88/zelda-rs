@@ -1,5 +1,6 @@
 //! Shared ancilla movement, lifting, collision, OAM, and sound helpers.
 
+use crate::zelda_rtl::sprite::SpriteHitBoxEntry;
 use super::*;
 const ANCILLA_LIFTABLE_THROW_Y_VELOCITIES: [i8; 4] = [-32, 32, 0, 0];
 const ANCILLA_LIFTABLE_THROW_X_VELOCITIES: [i8; 4] = [0, 0, -32, 32];
@@ -1272,7 +1273,7 @@ impl ZeldaState {
 
     fn ancilla_check_sprite_collision_single(&mut self, k: usize, j: usize) -> bool {
         let mut hb = self.ancilla_setup_hit_box(k);
-        self.sprite_setup_hit_box_long_marked(j, &mut hb);
+        self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Rom0683EA);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
         if !overlap {
             return false;
@@ -1375,7 +1376,7 @@ impl ZeldaState {
 
     fn ancilla_check_basic_sprite_collision_single(&mut self, k: usize, j: usize) -> bool {
         let mut hb = self.ancilla_setup_basic_hit_box(k);
-        self.sprite_setup_hit_box(j, &mut hb);
+        self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Unpriced);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
         if !overlap {
             return false;

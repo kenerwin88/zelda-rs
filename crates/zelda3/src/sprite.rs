@@ -9,6 +9,108 @@ use crate::types::{
     SpriteHitBox,
 };
 
+// Explicit ROM call paths. Unpriced skips added wrapper markers; existing
+// scalar and instruction-stepped child costs retain their original ownership.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteMoveEntry {
+    Unpriced,
+    Rom06E93E,
+    Rom05FA00,
+    Rom1EFF34,
+    Rom1DE95D,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteMoveZEntry {
+    Unpriced,
+    Rom06E96C,
+    Rom1EFF62,
+    Rom1DE98B,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteDamageFromEntry {
+    Unpriced,
+    Rom06F2AA,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteDamageToEntry {
+    Unpriced,
+    Rom06F121,
+    Rom1EC26B,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteDamageBothEntry {
+    Unpriced,
+    Rom05AB93,
+    Rom06D88B,
+    Rom1DC211,
+    Rom1EC267,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteTileCollisionEntry {
+    Unpriced,
+    Rom06E496,
+    Rom1E8B2E,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteHitBoxEntry {
+    Unpriced,
+    Rom0683EA,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteHitBox00Entry {
+    Unpriced,
+    Rom06F1F6,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteSingleSmallEntry {
+    Unpriced,
+    Rom06DCEF,
+    Rom06DBF8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteSingleLargeEntry {
+    Unpriced,
+    Rom06DBF0,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteShadowEntry {
+    Unpriced,
+    Rom06DC54,
+    Rom06DC54Default,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteInactiveEntry {
+    Unpriced,
+    Rom06D9EC,
+    Rom05F94E,
+    Rom1AF954,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpritePausedEntry {
+    Unpriced,
+    Rom06D9F3,
+    Rom05F955,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteRecoilEntry {
+    Unpriced,
+    Rom1EFE9B,
+    Rom1DE8C5,
+}
+
 mod sprite_shared;
 use sprite_shared::*;
 

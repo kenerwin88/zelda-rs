@@ -1,4 +1,8 @@
 //! Ported Blind-boss handlers from sprite_main.c.
+use crate::zelda_rtl::sprite::{
+    SpriteDamageBothEntry, SpriteInactiveEntry, SpriteMoveEntry, SpriteRecoilEntry,
+    SpriteSingleLargeEntry, SpriteTileCollisionEntry,
+};
 use super::*;
 
 mod sprite_main_blind_shared;
@@ -26,7 +30,7 @@ impl ZeldaState {
             sprite.set_oam_flags(BLIND_LASER_OAM_FLAGS_BY_HEAD_DIR[j] | 3);
         }
         self.sprite_prep_oam_coord(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         if self.sprite_slot_view(k).delay_main() != 0 {
@@ -46,7 +50,7 @@ impl ZeldaState {
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
         // ROM $1D:A2BD -> $1D:8094 -> $06:E496
-        if self.sprite_check_tile_collision_long(k) != 0 {
+        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0 {
             self.sprite_slot_view_mut(k).set_delay_main(12);
         }
         self.blind_laser_spawn_trail_garnish(k);
@@ -129,17 +133,17 @@ impl ZeldaState {
     pub(super) fn sprite_blind_head(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).or_object_priority_bits(48);
         // ROM $1D:A120 JSL $06:DBF0
-        self.sprite_draw_single_large_long(k);
+        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
         // OamEnt *oam = GetOamCurPtr(); oam->charnum = ...; oam->flags = ...;
         self.blind_head_apply_oam_for_blind(k);
 
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         if self.sprite_slot_view(k).f() == 14 {
             self.sprite_slot_view_mut(k).set_f(8);
         }
-        if self.sprite_return_if_recoiling_bank(k, 0x1de95d) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1DE8C5) {
             return;
         }
         let new_sub = self.sprite_slot_view(k).subtype().wrapping_sub(1);
@@ -153,7 +157,7 @@ impl ZeldaState {
             return;
         }
         // $1D:A168 JSR $1D:C211: both complete damage calls.
-        self.sprite_check_damage_both_marked(k, 0x1dc211);
+        self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1DC211);
         self.sprite_slot_view_mut(k).increment_subtype2();
         let j_ret = self.blind_spit_fireball(k, 0x1f);
         if j_ret >= 0 {
@@ -184,7 +188,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).increment_anim_clock();
         }
         if self.sprite_slot_view(k).f() == 0 {
-            self.sprite_move_xy_bank(k, 0x1de95d);
+            self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
         }
     }
 
@@ -237,7 +241,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).or_object_priority_bits(0x30);
         self.blind_draw(k);
         self.sprite_slot_view_mut(k).set_oam_flags(1);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         let a = self.sprite_slot_view(k).f();
@@ -376,7 +380,7 @@ impl ZeldaState {
                     sprite.set_ignore_projectile(0);
                 } else if self.sprite_slot_view(k).delay_aux2() < 64 {
                     self.sprite_slot_view_mut(k).set_y_velocity((-8i8) as u8);
-                    self.sprite_move_axis_bank(k, false, 0x1de95d);
+                    self.sprite_move_axis(k, false, SpriteMoveEntry::Rom1DE95D);
                 }
                 self.blind_animate(k);
                 self.sprite_slot_view_mut(k).set_head_direction(4);
@@ -419,7 +423,7 @@ impl ZeldaState {
                 {
                     self.sprite_slot_view_mut(k).increment_g();
                 }
-                self.sprite_move_xy_bank(k, 0x1de95d);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
                 if self.sprite_slot_view(k).wall_collision() != 0 {
                     let wc = self.sprite_slot_view(k).wall_collision();
                     self.blind_fireball_flurry(k, wc);
@@ -433,7 +437,7 @@ impl ZeldaState {
                 self.blind_check_bump_damage(k);
                 if self.sprite_slot_view(k).delay_aux2() != 0 {
                     self.blind_decelerate_x(k);
-                    self.sprite_move_x_bank(k, 0x1de95d);
+                    self.sprite_move_x(k, SpriteMoveEntry::Rom1DE95D);
                     self.blind_decelerate_y(k);
                 } else {
                     let j = (self.sprite_slot_view(k).direction().wrapping_sub(2)) as usize;
@@ -451,7 +455,7 @@ impl ZeldaState {
                         sprite.increment_c();
                         sprite.set_b(b);
                     }
-                    self.sprite_move_xy_bank(k, 0x1de95d);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
                     self.blind_decelerate_x(k);
                 }
             }
@@ -650,7 +654,7 @@ impl ZeldaState {
             };
             self.sprite_slot_view_mut(k).add_y_velocity(delta as u8);
         }
-        self.sprite_move_axis_bank(k, false, 0x1de95d);
+        self.sprite_move_axis(k, false, SpriteMoveEntry::Rom1DE95D);
         if self.sprite_slot_view(k).wall_collision() != 0 {
             let wc = self.sprite_slot_view(k).wall_collision();
             self.blind_fireball_flurry(k, wc);
@@ -674,7 +678,7 @@ impl ZeldaState {
         let sprite = self.sprite_slot_view(k);
         if (sprite.delay_aux4() | sprite.f()) == 0 {
             // $1D:A6C8 JSR $1D:C211: both complete damage calls.
-            self.sprite_check_damage_both_marked(k, 0x1dc211);
+            self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1DC211);
         }
         let link_x = self.game_state.player.follower_link.x();
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();

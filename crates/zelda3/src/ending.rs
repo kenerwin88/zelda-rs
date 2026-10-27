@@ -1,3 +1,6 @@
+use crate::zelda_rtl::sprite::{
+    SpriteMoveEntry, SpriteShadowEntry,
+};
 // Methods ported from zelda3/src/ending.c and included inside ZeldaState.
 
 
@@ -1681,7 +1684,7 @@ impl ZeldaState {
                         CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE4_SPRITE_CHARS[k],
                     );
                     self.end_sequence_draw_shadow2(k);
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                     if k == 0 {
                         break;
                     }
@@ -1763,7 +1766,7 @@ impl ZeldaState {
                 if r16 >= 0x180 {
                     self.sprite_slot_view_mut(k).set_y_velocity(4);
                     if self.sprite_slot_view(k).y_low() != 0x7c {
-                        self.sprite_move_xy(k);
+                        self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                     }
                 }
                 k -= 1;
@@ -1808,7 +1811,7 @@ impl ZeldaState {
                     }
                     if self.sprite_slot_view(k).state() != 0 {
                         self.sprite_slot_view_mut(k).set_y_velocity((-8i8) as u8);
-                        self.sprite_move_xy(k);
+                        self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                         if self.game_state.frame.frame_counter & 1 == 0 {
                             let delta = if ((self.game_state.frame.frame_counter >> 5) ^ k as u8)
                                 & 1
@@ -1940,7 +1943,7 @@ impl ZeldaState {
                     };
                     self.sprite_slot_view_mut(k).add_x_velocity(x_delta);
                     self.sprite_slot_view_mut(k).add_y_velocity(y_delta);
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                 }
                 let oam_flags = (self.sprite_slot_view(k).x_velocity() >> 1 & 0x40) ^ 0x7e;
                 self.sprite_slot_view_mut(k).set_oam_flags(oam_flags);
@@ -1997,7 +2000,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
                 self.credits_sprite_draw_single(k, 3, 0x34);
-                self.sprite_move_xy(k);
+                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
             }
             14 => {
                 let mut k = 6usize;
@@ -2041,7 +2044,7 @@ impl ZeldaState {
                             }
                             self.sprite_slot_view_mut(k).set_x_velocity(v);
                         }
-                        self.sprite_move_xy(k);
+                        self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                         let graphics = CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE14_BIRD_GFX_FRAMES
                             [((self.game_state.frame.frame_counter >> 3) & 3) as usize];
                         self.sprite_slot_view_mut(k).set_graphics(graphics);
@@ -2139,7 +2142,7 @@ impl ZeldaState {
         self.oam_allocate_from_region_a(4);
         let mut info = self.ending_coords;
         // ROM $0E:A608
-        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
+        self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
         self.ending_coords = info;
     }
 
@@ -2148,7 +2151,7 @@ impl ZeldaState {
         self.oam_allocate_from_region_a(4);
         let mut info = self.ending_coords;
         // ROM $0E:A608
-        self.sprite_draw_shadow_long_marked(k, &mut info, 10);
+        self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
         self.ending_coords = info;
     }
 
@@ -2248,7 +2251,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(32);
         self.credits_sprite_draw_single(k, 2, 26);
         self.end_sequence_draw_shadow2(k);
-        self.sprite_move_xy(k);
+        self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
     }
 
     pub(super) fn credits_sprite_draw_move_squirrel(&mut self, k: usize) {
@@ -2262,7 +2265,7 @@ impl ZeldaState {
                 .set_x_velocity(CREDITS_SPRITE_DRAW_MOVE_SQUIRREL_X_VELOCITIES[j] as u8);
             self.sprite_slot_view_mut(k)
                 .set_y_velocity(CREDITS_SPRITE_DRAW_MOVE_SQUIRREL_Y_VELOCITIES[j] as u8);
-            self.sprite_move_xy(k);
+            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
         }
     }
 
@@ -2293,7 +2296,7 @@ impl ZeldaState {
                     .set_head_direction(head_direction);
             }
         }
-        self.sprite_move_xy(k);
+        self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
     }
 
     pub(super) fn credits_handle_camera_scroll_control(&mut self) {

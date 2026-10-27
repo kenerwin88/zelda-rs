@@ -1,5 +1,9 @@
 //! Sprite properties, movement, dynamic spawning, terrain, messages, and room-clear helpers.
 
+use crate::zelda_rtl::sprite::{
+    SpriteHitBoxEntry, SpriteTileCollisionEntry,
+};
+use crate::zelda_rtl::sprite::{SpriteMoveEntry, SpriteMoveZEntry};
 use super::*;
 
 impl ZeldaState {
@@ -62,16 +66,28 @@ impl ZeldaState {
         self.sprite_project_speed_towards_location(k, x, y, vel)
     }
 
-    pub(in crate::zelda_rtl) fn sprite_move_z_marked(&mut self, k: usize, entry: u32) {
+    pub(in crate::zelda_rtl) fn sprite_move_z(&mut self, k: usize, path: SpriteMoveZEntry) {
+        let entry = match path {
+            SpriteMoveZEntry::Unpriced => {
+                self.sprite_slot_view_mut(k).move_z();
+                return;
+            }
+            SpriteMoveZEntry::Rom06E96C => 0x06e96c,
+            SpriteMoveZEntry::Rom1EFF62 => 0x1eff62,
+            SpriteMoveZEntry::Rom1DE98B => 0x1de98b,
+        };
         // $06:E96C, $1E:FF62 and $1D:E98B are identical complete Z movers.
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
         let b = crate::cycle_ledger::blocks(self.lag_free);
         let delta = entry - 0x06e96c;
         b.block(entry);
-        if self.sprite_slot_view(k).z_velocity() & 0x80 == 0 { b.taken(0x06e983 + delta); }
-        else { b.block(0x06e985 + delta); }
+        if self.sprite_slot_view(k).z_velocity() & 0x80 == 0 {
+            b.taken(0x06e983 + delta);
+        } else {
+            b.block(0x06e985 + delta);
+        }
         b.block(0x06e987 + delta);
-        self.sprite_move_z(k);
+        self.sprite_slot_view_mut(k).move_z();
     }
 
 
@@ -597,9 +613,29 @@ impl ZeldaState {
         }
     }
 
-    pub(in crate::zelda_rtl) fn sprite_move_xy(&mut self, k: usize) {
-        self.sprite_move_x(k);
-        self.sprite_move_y(k);
+    pub(in crate::zelda_rtl) fn sprite_move_xy(&mut self, k: usize, entry: SpriteMoveEntry) {
+        if entry == SpriteMoveEntry::Unpriced {
+            self.sprite_move_x(k, SpriteMoveEntry::Unpriced);
+            self.sprite_move_y(k, SpriteMoveEntry::Unpriced);
+            return;
+        }
+        let address = match entry {
+            SpriteMoveEntry::Rom06E93E => 0x06e93e,
+            SpriteMoveEntry::Rom05FA00 => 0x05fa00,
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff34,
+            SpriteMoveEntry::Rom1DE95D => 0x1de95d,
+            SpriteMoveEntry::Unpriced => unreachable!(),
+        };
+        // Bank 06 tail Y keeps the XY scope; other banks call Y separately.
+        let xy = match entry {
+            SpriteMoveEntry::Rom06E93E => 0x06e92c,
+            SpriteMoveEntry::Rom05FA00 => 0x05f9ed,
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff21,
+            SpriteMoveEntry::Rom1DE95D => 0x1de94b,
+            SpriteMoveEntry::Unpriced => unreachable!(),
+        };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xy));
+        self.sprite_move_xy_body(k, entry, address, xy);
     }
 
     /// Execute only `Sprite_MoveX`'s first source assignment and return the
@@ -633,7 +669,7 @@ impl ZeldaState {
                 (continuation.x_low, continuation.x_high) = self.sprite_move_x_through_subpixel(k);
                 self.sprite_slot_view_mut(k).set_x_low(continuation.x_low);
             }
-            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_x(k),
+            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_x(k, SpriteMoveEntry::Unpriced),
             crate::SpriteMoveXYCheckpoint::AfterYSubpixel => {
                 (continuation.y_low, continuation.y_high) =
                     self.sprite_move_xy_through_y_subpixel(k);
@@ -643,7 +679,7 @@ impl ZeldaState {
                     self.sprite_move_xy_through_y_subpixel(k);
                 self.sprite_slot_view_mut(k).set_y_low(continuation.y_low);
             }
-            crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy(k),
+            crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy(k, SpriteMoveEntry::Unpriced),
         }
         continuation
     }
@@ -657,20 +693,20 @@ impl ZeldaState {
         continuation: SpriteMoveXYContinuation,
     ) {
         match checkpoint {
-            crate::SpriteMoveXYCheckpoint::BeforeMovement => self.sprite_move_xy(k),
+            crate::SpriteMoveXYCheckpoint::BeforeMovement => self.sprite_move_xy(k, SpriteMoveEntry::Unpriced),
             crate::SpriteMoveXYCheckpoint::AfterXSubpixel => {
                 self.complete_sprite_move_x_after_subpixel(
                     k,
                     continuation.x_low,
                     continuation.x_high,
                 );
-                self.sprite_move_y(k);
+                self.sprite_move_y(k, SpriteMoveEntry::Unpriced);
             }
             crate::SpriteMoveXYCheckpoint::AfterXLow => {
                 self.sprite_slot_view_mut(k).set_x_high(continuation.x_high);
-                self.sprite_move_y(k);
+                self.sprite_move_y(k, SpriteMoveEntry::Unpriced);
             }
-            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_y(k),
+            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_y(k, SpriteMoveEntry::Unpriced),
             crate::SpriteMoveXYCheckpoint::AfterYSubpixel => self
                 .complete_sprite_move_y_after_subpixel(k, continuation.y_low, continuation.y_high),
             crate::SpriteMoveXYCheckpoint::AfterYLow => {
@@ -696,7 +732,7 @@ impl ZeldaState {
     /// computed low/high bytes lets a host-boundary continuation finish those
     /// assignments without evaluating the velocity twice.
     pub(in crate::zelda_rtl) fn sprite_move_xy_through_y_subpixel(&mut self, k: usize) -> (u8, u8) {
-        self.sprite_move_x(k);
+        self.sprite_move_x(k, SpriteMoveEntry::Unpriced);
         self.sprite_move_y_through_subpixel(k)
     }
 
@@ -735,118 +771,135 @@ impl ZeldaState {
     //   Sprite_MoveX(k);
     //   Sprite_MoveY(k);
     // }
-    pub(in crate::zelda_rtl) fn sprite_move_xyz(&mut self, k: usize) {
-        self.sprite_move_z(k);
-        self.sprite_move_x(k);
-        self.sprite_move_y(k);
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_move_x(&mut self, k: usize) {
-        self.sprite_slot_view_mut(k).move_x();
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_move_y(&mut self, k: usize) {
-        self.sprite_slot_view_mut(k).move_y();
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_move_xy_marked(&mut self, k: usize, entry: u32) {
-        // $06:E92C calls X then tail-jumps Y; $05:F9ED calls both
-        // axes and returns. The tail's instructions retain the XY owner.
-        let xy = if entry == 0x06e93e { 0x06e92c } else { 0x05f9ed };
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xy));
-        let blocks = crate::cycle_ledger::blocks(self.lag_free);
-        blocks.block(xy);
-        self.sprite_move_x_marked(k, entry);
-        blocks.block(xy + 3);
-        if entry == 0x06e93e {
-            self.sprite_move_axis_marked_body(k, false, entry);
-        } else {
-            self.sprite_move_y_marked(k, entry);
-            blocks.block(xy + 6);
+    pub(in crate::zelda_rtl) fn sprite_move_xyz(&mut self, k: usize, entry: SpriteMoveEntry) {
+        if entry == SpriteMoveEntry::Unpriced {
+            self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+            self.sprite_move_x(k, SpriteMoveEntry::Unpriced);
+            self.sprite_move_y(k, SpriteMoveEntry::Unpriced);
+            return;
         }
+        let address = match entry {
+            SpriteMoveEntry::Rom06E93E => 0x06e93e,
+            SpriteMoveEntry::Rom05FA00 => 0x05fa00,
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff34,
+            SpriteMoveEntry::Rom1DE95D => 0x1de95d,
+            SpriteMoveEntry::Unpriced => unreachable!(),
+        };
+        // Z call and shared XY tail retain the XYZ owner.
+        let xyz = if entry == SpriteMoveEntry::Rom1EFF34 { 0x1eff1e } else { 0x1de948 };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xyz));
+        crate::cycle_ledger::blocks(self.lag_free).block(xyz);
+        // $1E:FF1E JSR $FF62 / $1D:E948 JSR $E98B.
+        self.sprite_move_z(k, if entry == SpriteMoveEntry::Rom1EFF34 {
+            SpriteMoveZEntry::Rom1EFF62
+        } else {
+            SpriteMoveZEntry::Rom1DE98B
+        });
+        self.sprite_move_xy_body(k, entry, address, xyz + 3);
     }
 
-    pub(in crate::zelda_rtl) fn sprite_move_x_marked(&mut self, k: usize, entry: u32) {
-        // $06:E932..E93D / $05:F9F4..F9FF: X-array offset and
-        // child JSR, then restore the slot index and RTS.
-        let x = entry - 12;
+    pub(in crate::zelda_rtl) fn sprite_move_x(&mut self, k: usize, entry: SpriteMoveEntry) {
+        if entry == SpriteMoveEntry::Unpriced {
+            self.sprite_slot_view_mut(k).move_x();
+            return;
+        }
+        let address = match entry {
+            SpriteMoveEntry::Rom06E93E => 0x06e93e,
+            SpriteMoveEntry::Rom05FA00 => 0x05fa00,
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff34,
+            SpriteMoveEntry::Rom1DE95D => 0x1de95d,
+            SpriteMoveEntry::Unpriced => unreachable!(),
+        };
+        let x = match entry {
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff28,
+            SpriteMoveEntry::Rom1DE95D => 0x1de952,
+            _ => address - 12,
+        };
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(x));
         let blocks = crate::cycle_ledger::blocks(self.lag_free);
         blocks.block(x);
-        self.sprite_move_axis_marked(k, true, entry);
-        blocks.block(x + 8);
+        {
+            let _axis = self.lag_free.then(|| crate::cycle_ledger::routine(address));
+            self.sprite_move_axis_body(k, true, address);
+        }
+        blocks.block(match entry {
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff30,
+            SpriteMoveEntry::Rom1DE95D => 0x1de95b,
+            _ => x + 8,
+        });
     }
 
-    pub(in crate::zelda_rtl) fn sprite_move_y_marked(&mut self, k: usize, entry: u32) {
-        self.sprite_move_axis_marked(k, false, entry);
+    pub(in crate::zelda_rtl) fn sprite_move_y(&mut self, k: usize, entry: SpriteMoveEntry) {
+        if entry == SpriteMoveEntry::Unpriced {
+            self.sprite_slot_view_mut(k).move_y();
+            return;
+        }
+        let address = match entry {
+            SpriteMoveEntry::Rom06E93E => 0x06e93e,
+            SpriteMoveEntry::Rom05FA00 => 0x05fa00,
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff34,
+            SpriteMoveEntry::Rom1DE95D => 0x1de95d,
+            SpriteMoveEntry::Unpriced => unreachable!(),
+        };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(address));
+        self.sprite_move_axis_body(k, false, address);
     }
 
-    fn sprite_move_axis_marked(&mut self, k: usize, horizontal: bool, entry: u32) {
-        assert!(matches!(entry, 0x06e93e | 0x05fa00));
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
-        self.sprite_move_axis_marked_body(k, horizontal, entry);
-    }
-
-    fn sprite_move_axis_marked_body(&mut self, k: usize, horizontal: bool, entry: u32) {
+    fn sprite_move_axis_body(&mut self, k: usize, horizontal: bool, entry: u32) {
         // $06:E93E..E96B / $05:FA00..FA2D, M8/X8. X enters
         // this same body with X+16. All indexed arrays stay in-page.
         let slot = self.sprite_slot_view(k);
         let velocity = if horizontal { slot.x_velocity() } else { slot.y_velocity() };
         let blocks = crate::cycle_ledger::blocks(self.lag_free);
         blocks.block(entry);
-        if velocity == 0 { blocks.taken(entry + 3); }
-        else {
+        if velocity == 0 {
+            blocks.taken(entry + 3);
+        } else {
             blocks.block(entry + 5);
-            if velocity & 128 == 0 { blocks.taken(entry + 0x1b); }
-            else { blocks.block(entry + 0x1d); }
+            if velocity & 128 == 0 {
+                blocks.taken(entry + 0x1b);
+            } else {
+                blocks.block(entry + 0x1d);
+            }
             blocks.block(entry + 0x20);
         }
         blocks.block(entry + 0x2d);
-        if horizontal { self.sprite_move_x(k); } else { self.sprite_move_y(k); }
+        if horizontal { self.sprite_slot_view_mut(k).move_x(); } else { self.sprite_slot_view_mut(k).move_y(); }
     }
 
     /// $1E:FF34..FF61 and $1D:E95D..E98A are identical full axis bodies.
     /// Their X wrappers execute the same body with X = slot + $10.
-    pub(in crate::zelda_rtl) fn sprite_move_axis_bank(&mut self, k: usize, horizontal: bool, entry: u32) {
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
-        self.sprite_move_axis_marked_body(k, horizontal, entry);
+    pub(in crate::zelda_rtl) fn sprite_move_axis(
+        &mut self,
+        k: usize,
+        horizontal: bool,
+        entry: SpriteMoveEntry,
+    ) {
+        let address = match entry {
+            SpriteMoveEntry::Rom06E93E => 0x06e93e,
+            SpriteMoveEntry::Rom05FA00 => 0x05fa00,
+            SpriteMoveEntry::Rom1EFF34 => 0x1eff34,
+            SpriteMoveEntry::Rom1DE95D => 0x1de95d,
+            SpriteMoveEntry::Unpriced => {
+                if horizontal { self.sprite_slot_view_mut(k).move_x(); } else { self.sprite_slot_view_mut(k).move_y(); }
+                return;
+            }
+        };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(address));
+        self.sprite_move_axis_body(k, horizontal, address);
     }
 
-    pub(in crate::zelda_rtl) fn sprite_move_xy_bank(&mut self, k: usize, entry: u32) {
-        // $1E:FF21..FF27 / $1D:E94B..E951: two calls and RTS.
-        let xy = if entry == 0x1eff34 { 0x1eff21 } else { 0x1de94b };
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xy));
-        self.sprite_move_xy_bank_body(k, entry, xy);
-    }
-
-    fn sprite_move_xy_bank_body(&mut self, k: usize, entry: u32, xy: u32) {
+    fn sprite_move_xy_body(&mut self, k: usize, entry: SpriteMoveEntry, address: u32, xy: u32) {
         let blocks = crate::cycle_ledger::blocks(self.lag_free);
         blocks.block(xy);
-        self.sprite_move_x_bank(k, entry);
+        self.sprite_move_x(k, entry);
         blocks.block(xy + 3);
-        self.sprite_move_axis_bank(k, false, entry);
-        blocks.block(xy + 6);
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_move_x_bank(&mut self, k: usize, entry: u32) {
-        // $1E:FF28..FF33 / $1D:E952..E95C: X-to-Y-array wrapper.
-        let x = if entry == 0x1eff34 { 0x1eff28 } else { 0x1de952 };
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(x));
-        let blocks = crate::cycle_ledger::blocks(self.lag_free);
-        blocks.block(x);
-        self.sprite_move_axis_bank(k, true, entry);
-        blocks.block(if entry == 0x1eff34 { 0x1eff30 } else { 0x1de95b });
-    }
-
-    pub(in crate::zelda_rtl) fn sprite_move_xyz_bank(&mut self, k: usize, entry: u32) {
-        // $1E:FF1E..FF27 / $1D:E948..E951: Z call and shared XY tail.
-        let xyz = if entry == 0x1eff34 { 0x1eff1e } else { 0x1de948 };
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xyz));
-        crate::cycle_ledger::blocks(self.lag_free).block(xyz);
-        // $1E:FF1E JSR $FF62 / $1D:E948 JSR $E98B: only the
-        // call opcode belongs to XYZ; the complete Z body is separate.
-        self.sprite_move_z_marked(k, if entry == 0x1eff34 { 0x1eff62 } else { 0x1de98b });
-        self.sprite_move_xy_bank_body(k, entry, xyz + 3);
+        if entry == SpriteMoveEntry::Rom06E93E {
+            self.sprite_move_axis_body(k, false, address);
+        } else {
+            self.sprite_move_y(k, entry);
+            blocks.block(xy + 6);
+        }
     }
 
     // ----- Common sprite-AI helpers (round-3 agent) -----
@@ -984,7 +1037,7 @@ impl ZeldaState {
                 r7_spr_ysize: 0,
             };
             self.link_setup_hit_box_conditional(&mut hb);
-            self.sprite_setup_hit_box(k, &mut hb);
+            self.sprite_setup_hit_box(k, &mut hb, SpriteHitBoxEntry::Unpriced);
             if self.check_if_hit_boxes_overlap(&hb) {
                 if self.lag_free { crate::cycle_ledger::charge(134); } // $F270..F278.
                 let v = (k as u8).wrapping_add(1);
@@ -1550,7 +1603,7 @@ impl ZeldaState {
     // }
     pub(in crate::zelda_rtl) fn sprite_bounce_from_tile_collision(&mut self, k: usize) -> u8 {
         // ROM $1D:C751 -> $1D:8094 -> $06:E496
-        let j = self.sprite_check_tile_collision_long(k);
+        let j = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
         if (j & 3) != 0 {
             let value = self.sprite_slot_view(k).x_velocity().wrapping_neg();
             self.sprite_slot_view_mut(k).set_x_velocity(value);

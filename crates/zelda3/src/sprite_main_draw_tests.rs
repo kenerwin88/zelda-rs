@@ -1,3 +1,7 @@
+use crate::zelda_rtl::sprite::{
+    SpriteDamageToEntry, SpriteHitBoxEntry, SpriteMoveEntry, SpriteMoveZEntry, SpriteRecoilEntry,
+    SpriteShadowEntry,
+};
 use super::*;
 use crate::rom_random::RomRandomResult;
 
@@ -370,7 +374,7 @@ fn shadow_draw_extended_oam_tail_resumes_after_ordinary_entry() {
     assert_eq!(split.game_state.oam.extended_byte(0), 0);
     split.finish_shadow_extended_oam_write(pending);
 
-    atomic.sprite_draw_shadow_custom(2, &mut atomic_info, 10);
+    atomic.sprite_draw_shadow_custom(2, &mut atomic_info, 10, SpriteShadowEntry::Unpriced);
     assert_eq!(*split.wram_image(), *atomic.wram_image());
     assert_eq!(split.game_state, atomic.game_state);
     assert_eq!(split_info.y, atomic_info.y);
@@ -901,9 +905,9 @@ fn marker30_wrapper_cases(entry:u32,end:u32,axis:u32,kind:u8) {
             crate::cycle_ledger::assert_rom_marker_work(entry,machine,
                 |s|s.cpu.k==(entry>>16)as u8 && (entry as u16..end as u16).contains(&s.cpu.pc),
                 ||match kind {
-                    0=>native.sprite_move_xyz_bank(k,axis),
-                    1=>native.sprite_move_xy_bank(k,axis),
-                    _=>native.sprite_move_x_bank(k,axis),
+                    0=>native.sprite_move_xyz(k, match axis { 0x06e93e => SpriteMoveEntry::Rom06E93E, 0x05fa00 => SpriteMoveEntry::Rom05FA00, 0x1eff34 => SpriteMoveEntry::Rom1EFF34, 0x1de95d => SpriteMoveEntry::Rom1DE95D, _ => unreachable!() }),
+                    1=>native.sprite_move_xy(k, match axis { 0x06e93e => SpriteMoveEntry::Rom06E93E, 0x05fa00 => SpriteMoveEntry::Rom05FA00, 0x1eff34 => SpriteMoveEntry::Rom1EFF34, 0x1de95d => SpriteMoveEntry::Rom1DE95D, _ => unreachable!() }),
+                    _=>native.sprite_move_x(k, match axis { 0x06e93e => SpriteMoveEntry::Rom06E93E, 0x05fa00 => SpriteMoveEntry::Rom05FA00, 0x1eff34 => SpriteMoveEntry::Rom1EFF34, 0x1de95d => SpriteMoveEntry::Rom1DE95D, _ => unreachable!() }),
                 });
         }
     }
@@ -924,7 +928,7 @@ fn marker30_axis_cases(entry: u32) {
                     let Some(machine)=marker29_machine(&native,entry,slot+offset)else{return};
                     let source=crate::cycle_ledger::assert_rom_marker_work(entry,machine,
                         |s|s.cpu.k==(entry>>16)as u8 && (entry as u16..entry as u16+0x2e).contains(&s.cpu.pc),
-                        ||native.sprite_move_axis_bank(slot,horizontal,entry));
+                        ||native.sprite_move_axis(slot,horizontal, match entry { 0x06e93e => SpriteMoveEntry::Rom06E93E, 0x05fa00 => SpriteMoveEntry::Rom05FA00, 0x1eff34 => SpriteMoveEntry::Rom1EFF34, 0x1de95d => SpriteMoveEntry::Rom1DE95D, _ => unreachable!() }));
                     for address in [0xd00,0xd20,0xd60] {
                         assert_eq!(native.read_wram_byte(address+offset+slot),source.snes().ram[address+offset+slot]);
                     }
@@ -944,7 +948,7 @@ fn marker30_axis_cases(entry: u32) {
             let Some(machine)=marker29_machine(&native,caller,k)else{return};
             crate::cycle_ledger::assert_rom_marker_work(entry,machine,
                 |s|s.cpu.k==(entry>>16)as u8 && (entry as u16..entry as u16+0x2e).contains(&s.cpu.pc),
-                ||{native.sprite_return_if_recoiling_bank(k,entry);});
+                ||{native.sprite_return_if_recoiling(k, match entry { 0x1eff34 => SpriteRecoilEntry::Rom1EFE9B, 0x1de95d => SpriteRecoilEntry::Rom1DE8C5, _ => unreachable!() });});
         }
     }
 }
@@ -1075,7 +1079,7 @@ fn marker29_far_damage_wrapper_matches_rom() {
             let Some(machine)=marker29_machine(&native,0x06f121,k) else {return};
             crate::cycle_ledger::assert_rom_marker_work(0x06f121,machine,
                 |s|s.cpu.k==6 && (0xf121..0xf129).contains(&s.cpu.pc),||{
-                    native.sprite_check_damage_to_link_long(k);
+                    native.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
                 });
         }
     }
@@ -1089,7 +1093,7 @@ fn marker29_damage_trampoline_matches_rom() {
     let Some(machine)=marker29_machine(&native,0x1ec26b,0) else {return};
     crate::cycle_ledger::assert_rom_marker_work(0x1ec26b,machine,
         |s|s.cpu.k==0x1e && (0xc26b..0xc270).contains(&s.cpu.pc),||{
-            native.sprite_check_damage_to_link_bank1e(0);
+            native.sprite_check_damage_to_link(0, SpriteDamageToEntry::Rom1EC26B);
         });
 }
 
@@ -1709,7 +1713,7 @@ fn marker37_hitbox_wrapper_matches_rom() {
         let Some(machine) = marker29_machine(&native,0x0683ea,slot) else {return};
         crate::cycle_ledger::assert_rom_marker_work(0x0683ea,machine,
             |s|s.cpu.k==0x6 && (0x83ea..0x83f2).contains(&s.cpu.pc),||{
-                native.sprite_setup_hit_box_long_marked(slot, &mut crate::types::SpriteHitBox { r0_xlo:0,r8_xhi:0,r1_ylo:0,r9_yhi:0,r2:0,r3:0,r4_spr_xlo:0,r10_spr_xhi:0,r5_spr_ylo:0,r11_spr_yhi:0,r6_spr_xsize:0,r7_spr_ysize:0 });
+                native.sprite_setup_hit_box(slot, &mut crate::types::SpriteHitBox { r0_xlo:0,r8_xhi:0,r1_ylo:0,r9_yhi:0,r2:0,r3:0,r4_spr_xlo:0,r10_spr_xhi:0,r5_spr_ylo:0,r11_spr_yhi:0,r6_spr_xsize:0,r7_spr_ysize:0 }, SpriteHitBoxEntry::Rom0683EA);
             });
     }
 }
@@ -1938,7 +1942,7 @@ fn marker40_bank1d_z_matches_rom() {
             native.sync_native_game_state_from_ram();
             let Some(machine)=marker29_machine(&native,0x1de98b,k)else{return};
             crate::cycle_ledger::assert_rom_marker_work(0x1de98b,machine,
-                |s|s.cpu.k==0x1d && (0xe98b..0xe9ad).contains(&s.cpu.pc),||native.sprite_move_z_marked(k,0x1de98b));
+                |s|s.cpu.k==0x1d && (0xe98b..0xe9ad).contains(&s.cpu.pc),||native.sprite_move_z(k, SpriteMoveZEntry::Rom1DE98B));
         }
     }
 }

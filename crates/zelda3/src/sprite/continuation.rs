@@ -1,5 +1,6 @@
 //! Sprite main CPU-boundary continuations and caller completion.
 
+use crate::zelda_rtl::sprite::SpriteMoveEntry;
 use super::*;
 
 impl ZeldaState {
@@ -798,7 +799,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 let k = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
                 self.complete_sprite_move_x_after_subpixel(k, x_low, x_high);
-                self.sprite_move_y(k);
+                self.sprite_move_y(k, SpriteMoveEntry::Unpriced);
                 self.buzzblob_after_movement(k);
                 self.complete_sprite_main_after_interrupted_slot(k);
             }

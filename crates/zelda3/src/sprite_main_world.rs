@@ -5,6 +5,10 @@
 //! reproduced as a comment block immediately above each port so a reviewer
 //! can verify behavior line-by-line.
 
+use crate::zelda_rtl::sprite::{
+    SpriteInactiveEntry, SpriteMoveEntry, SpriteMoveZEntry, SpriteSingleLargeEntry,
+    SpriteSingleSmallEntry, SpriteTileCollisionEntry,
+};
 use super::sprite::{DrawMultipleData, SpriteSpawnInfo};
 use super::*;
 use crate::tile_definition::{NativeTile, PipeJunction};
@@ -232,7 +236,7 @@ impl ZeldaState {
             }
             1 => {
                 self.somaria_platform_draw(k);
-                if self.sprite_return_if_inactive(k) {
+                if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                     return;
                 }
                 let drag_x = self.game_state.player.follower_link.drag_player_x();
@@ -285,7 +289,7 @@ impl ZeldaState {
                                 .wrapping_add(SOMARIA_PLATFORM_DRAG_Y_OFFSETS[j] as i16 as u16);
                             self.follower_link_state_mut().set_drag_player_x(dx);
                             self.follower_link_state_mut().set_drag_player_y(dy);
-                            self.sprite_move_xy_bank(k, 0x1eff34);
+                            self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
                             self.somaria_platform_drag_link(k);
                         } else {
                             self.follower_link_state_mut().set_somaria_platform_state(1);
@@ -541,7 +545,7 @@ impl ZeldaState {
 
     // void Sprite_AE_Pipe_Down(int k) {  // 9efb7e
     pub(super) fn sprite_ae_pipe_down(&mut self, k: usize) {
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         match self.sprite_slot_view(k).graphics() {
@@ -567,7 +571,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 self.somaria_platform_and_pipe_handle_movement(k);
                 // ROM $1E:FBBA
-                self.sprite_move_xy_bank(k, 0x1eff34);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
             }
             2 => {
                 if self.game_state.sprites.system.alt_sprite_spawned_flag() == 255
@@ -630,7 +634,7 @@ impl ZeldaState {
                         }
                     }
                     // ROM $1E:FBBA
-                    self.sprite_move_xy_bank(k, 0x1eff34);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
                     let x = self.sprite_get_x(k).wrapping_sub(8);
                     let y = self.sprite_get_y(k).wrapping_sub(14);
                     let link_x = self.game_state.player.follower_link.x();
@@ -887,7 +891,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_master_sword_light_beam(&mut self, k: usize) {
         // ROM $05:8AEA JSL $06:DBF0
-        self.sprite_draw_single_large_long(k);
+        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
         if self.sprite_slot_view(k).a() != 0 {
             if let Some(SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
                 slot,
@@ -911,7 +915,7 @@ impl ZeldaState {
                         );
                     }
                     // ROM $05:8AF3
-                    self.sprite_move_xy_marked(k, 0x05fa00);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
                     let mut info = SpriteSpawnInfo::default();
                     self.sprite_spawn_dynamically_selected_prefix(
                         k, 0x62, &mut info, spawned, progress,
@@ -938,7 +942,7 @@ impl ZeldaState {
                                 self.sprite_move_x_through_subpixel(k);
                             self.sprite_slot_view_mut(k).set_x_low(continuation.x_low);
                         }
-                        crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_x(k),
+                        crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_x(k, SpriteMoveEntry::Unpriced),
                         crate::SpriteMoveXYCheckpoint::AfterYSubpixel => {
                             (continuation.y_low, continuation.y_high) =
                                 self.sprite_move_xy_through_y_subpixel(k);
@@ -949,7 +953,7 @@ impl ZeldaState {
                             self.sprite_slot_view_mut(k).set_y_low(continuation.y_low);
                         }
                         // ROM $05:8AF3
-                        crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy_marked(k, 0x05fa00),
+                        crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00),
                     }
                     self.sprite_main_cpu_boundary =
                         Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
@@ -961,7 +965,7 @@ impl ZeldaState {
                 }
             }
             // ROM $05:8AF3
-            self.sprite_move_xy_marked(k, 0x05fa00);
+            self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
             if (self.game_state.frame.frame_counter & 3) == 0 {
                 self.master_sword_spawn_replacement_light_beam(k);
             } else {
@@ -986,20 +990,20 @@ impl ZeldaState {
         assert_eq!(self.sprite_slot_view(k).subtype2(), 2);
         assert_ne!(self.sprite_slot_view(k).a(), 0);
         match checkpoint {
-            crate::SpriteMoveXYCheckpoint::BeforeMovement => self.sprite_move_xy(k),
+            crate::SpriteMoveXYCheckpoint::BeforeMovement => self.sprite_move_xy(k, SpriteMoveEntry::Unpriced),
             crate::SpriteMoveXYCheckpoint::AfterXSubpixel => {
                 self.complete_sprite_move_x_after_subpixel(
                     k,
                     continuation.x_low,
                     continuation.x_high,
                 );
-                self.sprite_move_y(k);
+                self.sprite_move_y(k, SpriteMoveEntry::Unpriced);
             }
             crate::SpriteMoveXYCheckpoint::AfterXLow => {
                 self.sprite_slot_view_mut(k).set_x_high(continuation.x_high);
-                self.sprite_move_y(k);
+                self.sprite_move_y(k, SpriteMoveEntry::Unpriced);
             }
-            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_y(k),
+            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_y(k, SpriteMoveEntry::Unpriced),
             crate::SpriteMoveXYCheckpoint::AfterYSubpixel => self
                 .complete_sprite_move_y_after_subpixel(k, continuation.y_low, continuation.y_high),
             crate::SpriteMoveXYCheckpoint::AfterYLow => {
@@ -1209,10 +1213,10 @@ impl ZeldaState {
     pub(super) fn sprite_master_sword_prop(&mut self, k: usize) {
         self.oam_allocate_from_region_b(4);
         // ROM $05:8D2F JSL $06:DBF0
-        self.sprite_draw_single_large_long(k);
+        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.sprite_move_xy(k);
+                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).set_delay_main(208);
@@ -1231,7 +1235,7 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.sprite_move_xy(k);
+                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let x_velocity = self.sprite_slot_view(k).x_velocity().wrapping_shl(1);
                     let y_velocity = self.sprite_slot_view(k).y_velocity().wrapping_shl(1);
@@ -1305,7 +1309,7 @@ impl ZeldaState {
             let c = self.flute_boy_draw(k);
             self.sprite_slot_view_mut(k).set_c(c);
         }
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         if self.sprite_slot_view(k).c() == 0 && self.sprite_slot_view(k).b() == 0 {
@@ -1365,7 +1369,7 @@ impl ZeldaState {
     //   See sprite_main.c:9881..9954 for the conversation / shovel sequence.
     pub(super) fn sprite_flute_kid_stumpy(&mut self, k: usize) {
         self.flute_aardvark_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         match self.sprite_slot_view(k).ai_state() {
@@ -1471,14 +1475,14 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_flute_kid_quaver(&mut self, k: usize) {
         // ROM $06:B173
-        self.sprite_draw_single_small_marked(k);
-        if self.sprite_return_if_inactive(k) {
+        self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Rom06DCEF);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // ROM $06:B179
-        self.sprite_move_xy_marked(k, 0x06e93e);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
         // ROM $06:B17C
-        self.sprite_move_z_marked(k, 0x06e96c);
+        self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
         if self.sprite_slot_view(k).delay_main() == 0 {
             self.sprite_slot_view_mut(k).set_state(0);
         }
@@ -1597,7 +1601,7 @@ impl ZeldaState {
         if self.game_state.world.location.is_indoors() && self.sprite_slot_view(k).delay_aux1() == 0
         {
             // ROM $1E:FD2F -> $1E:8B2E -> $06:E496
-            if (self.sprite_check_tile_collision_bank1e_marked(k) & 3) != 0 {
+            if (self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E) & 3) != 0 {
                 let x_velocity = 0u8.wrapping_sub(self.sprite_slot_view(k).x_velocity());
                 let direction = 0u8.wrapping_sub(self.sprite_slot_view(k).direction());
                 self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
@@ -1620,7 +1624,7 @@ impl ZeldaState {
             }
         }
         // ROM $1E:FD81
-        self.sprite_move_xy_bank(k, 0x1eff34);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
         if (self.game_state.frame.frame_counter & 63) == 0 {
             let x = (self.game_state.player.follower_link.x() & !0xff)
                 .wrapping_add(u16::from(self.get_random_number()));
@@ -1642,7 +1646,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
         }
         // ROM $1E:FDFC
-        self.sprite_move_z_marked(k, 0x1eff62);
+        self.sprite_move_z(k, SpriteMoveZEntry::Rom1EFF62);
         let z_velocity_delta = if (self.get_random_number() & 1) != 0 {
             -1i8
         } else {

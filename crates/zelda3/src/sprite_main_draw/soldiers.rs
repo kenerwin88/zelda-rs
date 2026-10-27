@@ -1,7 +1,11 @@
 //! Guards, archers, troopers, their weapons, and soldier draw helpers.
 
+use crate::zelda_rtl::sprite::{
+    PrepOamCoordsRet, SpriteDamageBothEntry, SpriteDamageToEntry, SpriteInactiveEntry,
+    SpriteMoveEntry, SpriteMoveZEntry, SpritePausedEntry, SpriteRecoilEntry, SpriteShadowEntry,
+    SpriteSingleLargeEntry, SpriteTileCollisionEntry,
+};
 use super::*;
-use crate::zelda_rtl::sprite::PrepOamCoordsRet;
 use crate::types::sign8;
 use crate::types::PointU8;
 
@@ -329,7 +333,7 @@ impl ZeldaState {
     // }
     pub(super) fn sprite_1_b_arrow(&mut self, k: usize) {
         self.enemy_arrow_draw(k);
-        if self.sprite_return_if_paused(k) {
+        if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
             return;
         }
         if self.sprite_slot_view(k).state() == 9 {
@@ -347,12 +351,12 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                     let value = ENEMY_ARROW_Y_VELOCITIES[idx];
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
-                    self.sprite_move_xy(k);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
                 }
                 return;
             }
             self.sprite_check_damage_to_link_same_layer(k);
-            if self.sprite_slot_view(k).e() == 0 && self.sprite_check_tile_collision(k) != 0 {
+            if self.sprite_slot_view(k).e() == 0 && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0 {
                 if self.sprite_slot_view(k).a() != 0 {
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x5);
                     self.sprite_schedule_for_breakage(k);
@@ -365,7 +369,7 @@ impl ZeldaState {
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x8);
                 }
             } else {
-                self.sprite_move_xy(k);
+                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
             }
         } else {
             if self.sprite_slot_view(k).ai_state() == 0 {
@@ -382,8 +386,8 @@ impl ZeldaState {
                 ENEMY_ARROW_DIRECTIONS[((self.sprite_slot_view(k).delay_main() >> 3) & 3) as usize];
             self.sprite_slot_view_mut(k).set_direction(value);
             // ROM $06:B7EE
-            self.sprite_move_z_marked(k, 0x06e96c);
-            self.sprite_move_xy(k);
+            self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
+            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
             self.sprite_slot_view_mut(k).subtract_z_velocity(2);
             if sign8(self.sprite_slot_view(k).z()) {
                 let value = 0;
@@ -447,7 +451,7 @@ impl ZeldaState {
             r4: 0,
             flags: info_flags,
         };
-        self.sprite_draw_shadow_custom(k, &mut info, 12);
+        self.sprite_draw_shadow_custom(k, &mut info, 12, SpriteShadowEntry::Unpriced);
     }
 
     // -----------------------------------------------------------------------
@@ -470,8 +474,7 @@ impl ZeldaState {
             self.sprite_draw_shadow_custom(
                 k,
                 &mut shadow_info,
-                PSYCHO_TROOPER_DRAW_SHADOW[usize::from(self.sprite_slot_view(k).direction() & 3)],
-            );
+                PSYCHO_TROOPER_DRAW_SHADOW[usize::from(self.sprite_slot_view(k).direction() & 3)], SpriteShadowEntry::Unpriced);
         }
     }
 
@@ -497,8 +500,7 @@ impl ZeldaState {
             self.sprite_draw_shadow_custom(
                 k,
                 &mut shadow_info,
-                JAVELIN_TROOPER_DRAW_SHADOW[usize::from(self.sprite_slot_view(k).direction() & 3)],
-            );
+                JAVELIN_TROOPER_DRAW_SHADOW[usize::from(self.sprite_slot_view(k).direction() & 3)], SpriteShadowEntry::Unpriced);
         }
     }
 
@@ -515,7 +517,7 @@ impl ZeldaState {
         self.sprite_workspace_mut()
             .set_current_sprite_y(bak2.wrapping_add(8));
         // ROM $05:D162 JSL $06:DBF0
-        self.sprite_draw_single_large_long(k);
+        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
         self.sprite_workspace_mut().set_current_sprite_y(bak2);
         let value = bak1;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
@@ -548,8 +550,7 @@ impl ZeldaState {
                 k,
                 &mut shadow_info,
                 BUSH_JAVELIN_SOLDIER_DRAW_SHADOW
-                    [usize::from(self.sprite_slot_view(k).direction() & 3)],
-            );
+                    [usize::from(self.sprite_slot_view(k).direction() & 3)], SpriteShadowEntry::Unpriced);
         }
     }
 
@@ -581,7 +582,7 @@ impl ZeldaState {
                 r4: info.r4,
                 flags: info.flags,
             };
-            self.sprite_draw_shadow_custom(k, &mut shadow_info, ARCHER_SOLDIER_DRAW_SHADOW[d]);
+            self.sprite_draw_shadow_custom(k, &mut shadow_info, ARCHER_SOLDIER_DRAW_SHADOW[d], SpriteShadowEntry::Unpriced);
         }
     }
 
@@ -602,19 +603,19 @@ impl ZeldaState {
         &mut self,
         k: usize,
     ) -> bool {
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return false;
         }
         self.bolt_guard_trigger_chase_theme(k);
         self.guard_parry_sword_attacks(k);
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return false;
         }
         if self.sprite_slot_view(k).wall_collision() == 0 {
-            self.sprite_move_xy(k);
+            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
         }
-        self.sprite_check_tile_collision(k);
-        self.sprite_check_damage_to_link(k);
+        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+        self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
             let dir = self.sprite_direction_to_face_link(k);
             let value = dir;
@@ -633,21 +634,21 @@ impl ZeldaState {
     // void Sprite_44_BluesainBolt(int k) {  // 85cc65
     pub(super) fn sprite_44_bluesain_bolt(&mut self, k: usize) {
         self.psycho_trooper_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.bolt_guard_trigger_chase_theme(k);
         self.guard_parry_sword_attacks(k);
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return;
         }
         if self.sprite_slot_view(k).wall_collision() == 0 {
-            self.sprite_move_xy(k);
+            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
         }
         // ROM $05:CC78 -> $05:B88D -> $06:E496
-        self.sprite_check_tile_collision_long(k);
+        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
         // $05:CC7B JSL $06:F121: complete body, caller opcode unchanged.
-        self.sprite_check_damage_to_link_long(k);
+        self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
             let dir = self.sprite_direction_to_face_link(k);
             let value = dir;
@@ -762,8 +763,7 @@ impl ZeldaState {
                 k,
                 &mut shadow_info,
                 CHAIN_BALL_TROOPER_DRAW_SHADOW
-                    [usize::from(self.sprite_slot_view(k).direction() & 3)],
-            );
+                    [usize::from(self.sprite_slot_view(k).direction() & 3)], SpriteShadowEntry::Unpriced);
         }
     }
 
@@ -782,17 +782,17 @@ impl ZeldaState {
     // void Sprite_Cannonball(int k) {  // 85ab54
     pub(super) fn sprite_cannonball(&mut self, k: usize) {
         // ROM $05:AB54 JSL $06:DBF0
-        self.sprite_draw_single_large_long(k);
-        if self.sprite_return_if_inactive(k) {
+        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // ROM $05:AB5B
-        self.sprite_move_xy_marked(k, 0x05fa00);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         if self.sprite_slot_view(k).delay_main() == 30 {
             self.sprite_spawn_poof_garnish(k);
         } else if self.sprite_slot_view(k).delay_main() == 0
             // ROM $05:AB6F -> $05:B88D -> $06:E496
-            && self.sprite_check_tile_collision_long(k) != 0
+            && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0
         {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
@@ -802,7 +802,7 @@ impl ZeldaState {
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x05);
         }
         // $05:AC05 JSR $05:AB93: complete two-call body.
-        self.sprite_check_damage_both_marked(k, 0x05ab93);
+        self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
     }
 
     // -----------------------------------------------------------------------
@@ -812,7 +812,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).ai_state() < 2 {
             self.draw_scratch_position_mut().set_flags_high(0x80);
         }
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.guard_parry_sword_attacks(k);
@@ -826,15 +826,15 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_a(value);
         let value = ((t >> 8) & 1) as u8;
         self.sprite_slot_view_mut(k).set_b(value);
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return;
         }
         // ROM $05:B04B -> $05:B88D -> $06:E496
-        let _ = self.sprite_check_tile_collision_long(k);
+        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
         // ROM $05:B04E
-        self.sprite_move_xy_marked(k, 0x05fa00);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         // $05:B051 JSL $06:F121: complete body, caller opcode unchanged.
-        self.sprite_check_damage_to_link_long(k);
+        self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
 
         let mut pt = PointU8 { x: 0, y: 0 };
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 0x0f) == 0 {
@@ -925,18 +925,18 @@ impl ZeldaState {
     pub(super) fn sprite_50_cannonball(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() == 0 {
             // ROM $05:B64D JSL $06:DBF0
-            self.sprite_draw_single_large_long(k);
+            self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
         } else {
             self.sprite_draw_big_cannonball(k);
         }
-        if self.sprite_return_if_inactive(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let value = (self.sprite_slot_view(k).subtype2() >> 2) & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
         // ROM $05:B666
-        self.sprite_move_xy_marked(k, 0x05fa00);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         if self.sprite_slot_view(k).delay_main() != 0 {
             if self.sprite_slot_view(k).delay_main() == 1 {
                 let value = 0;
@@ -945,9 +945,9 @@ impl ZeldaState {
             return;
         }
         // $05:B675 JSR $05:AB93: both complete damage calls.
-        self.sprite_check_damage_both_marked(k, 0x05ab93);
+        self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
         // ROM $05:B67D -> $05:B88D -> $06:E496
-        if self.sprite_slot_view(k).delay_aux2() == 0 && self.sprite_check_tile_collision_long(k) != 0 {
+        if self.sprite_slot_view(k).delay_aux2() == 0 && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0 {
             let value = 16;
             self.sprite_slot_view_mut(k).set_delay_main(value);
         }
@@ -978,11 +978,11 @@ impl ZeldaState {
         // $05:BCB5 JSR Sprite_ReturnIfInactive_ (46), $05:BCB8 JSR
         // Sprite_ReturnIfRecoiling_ (46): each double-returns when it fires.
         crate::cycle_ledger::charge(46);
-        if self.sprite_return_if_inactive_bank5(k) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
         crate::cycle_ledger::charge(46);
-        if self.sprite_return_if_recoiling(k) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             // Sprite_ReturnIfRecoiling_ $05:F971 is unannotated, but its
             // double return's second PLA and RTS (70) are measured in this
             // frame, as for every bank-5 double-return wrapper.
@@ -993,10 +993,10 @@ impl ZeldaState {
         // JSR Sprite_CheckTileCollision, LDA $D80,x, BNE (186; taken +6 into
         // GreenKnifeGuard_Moving).
         // $05:BCBB JSR $05:AB93: both complete damage calls.
-        self.sprite_check_damage_both_marked(k, 0x05ab93);
+        self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
         // $05:BCBE JSR $05:F9ED: complete body, caller opcode unchanged.
-        self.sprite_move_xy_marked(k, 0x05fa00);
-        let _ = self.sprite_check_tile_collision(k);
+        self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
         if self.sprite_slot_view(k).ai_state() != 0 {
             crate::cycle_ledger::charge(186 + 6);
             self.green_knife_guard_moving(k);
@@ -1077,7 +1077,7 @@ impl ZeldaState {
             );
         }
         let mut shadow_info = PrepOamCoordsRet { x, y, r4: 0, flags };
-        self.sprite_draw_shadow_custom(k, &mut shadow_info, 10);
+        self.sprite_draw_shadow_custom(k, &mut shadow_info, 10, SpriteShadowEntry::Unpriced);
     }
 
     pub(super) fn bush_soldier_common_draw(&mut self, k: usize) {
