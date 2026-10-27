@@ -677,8 +677,21 @@ impl ZeldaState {
 
     /// ROM: `Module07_07_FallingTransition`
     pub(in crate::zelda_rtl) fn module07_07_falling_transition(&mut self) {
+        // $02:87AC's JSR ($876C,X), table word $877A, selects $8E27, M8/X8.
+        // Price the prefix before the attribute loader can suspend it.
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x028e27));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(0x028e27);
+            if self.game_state.frame.subsubmodule < 6 { b.taken(0x028e2b); }
+            else { b.block(0x028e2d); }
+        }
         if self.game_state.frame.subsubmodule >= 6 {
             self.graphics_incremental_vram_upload();
+            {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x028e27));
+                crate::cycle_ledger::blocks(self.lag_free).block(0x028e31);
+            }
             if self.suspend_dungeon_selectable_peg_attribute_flip(
                 DungeonPegAttributeFlipCaller::FallingTransition,
             ) {
@@ -691,7 +704,16 @@ impl ZeldaState {
 
     pub(in crate::zelda_rtl) fn complete_module07_07_falling_transition_after_attribute_loader(&mut self) {
         if self.game_state.frame.subsubmodule >= 6 {
+            {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x028e27));
+                crate::cycle_ledger::blocks(self.lag_free).block(0x028e35);
+            }
             self.apply_grayscale_fixed_incremental();
+        }
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x028e27));
+            // $8E39 LDA/JSL; JumpTableLocal and selected bodies are children.
+            crate::cycle_ledger::blocks(self.lag_free).block(0x028e39);
         }
         match self.game_state.frame.subsubmodule {
             0 => self.module07_07_00_handle_music_and_reset_room(),

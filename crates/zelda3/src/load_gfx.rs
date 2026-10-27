@@ -4483,17 +4483,31 @@ impl ZeldaState {
 
     /// ROM: `MirrorWarp_RunAnimationSubmodules`
     pub(super) fn mirror_warp_run_animation_submodules(&mut self) {
+        // $00:FE64/$FF2F JSL $EEE7, M8/X8. Animation is a child;
+        // the filter falls through to its shared return in this source frame.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00eee7));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x00eee7);
         let ctr = self.mirror_warp_scratch_mut().decrement_animation_counter();
         if ctr != 0 {
+            b.taken(0x00eeea);
+            b.block(0x00eee0);
             self.AnimateMirrorWarp();
+            if !self.game_execution_scheduler.work_is_pending() { b.block(0x00eee4); }
             return;
         }
+        b.block(0x00eeec);
         self.mirror_warp_scratch_mut().set_animation_counter(2);
-        self.palette_filter_blinding_white();
+        self.palette_filter_blinding_white_body(self.lag_free);
     }
 
     /// ROM: `PaletteFilter_BlindingWhite`
     pub(super) fn palette_filter_blinding_white(&mut self) {
+        self.palette_filter_blinding_white_body(false);
+    }
+
+    fn palette_filter_blinding_white_body(&mut self, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked);
         if self
             .game_state
             .display
@@ -4501,8 +4515,11 @@ impl ZeldaState {
             .darkening_or_lightening_screen()
             == 0xff
         {
+            b.taken(0x00eefa);
+            b.block(0x00eee4);
             return;
         }
+        b.block(0x00eefc);
         if self
             .game_state
             .display
@@ -4510,17 +4527,29 @@ impl ZeldaState {
             .darkening_or_lightening_screen()
             == 2
         {
+            b.block(0x00ef01);
             self.palette_filter_restore_additive(0x40, 0x1b0);
+            b.block(0x00ef0a);
             self.palette_filter_restore_additive(0x1c0, 0x1e0);
+            b.block(0x00ef13);
         } else {
+            b.taken(0x00eeff);
+            b.block(0x00ef15);
             self.palette_filter_restore_subtractive(0x40, 0x1b0);
+            b.block(0x00ef1e);
             self.palette_filter_restore_subtractive(0x1c0, 0x1e0);
         }
-        self.palette_filter_start_blinding_white();
+        self.palette_filter_start_blinding_white_body(marked);
     }
 
     /// ROM: `PaletteFilter_StartBlindingWhite`
     pub(super) fn palette_filter_start_blinding_white(&mut self) {
+        self.palette_filter_start_blinding_white_body(false);
+    }
+
+    fn palette_filter_start_blinding_white_body(&mut self, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked);
+        b.block(0x00ef27);
         self.copy_color((Bank::Main, 32), (Bank::Main, 0));
         if self
             .game_state
@@ -4529,25 +4558,38 @@ impl ZeldaState {
             .darkening_or_lightening_screen()
             == 0
         {
+            b.block(0x00ef35);
             self.increment_countdown();
             if self.game_state.display.palette_filter.countdown() == 66 {
+                b.block(0x00ef43);
                 self.set_darkening_or_lightening_screen(0xff);
                 self.mirror_warp_scratch_mut().set_animation_counter(32);
-            }
+            } else { b.taken(0x00ef41); }
         } else {
+            b.taken(0x00ef33);
+            b.block(0x00ef56);
             self.increment_countdown();
             if self.game_state.display.palette_filter.countdown() == 31 {
+                b.block(0x00ef64);
                 self.xor_darkening_or_lightening_screen(2);
                 if self.game_state.frame.main_module != 21 {
+                    b.taken(0x00ef75);
+                    b.block(0x00ef89);
                     return;
                 }
+                b.block(0x00ef77);
                 self.clear_hdma_enable_mask();
                 for i in 0..240 {
                     self.set_spotlight_hdma_table_dynamic_entry(i, 0x0778);
                 }
                 self.set_hdma_enable_mask(0xc0);
-            }
+                b.block(0x00ef87);
+                b.block(0x00ef89);
+                self.increment_cgram_update_flag();
+                return;
+            } else { b.taken(0x00ef62); }
         }
+        b.block(0x00ef51);
         self.increment_cgram_update_flag();
     }
 
@@ -4969,16 +5011,44 @@ impl ZeldaState {
     }
 
     pub(super) fn ResetStarTileGraphics(&mut self) {
+        // $02:8A5F/$8CE9 JSL $00:FDA4: STZ then fall through $FDA7, not a child call.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00fda4));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x00fda4);
         self.dungeon_room_effects_mut().clear_star_tile_phase();
-        self.dungeon_restore_star_tile_chr();
+        self.dungeon_restore_star_tile_chr_body();
     }
 
     /// ROM: `Dungeon_RestoreStarTileChr`
     pub(super) fn dungeon_restore_star_tile_chr(&mut self) {
+        // $01:CC54 JSL $00:FDA7; unlike FDA4 this retains the star phase.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00fda7));
+        self.dungeon_restore_star_tile_chr_body();
+    }
+
+    fn dungeon_restore_star_tile_chr_body(&mut self) {
+        // $00:FDA7..FDED: two sixteen-word CHR copies and the NMI request.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x00fda7);
+        if self.game_state.dungeon.room_effects.star_tile_phase() == 0 {
+            b.taken(0x00fdb2);
+        } else {
+            b.block(0x00fdb4);
+        }
+        b.block(0x00fdb8);
         let (xx, yy) = self.dungeon_star_tile_restore_source_offsets();
         let src0 = 0xbdc0 + xx;
         let src1 = 0xbdc0 + yy;
+        for i in 0..16 {
+            b.block(0x00fdc4);
+            if i != 15 { b.taken(0x00fdd2); }
+        }
+        b.block(0x00fdd4);
+        for i in 0..16 {
+            b.block(0x00fdd6);
+            if i != 15 { b.taken(0x00fde4); }
+        }
         self.copy_graphics_message_rows(0, src0, src1, 32);
+        b.block(0x00fde6);
         self.set_pending_nmi_subroutine(0x18);
     }
 

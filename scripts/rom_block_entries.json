@@ -187,5 +187,21 @@
   {"entry": "01f764", "end": "01f7f1", "m8": false, "x8": false},
   {"entry": "01f77c", "end": "01f7f1", "m8": false, "x8": false},
   {"entry": "01f980", "end": "01fa4a", "m8": false, "x8": false},
-  {"entry": "00fdee", "end": "00fe5d", "data_bank": 0}
+  {"entry": "00fdee", "end": "00fe5d", "data_bank": 0},
+  {"entry": "00fda4", "end": "00fda7"},
+  {"entry": "00fda7", "end": "00fdee"},
+  {"entry": "018916", "end": "01893c", "m8": false, "x8": false, "terminal_dispatch": true},
+  {"entry": "01b0da", "end": "01b191", "m8": false, "x8": false},
+  {"entry": "01b2ca", "end": "01b2ce", "m8": false, "x8": false},
+  {"entry": "01b2ce", "end": "01b2d0", "m8": false, "x8": false},
+  {"entry": "01b2d0", "end": "01b2e1", "m8": false, "x8": false},
+  {"entry": "028e27", "end": "028e3f"},
+  {"entry": "00eee0", "end": "00eee4"},
+  {"entry": "00eee4", "end": "00eee7", "m8": false, "x8": false},
+  {"entry": "00eee7", "end": "00eefc"},
+  {"entry": "00eefc", "end": "00ef51", "m8": false, "x8": false},
+  {"entry": "00ef51", "end": "00ef56", "m8": false, "x8": false},
+  {"entry": "00ef56", "end": "00ef77", "m8": false, "x8": false},
+  {"entry": "00ef77", "end": "00ef87", "data_bank": 0},
+  {"entry": "00ef87", "end": "00ef8a"}
 ]

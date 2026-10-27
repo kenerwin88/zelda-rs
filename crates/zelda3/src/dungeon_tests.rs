@@ -3702,3 +3702,161 @@ fn native_recoil_prefix_handoffs_preserve_health_damage_and_remaining_bodies_onc
     }
     assert!(tails.iter().all(|n|*n>0));println!("native recoil semantic handoffs:1728 fixtures, tails={tails:?}, ROM empty, full remaining RAM/native state and owned cycles match");
 }
+
+fn load4_rom_machine(native: &ZeldaState, entry: u32, flags: u8) -> snes::Snes {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut s = snes::Snes::new();
+    s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+    s.ram.copy_from_slice(&native.wram_image());
+    s.cpu.e = false;
+    s.cpu.unpack_flags(flags);
+    s.cpu.k = (entry >> 16) as u8;
+    s.cpu.db = (entry >> 16) as u8;
+    s.cpu.pc = entry as u16;
+    s.cpu.sp = 0x1fa;
+    s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+    s
+}
+
+#[test]
+fn load4_star_reset_and_restore_markers_match_rom() {
+    for reset in [false, true] {
+        for phase in [0, 1] {
+            let mut n = ZeldaState::new();
+            n.write_wram_byte(0x4bc, phase);
+            n.sync_native_game_state_from_ram();
+            n.set_lag_free(true);
+            let entry = if reset { 0x00fda4 } else { 0x00fda7 };
+            let mut s = load4_rom_machine(&n, entry, 0x30);
+            s.cpu.sp = 0x1f9;
+            s.ram[0x1fa..0x1fd].copy_from_slice(&[0xff, 0x7f, 0]);
+            crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                |s| s.cpu.k == 0 && (0xfda4..0xfdee).contains(&s.cpu.pc), || {
+                    if reset { n.ResetStarTileGraphics(); }
+                    else { n.dungeon_restore_star_tile_chr(); }
+                });
+        }
+    }
+}
+
+#[test]
+fn load4_row_fill_entries_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for entry in [0x01b2ca, 0x01b2ce, 0x01b2d0] {
+        for count in [1u16, 2, 4, 19] {
+            let mut n = ZeldaState::new();
+            n.set_assets(&assets).unwrap();
+            n.set_lag_free(true);
+            let mut s = load4_rom_machine(&n, entry, 0);
+            s.cpu.a = count;
+            s.cpu.x = if entry == 0x01b2ca { 0x100 - 2 } else { 0x100 };
+            s.cpu.y = if entry == 0x01b2ca { 0x80 - 2 } else { 0x80 };
+            s.ram[0xb2..0xb4].copy_from_slice(&count.to_le_bytes());
+            s.ram[0xbf..0xc2].copy_from_slice(&[0, 0x20, 0x7e]);
+            crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                |s| s.cpu.k == 1 && (0xb2ca..0xb2e1).contains(&s.cpu.pc), || {
+                    match entry {
+                        0x01b2ca => n.room_object_fill_row_advance(count, 0x100, 0x40),
+                        0x01b2ce => n.room_object_fill_row_width(count, 0x100, 0x40),
+                        _ => n.room_object_fill_row_a(count, 0x100, 0x40),
+                    }
+                });
+        }
+    }
+}
+
+#[test]
+fn load4_door_flag_markers_match_rom() {
+    for slot in [0u16, 1, 3, 4, 7, 8, 12, 15] {
+        for opened in [0u16, 0xffff] {
+            for trap in [0u8, 1] {
+                for kind in [0u8, 8, 0x18, 0x1a, 0x32, 0x40, 0x44, 0x46] {
+                    let mut n = ZeldaState::new();
+                    n.write_wram_word(0x460, slot * 2);
+                    n.write_wram_word(0x68c, opened);
+                    n.write_wram_byte(0x468, trap);
+                    n.write_wram_byte(0x2f, 2);
+                    n.sync_native_game_state_from_ram();
+                    n.set_lag_free(true);
+                    let mut s = load4_rom_machine(&n, 0x01b0da, 0);
+                    s.cpu.a = 1;
+                    s.cpu.x = slot * 2;
+                    s.cpu.y = 0x200;
+                    s.ram[0..2].copy_from_slice(&1u16.to_le_bytes());
+                    s.ram[4..6].copy_from_slice(&u16::from(kind).to_le_bytes());
+                    s.ram[0xa..0xc].copy_from_slice(&u16::from(kind).to_le_bytes());
+                    crate::cycle_ledger::assert_rom_marker_work(0x01b0da, s,
+                        |s| s.cpu.k == 1 && (0xb0da..0xb191).contains(&s.cpu.pc), || {
+                            n.room_draw_flag_doors_and_get_final_type(1, kind, 0x100);
+                        });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn load4_door_dispatch_markers_match_rom() {
+    for direction in 0..4u16 {
+        let raw = 0x1600 | direction;
+        let mut n = ZeldaState::new();
+        n.set_lag_free(true);
+        let mut s = load4_rom_machine(&n, 0x018916, 0);
+        s.cpu.a = raw;
+        s.ram[..2].copy_from_slice(&raw.to_le_bytes());
+        crate::cycle_ledger::assert_rom_marker_work(0x018916, s,
+            |s| s.cpu.k == 1 && (0x8916..0x893c).contains(&s.cpu.pc), || {
+                n.room_data_draw_object_door(raw);
+            });
+    }
+}
+
+#[test]
+fn load4_mirror_animation_markers_match_rom() {
+    for counter in [1u8, 2] {
+        for filter in [0u16, 2, 0xff] {
+            for countdown in [0u16, 30, 65] {
+                for module in [9u8, 21] {
+                    let mut n = ZeldaState::new();
+                    n.write_wram_byte(0x10, module);
+                    n.write_wram_byte(0x6bb, counter);
+                    n.write_wram_byte(0x6ba, 9);
+                    n.write_wram_word(0xc009, filter);
+                    n.write_wram_word(0xc007, countdown);
+                    n.sync_native_game_state_from_ram();
+                    n.set_lag_free(true);
+                    let mut s = load4_rom_machine(&n, 0x00eee7, 0x30);
+                    s.cpu.sp = 0x1f9;
+                    s.ram[0x1fa..0x1fd].copy_from_slice(&[0xff, 0x7f, 0]);
+                    crate::cycle_ledger::assert_rom_marker_work(0x00eee7, s,
+                        |s| s.cpu.k == 0 && (0xeee0..0xef8a).contains(&s.cpu.pc), || {
+                            n.mirror_warp_run_animation_submodules();
+                        });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn load4_falling_dispatch_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for sub in [3u8, 8] {
+        let mut n = ZeldaState::new();
+        n.set_assets(&assets).unwrap();
+        n.write_wram_byte(0x10, 7);
+        n.write_wram_byte(0x11, 7);
+        n.write_wram_byte(0xb0, sub);
+        n.write_wram_byte(0x1b, 1);
+        n.sync_native_game_state_from_ram();
+        n.set_lag_free(true);
+        let s = load4_rom_machine(&n, 0x028e27, 0x30);
+        crate::cycle_ledger::assert_rom_marker_work(0x028e27, s,
+            |s| s.cpu.k == 2 && (0x8e27..0x8e3f).contains(&s.cpu.pc), || {
+                n.module07_07_falling_transition();
+            });
+    }
+}

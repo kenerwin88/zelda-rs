@@ -169,17 +169,11 @@ impl ZeldaState {
                     crate::cycle_ledger::charge(156 + if preserve_corner { 6 } else { 102 } + 190);
                     crate::cycle_ledger::charge_routine(0x01_b0af, 262);
                     crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
-                    // $01:B2CA..B2E0: advance/setup, stores and RTS.
-                    crate::cycle_ledger::charge_routine(0x01_b2ca,
-                        254 + 154 * u64::from(count) + 6 * u64::from(count - 1));
                 }
                 if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
                 }
-                let tile = self.tile_word(src, 1);
-                for i in 1..=count {
-                    self.room_write_current(dsto + i, tile);
-                }
+                self.room_object_fill_row_advance(count, src + 2, dsto + 1);
                 self.room_write_current(dsto + count + 1, self.tile_word(src, 2));
             }
             0x23..=0x2e | 0x3f..=0x46 | 0xb3 | 0xb4 => {
@@ -441,17 +435,11 @@ impl ZeldaState {
                     crate::cycle_ledger::charge(178 + if preserve_corner { 6 } else { 102 } + 190);
                     crate::cycle_ledger::charge_routine(0x01_b0af, 262);
                     crate::cycle_ledger::charge_routine(0x01_b191, if preserve_corner { 222 } else { 216 });
-                    // $01:B2CA..B2E0: advance/setup, stores and RTS.
-                    crate::cycle_ledger::charge_routine(0x01_b2ca,
-                        254 + 154 * u64::from(count) + 6 * u64::from(count - 1));
                 }
                 if !preserve_corner {
                     self.room_write_current(dsto, self.tile_word(src, 0));
                 }
-                let fill = self.tile_word(src, 1);
-                for i in 1..=count {
-                    self.room_write_current(dsto + i, fill);
-                }
+                self.room_object_fill_row_advance(count, src + 2, dsto + 1);
                 self.room_write_current(dsto + count + 1, self.tile_word(src, 2));
             }
             0x60 | 0x92 | 0x93 => {
@@ -770,7 +758,7 @@ impl ZeldaState {
                 let mut count = size_a_to_a_plus_15(width, height, 4);
                 let mut dst = dsto;
                 while count != 0 {
-                    self.room_fill_horizontal(dst, count, self.tile_word(src, 0));
+                    self.room_object_fill_row_width(count, src, dst);
                     dst = dst.wrapping_add(64);
                     count -= 1;
                 }
@@ -778,14 +766,14 @@ impl ZeldaState {
             0xa1 | 0xa6 | 0xaa => {
                 let count = size_a_to_a_plus_15(width, height, 4);
                 for y in 0..count {
-                    self.room_fill_horizontal(dsto + y * 64, y + 1, self.tile_word(src, 0));
+                    self.room_object_fill_row_a(y + 1, src, dsto + y * 64);
                 }
             }
             0xa2 | 0xa7 | 0xab => {
                 let mut count = size_a_to_a_plus_15(width, height, 4);
                 let mut dst = dsto;
                 while count != 0 {
-                    self.room_fill_horizontal(dst, count, self.tile_word(src, 0));
+                    self.room_object_fill_row_width(count, src, dst);
                     dst = dst.wrapping_add(65);
                     count -= 1;
                 }
@@ -794,7 +782,7 @@ impl ZeldaState {
                 let mut count = size_a_to_a_plus_15(width, height, 4);
                 let mut dst = dsto;
                 while count != 0 {
-                    self.room_fill_horizontal(dst, count, self.tile_word(src, 0));
+                    self.room_object_fill_row_width(count, src, dst);
                     dst = dst.wrapping_sub(63);
                     count -= 1;
                 }

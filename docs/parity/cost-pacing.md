@@ -12601,3 +12601,43 @@ The retained **default 200k ledger matches every record and EOF**. Library pass/
 **Deferred loader families:** `filter_majorly_whiten_bg`; `overworld_check_special_switch_area`, `draw_mire_body`, bank-02 decompression and module09 long-load paths; dungeon basic/crystal-peg attributes; water-tag tile preparation; 32x32/floor-chunk builders; pre-dungeon song/reset and straight-interroom sprite-reset continuations. Their files/callers were not edited. Broader ending, NMI, game-loop and player-OAM continuation bodies remain distinct; ending sprite callers only gained selector arguments.
 
 All **1,512 supplied ledger/cache files** retain size and mtime. Source/binary hashes, test manifests and final counts are in `verification.json`; evidence stays below **3 GB**. No GPU run, oracle-cache write, cargo fmt, commit, push or one-off repository script was used.
+
+## Load/transition batch 4
+
+**Verified partial stop on `codex/load-pacing4`, main `74f04ad6`.** ROM missing/excess/FP: **3,983 / 0 / 0 → 3,923 / 0 / 0** (60 restored frames). Measured live after: **4,623 / 593 / 133**. Supplied joint main control reused; no full main controls rerun. Evidence: `target/load-pacing4/`.
+
+The batch-3 worklist supplies **997 missing iterations** in the seven requested modules, refreshed with matched native windows against hash-verified retained ROM profiles. Rank uses each iteration's P2 shortfall, exclusive unpriced work and tail normalization, rather than clocks alone. Nine admitted entries yield **78 independent predicted flips / 60 joint predicted flips**; matched replay gains **60 frames**, with zero lost holds or new overcounts. The >=80 aim was not reached; remaining tail/continuation ownership needs another source audit. Forced windows remain diagnostic, separate from the canonical census.
+
+**57 generated blocks / 224 instructions** price door decode and door flags, the three shared row-fill entries, star reset/direct restore, mirror animation/filter dispatch and falling-transition dispatch. All **1,453 existing rows** remain unchanged. 32 decoded call sites/table bindings are retained in `source-pricing-audit.json`. Six `assert_rom_marker_work` fixtures pass **314 unmodified-ROM cases** over all nine entries. Shared fallthroughs own one scope; child bodies are excluded. Falling prefixes precede the suspending attribute load; the mirror return marker follows the completed animation child, including its final NMI-request stores.
+
+| Complete entry | Old scalar clocks | Marker clocks | Net clocks closed | Predicted flips | Actual joint gains on positive-net calls |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `$00:eee7` Mirror animation/filter dispatch | 0 | 127,734 | 127,734 | 14 | 14 |
+| `$00:fda4` Star-tile reset + restore | 0 | 1,261,876 | 1,261,876 | 20 | 36 |
+| `$00:fda7` Direct star-tile restore | 0 | 0 | 0 | 0 | 0 |
+| `$01:8916` Door decode/dispatch | 0 | 457,930 | 457,930 | 5 | 43 |
+| `$01:b0da` Door flags/type | 0 | 933,678 | 933,678 | 13 | 43 |
+| `$01:b2ca` Advance/row fill | 1,250,608 | 1,250,608 | 0 | 0 | 0 |
+| `$01:b2ce` Width/row fill | 0 | 1,782,784 | 1,782,784 | 17 | 25 |
+| `$01:b2d0` A-count/row fill | 0 | 794,400 | 794,400 | 6 | 16 |
+| `$02:8e27` Falling-transition dispatch | 0 | 41,748 | 41,748 | 3 | 6 |
+
+Two lagless-only B2CA scalar calls are deleted and replaced: **1,250,608 → 1,250,608 clocks**, equal on every cohort iteration. This conversion receives zero flip credit. Other scalars remain untouched, including default/ROM-timing accounting. Total new markers **6,650,758**, less removed scalars, equal the **5,400,150-clock** signed main-counter increase on every cohort row. Per-body actual gains overlap and must not be summed; they are batch outcomes on executions, not isolated marginal reruns.
+
+Full source-exclusive clocks match the admitted mirror, star reset, door-flag and A-count row bodies on this cohort. Door-dispatch, falling-dispatch and width/advance-fill source scopes also contain tail bodies or unadmitted aliases; those residuals remain open and are not counted as closed work. Iris reset has no calls in the selected missing cohort; mirror finalization remains under the B1FF tail frame. Other room/door targets, mosaic tails and protected sprite/player/ancilla/garnish owners were deferred. No classifier, fitted constant, scene threshold, multiplier or scene table changed.
+
+Both final full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; every runtime hold equals P2. These are periodically seeded logical checks.
+
+| Entry | ROM missing before → after | Live missing after | Excess ROM / live | FP ROM / live |
+| --- | ---: | ---: | ---: | ---: |
+| `07/02` | 242 → 221 | 221 | 0 / 0 | 0 / 0 |
+| `07/07` | 231 → 225 | 225 | 0 / 0 | 0 / 0 |
+| `09/23` | 201 → 187 | 187 | 0 / 0 | 0 / 0 |
+| `07/0E` | 98 → 86 | 86 | 0 / 0 | 0 / 0 |
+| `09/0D` | 81 → 81 | 81 | 0 / 0 | 0 / 0 |
+| `06/00` | 74 → 67 | 67 | 0 / 0 | 0 / 0 |
+| `09/16` | 71 → 71 | 71 | 0 / 0 | 0 / 0 |
+
+All **48 crystal/pendant phases** remain within one; stable outcomes match batch 3. The retained **default 200k ledger matches every record and EOF**. Default and reduced ordinary builds are warning-free; existing lib-test warnings remain. Default library: **2,683 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,218 pass / 0 failures / 2 ignored**. Both CPU SNES libraries: **504 / 0 / 7**. Block generator/worklist, routine-coverage, inverse, exact regeneration and `git diff --check` pass.
+
+`remaining-worklist.json` retains **937 refreshed missing iterations** in the requested modules; the **69 inherited rows outside those modules** are preserved separately as unprofiled, not asserted unchanged. All **1,512 supplied ledger/cache files** retain size and mtime, with no files added. Raw profiles/predictors were summarized and deleted; retained evidence is **258.5 MB**, below 3 GB. No GPU run, --video, cached-av, Snes9x, GPU test, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.

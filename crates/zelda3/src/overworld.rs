@@ -3357,6 +3357,12 @@ impl ZeldaState {
     fn mirror_warp_finish_animation_after_portal(&mut self) {
         self.set_pending_nmi_subroutine(12);
         self.set_core_update_disable_flag(12);
+        // $00:EEE4 resumes only after the suspended $EEE0 animation child,
+        // including its final NMI-request stores, has returned.
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00eee7));
+            crate::cycle_ledger::blocks(self.lag_free).block(0x00eee4);
+        }
         self.mirror_warp_table_after_animation();
     }
 

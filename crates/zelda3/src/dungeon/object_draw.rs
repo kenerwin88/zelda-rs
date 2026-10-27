@@ -1417,6 +1417,42 @@ impl ZeldaState {
         }
     }
 
+    /// $01:8E6D/$8E9B/$8EAF JSR $B2CE, M16/X16.
+    pub(super) fn room_object_fill_row_width(&mut self, count: u16, src: usize, dsto: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b2ce));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x01b2ce);
+        self.room_object_fill_row_body(count, src, dsto);
+    }
+
+    /// $01:8E85 JSR $B2D0, M16/X16: count arrives in A, not $B2.
+    pub(super) fn room_object_fill_row_a(&mut self, count: u16, src: usize, dsto: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b2d0));
+        self.room_object_fill_row_body(count, src, dsto);
+    }
+
+    /// $01:8F03/$8F81 JSR $B2CA, M16/X16: advance X/Y before the shared fill.
+    /// Native callers supply the already advanced source/destination.
+    pub(super) fn room_object_fill_row_advance(&mut self, count: u16, src: usize, dsto: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b2ca));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b2ca);
+        b.block(0x01b2ce);
+        self.room_object_fill_row_body(count, src, dsto);
+    }
+
+    fn room_object_fill_row_body(&mut self, count: u16, src: usize, dsto: u16) {
+        // $01:B2D0..B2E0, including each executed store and the shared RTS.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b2d0);
+        let tile = self.tile_word(src, 0);
+        for i in 0..count {
+            b.block(0x01b2d5);
+            self.room_write_current(dsto + i, tile);
+            if i + 1 != count { b.taken(0x01b2db); }
+        }
+        b.block(0x01b2dd);
+    }
+
     /// ROM: `Object_Hole`
     pub(super) fn object_hole(&mut self, src: usize, dsto: u16, width: u8, height: u8) {
         self.dungeon_room_load_mut().set_draw_width_indicator(width);
@@ -1451,13 +1487,6 @@ impl ZeldaState {
             for x in 0..width {
                 self.room_write_current(dsto + x + y * 64, tile);
             }
-        }
-    }
-
-    #[track_caller]
-    pub(super) fn room_fill_horizontal(&mut self, dsto: u16, count: u16, tile: u16) {
-        for x in 0..count {
-            self.room_write_current(dsto + x, tile);
         }
     }
 

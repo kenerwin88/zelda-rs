@@ -7,6 +7,12 @@ impl ZeldaState {
 
     /// ROM: `RoomData_DrawObject_Door`
     pub(super) fn room_data_draw_object_door(&mut self, raw: u16) {
+        // $01:890D JSR $8916, M16/X16: decode and JMP ($0E) only.
+        // The dispatched door body owns its instructions separately.
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x018916));
+            crate::cycle_ledger::blocks(self.lag_free).block(0x018916);
+        }
         let door_type = (raw >> 8) as u8;
         let position = ((raw >> 4) & 0x0f) as usize;
         match raw & 3 {
@@ -429,6 +435,11 @@ impl ZeldaState {
         door_type: u8,
         dsto: u16,
     ) -> u16 {
+        // $01:A8CB and the other directional drawers JSR $B0DA,
+        // M16/X16. Branches use the original type and live door flags.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b0da));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b0da);
         let slot = self.game_state.dungeon.doors.current_door_index() as usize >> 1;
         if slot < 16 {
             self.dungeon_doors_mut()
@@ -437,6 +448,56 @@ impl ZeldaState {
                 .set_door_tilemap_address(slot, dsto * 2);
             self.dungeon_doors_mut()
                 .set_door_type_word(slot, ((slot as u16) << 8) | door_type as u16);
+        }
+        let opened = self.game_state.dungeon.doors.opened_doors_including_adjacent();
+        if (slot & 7) >= 4 {
+            b.taken(0x01b0f1);
+        } else {
+            b.block(0x01b0f3);
+            if opened & upper_bitmask(slot & 7) == 0 {
+                b.taken(0x01b0f9);
+            } else {
+                b.block(0x01b0fb);
+                let shutter = if door_type == DOOR_TYPE_SHUTTERS_TWO_WAY {
+                    b.taken(0x01b104);
+                    true
+                } else {
+                    b.block(0x01b106);
+                    if door_type != DOOR_TYPE_SHUTTER { b.taken(0x01b109); }
+                    door_type == DOOR_TYPE_SHUTTER
+                };
+                let blocked = shutter && self.game_state.dungeon.environment.trapdoors_down() != 0;
+                if shutter {
+                    b.block(0x01b10b);
+                    if blocked { b.taken(0x01b10e); }
+                }
+                if !blocked {
+                    b.block(0x01b110);
+                    if door_type == DOOR_TYPE_SHUTTERS_TWO_WAY {
+                        b.taken(0x01b122);
+                    } else {
+                        b.block(0x01b124);
+                        if door_type == DOOR_TYPE_SHUTTER {
+                            b.taken(0x01b127);
+                        } else {
+                            b.block(0x01b129);
+                            if door_type < DOOR_TYPE_INVISIBLE_DOOR {
+                                b.taken(0x01b12c);
+                            } else {
+                                b.block(0x01b12e);
+                                if door_type == DOOR_TYPE_REGULAR_DOOR33 {
+                                    b.taken(0x01b131);
+                                } else {
+                                    b.block(0x01b133);
+                                    if door_type == DOOR_TYPE_WARP_ROOM_DOOR {
+                                        b.taken(0x01b136);
+                                    } else { b.block(0x01b138); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         let mut remapped = door_type;
         if (slot & 7) < 4
@@ -467,11 +528,36 @@ impl ZeldaState {
         self.dungeon_doors_mut()
             .set_current_door_index((slot as u16).wrapping_mul(2).wrapping_add(2));
 
-        if remapped == DOOR_TYPE_SLASHABLE || remapped == DOOR_TYPE_WATERFALL_TUNNEL {
+        b.block(0x01b141);
+        if remapped == DOOR_TYPE_SLASHABLE {
+            b.taken(0x01b14b);
+            b.block(0x01b18f);
             return 0x100 | remapped as u16;
         }
+        b.block(0x01b14d);
+        if remapped == DOOR_TYPE_WATERFALL_TUNNEL {
+            b.taken(0x01b150);
+            b.block(0x01b18f);
+            return 0x100 | remapped as u16;
+        }
+        b.block(0x01b152);
         if door_type != DOOR_TYPE_INVISIBLE_DOOR {
+            b.taken(0x01b157);
+            b.block(0x01b18d);
             return remapped as u16;
+        }
+        b.block(0x01b159);
+        let facing = self.ram[0x2f];
+        let source_direction = direction as u8 * 2;
+        if source_direction != facing {
+            b.taken(0x01b178);
+            b.block(0x01b181);
+            b.block(0x01b18d);
+        } else {
+            b.block(0x01b17a);
+            // XOR #2 cannot equal the same eight-bit facing value.
+            b.block(0x01b181);
+            b.block(0x01b18d);
         }
 
         self.dungeon_room_doors_mut()
