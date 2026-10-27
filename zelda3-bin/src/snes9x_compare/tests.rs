@@ -845,6 +845,8 @@ fn bootstrap_instruction(
         boundary_opcode_cycle: 0,
         op_step_calls,
         max_continuation_opcode_cycle: op_step_calls - 1,
+        hardware: [-1; 32],
+        driver_40_5f: [-1; 32],
     }
 }
 
@@ -2184,6 +2186,10 @@ fn spc_clock_witness_aligns_different_frame_boundary_instructions() {
         timer0_cycles: 100,
         timer0_divider: 6,
         timer0_counter: 0,
+        timers: [snes::apu::ApuTimer::default(); 3],
+        driver_40_5f: [0; 32],
+        mmio: [[0; 4]; 4],
+        mmio_count: 0,
     };
     let oracle_instruction = crate::libretro_core::LibretroSmpInstruction {
         absolute_cycle: 0,
@@ -2204,6 +2210,8 @@ fn spc_clock_witness_aligns_different_frame_boundary_instructions() {
         boundary_opcode_cycle: 0,
         op_step_calls: 1,
         max_continuation_opcode_cycle: 0,
+        hardware: [-1; 32],
+        driver_40_5f: [-1; 32],
     };
 
     let witness =

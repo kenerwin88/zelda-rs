@@ -1643,6 +1643,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     fs::write(dir.join(format!("{audio_callbacks}-before.audio")), game.zelda_audio_snapshot_bytes()).expect("audio snapshot");
                     game.zelda_begin_spc_driver_instruction_trace();
                 }
+                #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
+                if note_capture.as_ref().is_some_and(|capture| capture.wants_instructions()) {
+                    game.zelda_begin_spc_driver_instruction_trace();
+                }
                 game.zelda_run_frame(i32::from(input));
                 if first_callback {
                     cost_predictions = game.native_cost_predictions();
@@ -1702,6 +1706,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 let audio_events = game.zelda_render_audio(&mut audio_buffer, AUDIO_SAMPLES as i32, 2);
                 #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
                 if let Some(capture) = note_capture.as_mut() {
+                    if capture.wants_instructions() {
+                        capture.record_instructions(game.zelda_take_spc_driver_instruction_trace())
+                            .expect("record native SMP instructions");
+                    }
                     let ram = game.wram_image();
                     let writes: Vec<_> = audio_events.events.iter().filter_map(|event| event.parity_dsp)
                         .map(|w| (capture.samples as i64 + i64::from(w.sample_offset), w.timer_cycles, w.addr, w.value)).collect();

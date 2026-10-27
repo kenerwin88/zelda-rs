@@ -1098,6 +1098,11 @@ pub struct SpcInstructionTrace {
     pub timer0_cycles: u8,
     pub timer0_divider: u8,
     pub timer0_counter: u8,
+    pub timers: [ApuTimer; 3],
+    pub driver_40_5f: [u8; 32],
+    /// (local cycle, write flag, address, value), in bus order.
+    pub mmio: [[u32; 4]; 4],
+    pub mmio_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1664,6 +1669,10 @@ impl ApuState {
                 timer0_cycles: self.timer[0].cycles,
                 timer0_divider: self.timer[0].divider,
                 timer0_counter: self.timer[0].counter,
+                timers: self.timer,
+                driver_40_5f: self.ram[0x40..0x60].try_into().expect("SPC driver state slice"),
+                mmio: [[0; 4]; 4],
+                mmio_count: 0,
             });
         }
     }
@@ -3179,7 +3188,7 @@ impl ApuState {
     }
 
     pub fn cpu_read(&mut self, adr: u16) -> u8 {
-        match adr {
+        let value = match adr {
             0xf0 | 0xf1 | 0xfa | 0xfb | 0xfc => 0,
             0xf2 => self.dsp_adr,
             0xf3 => {
@@ -3203,10 +3212,13 @@ impl ApuState {
             }
             _ if self.rom_readable && adr >= 0xffc0 => BOOT_ROM[(adr - 0xffc0) as usize],
             _ => self.ram[adr as usize],
-        }
+        };
+        self.record_debug_mmio(false, adr, value);
+        value
     }
 
     pub fn cpu_write(&mut self, adr: u16, val: u8) {
+        self.record_debug_mmio(true, adr, val);
         match adr {
             0xf0 => {}
             0xf1 => {
@@ -3257,6 +3269,15 @@ impl ApuState {
             _ => {}
         }
         self.ram[adr as usize] = val;
+    }
+
+    fn record_debug_mmio(&mut self, write: bool, address: u16, value: u8) {
+        if !(0xf0..=0xff).contains(&address) { return; }
+        if let Some(instruction) = self.debug_spc_instruction_trace.as_mut().and_then(|trace| trace.last_mut()) {
+            assert!(instruction.mmio_count < instruction.mmio.len(), "SPC MMIO trace overflow");
+            instruction.mmio[instruction.mmio_count] = [self.cycles, u32::from(write), u32::from(address), u32::from(value)];
+            instruction.mmio_count += 1;
+        }
     }
 }
 
@@ -4529,6 +4550,33 @@ mod tests {
 
         assert_eq!(apu.spc.y, 1);
         assert_eq!(apu.timer[0].counter, 0);
+    }
+
+    #[test]
+    fn instruction_observer_preserves_timer_read_before_at_and_after_tick() {
+        for timer in 0..3 {
+            for (remaining, expected) in [(3, 1), (4, 1), (5, 0)] {
+                let mut apu = ApuState::new();
+                apu.rom_readable = false;
+                apu.spc.pc = 0x0200;
+                apu.ram[0x0200..0x0203].copy_from_slice(&[0xec, 0xfd + timer as u8, 0]);
+                apu.timer[timer] = ApuTimer {
+                    cycles: remaining, divider: 0, target: 1, counter: 0, enabled: true,
+                };
+                let mut control = apu.clone();
+                apu.debug_spc_instruction_trace = Some(Vec::new());
+                apu.run_cycle_sequenced_instruction_without_dsp();
+                control.run_cycle_sequenced_instruction_without_dsp();
+                let trace = apu.debug_spc_instruction_trace.take().unwrap();
+                assert_eq!(trace.len(), 1);
+                assert_eq!(trace[0].timers[timer].cycles, remaining);
+                assert_eq!(trace[0].mmio_count, 1);
+                assert_eq!(trace[0].mmio[0], [4, 0, 0xfd + timer as u32, expected]);
+                assert_eq!(apu.spc.y, expected as u8);
+                assert_eq!(apu.timer[timer].counter, 0);
+                assert_eq!(apu.save_c_saveload_prefix(), control.save_c_saveload_prefix());
+            }
+        }
     }
 
     #[test]

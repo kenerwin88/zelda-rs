@@ -211,3 +211,58 @@ Evidence: `before-live-gate.log`, `after-{rom,live}-gate.log`, corresponding rep
 The complete default library suite finishes with **2,693 passed / 1 known failure / 3 default-ignored tests**. The sole failure is `cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`, with the existing `Some(1047868)` versus `Some(170442)` assertion. `library-tests-final.log` retains the full result. No additional failure was hidden by the audio or pacing selections.
 
 The retained artifact set is about **0.65 GB** after removing build caches, and the temporary asset-input symlink is removed. Build intermediates briefly exceeded the requested 3 GB cap during compilation; they were pruned rather than retained. `verification.json` binds the final and baseline binaries, test executable, source patch, inputs, gates and reported limitations. All retained output is under `target/live-songend2/`.
+
+## SPC song length 1
+
+**Verified song-window diagnosis on `c074f341`, branch `codex/spc-songlength1`; no emulation repair.** The fresh cold, CPU-only `full-v2` replay uses `--report 0 --live-apu-reads`, without periodic seeding. It reproduces **94,853 clean iterations**, last clean index **94,852**, then the same first live song-poll difference at **94,853**. The 94,860-iteration diagnostic gate **FAILS with seven song-state comparisons**; ordinary WRAM, RNG and command consumption remain clean. No later continuous frontier is claimed.
+
+### What accounts for the 6,213 cycles
+
+The command-to-zero measurement compares chips with different driver and timer state when the command arrives. The first stable input read is `$08E8 MOV A,$00F4+X`, `X=0`, on its fifth cycle. Dummy reads in the preceding output-store instruction are retained separately and are not mistaken for command acceptance.
+
+| Absolute SPC event | Original | Native |
+| --- | ---: | ---: |
+| CPU delivers `$13` | 1,758,669,007 | 1,754,798,825 |
+| Stable `$13` input read | 1,758,677,911 | 1,754,799,074 |
+| Output port 0 becomes zero | 1,769,555,263 | 1,765,678,868 |
+| Final all-voice KOFF | 1,769,555,344 | 1,765,678,949 |
+
+| Interval, SPC cycles | Original | Native | Native minus original |
+| --- | ---: | ---: | ---: |
+| Arrival to stable read | 8,904 | 249 | **−8,655** |
+| Stable read to zero | 10,877,352 | 10,879,794 | **+2,442** |
+| Arrival to zero | 10,886,256 | 10,880,043 | **−6,213** |
+
+Both final KOFFs remain exactly **81 cycles after zero**. These coordinates use the original core's absolute SMP counter and native `apu_cycle_origin + instruction.cycle`; native callback-sized PCM buffers are not used as an absolute SPC clock.
+
+### First instruction and control-flow differences
+
+At arrival, original `$43` (the driver's software SFX timer accumulator) is **176**, with timer 0 `(elapsed stage 1, divider, counter) = (79, 15, 0)`. The original is at `$0876`, the timer-poll branch. Native `$43` is **40** and timer 0 is **(115, 5, 1)**; delivery occurs three cycles into the instruction at `$0FCE`. Its recorded instruction-start timer phase is 112, advanced by those three measured cycles. Timer 0 is enabled with target **16** on both sides.
+
+At the stable command-read instruction, `$43` is **144 original / 40 native**. The PC/opcode sequence and cumulative instruction costs agree through **index 460**, relative cycle **1,845** at `$0881 BCC`. A/X/Y/SP equality first fails at index **127**, `$086A`, because the preceding `$0868 MOV A,$18` reads inherited RAM values **173 / 255**; this difference does not change control flow there. The existing native trace exposes the direct-page P bit, not the full PSW, so no earlier equality of all flags is claimed.
+
+The first control decision differs at `$0881`. After `CLRC`, `$087D ADC A,$43` adds **56** to software accumulator **200 original / 96 native**. The original result is **0 with carry**, and native is **152 without carry**. The store at `$087F` preserves those respective results. BCC correctly takes **2 cycles** on the original and **4 cycles** natively. The next instruction, index **461**, is therefore original **`$0883 CALL` at relative cycle 1,847**, versus native **`$08B4 MOV A,dp` at 1,849**. This is a state-dependent branch with correct timing, not a demonstrated wrong opcode cost.
+
+Classification: **initial SPC driver/software phase and hardware timer state at command arrival, inherited from prior execution**. The window does not locate the earliest cold-boot/upload/callback-history divergence that produced those states. It does not justify changing an opcode cost, timer divider, song-specific state, or command delay. No such runtime change was installed.
+
+### Whole-window checks and capture authority
+
+The extended renderless trace core is built from pinned Snes9x revision `921f9f7b83660eb44ad263022a57a4a029057c37`. Its observational patch and source identity are retained under `target/spc-songlength1/`. Its SHA-256 is `3ea10f7ab7e1b7a12600763f359afefb4c8342bb025a6ee1016740a4c177672a`; it reproduces the cache's exact initial state and **all 103,741 original PCM hashes**, **55,306,534 stereo pairs**, against pinned core `6f112667f7b590c3f789630171ce9af79b1793245ad2e14080522146ffd6d498`. Capture holds the compare lock, disables video and performs no in-run serialization.
+
+Both traces retain PC, opcode, instruction clock, registers, all three timer stages/targets/enables, ordered `$F0–$FF` bus reads/writes and DSP writes. Original coroutine instructions spanning `retro_run` are deduplicated by retaining their later completed record (**185** repeated boundaries in the normalized song interval). Raw records remain available.
+
+The normalized stable-read-to-end windows contain **2,651,333 original / 2,651,967 native instructions**. Every one of their **5,303,298 adjacent instruction transitions** obeys the same timer model: stage-1 periods **128 / 128 / 16 SPC cycles**, 8-bit target dividers, 4-bit output counters and read-clear on `$FD–$FF`. All **12,473 original / 12,774 native timer reads** agree with reconstructed counters. There are **zero timer-state or read-value discrepancies**. Neither lane writes `$F1` or `$FA–$FC` in this interval, so no hidden timer reset or target change supplies the difference.
+
+All **1,192 executed `(PC, opcode, next PC)` cost signatures** occur in both lanes and have identical cycle-count sets. This checks instruction costs across the window; it does not claim identical control-flow histories after the first branch difference. All **221 pendant-song KON edges** have source and pitch registers actually observed before their onset, and their per-voice ordered tokens match: counts **31, 18, 31, 31, 31, 31, 23, 25**. Each window also contains one already queued voice-4 onset (`$45=$10` at entry); its parameters precede this instruction window and are explicitly marked unknown rather than filled with zero. `known-kon-verification.json` retains this distinction. Onset offsets vary, so there is no claim of a single uniform audio delay or matching mixed PCM.
+
+Evidence: `diagnosis.json`, `first-instruction-flow-divergence.json`, `{original,native}-command-{arrival,prefix}.json`, `{original,native}-timer-validation.json`, `song-comparison.json`, and the compressed instruction/DSP streams under `target/spc-songlength1/`.
+
+### Verification and stopping boundary
+
+The normal Rust builds are warning-free, and the final binary's **default 200,000-frame ledger comparison passes every record and EOF**, including state, display, SRAM and audio hashes. SNES default library tests pass **505 / 0 / 7 ignored**, including a new observer-transparency regression for timer reads before, at and after the tick, for all three timers. The observer retains normal read-clear behavior and the same state as untraced execution; it is not an emulation repair.
+
+The full default Zelda library finishes **2,710 passed / 1 failed / 3 ignored**. Its sole failure is the documented `cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames` assertion, `Some(1047868)` versus `Some(170442)`; no audio test fails. The reduced SNES library also passes **505 / 0 / 7 ignored**. The full reduced Zelda library passes **2,245 / 0 / 2 ignored**. The first default attempt lacked the fixtures' required `ZELDA3_ASSETS` variable and was interrupted; its log is retained separately. The corrected run binds the existing asset pack explicitly. The default Zelda test build retains **24 existing warnings**, separately from the warning-free Rust production builds. The external C++ trace-core build reports existing anonymous-union and deprecated-`sprintf` warnings; those were not changed or suppressed.
+
+Full seeded census acceptance is **not newly established**. The ROM census was interrupted at this diagnosis stop; the live census was not started. The supplied main **3,528 missing / 0 excess / 0 FP** remains prior baseline evidence, and no new full-route live missing/excess/FP totals are claimed. There is no continuous pass beyond 94,853 and no claim of full-route A/V acceptance for a repair.
+
+All retained output is under `target/spc-songlength1/`, below **3 GB**. The oracle cache and `target/logical-ledger/full-v2` are read-only. No GPU run, formatting, one-off repository script, commit or push was performed.

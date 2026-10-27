@@ -17,6 +17,12 @@ struct Plan {
     logical_inputs: Option<PathBuf>,
     /// Cartridge tables used by the exact CPU/HDMA clock, never executed here.
     rom: Option<PathBuf>,
+    /// Retain instruction boundaries only inside the selected host ranges.
+    #[serde(default)]
+    instructions: bool,
+    /// Explicit identity for an extended trace core. Initial state and every
+    /// PCM callback must still match the cache's pinned original exactly.
+    trace_core_sha256: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +45,7 @@ pub(crate) struct NoteCapture {
     hashes: zstd::stream::write::Encoder<'static, BufWriter<File>>,
     pcm: BufWriter<File>,
     metadata: BufWriter<File>,
+    instructions: Option<zstd::stream::write::Encoder<'static, BufWriter<File>>>,
     ranges: Vec<[u32; 2]>,
     registers: [u8; 128],
     pub(crate) samples: u64,
@@ -65,9 +72,26 @@ impl NoteCapture {
             hashes: zstd::stream::write::Encoder::new(create(plan.output.join("hashes.jsonl.zst"))?, 3)?,
             pcm: create(plan.output.join("windows.s16le"))?,
             metadata: create(plan.output.join("frames.jsonl"))?,
+            instructions: if plan.instructions { Some(zstd::stream::write::Encoder::new(
+                create(plan.output.join("instructions.jsonl.zst"))?, 3)?) } else { None },
             ranges: plan.ranges.clone(), registers: [0; 128], samples: 0,
             frames: 0, writes: 0, edges: 0, bytes: 0,
         })
+    }
+
+    pub(crate) fn wants_instructions(&self) -> bool {
+        self.instructions.is_some() && self.ranges.iter().any(|[lo, hi]|
+            u64::from(*lo) <= self.frames && self.frames <= u64::from(*hi))
+    }
+
+    pub(crate) fn record_instructions(&mut self, trace: impl serde::Serialize) -> Result<()> {
+        if let Some(writer) = self.instructions.as_mut() {
+            serde_json::to_writer(&mut *writer, &serde_json::json!({
+                "host": self.frames, "sample": self.samples, "trace": trace
+            }))?;
+            writer.write_all(b"\n")?;
+        }
+        Ok(())
     }
 
     pub(crate) fn record(&mut self, iteration: u64, reset: bool, context: [u16; 3],
@@ -125,6 +149,7 @@ impl NoteCapture {
     }
 
     pub(crate) fn finish(mut self, reference: bool, extra: serde_json::Value) -> Result<()> {
+        if let Some(writer) = self.instructions.take() { writer.finish()?.flush()?; }
         self.events.finish()?.flush()?;
         self.notes.finish()?.flush()?;
         self.hashes.finish()?.flush()?;
@@ -144,8 +169,11 @@ fn original(args: &[String]) -> Result<()> {
     use std::sync::atomic::Ordering;
     if args.len() != 4 { return Err("usage: --render-original-audio-cpu CACHE CORE ROM FRAMES".into()); }
     let cache = PathBuf::from(&args[0]);
+    let plan: Plan = serde_json::from_slice(&fs::read(debug_env::var_os("ZELDA3_DEBUG_PCM_WINDOWS")
+        .ok_or("missing capture plan")?)?)?;
     let manifest: serde_json::Value = serde_json::from_slice(&fs::read(cache.join("cache-manifest.json"))?)?;
-    for (path, expected) in [(PathBuf::from(&args[1]), &manifest["cache_identity"]["core_sha256"]),
+    let trace_identity = plan.trace_core_sha256.as_ref().map(|hash| serde_json::json!(hash));
+    for (path, expected) in [(PathBuf::from(&args[1]), trace_identity.as_ref().unwrap_or(&manifest["cache_identity"]["core_sha256"])),
         (PathBuf::from(&args[2]), &manifest["cache_identity"]["rom_sha256"]),
         (cache.join("initial.srm"), &manifest["artifact_sha256"]["initial.srm"]),
         (cache.join("oracle-av-hashes.jsonl"), &manifest["artifact_sha256"]["oracle-av-hashes.jsonl"])] {
@@ -153,8 +181,6 @@ fn original(args: &[String]) -> Result<()> {
             return Err(format!("provenance hash mismatch: {}", path.display()).into());
         }
     }
-    let plan: Plan = serde_json::from_slice(&fs::read(debug_env::var_os("ZELDA3_DEBUG_PCM_WINDOWS")
-        .ok_or("missing capture plan")?)?)?;
     let mut capture = NoteCapture::open(&plan)?;
     // Sparse bus receipts share the PCM selection, but retain the core's raw
     // cycle/phase fields so command arrival and gameplay polls can be compared
@@ -191,6 +217,14 @@ fn original(args: &[String]) -> Result<()> {
             return Err(format!("original PCM mismatch at {host}").into());
         }
         let raw = core.debug_dsp_register_writes().ok_or("core lacks DSP register trace")?;
+        if capture.wants_instructions() {
+            let instructions = core.debug_smp_instructions().ok_or("core lacks SMP instruction trace")?;
+            if instructions.len() >= 8192 { return Err("SMP instruction trace capacity reached".into()); }
+            if instructions.iter().any(|instruction| instruction.hardware[15] > 4) {
+                return Err("SMP MMIO trace capacity reached".into());
+            }
+            capture.record_instructions(instructions)?;
+        }
         if plan.ranges.iter().any(|[lo, hi]| (*lo..=*hi).contains(&host)) {
             let cpu = core.debug_apu_port_writes_exact()?.ok_or("core lacks APUI trace")?;
             let smp = core.debug_smp_output_port_writes_exact()?.ok_or("core lacks SMP port trace")?;
@@ -212,7 +246,8 @@ fn original(args: &[String]) -> Result<()> {
     }
     ports.flush()?;
     capture.finish(true, serde_json::json!({"oracle_eof": ledger.next().is_none(),
-        "core_sha256": manifest["cache_identity"]["core_sha256"], "seconds": started.elapsed().as_secs_f64()}))
+        "core_sha256": parity::hash::sha256_file(&PathBuf::from(&args[1]))?,
+        "pinned_core_sha256": manifest["cache_identity"]["core_sha256"], "seconds": started.elapsed().as_secs_f64()}))
 }
 
 pub(crate) fn run_original(args: &[String]) {

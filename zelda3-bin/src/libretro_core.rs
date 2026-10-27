@@ -848,6 +848,8 @@ impl LibretroCore {
                     boundary_opcode_cycle: unsafe { value(instruction, 25) },
                     op_step_calls: unsafe { value(instruction, 26) },
                     max_continuation_opcode_cycle: unsafe { value(instruction, 27) },
+                    hardware: std::array::from_fn(|offset| unsafe { value(instruction, 28 + offset as i32) }),
+                    driver_40_5f: std::array::from_fn(|offset| unsafe { value(instruction, 60 + offset as i32) }),
                 })
                 .collect(),
         )
@@ -1098,6 +1100,10 @@ pub(crate) struct LibretroSmpInstruction {
     pub(crate) boundary_opcode_cycle: i32,
     pub(crate) op_step_calls: i32,
     pub(crate) max_continuation_opcode_cycle: i32,
+    /// Extended trace ABI: all timers followed by up to four MMIO accesses.
+    /// Older pinned cores return -1 for these optional fields.
+    pub(crate) hardware: [i32; 32],
+    pub(crate) driver_40_5f: [i32; 32],
 }
 
 impl Drop for LibretroCore {
