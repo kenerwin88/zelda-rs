@@ -924,7 +924,7 @@ impl ZeldaState {
                 if self.game_state.player.follower_link.actual_y_velocity() == 0
                     || self.game_state.player.follower_link.actual_x_velocity() == 0
                 {
-                    if !self.ancilla_check_tile_collision_class2(k) {
+                    if !self.ancilla_check_tile_collision_class2(k, AncillaClass2Entry::Unpriced) {
                         self.ancilla_move_y(k);
                         self.ancilla_move_x(k);
                         let movement_ticks = self.ancilla_slot_view_mut(k).advance_a();

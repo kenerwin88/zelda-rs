@@ -877,15 +877,12 @@ impl ZeldaState {
         y
     }
 
-    pub(in crate::zelda_rtl) fn ancilla_check_tile_collision_class2(&mut self, k: usize) -> bool {
-        self.ancilla_check_tile_collision_class2_body(k, false)
-    }
-
-    pub(super) fn ancilla_check_tile_collision_class2_marked(&mut self, k: usize) -> bool {
-        self.ancilla_check_tile_collision_class2_body(k, true)
-    }
-
-    fn ancilla_check_tile_collision_class2_body(&mut self, k: usize, marked: bool) -> bool {
+    pub(in crate::zelda_rtl) fn ancilla_check_tile_collision_class2(
+        &mut self,
+        k: usize,
+        entry: AncillaClass2Entry,
+    ) -> bool {
+        let marked = entry == AncillaClass2Entry::Rom088BCF;
         let _scope = (marked && self.lag_free).then(|| crate::cycle_ledger::routine(0x088bcf));
         let b = crate::cycle_ledger::blocks(marked && self.lag_free);
         b.block(0x088bcf);
@@ -898,7 +895,8 @@ impl ZeldaState {
         let mut x = 0u16;
         let mut y = 0u16;
         if self.game_state.dungeon.room_load.header_collision() < 3 {
-            b.taken(0x088bd8); b.block(0x088be0);
+            b.taken(0x088bd8);
+            b.block(0x088be0);
             x = self
                 .game_state
                 .display
@@ -911,11 +909,13 @@ impl ZeldaState {
                 .ppu_scroll_copy
                 .bg1_v_copy2()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
+        } else {
+            b.block(0x088bda);
         }
-
-        else { b.block(0x088bda); }
         b.block(0x088bee);
-        if k >= 6 { b.crossing(0x088c03); }
+        if k >= 6 {
+            b.crossing(0x088c03);
+        }
         let oldx = self.ancilla_x(k);
         let oldy = self.ancilla_y(k);
         self.ancilla_set_xy(k, oldx.wrapping_add(x), oldy.wrapping_add(y));
@@ -929,7 +929,11 @@ impl ZeldaState {
         let value = 0;
         self.ancilla_slot_view_mut(k).set_floor(value);
         self.ancilla_set_xy(k, oldx, oldy);
-        if !first { b.taken(0x088c33); } else { b.block(0x088c35); }
+        if !first {
+            b.taken(0x088c33);
+        } else {
+            b.block(0x088c35);
+        }
         b.block(0x088c36);
         let second = {
             let _child = (marked && self.lag_free).then(|| crate::cycle_ledger::routine(0x088c43));
@@ -1006,7 +1010,7 @@ impl ZeldaState {
                     ANCILLA_CHECK_INITIAL_TILE_COLLISION_CLASS2_INITIAL_TILE_COLL_Y[j] as u16,
                 ),
             );
-            if self.ancilla_check_tile_collision_class2(k) {
+            if self.ancilla_check_tile_collision_class2(k, AncillaClass2Entry::Unpriced) {
                 return true;
             }
             j += 1;
@@ -1654,7 +1658,7 @@ fn marker39_class2_wrapper_matches_rom() {
         crate::cycle_ledger::assert_rom_marker_work(0x088bcf,machine,
             |s|s.cpu.k==8 && ((0x8bcf..0x8c43).contains(&s.cpu.pc)
                 || (s.ram[0x46c]==0 && (0x8c43..0x8cd9).contains(&s.cpu.pc))),
-            ||{native.ancilla_check_tile_collision_class2_marked(slot);});
+            ||{native.ancilla_check_tile_collision_class2(slot, AncillaClass2Entry::Rom088BCF);});
     }
 }
 

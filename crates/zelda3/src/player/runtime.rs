@@ -1332,7 +1332,7 @@ impl ZeldaState {
                     Some(GroundSwordCapeTail::CheckSwordSwing | GroundSwordCapeTail::SwordSwingActive) => self.link_check_for_sword_swing(),
                     Some(GroundSwordCapeTail::SwordControls) => self.handle_sword_controls(),
                     // $07:81CF JSR $9AC2; no resumed prefix owns this body.
-                    None => self.link_handle_sword_cooldown_marked(),
+                    None => self.link_handle_sword_cooldown(),
                     _ => unreachable!(),
                 }
                 b.block(0x0781d2);

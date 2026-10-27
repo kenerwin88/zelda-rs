@@ -1208,7 +1208,7 @@ impl ZeldaState {
         let mut s1b = self.ancilla_slot_view(k).object_priority();
         self.ancilla_slot_view_mut(k).set_object_priority(0);
         // $08:E463 JSR $08:8BCF; full collision body, call opcode separate.
-        let mut flag = self.ancilla_check_tile_collision_class2_marked(k);
+        let mut flag = self.ancilla_check_tile_collision_class2(k, AncillaClass2Entry::Rom088BCF);
 
         if self.game_state.world.location.is_indoors()
             && self.ancilla_slot_view(k).l() != 0

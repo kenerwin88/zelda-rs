@@ -12528,3 +12528,24 @@ Both final full CPU census gates **PASS**, **1,473,123 iterations** each, unexpl
 All **48 crystal/pendant phases** remain within one frame; stable outcomes match the retained phase control. The retained **default 200k ledger matches every record and EOF**; default/ROM-timing ledgers are unchanged. Ordinary default/reduced builds are warning-free; the existing lib-test dead-code warning remains. Default library: **2,661 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,196 pass / 0 failures / 2 ignored**. Both CPU SNES suites: **504 / 0 / 7**. Generator/worklist, routine-coverage, inverse, regeneration and `git diff --check` pass.
 
 The alias-normalized `remaining-worklist.json` retains **931 diagnostic missing iterations**, including **19** remaining B1FF potential closures. Mirror initialization/finalization, overlay DMA preparation (`$01:F764`, 37 predicted closures), overlay drawing (`$01:F980`, 25), iris and room/door dispatch remain open. Sprite/cache/disable/proximity, player, ancilla and garnish owners were skipped under the shared-work restriction. All **1,512** supplied ledger/cache file sizes/mtimes are unchanged. Raw profiles/predictors were summarized and deleted; evidence is **214.0 MB**, below 3 GB. No GPU execution, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.
+
+
+## Marker plumbing cleanup 1
+
+**Verified partial refactor on `codex/marker-cleanup1`, main `68beb4e2`.** No behavior or pricing change was admitted. Evidence: `target/marker-cleanup1/`.
+
+| Family | Entry plumbing before → after |
+| --- | --- |
+| Moving-background velocity | raw + marked + body → one entry, explicit `MovingBackgroundEntry::Unpriced` / `Rom07B9B3` |
+| Ancilla class-2 tile collision | raw + marked + body → one entry, explicit `AncillaClass2Entry::Unpriced` / `Rom088BCF`; distinct inner collision body retained |
+| Sword cooldown | marked + body → one complete entry; no alternate/unpriced entry existed |
+
+**Five fewer functions**, **12 source/test files**, **73 added / 54 removed source/test lines (net +19)**; this appendix is the thirteenth file. Marker compounds in the folded bodies use normal multiline style. Caller ROM comments, marker order, routine scopes and unpriced paths are preserved. All three semantic/marker body token sequences are unchanged after removing whitespace. Fixtures change call paths only; no price, generated table, model or scalar changed.
+
+Both fresh main predictors were captured completely before source edits. Both final predictors are **BYTE-IDENTICAL**, including headers and all **1,473,123 rows per lane** (ROM and `--live-apu-reads`); all **four census gates PASS**, unexplained zero. `predictor-comparison.json` retains complete SHA-256 hashes and byte lengths. The four raw CSVs were deleted after `cmp` and hash comparison. These are periodically seeded CPU logical gates.
+
+The retained **default 200k ledger matches every record and EOF**, before and after. Library pass/fail/ignored: **default 2671/1/3** (only the known spotlight caller-return failure), **reduced 2206/0/2**. All routine marker fixtures pass. Both ordinary builds are warning-free; lib-test builds retain exactly their baseline warning groups (**24 default / 1 reduced**), with **no new dead code** and no change to `cfg_attr(not(test))` policy.
+
+**Deferred loader/transition families:** `filter_majorly_whiten_bg` / marked entry; `overworld_check_special_switch_area` / marked entry; `draw_mire_body`; bank-02 decompression wrappers; `dungeon_load_basic_attribute_body`; crystal-peg bank/continuation entries; `tile_map_prep_not_water_on_tag_body`; `room_draw_a_many_32x32_blocks_body`; `room_draw_floor_chunks_body`; pre-dungeon song-bank/reset, module09 long-load and straight-interroom sprite-reset continuations. Broader ending, NMI, game-loop and player-OAM continuation bodies remain separate. None of their files or callers was edited. Remaining sprite/player/ancilla families are listed in `wrapper-inventory.md`, with the complete literal matches and 292 matching definitions beside it; this partial batch does not claim their consolidation or formatting.
+
+All **1,512 supplied ledger/cache files** retain size and mtime. `verification.json` binds source/binary hashes, library manifests, checks and file/line totals. Evidence remains below **3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit, push or one-off repository script was used.

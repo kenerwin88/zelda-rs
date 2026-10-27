@@ -35,7 +35,7 @@ fn marker36_moving_background_velocity_matches_rom() {
                 let Some(machine) = marker36_player_machine(&native, 0x07b9b3) else { return };
                 crate::cycle_ledger::assert_rom_marker_work(0x07b9b3, machine,
                     |s| s.cpu.k == 7 && (0xb9b3..0xb9f7).contains(&s.cpu.pc), || {
-                        native.create_velocity_from_moving_background_marked();
+                        native.create_velocity_from_moving_background(MovingBackgroundEntry::Rom07B9B3);
                     });
             }
         }
@@ -55,7 +55,7 @@ fn marker36_sword_cooldown_matches_rom() {
             let Some(machine) = marker36_player_machine(&native, 0x079ac2) else { return };
             crate::cycle_ledger::assert_rom_marker_work(0x079ac2, machine,
                 |s| s.cpu.k == 7 && (0x9ac2..0x9ae6).contains(&s.cpu.pc), || {
-                    native.link_handle_sword_cooldown_marked();
+                    native.link_handle_sword_cooldown();
                 });
         }
     }

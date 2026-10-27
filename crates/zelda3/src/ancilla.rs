@@ -3,6 +3,12 @@
 
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum AncillaClass2Entry {
+    Unpriced,
+    Rom088BCF,
+}
+
 #[macro_use]
 mod ancilla_shared;
 use ancilla_shared::*;

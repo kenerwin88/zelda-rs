@@ -1,4 +1,5 @@
 use super::*;
+use crate::zelda_rtl::ancilla::AncillaClass2Entry;
 use crate::game_state::constants::SPRITE_TILETYPE;
 use crate::tile_definition::{EntityCollision, NativeTile};
 
@@ -257,7 +258,7 @@ fn ancilla_probe_publishes_indoors_only_and_outdoor_slopes_read_the_stale_scratc
     state
         .dungeon_bg2_attributes_mut()
         .set_bg2_attr(offset, 0x01);
-    assert!(state.ancilla_check_tile_collision_class2(0));
+    assert!(state.ancilla_check_tile_collision_class2(0, AncillaClass2Entry::Unpriced));
     assert_eq!(state.game_state.sprites.workspace.tile(), tile(0x01));
     assert_eq!(state.ancilla_slot_view(0).tile_attribute(), 0x01);
 
@@ -271,14 +272,14 @@ fn ancilla_probe_publishes_indoors_only_and_outdoor_slopes_read_the_stale_scratc
         let mut state = outdoor_state(0x00, 0x18);
         state.sprite_workspace_mut().set_tile(stale);
         state.ancilla_set_xy(0, 4 << 3, 0x30);
-        assert_eq!(state.ancilla_check_tile_collision_class2(0), expected);
+        assert_eq!(state.ancilla_check_tile_collision_class2(0, AncillaClass2Entry::Unpriced), expected);
         assert_eq!(state.ancilla_slot_view(0).tile_attribute(), 0x19);
         assert_eq!(state.game_state.sprites.workspace.tile(), stale);
     }
     let mut state = outdoor_state(0x00, 0x01);
     state.sprite_workspace_mut().set_tile(NativeTile::PIT);
     state.ancilla_set_xy(0, 4 << 3, 0x30);
-    assert!(state.ancilla_check_tile_collision_class2(0));
+    assert!(state.ancilla_check_tile_collision_class2(0, AncillaClass2Entry::Unpriced));
     assert_eq!(state.game_state.sprites.workspace.tile(), NativeTile::PIT);
 }
 

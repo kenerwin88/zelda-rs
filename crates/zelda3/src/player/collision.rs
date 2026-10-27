@@ -2548,7 +2548,7 @@ impl ZeldaState {
                 assert!(matches!(direction, 2 | 3));
                 self.player_limit_directions_after_vertical(Some(CollisionDirection::from_legacy(direction)));
                 if primary_layer {
-                    self.create_velocity_from_moving_background();
+                    self.create_velocity_from_moving_background(MovingBackgroundEntry::Unpriced);
                     self.follower_link_state_mut().mask_direction(0x0f);
                     self.player_limit_directions_inner();
                 }
@@ -2557,7 +2557,7 @@ impl ZeldaState {
                 assert!(direction <= 1);
                 self.player_limit_directions_after_reset(Some(CollisionDirection::from_legacy(direction)));
                 if primary_layer {
-                    self.create_velocity_from_moving_background();
+                    self.create_velocity_from_moving_background(MovingBackgroundEntry::Unpriced);
                     self.follower_link_state_mut().mask_direction(0x0f);
                     self.player_limit_directions_inner();
                 }
@@ -2581,7 +2581,7 @@ impl ZeldaState {
             }
             blocks.block(0x07b657);
             // $07:B657 JSR $B9B3; parent markers own only the call opcode.
-            self.create_velocity_from_moving_background_marked();
+            self.create_velocity_from_moving_background(MovingBackgroundEntry::Rom07B9B3);
         } else { blocks.taken(0x07b652); }
         blocks.block(0x07b65a);
         self.follower_link_state_mut().mask_direction(0x0f);
@@ -2908,14 +2908,14 @@ impl ZeldaState {
                     && self.check_if_room_needs_double_layer_check()
                 {
                     self.check_primary_collision_layer();
-                    self.create_velocity_from_moving_background();
+                    self.create_velocity_from_moving_background(MovingBackgroundEntry::Unpriced);
                 }
                 self.finish_cardinal_collision_after_primary();
             }
             CardinalCollisionTail::PrimaryFootprint => {
                 self.player_tile_detect_nearby();
                 self.check_primary_collision_layer_after_nearby();
-                self.create_velocity_from_moving_background();
+                self.create_velocity_from_moving_background(MovingBackgroundEntry::Unpriced);
                 self.finish_cardinal_collision_after_primary();
             }
             CardinalCollisionTail::FinalFootprint { collision_two } => {
@@ -2950,7 +2950,7 @@ impl ZeldaState {
                     });
                 }
                 if primary_layer {
-                    self.create_velocity_from_moving_background();
+                    self.create_velocity_from_moving_background(MovingBackgroundEntry::Unpriced);
                     self.finish_cardinal_collision_after_primary();
                 } else {
                     self.finish_cardinal_collision_after_checks();
@@ -3001,7 +3001,7 @@ impl ZeldaState {
                 self.check_primary_collision_layer();
                 blocks.block(0x07b848);
                 // $07:B848 JSR $B9B3; parent markers own only the call opcode.
-                self.create_velocity_from_moving_background_marked();
+                self.create_velocity_from_moving_background(MovingBackgroundEntry::Rom07B9B3);
             } else { blocks.taken(0x07b7de); }
         }
 

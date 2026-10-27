@@ -2,6 +2,7 @@
 // Methods ported from zelda3/src/player.c and included inside ZeldaState.
 
 use super::*;
+use super::ancilla::AncillaClass2Entry;
 
 #[path = "player/runtime.rs"]
 mod runtime;
@@ -18,6 +19,13 @@ mod actions;
 
 mod player_shared;
 use player_shared::*;
+
+/// Complete ROM call versus a continuation whose source cursor owns the work.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum MovingBackgroundEntry {
+    Unpriced,
+    Rom07B9B3,
+}
 
 const DASH_FOLLOWER_SLOWDOWN_INDICATORS: [u8; 15] =
     [0xff, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
