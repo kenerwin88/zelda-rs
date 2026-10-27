@@ -26,6 +26,9 @@ against those hashes. No source PCM is synthesized from a Rust replay.
 
 The lagless driver is the supplied logical ledger at
 `/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full`.
+Those receipts retain their original ledger provenance. New runs use the
+corrected `full-v2`; `full` remains the immutable backup. See
+[Continuous lagless 2](cost-pacing.md#continuous-lagless-2).
 It runs the existing production pacing holds and audio calls. Cartridge APU
 answers and live SPC are separate executions; both retain the ledger's
 cartridge RNG policy. This measures that requested driver configuration,
@@ -121,7 +124,7 @@ normal-census capture path; no shortcut run is substituted for them.
 
 ```sh
 C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
-L=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full
+L=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
 P=target/lagless-audio-proof
 python3 scripts/lagless_audio_compare.py extract "$C" "$P/oracle"
 ZELDA3_SAVE_DIR=/tmp/lagless-audio-rom "$P/compare-zelda3" \

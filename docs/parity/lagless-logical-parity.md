@@ -8,6 +8,13 @@ iteration. Lag-free parity compares **per main-loop iteration** instead.
 
 ## The two tools
 
+The corrected full-route ledger is
+`/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2`.
+`full` remains the immutable backup. The recorder fix, exact ledger comparison,
+continuous pass and both seeded census passes are documented in
+[Continuous lagless 2](cost-pacing.md#continuous-lagless-2). Use a fresh output
+directory when recording another ledger.
+
 ```sh
 # 1. ROM ledger: the cartridge on the in-repo source CPU, cut into iterations.
 cargo build --profile parity -p snes --example logical_frame_ledger
@@ -34,7 +41,10 @@ while `$12` is clear (Main finished; the handler then performs the frame's
 updates); an NMI with `$12` set is a lag NMI inside the iteration. Testing the
 interrupted PC against the `$00:8034` wait loop instead merges iterations: Main
 can finish and be interrupted before it reaches the loop. The handler ends at
-its `RTI` (IRQs can nest). Per iteration it records, in `iterations.jsonl`:
+its `RTI` (IRQs can nest). A source receipt can also accept a new interrupt
+after that RTI; the recorder retires the return before accounting for the new
+interrupt, so the post image cannot slip to the next NMI. Per iteration it
+records, in `iterations.jsonl`:
 
 - the joypad word the opening NMI latched (`$4218`, the bit-reversed libretro
   word);

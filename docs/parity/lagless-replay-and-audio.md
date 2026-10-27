@@ -49,7 +49,7 @@ are not inputs to the game.
 
 ```sh
 BIN=target/parity/zelda3
-LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full
+LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
 C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
 $BIN --convert-lagless "$LEDGER" "$C/initial.srm" target/lagless-proof/full.z3lag
 $BIN --replay-lagless target/lagless-proof/full.z3lag --renderless \

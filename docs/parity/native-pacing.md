@@ -319,7 +319,7 @@ No runtime ledger lag counts, per-scene duration tables, new exact cycle model, 
 ### Reproduce the full CPU gates
 
 ```sh
-LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full
+LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
 C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
 BIN=target/native-pacing/final-reduced-zelda3
 ZELDA3_SAVE_DIR=/tmp/native-pacing-repro-rom "$BIN" --logical-replay "$LEDGER" "$C/initial.srm" \

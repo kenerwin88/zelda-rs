@@ -426,7 +426,7 @@ The census gates retain the existing polygon, song-poll, and rupee exceptions. A
 All logs and raw timing traces are under `target/crystal-timing/`. `before.jsonl` is the old engine, `bank.jsonl` is the seed-bank repair; each retains both engine and original state observations. Their `.phases.json` files retain the extracted boundaries, including absolute original host values. `bank.jsonl` additionally retains the actual native SPC summaries. These target artifacts are local evidence, not a promotion or production acceptance receipt.
 
 ```sh
-LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full
+LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
 C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
 BIN=target/crystal-timing/final-reduced-zelda3
 ZELDA3_SAVE_DIR=/tmp/crystal-receipt-repro "$BIN" --logical-replay "$LEDGER" "$C/initial.srm" \

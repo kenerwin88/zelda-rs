@@ -69,6 +69,69 @@ const RTI: u8 = 0x40;
 const MAIN_MODULE: usize = 0x10;
 const NMI_THREAD_ACTIVE: usize = 0x12a;
 
+/// Receipts include both the completed opcode and any interrupt accepted
+/// after it. Retire RTI before accounting for that new interrupt: an IRQ
+/// accepted on the opening NMI's RTI must not keep that NMI open until the
+/// following iteration. NMI resets depth for the polygon stack handoff.
+fn handler_returned(opcode: u8, accepted: Option<SourceCpuAcceptedInterrupt>, depth: &mut u32) -> bool {
+    let returned = if opcode == RTI {
+        *depth = depth.saturating_sub(1);
+        *depth == 0
+    } else {
+        false
+    };
+    match accepted {
+        Some(SourceCpuAcceptedInterrupt::Nmi { .. }) => *depth = 1,
+        Some(SourceCpuAcceptedInterrupt::Irq { .. }) => *depth += 1,
+        None => {}
+    }
+    returned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn irq() -> SourceCpuAcceptedInterrupt {
+        SourceCpuAcceptedInterrupt::Irq {
+            started_at: snes::CpuMasterTimestamp::new(100),
+            interrupted_pc: 0x008034,
+        }
+    }
+
+    #[test]
+    fn rti_accepting_irq_closes_opening_before_it_can_go_stale() {
+        let mut depth = 1;
+        let mut opening = Some(7);
+        let mut snapshots = Vec::new();
+        // The NMI returns and an IRQ is accepted on the same receipt. Save
+        // this image now, rather than leaving opening pending for the next NMI.
+        if handler_returned(RTI, Some(irq()), &mut depth) {
+            snapshots.push((opening.take().unwrap(), "NMI return image"));
+        }
+        assert_eq!(depth, 1);
+        assert!(handler_returned(RTI, None, &mut depth));
+        let next_nmi = SourceCpuAcceptedInterrupt::Nmi {
+            started_at: snes::CpuMasterTimestamp::new(200),
+            interrupted_pc: 0x008034,
+        };
+        assert!(!handler_returned(0xea, Some(next_nmi), &mut depth));
+        assert!(opening.is_none(), "the stale-opening fallback must not capture the next iteration");
+        assert_eq!(snapshots, [(7, "NMI return image")]);
+        assert_eq!(depth, 1);
+    }
+
+    #[test]
+    fn nested_irq_return_does_not_close_nmi() {
+        let mut depth = 1;
+        assert!(!handler_returned(0xea, Some(irq()), &mut depth));
+        assert_eq!(depth, 2);
+        assert!(!handler_returned(RTI, None, &mut depth));
+        assert!(handler_returned(RTI, None, &mut depth));
+        assert_eq!(depth, 0);
+    }
+}
+
 /// Whether the cartridge is in a sequence that advances per NMI rather than
 /// per iteration (see `docs/parity/lagless-logical-parity.md`).
 fn timing_defined(ram: &[u8]) -> bool {
@@ -737,19 +800,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 let nmi_accepted = matches!(step.accepted_interrupt, Some(SourceCpuAcceptedInterrupt::Nmi { .. }));
                 let stale_opening = nmi_accepted && opening.is_some();
-                let handler_returned = stale_opening
-                    || (step.opcode == RTI && step.accepted_interrupt.is_none() && {
-                        interrupt_depth = interrupt_depth.saturating_sub(1);
-                        interrupt_depth == 0
-                    });
-                if nmi_accepted {
-                    interrupt_depth = 1;
-                } else if step.accepted_interrupt.is_some() {
-                    interrupt_depth += 1;
-                }
+                let returned = handler_returned(step.opcode, step.accepted_interrupt, &mut interrupt_depth);
+                let handler_returned = stale_opening || returned;
                 if handler_returned {
                     in_lag_handler = false;
                     if opening.is_some() {
+                        if stale_opening || (returned && step.accepted_interrupt.is_some()) {
+                            eprintln!("ledger-handler-boundary opening={} host={host} pc={:06x} stale={stale_opening} returned={returned} interrupt={:?}",
+                                opening.as_ref().unwrap().index, step.origin_pc, step.accepted_interrupt);
+                        }
                         if let Err(error) = post_nmi.push(&exec.machine().snes().ram[..WRAM_LEN]) {
                             failure = Some(error);
                         }
@@ -778,7 +837,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             awaiting_picture.push_back(finished);
                         }
                         current = opening.take();
-                        if !stale_opening {
+                        if step.accepted_interrupt.is_none() {
                             return Ok(());
                         }
                     }

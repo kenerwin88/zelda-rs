@@ -84,7 +84,7 @@ route, not a cold native movie's soundtrack or quest equivalence proof.
 cargo build --profile parity -p zelda3-bin
 python3 scripts/lagless_audio_timing.py \
   --binary target/parity/zelda3 \
-  --ledger /Users/missingno/Documents/zelda3-rs/target/logical-ledger/full \
+  --ledger /Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2 \
   --sram /Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18/initial.srm \
   --output target/lagless-audio-timing-repro
 python3 -m unittest discover -s scripts -p test_lagless_audio_timing.py

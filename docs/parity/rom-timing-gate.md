@@ -210,6 +210,9 @@ source-ledger iterations with `--report 0 --seed-every 2000`, using
 `/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full` and the supplied
 read-only cache's `initial.srm`. Separate `ZELDA3_SAVE_DIR` directories beneath
 `/tmp` isolated SRAM persistence.
+Those receipts retain their original `full` provenance. New replays use the
+corrected `full-v2`, with `full` kept as the immutable backup; see
+[Continuous lagless 2](cost-pacing.md#continuous-lagless-2).
 
 `scripts/logical_census_summary.py` produced byte-identical summaries. All **766**
 segment, polygon, and final-result records also matched exactly. Both binaries

@@ -1,5 +1,8 @@
 # Lagless cost accounting
 
+New replays use the corrected `full-v2` ledger; `full` remains the immutable
+backup used by earlier receipts below. See [Continuous lagless 2](#continuous-lagless-2).
+
 Partial stopping point on `codex/cost-pacing`, based on main `276b4b92`.
 Production cost holds are enabled. This batch implements the overworld map
 charge group and two dispatcher self charges; room/object/stair, choice-menu,
@@ -144,7 +147,7 @@ as validation.
 ## Reproduction
 
 ```sh
-LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full
+LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
 CACHE=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
 BIN=target/cost-pacing/worker-final-zelda3
 ZELDA3_SAVE_DIR=/tmp/cost-pacing-repro "$BIN" --logical-replay "$LEDGER" "$CACHE/initial.srm" \
@@ -1537,7 +1540,7 @@ normalized. Negative differences remain visible; no cap hides overpricing.
 ```sh
 cargo build --profile parity -p snes --example logical_frame_ledger
 cargo build --profile parity -p zelda3-bin --no-default-features --features parity-debug
-LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full
+LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
 CACHE=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
 WINDOWS=1934,94000-96000
 ZELDA3_LEDGER_PROFILE="$WINDOWS" ZELDA3_LEDGER_PROFILE_ONLY=1 \
@@ -3785,7 +3788,7 @@ python3 scripts/pacing_shortfalls.py target/cost-pacing10/before-rom.csv \
   --source target/cost-pacing10/source-missing/routine-profile.csv \
   --native target/cost-pacing10/before-native-profile.csv \
   --structural target/cost-pacing10/source-missing/structural-profile.csv \
-  --ledger /Users/missingno/Documents/zelda3-rs/target/logical-ledger/full/iterations.jsonl \
+  --ledger /Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2/iterations.jsonl \
   --json /tmp/hold-targeted-report.json
 ```
 
@@ -12747,3 +12750,88 @@ Live drift outside the priced bodies remains open: `07/00` excess **106 → 109*
 All **48 crystal/pendant phases** remain within one; stable outcomes match batch 4. The retained **default 200k ledger matches every record and EOF**. Its pruned old path was replaced with the retained local copy, SHA-256 `18b58a3f887457d770918497218eaf7eb39360e1d04ed789c8b04b0ff4d8ba77`, identical to the second retained block-worklist copy. Default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; lib-test builds retain the baseline 24/default and 1/reduced warning groups. Default library: **2,687 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,222 pass / 0 failures / 2 ignored**. Both CPU SNES suites and block/worklist, inverse, routine-coverage, exact regeneration and diff checks pass.
 
 The refreshed targeted worklist retains **1,149 diagnostic missing iterations**; remaining raw deficits still need tail/alias/continuation admission. All **1,512 supplied ledger/cache files** retain size/mtime, with none added. Summarized raw profiles/predictors and duplicate fixture binaries are deleted; evidence is **216.1 MB**, below 3 GB. No GPU execution, --video, cached-av, Snes9x, GPU test, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.
+
+## Continuous lagless 2
+
+**Verified on `codex/continuous2`, main `f4e5641b`: the continuous recorded-answer gate passes.**
+The corrected ledger is `/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2`;
+`full` remains the immutable backup. Only the recorder and documentation changed.
+Native execution, prices, classifiers and summary gates are unchanged. Evidence
+is in `target/continuous2/`.
+
+Source receipts contain the completed opcode **and** any interrupt accepted
+after it. At all four defects, the opening NMI's `RTI` at `$00:822C` immediately
+accepts an IRQ. The old tracker ignored that return, inflated interrupt depth
+and left `opening` pending until the next NMI's `stale_opening` fallback.
+The recorder now retires RTI before accounting for the new interrupt, captures
+the post image there, and still processes that interrupt. Two focused tests
+cover the formerly stale opening and an IRQ nested inside NMI. No route
+iteration is special-cased.
+
+The normal recorder ran cold from `saves/zelda3.sfc` and the same cache's
+`initial.srm` and `input.txt`, for **1,581,079 host calls**, with
+`ZELDA3_LEDGER_SEED_EVERY=2000`. RNG remains source CPU beam-derived; ROM,
+SRAM, input and cache RNG hashes are bound in `provenance.json`. It wrote
+**1,473,123 complete iterations**, with four RTI/IRQ boundary events and
+**zero deferred stale captures**. `df -h /` showed **211 GiB available** before
+recording. The old ledger was never patched, moved or deleted.
+
+The complete comparison checks every JSON record and all **1,473,124** post
+images through EOF, including every scratch and stack byte. Post image j
+closes iteration j−1. These are all four differing snapshots and all eight
+differing metadata records:
+
+| Compared iteration / finished metadata | Post image / following IRQ metadata | Source host | Raw WRAM bytes changed |
+| ---: | ---: | ---: | ---: |
+| 471,536 | 471,537 | 510,438 | 1,040 |
+| 473,561 | 473,562 | 512,815 | 1,041 |
+| 885,929 | 885,930 | 951,566 | 953 |
+| 1,068,135 | 1,068,136 | 1,147,222 | 951 |
+
+All four have the same source-boundary cause above. Their finished records
+change `nmi_return_line` **225 → 48**, `picture_host` **source host + 1 → source
+host**, and `irqs` **7 → 6**. Each following record changes only `irqs`
+**0 → 1**: the IRQ accepted after NMI returns belongs to the newly opened
+iteration. IRQ totals are conserved. All other post images and JSON fields
+match, including joypads, RNG, APU reads/writes, lag counts and opening/closing
+hosts. The first two changed images also match an independent 475k-image
+comparison. The complete compressed pre-NMI stream is SHA-256 identical,
+all **1,499 seed files** match byte for byte, and the **1,502-file set** is
+unchanged. There are **no unexplained differences**.
+
+All three native runs use `--report 0` and exit 0. Their unchanged summary
+gates use `--expect-iterations 1473123` and exit 0. Counts are missing / excess /
+false-positive iterations:
+
+| Lane | Seeding | Gate | Missing / excess / FP |
+| --- | --- | --- | ---: |
+| Recorded APU, continuous | No `--seed-every`, including no post-polygon resync | PASS | 3,838 / 0 / 0 |
+| Recorded APU census | `--seed-every 2000` | PASS | 3,838 / 0 / 0 |
+| Live APU census | `--seed-every 2000 --live-apu-reads` | PASS | 4,535 / 590 / 132 |
+
+The continuous run reports **1,473,123 clean WRAM iterations**, no first
+WRAM divergence, and clean RNG/APU consumption. It reaches module `$19` at
+**1,452,678**, enters `$1A` at **1,456,869**, and finishes at **1,473,122**,
+`$1A/$22`, with **20,445 ending iterations**. Recorded holds remain **98,839
+versus 102,677 source lag NMIs**, with **5,152 masked callbacks**. ROM census
+counts match the supplied main control; live counts match this batch's fresh
+`full` control. Holds and masked callbacks match record for record between
+the old/new live censuses and between continuous/seeded recorded APU runs.
+No timing deficit was fitted away. These are CPU logical-state/count gates;
+continuous live-APU acceptance and video/audio parity are not claimed.
+
+The **default 200k comparison matches every record and EOF**, and its baseline
+SHA-256 matches the original metadata. Ordinary default, reduced and recorder
+builds are warning-free. Asset-backed library results are default **2,689
+passed / 1 known spotlight failure / 3 ignored**, reduced **2,224 passed /
+0 failed / 2 ignored**; recorder tests are **2/2**. Existing lib-test warnings
+are separate from ordinary builds. `git diff --check` passes.
+
+All **1,502 original `full` files retain size, nanosecond mtime and SHA-256**,
+with no files added or removed. `full-v2` retains its recorded hashes after
+the replays. Both integrity reports, before/after manifests,
+`ledger-comparison.json`, `ledger-equivalence-verdict.json`, raw predictors,
+gate logs and command/binary provenance retain the proof below **3 GB**.
+Documented replay paths switch to `full-v2` only after all checks passed.
+No GPU run, `--video`, cached-av, cargo GPU test, oracle-cache write, cargo fmt,
+commit, push or one-off repository script was used.

@@ -336,7 +336,7 @@ Retained evidence is under `target/pacing-predictor/`: `build-{default,reduced}.
 ```sh
 cargo build --profile parity -p zelda3-bin --no-default-features --features parity-debug
 cp target/parity/zelda3 target/pacing-predictor/reduced-zelda3
-LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full
+LEDGER=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
 C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
 ZELDA3_SAVE_DIR=/tmp/pacing-predictor-repro target/pacing-predictor/reduced-zelda3 \
   --logical-replay "$LEDGER" "$C/initial.srm" --report 0 --seed-every 2000 \
