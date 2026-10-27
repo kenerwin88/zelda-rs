@@ -736,11 +736,22 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Goriya_Draw(int k) {  // 9df589
     pub(in crate::zelda_rtl) fn goriya_draw(&mut self, k: usize) {
+        // $1E:C7A3 JSL $1D:F589: complete body through $F5D3,
+        // including the two draw-call opcodes.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df589));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df589);
+        if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.block(0x1df591);
+            if self.sprite_slot_view(k).direction() == 3 { b.taken(0x1df596); }
+        } else { b.taken(0x1df58f); }
         if self.sprite_slot_view(k).delay_aux1() != 0 && self.sprite_slot_view(k).direction() != 3 {
+            b.block(0x1df598);
             let d = usize::from(self.sprite_slot_view(k).direction());
             self.sprite_draw_multiple(k, &GORIYA_DRAW_FRAMES_2[d..d + 1]);
         }
 
+        b.block(0x1df5a8);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
@@ -752,9 +763,11 @@ impl ZeldaState {
             k,
             &GORIYA_DRAW_FRAMES[GORIYA_DRAW_OFFSETS[g]..GORIYA_DRAW_OFFSETS[g + 1]],
         );
+        b.block(0x1df5c8);
         self.sprite_slot_view_mut(k).subtract_flags2(1);
         // ROM $1D:F5CB
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x1df5cf);
         self.sprite_slot_view_mut(k).add_flags2(1);
     }
 

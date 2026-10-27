@@ -377,9 +377,17 @@ impl ZeldaState {
     //   Two body tiles, optional foot tiles, then common shadow.
     // }
     pub(in crate::zelda_rtl) fn pengator_draw(&mut self, k: usize) {
+        // $1E:A1A3 JSR $A415: complete local caller through $A461;
+        // drawing/shadow children own their bodies.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ea415));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ea415);
         let gfx = self.sprite_slot_view(k).graphics() as usize;
         let base = (gfx * 2).min(PENGATOR_DRAW_FRAMES0.len() - 2);
         let mut info = self.sprite_draw_multiple(k, &PENGATOR_DRAW_FRAMES0[base..base + 2]);
+        b.block(0x1ea42d);
+        if gfx == 14 { b.taken(0x1ea437); }
+        else { b.block(0x1ea439); if gfx != 19 { b.taken(0x1ea43c); } }
         let extra = if gfx == 14 {
             Some(0usize)
         } else if gfx == 19 {
@@ -388,6 +396,7 @@ impl ZeldaState {
             None
         };
         if let Some(extra_base) = extra {
+            b.block(0x1ea43e);
             let cur = self.game_state.oam.current_pointer();
             self.oam_state_mut()
                 .set_current_pointer(cur.wrapping_add(8));
@@ -399,8 +408,10 @@ impl ZeldaState {
                 &PENGATOR_DRAW_FRAMES1[extra_base..extra_base + 2],
             );
         }
+        b.block(0x1ea45d);
         // ROM $1E:A45D
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x1ea461);
     }
 
     // -----------------------------------------------------------------------
@@ -630,45 +641,69 @@ impl ZeldaState {
             return;
         }
 
+        // $1D:85E3 BNE $8600: complete active-entry self work through $8669; the draw,
+        // inactive, damage, movement and collision children stay separate.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1d8600);
         self.sprite_draw_antfairy(k);
         self.sprite_bunny_beam_after_antfairy_draw(k);
     }
 
     fn sprite_bunny_beam_after_antfairy_draw(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1d8604);
         if self.sprite_slot_view(k).pause() == 0 {
+            b.block(0x1d8609);
             let oam = self.game_state.oam.current_pointer_usize();
             let charnum = RABBIT_BEAM_GFX[self.sprite_slot_view(k).graphics() as usize];
             for i in 0..5 {
+                b.block(0x1d8613);
+                if (oam & 255) + i * 4 + 3 > 255 { b.crossing(0x1d861a); }
+                if i != 4 { b.taken(0x1d8625); }
                 let pos = oam + i * 4;
                 self.oam_state_mut().set_entry_char(pos, charnum);
                 self.oam_state_mut().merge_entry_flags(pos, 0xf0, 2);
             }
-        }
+        } else { b.taken(0x1d8607); }
+        b.block(0x1d8627);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1d862a);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x1d862f);
             let value = 0x30;
             self.sprite_slot_view_mut(k).set_bump_damage(value);
             // $1D:8634 JSL $06:F121: complete body, caller opcode unchanged.
-            if self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121) {
+            let hit = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
+            b.block(0x1d8638);
+            if hit {
+                b.block(0x1d863a);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
                 self.follower_link_state_mut().set_temp_bunny_timer(256);
-            }
+            } else { b.taken(0x1d8638); }
+            b.block(0x1d8647);
             if self.game_state.player.follower_link.lower_level_state()
                 == self.sprite_slot_view(k).floor()
             {
+                b.block(0x1d864e);
                 self.sprite_apply_speed_towards_link(k, 16);
-            }
+            } else { b.taken(0x1d864c); }
+            b.block(0x1d8654);
             self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
-            if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0 {
+            b.block(0x1d8657);
+            let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+            b.block(0x1d865a);
+            if collision != 0 {
+                b.block(0x1d865c);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
                 self.sprite_spawn_poof_garnish(k);
+                b.block(0x1d8663);
                 self.sprite_sfx_queue_sfx2_with_pan(k, 0x15);
-            }
-        }
+            } else { b.taken(0x1d865a); }
+        } else { b.taken(0x1d862d); }
+        b.block(0x1d8669);
     }
 
     // -----------------------------------------------------------------------
@@ -994,15 +1029,24 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_5B_Spark_Clockwise(int k) {  // 85933f
     pub(super) fn sprite_5_b_spark_clockwise(&mut self, k: usize) {
+        // $05:933F..940D: complete RTS-dispatched self body. Child calls stay separate.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05933f);
         // ROM $05:933F JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x059343);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x059346);
         if (self.game_state.frame.frame_counter & 1) == 0 {
+            b.block(0x05934c);
             self.sprite_slot_view_mut(k).xor_oam_flags(6);
         }
+        else { b.taken(0x05934a); }
+        b.block(0x059354);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.block(0x059359);
             let value = 1;
             self.sprite_slot_view_mut(k).set_ai_state(value);
             let value = 1;
@@ -1011,28 +1055,41 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_y_velocity(value);
             // ROM $05:9364 -> $05:B88D, $05:9370 -> $05:B88D, $05:93C4 -> $05:B88D -> $06:E496
             let mut coll = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            b.block(0x059367);
             let value = (-1i8) as u8;
             self.sprite_slot_view_mut(k).set_x_velocity(value);
             let value = (-1i8) as u8;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
             // ROM $05:9364 -> $05:B88D, $05:9370 -> $05:B88D, $05:93C4 -> $05:B88D -> $06:E496
             coll |= self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            b.block(0x059373);
             let j = if coll < 4 {
+                b.block(0x05937b);
                 if (coll & 1) != 0 {
+                    b.taken(0x05937f); b.block(0x059382);
                     0
                 } else {
+                    b.block(0x059381); b.block(0x059382);
                     1
                 }
             } else if (coll & 4) != 0 {
+                b.taken(0x059379); b.block(0x059384); b.taken(0x059388);
                 2
             } else {
+                b.taken(0x059379); b.block(0x059384); b.block(0x05938a);
                 3
             };
+            b.block(0x05938b);
+            if self.sprite_slot_view(k).sprite_type() == 0x5c { b.taken(0x059390); }
+            else { b.block(0x059392); }
+            b.block(0x059396);
             let value = SPRITE_5_B_SPARK_CLOCKWISE_DIRECTIONS
                 [usize::from(u8::from(self.sprite_slot_view(k).sprite_type() != 0x5c) * 4 + j)];
             self.sprite_slot_view_mut(k).set_direction(value);
         }
 
+        else { b.taken(0x059357); }
+        b.block(0x05939c);
         let value = (self.sprite_slot_view(k).oam_flags() & 0x3f)
             | SPRITE_5_B_SPARK_CLOCKWISE_OAM_FLAGS
                 [usize::from((self.game_state.frame.frame_counter >> 2) & 3)];
@@ -1040,8 +1097,10 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         // ROM $05:93AE
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x0593b1);
         // $05:93B1 JSL $06:F121: complete body, caller opcode unchanged.
         self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
+        b.block(0x0593b5);
         let mut j = usize::from(self.sprite_slot_view(k).direction());
         let value = SOLDIER_B_STEP_X_VELOCITIES[j] as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
@@ -1050,18 +1109,27 @@ impl ZeldaState {
         // ROM $05:9364 -> $05:B88D, $05:9370 -> $05:B88D, $05:93C4 -> $05:B88D -> $06:E496
         let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
 
+        b.block(0x0593c7);
         j = usize::from(self.sprite_slot_view(k).direction());
         if self.sprite_slot_view(k).delay_aux2() != 0 {
+            b.block(0x0593cc);
             if self.sprite_slot_view(k).delay_aux2() == 6 {
+                b.block(0x0593d0);
                 j = usize::from(SOLDIER_B_NEXT_DIRECTIONS[j]);
-            }
+            } else { b.taken(0x0593ce); }
         } else if (self.sprite_slot_view(k).wall_collision() & SOLDIER_B_COLLISION_MASKS[j]) == 0 {
+            b.taken(0x0593ca); b.block(0x0593db); b.block(0x0593e6);
             let value = 10;
             self.sprite_slot_view_mut(k).set_delay_aux2(value);
         }
+        else { b.taken(0x0593ca); b.block(0x0593db); b.taken(0x0593e4); }
+        b.block(0x0593eb);
         if (self.sprite_slot_view(k).wall_collision() & SOLDIER_B_FAST_COLLISION_MASKS[j]) != 0 {
+            b.block(0x0593f6);
             j = usize::from(SOLDIER_B_FAST_NEXT_DIRECTIONS[j]);
         }
+        else { b.taken(0x0593f4); }
+        b.block(0x0593fc);
         let value = j as u8;
         self.sprite_slot_view_mut(k).set_direction(value);
         let value = (SOLDIER_B_FAST_X_VELOCITIES[j] * 2) as u8;

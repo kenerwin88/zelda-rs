@@ -2863,55 +2863,83 @@ impl ZeldaState {
 
     // void Babasu(int k) {  // 9e9c6b
     pub(super) fn babasu(&mut self, k: usize) {
+        // $1E:9C6B..9D16: complete local dispatch and four state tails.
+        // The RTS table at $9C79 selects these tails in the same caller frame.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e9c6b);
         self.babusu_draw(k);
+        b.block(0x1e9c6f);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
-
+        b.block(0x1e9c72);
+        let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+        b.block(0x008781);
+        drop(_dispatch);
+        b.block(0x008784);
+        b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x1e9c81);
                 self.sprite_slot_view_mut(k).increment_ai_state();
                 self.sprite_slot_view_mut(k).set_delay_main(128);
                 self.sprite_slot_view_mut(k).set_graphics(255);
             }
             1 => {
+                b.block(0x1e9c8f);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1e9c94);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).set_delay_main(55);
-                }
+                } else { b.taken(0x1e9c92); }
+                b.block(0x1e9c9c);
             }
             2 => {
+                b.block(0x1e9cad);
                 let j = self.sprite_slot_view(k).delay_main();
                 let i = usize::from(self.sprite_slot_view(k).direction());
                 if j == 0 {
+                    b.block(0x1e9cb2);
                     self.sprite_slot_view_mut(k).set_ai_state(3);
                     self.sprite_slot_view_mut(k)
                         .set_x_velocity(BABUSU_AXIS_VELOCITIES[i] as u8);
                     self.sprite_slot_view_mut(k)
                         .set_y_velocity(BABUSU_AXIS_VELOCITIES[i + 2] as u8);
                     self.sprite_slot_view_mut(k).set_delay_main(32);
-                }
+                } else { b.taken(0x1e9cb0); }
+                b.block(0x1e9ccb);
                 if j >= 32 {
+                    b.block(0x1e9ccf);
                     self.sprite_slot_view_mut(k).set_graphics(
                         BABUSU_GRAPHICS[usize::from((j - 32) >> 2)] + BABUSU_DIRECTION_GRAPHICS[i],
                     );
                 } else {
+                    b.taken(0x1e9ccd);
+                    b.block(0x1e9ce2);
                     self.sprite_slot_view_mut(k).set_graphics(0xff);
                 }
             }
             3 => {
+                b.block(0x1e9cec);
                 // $1E:9CEC JSR $1E:C267: complete two-call body.
                 self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
+                b.block(0x1e9cef);
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
+                b.block(0x1e9cf2);
                 let value = ((self.game_state.frame.frame_counter >> 1) & 1)
                     + BABUSU_SCURRY_GRAPHICS[usize::from(self.sprite_slot_view(k).direction())];
                 self.sprite_slot_view_mut(k).set_graphics(value);
-                if self.sprite_slot_view(k).delay_main() == 0
-                    && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0
-                {
-                    self.sprite_slot_view_mut(k).xor_direction(1);
-                    self.sprite_slot_view_mut(k).set_ai_state(0);
-                }
+                if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1e9d06);
+                    let hit = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                    b.block(0x1e9d09);
+                    if hit != 0 {
+                        b.block(0x1e9d0b);
+                        self.sprite_slot_view_mut(k).xor_direction(1);
+                        self.sprite_slot_view_mut(k).set_ai_state(0);
+                    } else { b.taken(0x1e9d09); }
+                } else { b.taken(0x1e9d04); }
+                b.block(0x1e9d16);
             }
             _ => {}
         }
@@ -4041,33 +4069,7 @@ impl ZeldaState {
                 }
             }
             6 => {
-                self.sprite_move_xyz(k, SpriteMoveEntry::Rom1EFF34);
-                self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
-                if !sign8(self.sprite_slot_view(k).z_velocity().wrapping_add(64)) {
-                    self.sprite_slot_view_mut(k).subtract_z_velocity(2);
-                }
-                if sign8(self.sprite_slot_view(k).z().wrapping_sub(1)) {
-                    self.sprite_slot_view_mut(k).set_z(0);
-                    self.sprite_slot_view_mut(k).set_z_velocity(0);
-                }
-                let j = self.sprite_slot_view(k).delay_main();
-                if j == 0 {
-                    if (self.get_random_number() & 1) != 0 {
-                        self.stalfos_knight_set_to_ground(k);
-                    } else {
-                        self.sprite_slot_view_mut(k).set_ai_state(7);
-                        self.sprite_slot_view_mut(k).set_delay_main(80);
-                    }
-                } else {
-                    if j >= 224 && (j & 3) == 0 {
-                        self.sprite_sfx_queue_sfx3_with_pan(k, 0x14);
-                    }
-                    self.sprite_slot_view_mut(k)
-                        .set_c(STALFOS_KNIGHT_CASE6_STATES[(j >> 3) as usize]);
-                    self.sprite_slot_view_mut(k).set_graphics(3);
-                    let value = 2;
-                    self.sprite_slot_view_mut(k).set_head_direction(value);
-                }
+                self.stalfos_knight_crumble(k);
             }
             7 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -4079,6 +4081,56 @@ impl ZeldaState {
                 }
             }
             _ => {}
+        }
+    }
+
+    pub(super) fn stalfos_knight_crumble(&mut self, k: usize) {
+        // $1E:AC77..ACD5 and its $AB46 JMP tail, under the local state dispatch.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eac77);
+        self.sprite_move_xyz(k, SpriteMoveEntry::Rom1EFF34);
+        b.block(0x1eac7a);
+        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+        b.block(0x1eac7d);
+        if !sign8(self.sprite_slot_view(k).z_velocity().wrapping_add(64)) {
+            b.block(0x1eac84);
+            self.sprite_slot_view_mut(k).subtract_z_velocity(2);
+        } else { b.taken(0x1eac82); }
+        b.block(0x1eac8a);
+        if sign8(self.sprite_slot_view(k).z().wrapping_sub(1)) {
+            b.block(0x1eac90);
+            self.sprite_slot_view_mut(k).set_z(0);
+            self.sprite_slot_view_mut(k).set_z_velocity(0);
+        } else { b.taken(0x1eac8e); }
+        b.block(0x1eac96);
+        let j = self.sprite_slot_view(k).delay_main();
+        if j == 0 {
+            b.block(0x1eac9b);
+            let random = self.get_random_number();
+            b.block(0x1eac9f);
+            if (random & 1) != 0 {
+                b.taken(0x1eaca1); b.block(0x1eacae); b.block(0x1eab46);
+                self.stalfos_knight_set_to_ground(k);
+            } else {
+                b.block(0x1eaca3);
+                self.sprite_slot_view_mut(k).set_ai_state(7);
+                self.sprite_slot_view_mut(k).set_delay_main(80);
+            }
+        } else {
+            b.taken(0x1eac99); b.block(0x1eacb1);
+            if j >= 224 {
+                b.block(0x1eacb5);
+                if (j & 3) == 0 {
+                    b.block(0x1eacba);
+                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x14);
+                } else { b.taken(0x1eacb8); }
+                b.block(0x1eacc0);
+            } else { b.taken(0x1eacb3); }
+            b.block(0x1eacc1);
+            self.sprite_slot_view_mut(k)
+                .set_c(STALFOS_KNIGHT_CASE6_STATES[(j >> 3) as usize]);
+            self.sprite_slot_view_mut(k).set_graphics(3);
+            self.sprite_slot_view_mut(k).set_head_direction(2);
         }
     }
 

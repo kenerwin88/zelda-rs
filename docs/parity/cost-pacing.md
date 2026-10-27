@@ -12835,3 +12835,37 @@ gate logs and command/binary provenance retain the proof below **3 GB**.
 Documented replay paths switch to `full-v2` only after all checks passed.
 No GPU run, `--video`, cached-av, cargo GPU test, oracle-cache write, cargo fmt,
 commit, push or one-off repository script was used.
+
+## Cost-pacing batch 42 — verified partial stop
+
+On `codex/cost-pacing42`, main `945532c9`: **33 predicted / 33 actual ordinary-gameplay flips**, with no lost holds or newly missing gameplay iterations. The **120-frame aim remains unfinished**. Full ROM missing falls **3,771 → 3,736** (35 restored frames, including two outside the targeted population). Evidence: `target/cost-pacing42/`.
+
+Ranking reuses batch 41's retained canonical inverse for the unchanged **2,273 missing iterations** in `07/00` and `09/00`; no full main controls were repeated. Every shortfall and raw owner ranking is retained. Bounded before probes are explicitly diagnostic. Existing drawing, coordinate, tile-property and inactive/paused scalar aliases receive no duplicate credit. Remaining raw deficits still require ownership admission.
+
+**92 new blocks / 321 instructions** price six complete ROM owners: Spark, Babasu's entry and all four state tails, RabbitBeam's active entry, the knight's crumble state and ground jump tail, Pengator drawing and Goriya drawing. All **1,703 existing rows** remain identical. `source-pricing-audit.json` checks ROM callers and dispatch-table bindings. Shared local-dispatch blocks are reused once, with child bodies excluded. Six proportionate `assert_rom_marker_work` fixtures pass **90 unmodified-ROM cases per library suite**, including clipping, OAM page crossings, AI branches and the actual ROM RNG child's returned answer.
+
+| Complete owner | Old scalar clocks | New marker clocks | Independent predicted flips |
+| --- | ---: | ---: | ---: |
+| Babasu `$1e:9c6b` + state tails | 0 | 1,372,472 | 11 |
+| Spark `$05:933f` | 0 | 514,702 | 9 |
+| RabbitBeam active `$1d:8600` | 0 | 420,292 | 7 |
+| Knight crumble `$1e:ac77` + `$ab46` tail | 0 | 234,622 | 6 |
+| Pengator draw `$1e:a415` | 0 | 345,536 | 5 |
+| Goriya draw `$1d:f589` | 0 | 382,336 | 3 |
+
+Independent predictions overlap; the joint prediction and actual gain are both **33**. The **3,269,960 new marker clocks** equal both the admitted source work and the signed main-counter increase on **every cohort iteration**. These self bodies contained no scalar calls to replace; existing child scalars and default/ROM-timing accounting remain intact. No fitted price, scene threshold, multiplier, scene table or classifier changed. These are executed-work receipts, not equivalent-call-sequence or physical-NMI proof.
+
+Both full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; all runtime holds equal P2. These are periodically seeded logical gates, not continuous-route or A/V acceptance. Counts are missing / excess / FP:
+
+| Lane / scope | Before | After |
+| --- | --- | --- |
+| ROM full | 3,771/0/0 | **3,736/0/0** |
+| ROM `07/00` | 1,433/0/0 | **1,400/0/0** |
+| ROM `09/00` | 840/0/0 | **840/0/0** |
+| Live full | supplied baseline reused | **4,436/593/133** |
+| Live `07/00` | supplied baseline reused | **1,400/106/20** |
+| Live `09/00` | supplied baseline reused | **840/0/0** |
+
+All **48 crystal/pendant phases** remain within one; stable outcomes match load batch 5. The **default 200k ledger matches every record and EOF**. Both ordinary builds are warning-free; existing lib-test warnings remain separate. Default library pass/fail/ignored: **2,699/1/3**, only the known spotlight failure. Reduced: **2,234/0/2**. Both CPU SNES libraries: **504/0/7**. Block/worklist, routine-coverage, inverse, exact regeneration and diff checks pass.
+
+The refreshed worklist retains **2,240 missing gameplay iterations**. All **1,512 supplied ledger/cache files** retain size and mtime, with none added. Large raw profiles and predictors were summarized, hashed and deleted; retained evidence is about **244 MB**, below 3 GB. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.

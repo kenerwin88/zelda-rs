@@ -2237,3 +2237,150 @@ fn marker41_busy_predicate_matches_rom() {
         assert_eq!(busy, source.snes().cpu.c);
     }
 }
+
+#[test]
+fn marker42_spark_complete_body_matches_rom() {
+    for (state, ai, delay, frame) in [(8, 0, 0, 0), (9, 0, 0, 0),
+        (9, 1, 0, 1), (9, 1, 6, 0), (9, 1, 5, 1)] {
+        for typ in [0x5bu8, 0x5c] {
+            let mut n = marker29_state();
+            let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../zelda3_assets.dat")).unwrap();
+            n.set_assets(&assets).unwrap();
+            for (a,v) in [(0xdd0,state),(0xe20,typ),(0xd80,ai),(0xe10,delay),
+                (0x1a,frame),(0xfa0,0),(0xcaa,0x80)] { n.write_wram_byte(a,v); }
+            n.write_wram_word(0xfd8,0x40); n.write_wram_word(0xfda,0x40);
+            n.write_wram_byte(0xd10,0x40); n.write_wram_byte(0xd00,0x40);
+            n.sync_native_game_state_from_ram();
+            let Some(machine) = marker29_machine(&n,0x05933f,0) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x05b5d3,machine,
+                |s| s.cpu.k==5 && (0x933f..0x940e).contains(&s.cpu.pc),|| {
+                    let _parent=crate::cycle_ledger::routine(0x05b5d3);
+                    n.sprite_5_b_spark_clockwise(0);
+                });
+        }
+    }
+}
+
+#[test]
+fn marker42_babasu_complete_states_match_rom() {
+    for ai in 0..4u8 {
+        for delay in [0u8, 1, 31, 32, 55] {
+            let mut n=marker29_state();
+            let assets=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../zelda3_assets.dat")).unwrap();
+            n.set_assets(&assets).unwrap();
+            for (a,v) in [(0xdd0,9),(0xe20,0x9c),(0xd80,ai),(0xdf0,delay),
+                (0xcaa,0x80),(0xfa0,0),(0xde0,1),(0xd10,0x40),(0xd00,0x40)] {
+                n.write_wram_byte(a,v);
+            }
+            n.sync_native_game_state_from_ram();
+            let Some(machine)=marker29_machine(&n,0x1e9c6b,0) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x1e8b19,machine,
+                |s| s.cpu.k==0x1e && ((0x9c6b..0x9c79).contains(&s.cpu.pc)
+                    || (0x9c81..0x9c9d).contains(&s.cpu.pc)
+                    || (0x9cad..0x9ce8).contains(&s.cpu.pc)
+                    || (0x9cec..0x9d17).contains(&s.cpu.pc))
+                    || s.cpu.k==0 && (0x8784..0x879c).contains(&s.cpu.pc),|| {
+                    let _parent=crate::cycle_ledger::routine(0x1e8b19);
+                    n.babasu(0);
+                });
+        }
+    }
+}
+
+#[test]
+fn marker42_pengator_complete_draw_matches_rom() {
+    for gfx in [0u8, 1, 14, 19, 21] {
+        for y in [0x40u16, 0x400] {
+            let mut n=marker29_state();
+            for (a,v) in [(0xdd0,9),(0xe20,0x99),(0xdc0,gfx),(0xfa0,0),
+                (0xcaa,0x80)] { n.write_wram_byte(a,v); }
+            n.write_wram_word(0xfda,y); n.write_wram_byte(0xd00,y as u8);
+            n.write_wram_byte(0xd20,(y>>8) as u8);
+            n.sync_native_game_state_from_ram();
+            let Some(machine)=marker29_machine(&n,0x1ea415,0) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x1ea415,machine,
+                |s| s.cpu.k==0x1e && (0xa415..0xa462).contains(&s.cpu.pc),
+                || { n.pengator_draw(0); });
+        }
+    }
+}
+
+#[test]
+fn marker42_goriya_complete_draw_matches_rom() {
+    for direction in 0..4u8 {
+        for delay in [0u8, 1] {
+            for gfx in [0u8, 3, 7] {
+                let mut n=marker29_state();
+                for (a,v) in [(0xdd0,9),(0xe20,0x83),(0xdc0,gfx),(0xfa0,0),
+                    (0xde0,direction),(0xe00,delay),(0xcaa,0x80)] { n.write_wram_byte(a,v); }
+                n.sync_native_game_state_from_ram();
+                let Some(machine)=marker29_machine(&n,0x1df589,0) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x1df589,machine,
+                    |s| s.cpu.k==0x1d && (0xf589..0xf5d4).contains(&s.cpu.pc),
+                    || { n.goriya_draw(0); });
+            }
+        }
+    }
+}
+
+#[test]
+fn marker42_rabbit_active_complete_body_matches_rom() {
+    for (pause,state,delay) in [(0u8,9u8,1u8),(0,9,0),(1,9,0),(0,8,1)] {
+        for pointer in [0x800u16,0x8fc] {
+            let mut n=marker29_state();
+            let assets=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../zelda3_assets.dat")).unwrap();
+            n.set_assets(&assets).unwrap();
+            for (a,v) in [(0xdd0,state),(0xe20,0x4b),(0xd80,1),(0xdf0,delay),
+                (0xf00,pause),(0xfa0,0),(0xcaa,0x80),(0xd10,0x40),(0xd00,0x40)] {
+                n.write_wram_byte(a,v);
+            }
+            n.write_wram_word(0x90,pointer);
+            n.sync_native_game_state_from_ram();
+            let Some(machine)=marker29_machine(&n,0x1d8600,0) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x1dc222,machine,
+                |s| s.cpu.k==0x1d && (0x8600..0x866a).contains(&s.cpu.pc),|| {
+                    let _parent=crate::cycle_ledger::routine(0x1dc222);
+                    n.sprite_bunny_beam(0);
+                });
+        }
+    }
+}
+
+#[test]
+fn marker42_knight_crumble_complete_body_matches_rom() {
+    for (z,vz) in [(0u8,0u8),(2,0xc0),(0,0xbf)] {
+        for delay in [0u8,1,223,224,225,255] {
+            let mut n=marker29_state();
+            let assets=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../zelda3_assets.dat")).unwrap();
+            n.set_assets(&assets).unwrap();
+            for (a,v) in [(0xdd0,9),(0xe20,0x91),(0xd80,6),(0xdf0,delay),
+                (0xf70,z),(0xf80,vz),(0xfa0,0),(0xcaa,0x80),
+                (0xd10,0x40),(0xd00,0x40)] { n.write_wram_byte(a,v); }
+            n.sync_native_game_state_from_ram();
+            let Some(machine)=marker29_machine(&n,0x1eac77,0) else { return };
+            let random = std::cell::Cell::new(None);
+            crate::cycle_ledger::assert_rom_marker_work(0x1e8b19,machine,
+                |s| {
+                    if s.cpu.k==0x1e && s.cpu.pc==0xac9f {
+                        random.set(Some((s.cpu.a as u8,s.cpu.c)));
+                    }
+                    s.cpu.k==0x1e && ((0xac77..0xacd6).contains(&s.cpu.pc)
+                        || (0xab46..0xab5a).contains(&s.cpu.pc))
+                },|| {
+                    // Replay the unmodified ROM child's answer, as logical
+                    // replay does; the native fallback RNG is a different stream.
+                    if let Some((value,carry))=random.get() {
+                        n.install_rom_random_replay(vec![crate::RomRandomSample::with_carry(
+                            0,value,carry)],0);
+                        n.rom_random_replay.begin_frame();
+                    }
+                    let _parent=crate::cycle_ledger::routine(0x1e8b19);
+                    n.stalfos_knight_crumble(0);
+                });
+        }
+    }
+}

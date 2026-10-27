@@ -224,5 +224,16 @@
   {"entry": "02ae6d", "end": "02aece"},
   {"entry": "02ae86", "end": "02aece"},
   {"entry": "028ca9", "end": "028cac"},
-  {"entry": "02a2a0", "end": "02a2a5"}
+  {"entry": "02a2a0", "end": "02a2a5"},
+  {"entry":"05933f","end":"05940e"},
+  {"entry":"1ea415","end":"1ea462"},
+  {"entry":"1df589","end":"1df5d4"},
+  {"entry":"1e9c6b","end":"1e9c79"},
+  {"entry":"1e9c81","end":"1e9c9d"},
+  {"entry":"1e9c8f","end":"1e9c9d"},
+  {"entry":"1e9cad","end":"1e9ce8"},
+  {"entry":"1e9cec","end":"1e9d17"},
+  {"entry":"1d8600","end":"1d866a"},
+  {"entry":"1eac77","end":"1eacd6"},
+  {"entry":"1eab46","end":"1eab5a"}
 ]
