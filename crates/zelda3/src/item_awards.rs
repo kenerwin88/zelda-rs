@@ -63,6 +63,10 @@ fn initial_item_award(item: u8) -> Option<InitialItemAward> {
     }
 }
 
+pub(super) fn has_initial_item_award(item: u8) -> bool {
+    initial_item_award(item).is_some()
+}
+
 impl ZeldaState {
     pub(super) fn grant_initial_item_award(&mut self, item: u8) {
         // The first sword also grants the first shield, before the sword write.

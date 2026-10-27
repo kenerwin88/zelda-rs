@@ -13314,3 +13314,52 @@ deleted; compact marker receipts and the per-iteration proof matrices remain.
 Evidence is below **0.1 GiB**, well under 3 GB. There were no GPU runs,
 `--video`, cached-av, Snes9x execution, oracle-cache/shared-ledger writes,
 `cargo fmt`, commits, pushes or one-off repository scripts.
+
+## Continuous lagless 4
+
+Verified partial stop on `codex/continuous4`, main `c074f341`. The continuous live ending gate is not achieved; its clean frontier remains **94,852**. Evidence is under `target/continuous4/`.
+
+The actual supplied main control first diverges at **94,853**, not 142,087. The earlier Continuous 3 binary predates the merged NMI-handler wall-time change. A cold control using the prebuilt main binary completes 94,854 iterations and fails its unchanged strict gate by one at 94,853. Its default/parity-debug/rom-timing build fingerprint and binary hash are retained. All **94,854 timing records are identical** between main and the candidate: callbacks, commands, polls and context. The repair does not introduce this first failure.
+
+| Iteration | Mechanism | Repair / status | Furthest clean continuous live index |
+| ---: | --- | --- | ---: |
+| 94,853, room `$00C8` | Inherited live song-end discrepancy. Native reads zero; both original reads remain `$13`. Native command-to-zero duration is 6,213 SPC cycles shorter than original, alongside the existing publication/observation phase gaps. | Open; no compensating delay or answer substitution. | 94,852 |
+| 142,087, room `$0033` | Main's priced producer is **40 master clocks** short of the next field boundary and publishes in slot 3 of five. | Price the receipt's allocation/award head and graphics-return suffix, including the actual command store and coordinate wrapper. Publication moves to slot 4. Candidate/source are nonzero at 142,087 and zero at 142,088. This observation follows reconvergence from the inherited earlier failure. | 94,852 |
+
+**62 blocks / 224 instructions** cover two bounded receipt fragments and their actual return wrapper. All **1,865 existing block rows remain unchanged**. The head and suffix execute for every supported award and receipt method; there is no scene-dependent admission. The award-specific middle remains unpriced. At 141,449, new exclusive work is **678 head + 2,286 suffix = 2,964 clocks**, leaving **1,532** of the receipt owner's original 4,496 exclusive clocks unpriced. Existing child prices remain disjoint. The completed instruction total is 1,343,814; this is a scoped work receipt, not whole-main CPU equivalence.
+
+Before the second song store, instruction work rises by **1,856** clocks. P2 wall time changes **1,429,432 → 1,434,438**: 1,856 instruction clocks, 80 refresh clocks and the induced 3,070-clock lag handler. HDMA remains 38,032 clocks. The unchanged fourth-field boundary is **1,429,472**. The post-store portion is also priced; the boundary did not select a fitted amount of work.
+
+The two 142,090-iteration cold timing traces differ on only four records: publication at **141,449**, the live poll at **142,087**, and its consequences at **142,088–142,089**. Main has 37 classified song-state comparisons; the candidate has 34, all **94,853–94,886**. Their strict gates fail accordingly. Both reconverge after the first pendant; no later observation is promoted to a longer clean continuous prefix.
+
+### Absolute SPC evidence
+
+The original captures are reused pinned, renderless captures, not new Snes9x executions. Fresh arithmetic checks reconstruct **all 4,217 original SMP output stores** exactly from host sample base, output sample, DSP phase and DSP debt, including the phase-28..31 counter adjustment. The source capture's complete receipt and file hashes are retained. Both original and main issue final all-voice KOFF exactly **81 cycles after** port zero.
+
+| First pendant event, absolute SPC cycles | Original | Main control |
+| --- | ---: | ---: |
+| `$13` arrival | 1,758,669,007 | 1,754,798,825 |
+| Port 0 becomes zero | 1,769,555,263 | 1,765,678,868 |
+| Final all-voice KOFF | 1,769,555,344 | 1,765,678,949 |
+| Poll(s) at 94,853 | 1,769,521,502; 1,769,538,560, both `$13` | 1,765,683,030, zero |
+| Command-to-zero interval | 10,886,256 | 10,880,043 |
+
+The original polls are **33,761 / 16,703 cycles before** zero; main polls **4,162 after** zero. Original first zero is observed at 94,854, 358 cycles after its store. The 6,213-cycle driver/event residual is measured but not assigned a root cause. It does not justify a fitted callback shift, a forced acknowledgement or an SPC tempo claim.
+
+At the second pendant, the candidate command arrives at **2,624,632,139**, zero at **2,635,519,378**, final KOFF at **2,635,519,459**, and the 142,087 poll at **2,635,516,341**: **3,037 cycles before** zero. Main's corresponding poll is at the same absolute cycle, **11,677 after** its zero. Original remains nonzero at **2,640,634,415**, 11,815 cycles before zero. These event measurements do not claim identical mixed PCM.
+
+### Full verification
+
+The full ROM seeded census and continuous recorded-answer gate both **PASS**, **1,473,123 clean iterations**, unexplained zero. Their predictors are byte-identical: **3,527 missing / 0 excess / 0 FP**, **99,150 held callbacks**, **102,677 source lag NMIs**, **5,150 masked callbacks**, and no P2 mismatch. The supplied main ROM reference is **3,528 / 0 / 0**: one missing hold is restored. Both runs enter `$19` at **1,452,678**, `$1A` at **1,456,869**, and finish **1,473,122**, `$1A/$22`, with **20,445 ending iterations**. The continuous lane has no reseeding or classified state comparisons and clean RNG/APU consumption.
+
+The full live seeded census also **passes**, **1,473,123 iterations**, unexplained zero: **3,920 missing / 299 excess / 82 FP**, **99,056 held / 5,117 masked callbacks**, and no P2 mismatch. Missing is **208 worse** than the supplied main reference of **3,712**; reference excess/FP were not supplied and a fresh full before census was not rerun. Accurate new instruction prices do not establish improved live pacing. These seeded gates do not supersede the failing continuous live prefix above.
+
+| Lane | Seeding | Gate | Missing / excess / FP |
+| --- | --- | --- | ---: |
+| ROM answers | Every 2,000 when required by existing drift rules | PASS | 3,527 / 0 / 0 |
+| Live SPC answers | Same seeded census | PASS | 3,920 / 299 / 82 |
+| Recorded answers, continuous | None, including no post-polygon resync | PASS | 3,527 / 0 / 0 |
+
+Both ordinary builds are warning-free. The default **200k ledger matches every record and EOF**. Seven generator tests, exact table regeneration and diff checks pass. Both corrected receipt selections pass **913 unmodified-ROM cases per feature configuration**: 305 head cases and 608 suffix cases. An initial fixture left the receipt slot free, allowing a nested cutscene allocation to overwrite it; the corrected fixture establishes the real allocation prefix's occupied receipt slot. The post-build source difference is exactly that one `#[cfg(test)]` fixture statement, with production line counts unchanged; `post-build-fixture-only.json` binds the proof. Final full Zelda libraries: default **2,712 passed / 1 known spotlight failure / 3 ignored**, reduced **2,247 / 0 / 2**. The sole final failure remains `closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`, `Some(1047868)` versus `Some(170442)`. Both CPU SNES libraries pass **504 / 0 / 7 ignored**. Existing lib-test warnings are separate from ordinary build results. Earlier invalid-fixture runs remain diagnostic logs and are superseded by the final full suites.
+
+All **1,502 ledger files** retain size, nanosecond mtime and SHA-256, with none added or removed. All new prices/scopes are lagless-only. Default/ROM-timing charges and the default ledger are unchanged. No protected load/transition or sprite owner was edited. No GPU run, --video, cached-av, oracle-cache/ledger write, cargo fmt, commit, push or one-off repository script was used. Retained output remains below **3 GB**. `census-totals.json`, the three gate logs, `first-original-verification.json`, `first-prefix-comparison.json`, `second-before-after.json`, `ledger-integrity.json` and `verification.json` retain the stopping point.

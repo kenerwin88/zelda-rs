@@ -235,6 +235,70 @@ mod continuous3_marker_tests {
                 });
         }
     }
+
+    #[test]
+    fn receipt_head_matches_rom() {
+        for item in 0..=0x4b {
+            for method in 0..=3 {
+                let mut n = native();
+                n.write_wram_byte(0x2d8, item); n.write_wram_byte(0x2e9, method);
+                n.write_wram_byte(0x1b, 1); n.sync_native_game_state_from_ram();
+                let mut s = machine(&n, 0x0985e8, true);
+                s.cpu.a = 0x22; s.cpu.y = 4;
+                crate::cycle_ledger::assert_rom_marker_work(0x0985e8, s,
+                    |s| s.cpu.k == 9 && ((0x85e8..0x8642).contains(&s.cpu.pc)
+                        || (0x8930..0x8932).contains(&s.cpu.pc)), || {
+                        let _ = n.ancilla_add_item_receipt_from(0x22, 4, 0,
+                            ItemReceiptCaller::AtomicCaller);
+                    });
+            }
+        }
+        let mut n = native();
+        for k in 0..5 { n.write_wram_byte(0xc4a + k, 1); }
+        n.sync_native_game_state_from_ram();
+        let mut s = machine(&n, 0x0985e8, true); s.cpu.a = 0x22; s.cpu.y = 4;
+        crate::cycle_ledger::assert_rom_marker_work(0x0985e8, s,
+            |s| s.cpu.k == 9 && ((0x85e8..0x8642).contains(&s.cpu.pc)
+                || (0x8930..0x8932).contains(&s.cpu.pc)), || {
+                let _ = n.ancilla_add_item_receipt_from(0x22, 4, 0,
+                    ItemReceiptCaller::AtomicCaller);
+            });
+    }
+
+    #[test]
+    fn receipt_graphics_return_matches_rom() {
+        for item in 0..=0x4b {
+            for method in 0..=3 {
+                for k in [0usize, 4] {
+                    let mut n = native(); n.write_wram_byte(0xc4a + k, 0x22);
+                    n.write_wram_byte(0x2d8, item); n.write_wram_byte(0x2e9, method);
+                    n.write_wram_word(0x20, 0x1234); n.write_wram_word(0x22, 0x1ff8);
+                    n.sync_native_game_state_from_ram();
+                    let mut s = machine(&n, 0x0987bb, true);
+                    // The graphics callee returns under PHB / optional chest
+                    // position pushes / PHX. Preserve that real source stack.
+                    s.cpu.sp = if method == 1 { 0x1f8 } else { 0x1fa };
+                    let sp = s.cpu.sp as usize;
+                    s.ram[sp + 1] = k as u8;
+                    if method == 1 { s.ram[0x1fa] = 0x12; s.ram[0x1fb] = 0x34; }
+                    s.ram[0x1fc] = 9;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x0987bb, s,
+                        |s| s.cpu.k == 9 && ((0x87bb..0x8930).contains(&s.cpu.pc)
+                            || ((0x80c3..0x80c8).contains(&s.cpu.pc) && s.cpu.sp >= 0x1fb)), || {
+                            n.complete_ancilla_add_item_receipt(ItemReceiptReturn {
+                                ancilla_slot: k as u8, item, chest_position: 0x1234,
+                            });
+                        });
+                    let ram = n.wram_image();
+                    for base in [0xc04, 0xc0e, 0xbf4, 0xbfa, 0x12c, 0x12e, 0x12f] {
+                        let address = if base >= 0xb00 { base + k } else { base };
+                        assert_eq!(ram[address], source.snes().ram[address],
+                            "item {item:02x} method {method} slot {k} address {address:04x}");
+                    }
+                }
+            }
+        }
+    }
 }
 const ARBITRARY_SFX_PAN_BY_SCREEN_COLUMN: [u8; 8] = [0x80, 0x80, 0x80, 0, 0, 0x40, 0x40, 0x40];
 const LINK_BODY_DMA_BASE_SOURCES: [u16; 303] = [
@@ -1510,10 +1574,36 @@ impl ZeldaState {
         chest_pos: u16,
         caller: ItemReceiptCaller,
     ) -> GameCallStatus {
+        // Bounded source head; the award-specific middle below is not yet priced.
+        let head = self.lag_free.then(|| crate::cycle_ledger::routine(0x0985e8));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0985e8);
         let Some(k) = self.ancilla_add_simple(ain, yin) else {
+            b.block(0x0985ee);
+            b.block(0x0985f0);
+            b.block(0x098930);
             return GameCallStatus::Returned;
         };
+        b.block(0x0985ee);
+        b.taken(0x0985ee);
         let item = self.game_state.player.follower_link.receive_item_index();
+        b.block(0x0985f3);
+        if self.game_state.player.follower_link.item_receipt_method() == 1 {
+            b.block(0x0985fa);
+        } else { b.taken(0x0985f8); }
+        b.block(0x098600);
+        if item == 0x20 { b.block(0x098609); } else { b.taken(0x098607); }
+        b.block(0x09860b);
+        if item == 0 { b.block(0x098615); } else { b.taken(0x098613); }
+        b.block(0x09862a);
+        let table_index = u16::from(item) * 2;
+        if 0xe8 + table_index > 0xff { b.crossing(0x09862d); }
+        if 0xe9 + table_index > 0xff { b.crossing(0x098632); }
+        // The sign of the ROM's initial-award table controls its indirect store.
+        if item_awards::has_initial_item_award(item) {
+            b.block(0x098640);
+        } else { b.taken(0x09863e); }
+        drop(head);
 
         self.follower_link_state_mut()
             .set_immobilized_flag(if item == 0x20 { 2 } else { 1 });
@@ -1662,24 +1752,63 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_ancilla_add_item_receipt(&mut self, receipt: ItemReceiptReturn) {
+        // Resume at the actual graphics return. No charge belongs to a held
+        // callback or a preview; this suffix executes exactly once on return.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0987bb));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         let k = receipt.ancilla_slot as usize;
         let item = receipt.item;
         let chest_pos = receipt.chest_position;
+        b.block(0x0987bb);
+        if item != 1 { b.taken(0x0987ca); }
+        else {
+            b.block(0x0987cc);
+            if self.game_state.player.follower_link.item_receipt_method() == 2 {
+                b.taken(0x0987d4);
+            }
+        }
         {
             let mut receipt = self.ancilla_slot_view_mut(k);
             receipt.set_item_to_link(item);
             receipt.set_work_byte_1(0);
         }
         if item == 1 && self.game_state.player.follower_link.item_receipt_method() != 2 {
+            b.block(0x0987d6);
             self.ancilla_slot_view_mut(k).set_timer(160);
             self.set_submodule(43);
             self.set_countdown(0);
             self.ancilla_add_ms_cutscene(0x35, 4);
+            b.block(0x0987ef);
+            b.block(0x0987f3);
             self.ancilla_slot_view_mut(k).set_work_byte_3(2);
         } else {
+            if item != 1 { b.block(0x0987f3); }
             self.ancilla_slot_view_mut(k).set_work_byte_3(9);
         }
+        b.block(0x0987f6);
+        let method = self.game_state.player.follower_link.item_receipt_method();
+        if method == 0 { b.taken(0x098804); } else { b.block(0x098806); }
+        b.block(0x098808);
+        if item == 0x20 { b.taken(0x09880d); }
+        else {
+            b.block(0x09880f);
+            if item == 0x37 { b.taken(0x098811); }
+            else {
+                b.block(0x098813);
+                if item == 0x38 { b.taken(0x098815); }
+                else {
+                    b.block(0x098817);
+                    if item == 0x39 { b.taken(0x098819); }
+                    else {
+                        b.block(0x09881b);
+                        if item == 0x26 { b.block(0x09881f); }
+                        else { b.taken(0x09881d); }
+                    }
+                }
+            }
+        }
         let aux_timer = if matches!(item, 0x20 | 0x37 | 0x38 | 0x39) {
+            b.block(0x098823);
             0x68
         } else if item == 0x26 {
             0x02
@@ -1688,6 +1817,7 @@ impl ZeldaState {
         } else {
             0x60
         };
+        b.block(0x098825);
         let item_receipt_method = self.game_state.player.follower_link.item_receipt_method();
         let mut receipt = self.ancilla_slot_view_mut(k);
         receipt.set_work_byte_4(5);
@@ -1695,6 +1825,9 @@ impl ZeldaState {
         receipt.set_aux_timer(aux_timer);
 
         let (x, y) = if self.game_state.player.follower_link.item_receipt_method() == 1 {
+            b.block(0x098831);
+            if 0x6c + u16::from(item) > 0xff { b.crossing(0x098861); }
+            if 0xb8 + u16::from(item) > 0xff { b.crossing(0x09886f); }
             let y = ((chest_pos & 0x1f80) >> 4)
                 .wrapping_add(self.game_state.dungeon.room_load.loading_bg_offset_v() & 0xff00)
                 .wrapping_add(receive_item_tab2_misc(item) as i16 as u16);
@@ -1703,21 +1836,76 @@ impl ZeldaState {
                 .wrapping_add(receive_item_tab3_misc(item) as u16);
             (x, y)
         } else {
-            if self.ancilla_slot_view(k).step() == 0 && item == 1 {
-                let sfx = self.link_calculate_sfx_pan() | 0x2c;
-                self.set_sound_effect_1(sfx);
-            } else if matches!(item, 0x20 | 0x37 | 0x38 | 0x39) {
-                let music = self.link_calculate_sfx_pan() | 0x13;
-                self.set_music_control(music);
-            } else if item != 0x3e && item != 0x17 {
-                let sfx = self.link_calculate_sfx_pan() | 0x0f;
-                self.publish_or_defer_item_receipt_sound_effect_2(sfx);
+            b.taken(0x09882f);
+            b.block(0x09887b);
+            if method != 0 { b.taken(0x09887f); }
+            else {
+                b.block(0x098881);
+                if item != 1 { b.taken(0x098886); }
             }
+            if self.ancilla_slot_view(k).step() == 0 && item == 1 {
+                b.block(0x098888);
+                let sfx = self.link_calculate_sfx_pan() | 0x2c;
+                b.block(0x09888c);
+                b.block(0x09888e);
+                self.set_sound_effect_1(sfx);
+                b.block(0x098891);
+            } else if matches!(item, 0x20 | 0x37 | 0x38 | 0x39) {
+                b.block(0x098893); b.block(0x09889a); b.block(0x09889e);
+                if item == 0x20 { b.taken(0x0988a0); }
+                else {
+                    b.block(0x0988a2);
+                    if item == 0x37 { b.taken(0x0988a4); }
+                    else {
+                        b.block(0x0988a6);
+                        if item == 0x38 { b.taken(0x0988a8); }
+                        else { b.block(0x0988aa); }
+                    }
+                }
+                b.block(0x0988ae);
+                let music = self.link_calculate_sfx_pan() | 0x13;
+                b.block(0x0988b2);
+                b.block(0x0988b4);
+                self.set_music_control(music);
+                b.block(0x0988b7);
+            } else if item != 0x3e && item != 0x17 {
+                b.block(0x098893); b.block(0x09889a); b.block(0x09889e);
+                b.block(0x0988a2); b.block(0x0988a6); b.block(0x0988aa);
+                b.taken(0x0988ac); b.block(0x0988b9);
+                let sfx = self.link_calculate_sfx_pan() | 0x0f;
+                b.block(0x0988bd);
+                self.publish_or_defer_item_receipt_sound_effect_2(sfx);
+            } else {
+                b.block(0x098893);
+                if item == 0x3e { b.taken(0x098898); }
+                else { b.block(0x09889a); b.taken(0x09889c); }
+            }
+            b.block(0x0988c2);
+            if receive_item_tab1_misc(item) == 0 { b.taken(0x0988ce); }
+            else {
+                b.block(0x0988d0);
+                if item == 0x20 { b.block(0x0988d4); }
+                else { b.taken(0x0988d2); b.block(0x0988d8); }
+            }
+            b.block(0x0988dc);
             let method = if self.game_state.player.follower_link.item_receipt_method() == 3 {
+                b.block(0x0988e3);
                 0
             } else {
+                b.taken(0x0988e1);
                 self.game_state.player.follower_link.item_receipt_method()
             };
+            b.block(0x0988e5);
+            if method == 2 { b.block(0x0988ed); } else { b.taken(0x0988eb); }
+            b.block(0x0988f3);
+            if method == 0 { b.taken(0x098901); } else { b.block(0x098903); }
+            b.block(0x09890e);
+            if method == 0 { b.taken(0x09891a); }
+            else {
+                b.block(0x09891c);
+                if 0xb8 + u16::from(item) > 0xff { b.crossing(0x09891c); }
+            }
+            b.block(0x098924);
             let x_offset = if method != 0 {
                 receive_item_tab3_misc(item) as u16
             } else if receive_item_tab1_misc(item) == 0 {
@@ -1745,7 +1933,10 @@ impl ZeldaState {
                     .wrapping_add(y_offset as u16),
             )
         };
+        b.block(0x098929);
+        b.block(0x0980c3);
         self.ancilla_set_xy(k, x, y);
+        b.block(0x0980c6);
     }
 
     pub(super) fn item_receipt_give_bottled_item(&mut self, item: u8) {

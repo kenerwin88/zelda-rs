@@ -2640,6 +2640,130 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x08f726, 0x08f72b, false, true, 78, 0x000000, &[]),
     // $08:F72B: fixed cost
     (0x08f72b, 0x08f72f, false, true, 78, 0x000000, &[]),
+    // $09:80C3: fixed cost
+    (0x0980c3, 0x0980c6, true, true, 46, 0x000000, &[]),
+    // $09:80C6: fixed cost
+    (0x0980c6, 0x0980c8, true, true, 72, 0x000000, &[]),
+    // $09:85E8: fixed cost
+    (0x0985e8, 0x0985ee, true, true, 118, 0x000000, &[]),
+    // $09:85EE: 0985ee taken +6
+    (0x0985ee, 0x0985f0, true, true, 16, 0x0985ee, &[]),
+    // $09:85F0: fixed cost
+    (0x0985f0, 0x0985f3, true, true, 30, 0x000000, &[]),
+    // $09:85F3: 0985f8 taken +6
+    (0x0985f3, 0x0985fa, true, true, 64, 0x0985f8, &[]),
+    // $09:85FA: fixed cost
+    (0x0985fa, 0x098600, true, true, 92, 0x000000, &[]),
+    // $09:8600: 098607 taken +6
+    (0x098600, 0x098609, true, true, 80, 0x098607, &[]),
+    // $09:8609: fixed cost
+    (0x098609, 0x09860b, true, true, 16, 0x000000, &[]),
+    // $09:860B: 098613 taken +6
+    (0x09860b, 0x098615, true, true, 116, 0x098613, &[]),
+    // $09:8615: 098617 +6 if the index crosses a page; 09861c +6 if the index crosses a page; 098625 +6 if the index crosses a page
+    (0x098615, 0x09862a, true, true, 248, 0x000000, &[0x098617, 0x09861c, 0x098625]),
+    // $09:862A: 09862d +6 if the index crosses a page; 098632 +6 if the index crosses a page; 09863b +6 if the index crosses a page; 09863e taken +6
+    (0x09862a, 0x098640, true, true, 242, 0x09863e, &[0x09862d, 0x098632, 0x09863b]),
+    // $09:8640: fixed cost
+    (0x098640, 0x098642, true, true, 48, 0x000000, &[]),
+    // $09:87BB: 0987ca taken +6
+    (0x0987bb, 0x0987cc, true, true, 198, 0x0987ca, &[]),
+    // $09:87CC: 0987d4 taken +6
+    (0x0987cc, 0x0987d6, true, true, 102, 0x0987d4, &[]),
+    // $09:87D6: fixed cost
+    (0x0987d6, 0x0987ef, true, true, 288, 0x000000, &[]),
+    // $09:87EF: fixed cost
+    (0x0987ef, 0x0987f3, true, true, 72, 0x000000, &[]),
+    // $09:87F3: fixed cost
+    (0x0987f3, 0x0987f6, true, true, 38, 0x000000, &[]),
+    // $09:87F6: 098804 taken +6
+    (0x0987f6, 0x098806, true, true, 178, 0x098804, &[]),
+    // $09:8806: fixed cost
+    (0x098806, 0x098808, true, true, 16, 0x000000, &[]),
+    // $09:8808: 098808 +6 if the index crosses a page; 09880d taken +6
+    (0x098808, 0x09880f, true, true, 64, 0x09880d, &[0x098808]),
+    // $09:880F: 098811 taken +6
+    (0x09880f, 0x098813, true, true, 32, 0x098811, &[]),
+    // $09:8813: 098815 taken +6
+    (0x098813, 0x098817, true, true, 32, 0x098815, &[]),
+    // $09:8817: 098819 taken +6
+    (0x098817, 0x09881b, true, true, 32, 0x098819, &[]),
+    // $09:881B: 09881d taken +6
+    (0x09881b, 0x09881f, true, true, 32, 0x09881d, &[]),
+    // $09:881F: fixed cost
+    (0x09881f, 0x098823, true, true, 38, 0x000000, &[]),
+    // $09:8823: fixed cost
+    (0x098823, 0x098825, true, true, 16, 0x000000, &[]),
+    // $09:8825: 09882f taken +6
+    (0x098825, 0x098831, true, true, 144, 0x09882f, &[]),
+    // $09:8831: 098861 +6 if the index crosses a page; 09886f +6 if the index crosses a page
+    (0x098831, 0x09887b, true, true, 924, 0x000000, &[0x098861, 0x09886f]),
+    // $09:887B: 09887c +6 if the index crosses a page; 09887f taken +6
+    (0x09887b, 0x098881, true, true, 70, 0x09887f, &[0x09887c]),
+    // $09:8881: 098881 +6 if the index crosses a page; 098886 taken +6
+    (0x098881, 0x098888, true, true, 64, 0x098886, &[0x098881]),
+    // $09:8888: fixed cost
+    (0x098888, 0x09888c, true, true, 62, 0x000000, &[]),
+    // $09:888C: fixed cost
+    (0x09888c, 0x09888e, true, true, 16, 0x000000, &[]),
+    // $09:888E: fixed cost
+    (0x09888e, 0x098891, true, true, 32, 0x000000, &[]),
+    // $09:8891: fixed cost
+    (0x098891, 0x098893, true, true, 22, 0x000000, &[]),
+    // $09:8893: 098893 +6 if the index crosses a page; 098898 taken +6
+    (0x098893, 0x09889a, true, true, 64, 0x098898, &[0x098893]),
+    // $09:889A: 09889c taken +6
+    (0x09889a, 0x09889e, true, true, 32, 0x09889c, &[]),
+    // $09:889E: 0988a0 taken +6
+    (0x09889e, 0x0988a2, true, true, 32, 0x0988a0, &[]),
+    // $09:88A2: 0988a4 taken +6
+    (0x0988a2, 0x0988a6, true, true, 32, 0x0988a4, &[]),
+    // $09:88A6: 0988a8 taken +6
+    (0x0988a6, 0x0988aa, true, true, 32, 0x0988a8, &[]),
+    // $09:88AA: 0988ac taken +6
+    (0x0988aa, 0x0988ae, true, true, 32, 0x0988ac, &[]),
+    // $09:88AE: fixed cost
+    (0x0988ae, 0x0988b2, true, true, 62, 0x000000, &[]),
+    // $09:88B2: fixed cost
+    (0x0988b2, 0x0988b4, true, true, 16, 0x000000, &[]),
+    // $09:88B4: fixed cost
+    (0x0988b4, 0x0988b7, true, true, 32, 0x000000, &[]),
+    // $09:88B7: fixed cost
+    (0x0988b7, 0x0988b9, true, true, 22, 0x000000, &[]),
+    // $09:88B9: fixed cost
+    (0x0988b9, 0x0988bd, true, true, 62, 0x000000, &[]),
+    // $09:88BD: fixed cost
+    (0x0988bd, 0x0988c2, true, true, 48, 0x000000, &[]),
+    // $09:88C2: 0988c8 +6 if the index crosses a page; 0988cb +6 if the index crosses a page; 0988ce taken +6
+    (0x0988c2, 0x0988d0, true, true, 144, 0x0988ce, &[0x0988c8, 0x0988cb]),
+    // $09:88D0: 0988d2 taken +6
+    (0x0988d0, 0x0988d4, true, true, 32, 0x0988d2, &[]),
+    // $09:88D4: fixed cost
+    (0x0988d4, 0x0988d8, true, true, 46, 0x000000, &[]),
+    // $09:88D8: fixed cost
+    (0x0988d8, 0x0988dc, true, true, 40, 0x000000, &[]),
+    // $09:88DC: 0988e1 taken +6
+    (0x0988dc, 0x0988e3, true, true, 64, 0x0988e1, &[]),
+    // $09:88E3: fixed cost
+    (0x0988e3, 0x0988e5, true, true, 16, 0x000000, &[]),
+    // $09:88E5: 0988eb taken +6
+    (0x0988e5, 0x0988ed, true, true, 80, 0x0988eb, &[]),
+    // $09:88ED: fixed cost
+    (0x0988ed, 0x0988f3, true, true, 78, 0x000000, &[]),
+    // $09:88F3: 098901 taken +6
+    (0x0988f3, 0x098903, true, true, 202, 0x098901, &[]),
+    // $09:8903: 098903 +6 if the index crosses a page
+    (0x098903, 0x09890e, false, true, 120, 0x000000, &[0x098903]),
+    // $09:890E: 09891a taken +6
+    (0x09890e, 0x09891c, false, true, 204, 0x09891a, &[]),
+    // $09:891C: 09891c +6 if the index crosses a page
+    (0x09891c, 0x098924, false, true, 96, 0x000000, &[0x09891c]),
+    // $09:8924: fixed cost
+    (0x098924, 0x098929, false, true, 78, 0x000000, &[]),
+    // $09:8929: fixed cost
+    (0x098929, 0x098930, false, true, 84, 0x000000, &[]),
+    // $09:8930: fixed cost
+    (0x098930, 0x098932, true, true, 72, 0x000000, &[]),
     // $09:893E: fixed cost
     (0x09893e, 0x098942, true, true, 40, 0x000000, &[]),
     // $09:8942: 098942 +6 if the index crosses a page; 098947 taken +6
