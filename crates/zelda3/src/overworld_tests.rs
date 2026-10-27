@@ -1640,3 +1640,80 @@ fn marker31_horizontal_slope_setup_matches_rom() {
             });
     }
 }
+
+#[test]
+fn load_pacing2_waving_table_body_matches_rom() {
+    load_pacing2_mirror_table_body_matches_rom(false);
+}
+
+#[test]
+fn load_pacing2_dewaving_table_body_matches_rom() {
+    load_pacing2_mirror_table_body_matches_rom(true);
+}
+
+fn load_pacing2_mirror_table_body_matches_rom(dewaving: bool) {
+    use snes::{CartType, Snes};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    // Odd/even, both displacement branches/signs, filter threshold, and both
+    // dewaving completion branches. Animation returns via its $FF sentinel.
+    for odd in [false, true] {
+        for displacement in [0u16, 0x100, 0x7fff, 0xff00] {
+            for countdown in [0u16, 0x30] {
+                for screen in [0u8, 0x1b] {
+                    let mut native = ZeldaState::new();
+                    native.set_assets(&assets).unwrap();
+                    native.write_wram_byte(0x1a, u8::from(odd));
+                    native.write_wram_byte(0x8a, screen);
+                    native.write_wram_word(0x6ac, displacement);
+                    native.write_wram_word(0x6a2, 0xff00);
+                    native.write_wram_word(0x6a4, 0x100);
+                    native.write_wram_word(0x6a6, 0xffc0);
+                    native.write_wram_word(0x6a8, 0x40);
+                    native.write_wram_byte(0x6bb, 1);
+                    native.write_wram_word(0xc007, countdown);
+                    native.write_wram_word(0xc009, 0xff);
+                    native.sync_native_game_state_from_ram();
+                    native.set_lag_free(true);
+                    let mut machine = Snes::new();
+                    machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                    machine.ram.copy_from_slice(&native.wram_image());
+                    // Physical source table and native relocated table
+                    // share word indices; upper 16 native padding rows
+                    // never feed the ROM-owned prefix in a descending copy.
+                    for y in 0..240 {
+                        let value = if displacement == 0 { 0 } else { y as u16 };
+                        machine.ram[0x1b00 + y * 2..0x1b02 + y * 2]
+                            .copy_from_slice(&value.to_le_bytes());
+                        native.set_spotlight_hdma_table_dynamic_entry(y, value);
+                    }
+                    machine.ram[0x1fa..0x1fd].copy_from_slice(&[0xff, 0x7f, 0]);
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0x30);
+                    machine.cpu.k = 0;
+                    machine.cpu.db = 0;
+                    machine.cpu.pc = if dewaving { 0xff2f } else { 0xfe64 };
+                    machine.cpu.sp = 0x1f9;
+                    let entry = u32::from(machine.cpu.pc);
+                    let source = crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+                        |s| s.cpu.k == 0 && if dewaving {
+                            (0xff2e..0xffb7).contains(&s.cpu.pc)
+                        } else {
+                            s.cpu.pc == 0xfe5d || (0xfe64..0xff2f).contains(&s.cpu.pc)
+                        }, || {
+                            if dewaving { native.mirror_warp_build_dewaving_hdma_table(); }
+                            else { native.mirror_warp_build_waving_hdma_table(); }
+                        });
+                    if !odd {
+                        for y in (8..224).step_by(2) {
+                            assert_eq!(native.spotlight_hdma_table_dynamic_entry(y),
+                                u16::from_le_bytes([source.snes().ram[0x1b00+y*2],
+                                    source.snes().ram[0x1b01+y*2]]));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

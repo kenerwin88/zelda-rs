@@ -2907,6 +2907,11 @@ impl ZeldaState {
 
     /// ROM: `MirrorWarp_BuildWavingHDMATable`
     pub(super) fn mirror_warp_build_waving_hdma_table(&mut self) {
+        // $00:FE64 JSL; $02:B204's long dispatch table at $B20E and
+        // $02:9E0F JSL select this body (the $FE5E arm falls through).
+        // Animation is a separate child; the remainder resumes after it.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00fe64));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x00fe64);
         if self.mirror_warp_run_animation_submodules_suspends() {
             return;
         }
@@ -2933,8 +2938,10 @@ impl ZeldaState {
             self.game_state.frame.subsubmodule == 3
         };
         if dewaving {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00ff2f));
             self.mirror_warp_build_dewaving_table_after_animation();
         } else {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00fe64));
             self.mirror_warp_build_waving_table_after_animation();
         }
         if self.game_state.frame.main_module == 0x15 && self.game_state.frame.subsubmodule != 0 {
@@ -2946,39 +2953,55 @@ impl ZeldaState {
     }
 
     fn mirror_warp_build_waving_table_after_animation(&mut self) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $00:FE68..FF2E, exclusive of the animation child at $FE64.
+        blocks.block(0x00fe68);
         if self.game_state.frame.frame_counter & 1 != 0 {
+            blocks.taken(0x00fe6b);
+            blocks.block(0x00fe5d);
             return;
         }
 
+        blocks.block(0x00fe6d);
         let mut y = 240usize - 8;
         loop {
             let value = self.spotlight_hdma_table_dynamic_entry(y - 8);
             for off in [0usize, 2, 4, 6] {
                 self.set_spotlight_hdma_table_dynamic_entry(y + off, value);
             }
+            self.mirror_warp_shift_markers(y, false);
             y -= 8;
             if y == 0 {
                 break;
             }
         }
 
+        blocks.block(0x00feb1);
         let mirror = &self.game_state.inventory.mirror_warp;
         let target = mirror.target_offset();
         let mut t = mirror.displacement().wrapping_add(mirror.velocity_delta());
         if !sign16(t.wrapping_sub(target) ^ target) {
+            blocks.block(0x00fec5);
             t = target;
             let mut mirror = self.mirror_warp_scratch_mut();
             mirror.reset_wave_and_subpixel();
             mirror.toggle_target_index();
+        } else {
+            blocks.taken(0x00fec3);
         }
+        blocks.block(0x00fed9);
         self.mirror_warp_scratch_mut().set_displacement(t);
         t = t.wrapping_add(self.game_state.inventory.mirror_warp.subpixel());
         self.mirror_warp_scratch_mut().set_subpixel_low_from(t);
         if sign16(t) {
+            blocks.block(0x00feeb);
             t |= 0x00ff;
         } else {
+            blocks.taken(0x00fee9);
+            blocks.block(0x00fef0);
             t &= !0x00ff;
         }
+        blocks.block(0x00fef3);
         t = self
             .game_state
             .inventory
@@ -2986,20 +3009,33 @@ impl ZeldaState {
             .wave_offset()
             .wrapping_add(t.swap_bytes());
         self.mirror_warp_scratch_mut().set_wave_offset(t);
+        if self.game_state.display.palette_filter.countdown() < 0x30 {
+            blocks.taken(0x00ff03);
+        } else {
+            blocks.block(0x00ff05);
+            if t & !7 != 0 { blocks.taken(0x00ff09); }
+        }
         if self.game_state.display.palette_filter.countdown() >= 0x30 && (t & !7) == 0 {
+            blocks.block(0x00ff0b);
             self.mirror_warp_scratch_mut()
                 .shrink_target_offsets_for_dewaving();
             self.increment_subsubmodule();
             t = 0;
         }
+        blocks.block(0x00ff1c);
         let value = t.wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
         for off in [0usize, 2, 4, 6] {
             self.set_spotlight_hdma_table_dynamic_entry(off, value);
         }
+        blocks.block(0x00ff2e);
     }
 
     /// ROM: `MirrorWarp_BuildDewavingHDMATable`
     pub(super) fn mirror_warp_build_dewaving_hdma_table(&mut self) {
+        // $02:B204's table at $B211 and $02:9E15 JSL select $00:FF2F;
+        // its animation callee is not included.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00ff2f));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x00ff2f);
         if self.mirror_warp_run_animation_submodules_suspends() {
             return;
         }
@@ -3007,31 +3043,42 @@ impl ZeldaState {
     }
 
     fn mirror_warp_build_dewaving_table_after_animation(&mut self) {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $00:FF33..FFB6, with the shared odd-frame RTL at $FF2E.
+        blocks.block(0x00ff33);
         if self.game_state.frame.frame_counter & 1 != 0 {
+            blocks.taken(0x00ff36);
+            blocks.block(0x00ff2e);
             return;
         }
 
+        blocks.block(0x00ff38);
         let mut y = 240usize - 8;
         loop {
             let value = self.spotlight_hdma_table_dynamic_entry(y - 8);
             for off in [0usize, 2, 4, 6] {
                 self.set_spotlight_hdma_table_dynamic_entry(y + off, value);
             }
+            self.mirror_warp_shift_markers(y, true);
             y -= 8;
             if y == 0 {
                 break;
             }
         }
 
+        blocks.block(0x00ff7c);
         let t = self.spotlight_hdma_table_dynamic_entry(0x0c0)
             | self.spotlight_hdma_table_dynamic_entry(0x0c8)
             | self.spotlight_hdma_table_dynamic_entry(0x0d0)
             | self.spotlight_hdma_table_dynamic_entry(0x0d8);
         if t == self.game_state.display.ppu_scroll_copy.bg2_h_copy2() {
+            blocks.block(0x00ff8c);
             self.clear_hdma_enable_mask();
             self.increment_subsubmodule();
             self.overworld_set_fixed_col_and_scroll();
+            blocks.block(0x00ff96);
             if self.game_state.world.location.overworld_screen_index() & 0x3f != 0x1b {
+                blocks.block(0x00ff9e);
                 let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
                 let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
                 self.set_bg1_x(bg2x);
@@ -3040,8 +3087,39 @@ impl ZeldaState {
                 self.set_bg1_y(bg2y);
                 self.set_bg1_v_copy(bg2y);
                 self.set_bg2_v_copy(bg2y);
+            } else {
+                blocks.taken(0x00ff9c);
             }
+        } else {
+            blocks.taken(0x00ff8a);
         }
+        blocks.block(0x00ffb4);
+    }
+
+    /// $00:FE7F..FEB0 / FF4A..FF7B copy 27 groups, Y=$01B0 down
+    /// to $0010 in byte offsets. Native uses word indices: 216 down to 8.
+    /// Its two additional trailing groups (224/232) have no ROM counterpart.
+    /// The source's scratch countdowns start at 2/3 and reload with 8;
+    /// neither changes the source/destination offsets or the copied values.
+    fn mirror_warp_shift_markers(&self, y: usize, dewaving: bool) {
+        if !self.lag_free || y > 0x1b0 / 2 { return; }
+        let blocks = crate::cycle_ledger::blocks(true);
+        let step = (0x1b0 / 2 - y) / 8;
+        let pc = |waving, dewaving_pc| if dewaving { dewaving_pc } else { waving };
+        blocks.block(pc(0x00fe7f, 0x00ff4a));
+        if step % 8 == 1 {
+            blocks.block(pc(0x00fe98, 0x00ff63));
+        } else {
+            blocks.taken(pc(0x00fe96, 0x00ff61));
+        }
+        blocks.block(pc(0x00fe9d, 0x00ff68));
+        if step % 8 == 2 {
+            blocks.block(pc(0x00fea7, 0x00ff72));
+        } else {
+            blocks.taken(pc(0x00fea5, 0x00ff70));
+        }
+        blocks.block(pc(0x00feac, 0x00ff77));
+        if y != 8 { blocks.taken(pc(0x00feaf, 0x00ff7a)); }
     }
 
     /// ROM: `MirrorWarp_FinalizeAndLoadDestination`

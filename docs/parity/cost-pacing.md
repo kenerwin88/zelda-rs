@@ -12484,3 +12484,47 @@ Both final full census gates **PASS**, **1,473,123 iterations per lane**, unexpl
 All **48 crystal/pendant phases** remain within one; stable outcomes match batch 39. The **default 200k ledger matches all records and EOF**; default/ROM-timing accounting is unchanged. Zelda library pass/fail/ignored: **default 2666/1/3** (only the known spotlight failure), **reduced 2201/0/2**. Both ordinary builds are warning-free; the existing lib-test-only warning remains separate. Generator/worklist (9), routine coverage (4), shortfall (6), exact regeneration and `git diff --check` pass.
 
 All **1,512 supplied ledger/cache files** retain size and mtime. Complete test manifests, source/binary hashes, per-owner predictions, marker deltas and pruning hashes bind this stop. Large raw artifacts were deleted after summaries; evidence is below **3 GB**. No GPU run, Snes9x execution, oracle-cache write, cargo fmt, commit or push was used.
+
+## Load/transition batch 2
+
+**Verified partial stop on `codex/load-pacing2`, main `dbcb13c0`.** ROM missing/excess/FP: **4,265 / 0 / 0 → 4,130 / 0 / 0**. Measured live after: **4,827 / 590 / 132**; no fresh live main control was run. Supplied main ROM control reused. Evidence: `target/load-pacing2/`.
+
+The extended batch-1 worklist contains **1,066 bounded missing iterations**, all covered by the retained source profile. The `$02:B1FF` alias leads permitted loader candidates at **154 potential closures**; admitted complete bodies predict **135**. Forced-seed windows are diagnostic, distinct from the canonical census; standing polygon/crystal drift signatures match before/after. Category counts are in `cohort-summary.json`.
+
+Completed `$00:FE64..FF2E` and `$00:FF2F..FFB6`, the highest-priority `09/23` mirror-table bodies. **32 blocks / 149 instructions** are ROM-generated; all **1,293** prior rows are unchanged. `$02:B204` dispatch table entries `$B20E/$B211` and `$02:9E0F/$9E15` direct calls bind the bodies. Only their call instructions are newly priced; animation/fixed-color child bodies receive no added charge. The shared RTL is charged once. Markers retire on the executing prefix/body before caller continuation.
+
+The ROM's **27 copies, word indices 216 down to 8**, match the native prefix; its extra trailing groups 224/232 receive no ROM price. Markers follow the ROM's 2/3→8 scratch countdown branches. Two `assert_rom_marker_work` fixtures pass **64 ROM cases**, including parity, arithmetic/completion branches and table equality. No game-state writes, gate rules, fitted prices or protected gameplay files changed.
+
+| Complete body | Matched-cohort new clocks | Predicted closures | Actual gained frames on body iterations |
+| --- | ---: | ---: | ---: |
+| `$00:FE64` Waving table | 4,704,932 | 135 | 135 |
+| `$00:FF2F` Dewaving table | 0 | 0 | 0 |
+
+Matched windows gain **135 frames**, with **0** iterations losing holds. New markers total **4,704,932 clocks**; signed main-counter change is **4,704,932**. The per-body rows are measured batch outcomes on disjoint body executions; they are not isolated causal reruns. Existing scalar clocks (**10,057,048**) move from the main scope into the new table scope without adding work; every matched iteration's main-counter delta equals its new markers. Ownership deltas are retained separately. Whole-route ROM gain is **135 frames**; only `09/23` changes among all ROM modules.
+
+Both final full CPU census gates **PASS**, **1,473,123 iterations** each, unexplained zero, every runtime hold equal to P2. These are periodically seeded logical checks.
+
+| Entry | ROM missing before → after | Live missing after | Excess ROM / live | FP ROM / live |
+| --- | ---: | ---: | ---: | ---: |
+| `09/23` | 338 → 203 | 203 | 0 / 0 | 0 / 0 |
+| `07/02` | 242 → 242 | 242 | 0 / 0 | 0 / 0 |
+| `07/07` | 231 → 231 | 231 | 0 / 0 | 0 / 0 |
+| `07/0E` | 98 → 98 | 98 | 0 / 0 | 0 / 0 |
+| `09/0D` | 81 → 81 | 81 | 0 / 0 | 0 / 0 |
+| `06/00` | 74 → 74 | 74 | 0 / 0 | 0 / 0 |
+| `09/16` | 71 → 71 | 71 | 0 / 0 | 0 / 0 |
+| `07/15` | 62 → 62 | 62 | 0 / 0 | 0 / 0 |
+| `07/0F` | 56 → 56 | 56 | 0 / 0 | 0 / 0 |
+| `0F/01` | 55 → 55 | 55 | 0 / 0 | 0 / 0 |
+| `0B/24` | 50 → 50 | 50 | 0 / 0 | 0 / 0 |
+| `01/00` | 48 → 48 | 48 | 0 / 0 | 0 / 0 |
+| `07/03` | 45 → 45 | 45 | 0 / 0 | 0 / 0 |
+| `0E/02` | 40 → 40 | 361 | 0 / 223 | 0 / 96 |
+| `0E/03` | 37 → 37 | 37 | 0 / 0 | 0 / 0 |
+| `0E/05` | 33 → 33 | 33 | 0 / 0 | 0 / 0 |
+| `0B/17` | 31 → 31 | 31 | 0 / 0 | 0 / 0 |
+| `0B/29` | 28 → 28 | 28 | 0 / 0 | 0 / 0 |
+
+All **48 crystal/pendant phases** remain within one frame; stable outcomes match the retained phase control. The retained **default 200k ledger matches every record and EOF**; default/ROM-timing ledgers are unchanged. Ordinary default/reduced builds are warning-free; the existing lib-test dead-code warning remains. Default library: **2,661 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,196 pass / 0 failures / 2 ignored**. Both CPU SNES suites: **504 / 0 / 7**. Generator/worklist, routine-coverage, inverse, regeneration and `git diff --check` pass.
+
+The alias-normalized `remaining-worklist.json` retains **931 diagnostic missing iterations**, including **19** remaining B1FF potential closures. Mirror initialization/finalization, overlay DMA preparation (`$01:F764`, 37 predicted closures), overlay drawing (`$01:F980`, 25), iris and room/door dispatch remain open. Sprite/cache/disable/proximity, player, ancilla and garnish owners were skipped under the shared-work restriction. All **1,512** supplied ledger/cache file sizes/mtimes are unchanged. Raw profiles/predictors were summarized and deleted; evidence is **214.0 MB**, below 3 GB. No GPU execution, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.
