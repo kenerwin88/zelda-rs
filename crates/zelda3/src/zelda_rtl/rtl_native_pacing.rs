@@ -252,11 +252,15 @@ impl ZeldaState {
         for (wall, wait) in result.iter_mut().zip(self.native_pacing.wait_wall) { *wall += wait; }
         let mut hdma = 0;
         let mut raster_wait = self.native_pacing.wait_wall[2];
-        // Complete-call HDMA ownership is admitted only after the program
-        // lease has been checked. Mid-call timed producers retain their
-        // existing scheduling. Raster barriers own wall time, including
+        // A timed producer leases only the prefix already executed: check
+        // the current program and ownership before composing its bus time.
+        // Completed calls use their frozen admission. Raster barriers own
+        // wall time, including
         // the bus events that occur while polling $00:F3A3..F3B2.
-        if !self.native_pacing.accounting && self.native_pacing.bus_admitted {
+        let bus_admitted = if self.native_pacing.accounting {
+            self.native_bus_lease_valid()
+        } else { self.native_pacing.bus_admitted };
+        if bus_admitted {
             if let Some((wall, bus, wait)) = self.native_pacing.bus_program.as_ref().and_then(|program|
                 program.compose(main, handler + worker, lag_handler, lag_worker,
                     self.native_pacing.worker_after_irq, &self.native_pacing.raster_barriers)) {
@@ -297,7 +301,14 @@ impl ZeldaState {
     /// Equality belongs to the callback after the NMI boundary just crossed.
     pub(crate) fn native_time_apu_request(&mut self, port: usize, value: u8) {
         if !self.native_main_cost_active() { return; }
-        let elapsed = self.native_cost_elapsed(self.native_main_work())[2];
+        let main = self.native_main_work();
+        let (elapsed, bus, _) = self.native_cost_components(main,
+            self.native_pacing_worker_share(self.native_pacing.entry_lag_handler));
+        let elapsed = elapsed[2];
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_LAGLESS_APU_REQUEST").is_some() {
+            eprintln!("lagless-apu-request host={} port={port} value={value:02x} main={main} wall={elapsed} hdma={bus} lease={} slot={}",
+                self.frame_ctr_dbg, self.native_bus_lease_valid(), elapsed / (1364 * 262));
+        }
         self.native_pacing.apu_writes.push(((elapsed / (1364 * 262)) as u32, port, value));
     }
 

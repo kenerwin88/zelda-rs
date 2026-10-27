@@ -446,6 +446,44 @@ mod tests {
     }
 
     #[test]
+    fn timed_request_prefix_includes_the_same_bus_stalls_as_completed_main() {
+        let mut game = game();
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.native_begin_main_cost();
+        let mut lo = 0;
+        let mut hi = FIELD;
+        while lo < hi {
+            let middle = lo + (hi - lo) / 2;
+            if game.native_cost_elapsed(middle)[2] >= FIELD { hi = middle; }
+            else { lo = middle + 1; }
+        }
+        // The immutable descriptor program makes this NMI arrive before
+        // an instruction/refresh-only prefix would reach it.
+        assert!(lo + lo.div_ceil(1324) * 40 < FIELD);
+        crate::cycle_ledger::charge(lo - 1);
+        game.set_music_control(0x11);
+        assert_eq!(game.native_pacing.apu_writes.last(), Some(&(0, 0, 0x11)));
+        crate::cycle_ledger::charge(1);
+        let prefix_wall = game.native_cost_elapsed(lo)[2];
+        game.set_music_control(0x12);
+        assert_eq!(game.native_pacing.apu_writes.last(), Some(&(1, 0, 0x12)));
+        crate::cycle_ledger::charge(1);
+        game.set_ambient_sound_effect(0x05);
+        assert_eq!(game.native_pacing.apu_writes.last(), Some(&(1, 1, 0x05)));
+        game.native_finish_main_cost();
+        assert_eq!(game.native_cost_elapsed(lo)[2], prefix_wall);
+        assert!(game.native_cost_main_hdma().0 > 0);
+
+        // A subsequent program write invalidates a new prefix, even if its
+        // mask is restored. Already observed requests keep their deadlines.
+        game.native_begin_main_cost();
+        game.clear_hdma_enable_mask();
+        game.set_hdma_enable_mask(0xc0);
+        assert!(!game.native_bus_lease_valid());
+        assert_eq!(game.native_cost_elapsed(lo)[2], lo + lo.div_ceil(1324) * 40);
+    }
+
+    #[test]
     fn worker_owned_bus_events_are_never_charged_to_main() {
         let mut program = Program::read(&game(), Programming::read(&game())).unwrap();
         program.events = vec![(60_000, 66), (200_000, 66)];

@@ -110,6 +110,132 @@ pub(crate) fn native_item_receipt_table_byte(address: u32) -> Option<u8> {
 }
 const ITEM_RECEIPT_BOTTLED_ITEM_IDS: [u8; 7] = [0x16, 0x2b, 0x2c, 0x2d, 0x3d, 0x3c, 0x48];
 const ITEM_RECEIPT_POTION_ITEM_IDS: [u8; 5] = [0x2e, 0x2f, 0x30, 0xff, 0x0e];
+
+#[cfg(test)]
+mod continuous3_marker_tests {
+    use super::*;
+
+    fn native() -> ZeldaState {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut n = ZeldaState::new();
+        n.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+        n.set_lag_free(true);
+        n
+    }
+
+    fn machine(n: &ZeldaState, entry: u32, long: bool) -> snes::Snes {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &std::fs::read(root.join("saves/zelda3.sfc")).unwrap(), 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+        s.cpu.k = (entry >> 16) as u8; s.cpu.db = s.cpu.k; s.cpu.pc = entry as u16;
+        s.cpu.sp = if long { 0x1fc } else { 0x1fd };
+        let stack = s.cpu.sp as usize + 1;
+        s.ram[stack..stack + if long { 3 } else { 2 }]
+            .copy_from_slice(if long { &[0xff, 0x7f, 0] } else { &[0xff, 0x7f] });
+        s
+    }
+
+    #[test]
+    fn animated_wrapper_matches_rom() {
+        for tile in [0u8, 0x0b, 0x0c, 0x0d, 0x22, 0x23, 0x24, 0x36, 0x37, 0x38] {
+            let mut n = native();
+            let mut s = machine(&n, 0x00d4ed, true); s.cpu.a = u16::from(tile);
+            crate::cycle_ledger::assert_rom_marker_work(0x00d4ed, s,
+                |s| s.cpu.k == 0 && (0xd4ed..0xd537).contains(&s.cpu.pc), || {
+                    n.decode_animated_sprite_tile_variable(tile);
+                });
+        }
+    }
+
+    #[test]
+    fn bottle_searches_match_rom() {
+        for item in ITEM_RECEIPT_BOTTLED_ITEM_IDS.into_iter()
+            .chain(ITEM_RECEIPT_POTION_ITEM_IDS).chain([0x37, 0x01]) {
+            for bottles in [[0, 0, 0, 0], [4, 2, 3, 1], [4, 3, 4, 2], [3, 4, 5, 6]] {
+                let mut n = native();
+                for (i, value) in bottles.into_iter().enumerate() { n.write_wram_byte(0xf35c + i, value); }
+                n.sync_native_game_state_from_ram();
+                let mut s = machine(&n, 0x09893e, false); s.cpu.y = u16::from(item);
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x09893e, s,
+                    |s| s.cpu.k == 9 && (0x893e..0x899a).contains(&s.cpu.pc), || {
+                        n.item_receipt_give_bottled_item(item);
+                    });
+                assert_eq!(&n.wram_image()[0xf35c..0xf360], &source.snes().ram[0xf35c..0xf360]);
+            }
+        }
+    }
+
+    #[test]
+    fn panning_matches_rom() {
+        for scroll in [0u16, 0xffd0] {
+            for relative in [0u16, 79, 80, 159, 160, 0x7fff, 0x8000, 0xffff] {
+                let mut n = native();
+                n.write_wram_word(0x22, scroll.wrapping_add(relative));
+                n.write_wram_word(0xe2, scroll); n.sync_native_game_state_from_ram();
+                let s = machine(&n, 0x0dbb67, true);
+                let mut result = 0;
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x0dbb67, s,
+                    |s| s.cpu.k == 0x0d && ((0xbb67..0xbb6e).contains(&s.cpu.pc)
+                        || (0xbba8..0xbbc8).contains(&s.cpu.pc)), || { result = n.link_calculate_sfx_pan(); });
+                assert_eq!(result, source.snes().cpu.a as u8);
+            }
+        }
+    }
+
+    #[test]
+    fn allocation_matches_rom() {
+        for (kind, limit) in [(0x22u8, 4u8), (7, 1), (8, 1), (0x3c, 4)] {
+            for slots in [[0u8; 5], [1, 2, 3, 4, 0], [0x22; 5],
+                [7; 5], [1, 2, 0x13, 4, 5], [1, 2, 3, 4, 5]] {
+                for entry in [0x099ce2, 0x0ff577] {
+                    let mut n = native();
+                    for (i, value) in slots.into_iter().enumerate() { n.write_wram_byte(0xc4a + i, value); }
+                    n.write_wram_byte(0x3c4, 0); n.sync_native_game_state_from_ram();
+                    let mut s = machine(&n, entry, entry == 0x0ff577);
+                    s.cpu.a = u16::from(kind); s.cpu.y = u16::from(limit);
+                    let mut result = None;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                        |s| if entry == 0x0ff577 { s.cpu.k == 0x0f && (0xf577..0xf5c3).contains(&s.cpu.pc) }
+                            else { s.cpu.k == 9 && (0x9ce2..0x9d18).contains(&s.cpu.pc) }, || {
+                            result = if entry == 0x0ff577 { n.ancilla_alloc_init(kind, limit) }
+                                else { n.ancilla_add_simple(kind, limit) };
+                        });
+                    let register = if entry == 0x0ff577 { source.snes().cpu.y } else { source.snes().cpu.x };
+                    assert_eq!(result, (register as u8 != 0xff).then_some(register as usize));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn item_caller_matches_rom() {
+        for (item, method, auxiliary) in [(0u8, 0u8, 0u8), (1, 0, 1), (0x17, 1, 0),
+            (0x20, 0, 0), (0x20, 3, 0), (0x37, 0, 0), (0x37, 1, 0),
+            (0x37, 2, 0), (0x37, 3, 0), (0x38, 3, 0), (0x39, 3, 1), (0x3e, 2, 0)] {
+            let mut n = native();
+            n.write_wram_byte(0x2e9, method); n.write_wram_byte(0x4d, auxiliary);
+            n.write_wram_byte(0x1b, 1); n.sync_native_game_state_from_ram();
+            let mut s = machine(&n, 0x0799ad, true); s.cpu.y = u16::from(item);
+            let bottle_calls = std::cell::Cell::new(0u64);
+            crate::cycle_ledger::assert_rom_marker_work(0x0799ad, s,
+                |s| {
+                    if s.cpu.k == 9 && s.cpu.pc == 0x893e { bottle_calls.set(bottle_calls.get() + 1); }
+                    s.cpu.k == 7 && (0x99ad..0x9a29).contains(&s.cpu.pc)
+                }, || {
+                    crate::cycle_ledger::profile_iteration(true);
+                    crate::cycle_ledger::profile_main_begin();
+                    let _ = n.link_receive_item_from(item, 0, ItemReceiptCaller::AtomicCaller);
+                    crate::cycle_ledger::profile_main_end();
+                    let rows = crate::cycle_ledger::take_routine_profile();
+                    assert_eq!(rows.get(&0x09893e).map_or(0, |r| r[0]), bottle_calls.get(),
+                        "item {item:02x} method {method}: source bottle-search call was omitted");
+                    crate::cycle_ledger::profile_iteration(false);
+                });
+        }
+    }
+}
 const ARBITRARY_SFX_PAN_BY_SCREEN_COLUMN: [u8; 8] = [0x80, 0x80, 0x80, 0, 0, 0x40, 0x40, 0x40];
 const LINK_BODY_DMA_BASE_SOURCES: [u16; 303] = [
     0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8040, 0x8040, 0x8040, 0x8040, 0x8040, 0x8000, 0x8000,
@@ -1393,6 +1519,9 @@ impl ZeldaState {
             .set_immobilized_flag(if item == 0x20 { 2 } else { 1 });
         self.grant_initial_item_award(item);
 
+        // $09:8777 also runs the bottle searches for non-bottle awards.
+        // Only the source arms that branch directly to $877A skip it.
+        let mut bottle_scan = self.lag_free;
         if item == 0x1f {
             self.follower_link_state_mut().clear_bunny_body_state();
         } else if item == 0x4b || item == 0x1e {
@@ -1401,6 +1530,7 @@ impl ZeldaState {
         }
 
         if item == 0x1b || item == 0x1c {
+            bottle_scan = false;
             self.palette_update_gloves_color();
         } else if matches!(item, 0x37..=0x39) {
             let bit = match item {
@@ -1415,9 +1545,11 @@ impl ZeldaState {
             }
             self.increment_overworld_map_state();
         } else if item == 0x22 {
+            bottle_scan = false;
             self.inventory_items_mut()
                 .grant_equipment_if_empty(EquipmentItem::Armor, 1);
         } else if matches!(item, 0x25 | 0x32 | 0x33) {
+            bottle_scan = false;
             let mask = 0x8000u16
                 >> ((self.game_state.inventory.save_progress.palace_index_x2() >> 1) as u16);
             let reward = match item {
@@ -1445,6 +1577,7 @@ impl ZeldaState {
                 }
             }
             if self.game_state.player.follower_link.is_cape_active() {
+                bottle_scan = false;
                 self.follower_link_state_mut().set_cape_transform_timer(32);
                 {
                     self.follower_link_state_mut()
@@ -1457,6 +1590,7 @@ impl ZeldaState {
             }
         } else if item == 0x29 {
             if self.game_state.inventory.items.mushroom() != 2 {
+                bottle_scan = false;
                 self.inventory_items_mut()
                     .grant_equipment(EquipmentItem::Mushroom, 1);
                 self.hud_refresh_icon();
@@ -1465,6 +1599,7 @@ impl ZeldaState {
             || (self.game_state.player.follower_link.item_receipt_method() != 2
                 && matches!(item, 0x27 | 0x28 | 0x31))
         {
+            bottle_scan = false;
             let add = match item {
                 0x28 => 3,
                 0x31 => 10,
@@ -1481,12 +1616,16 @@ impl ZeldaState {
             }
             self.hud_refresh_icon();
         } else if item == 0x17 {
+            bottle_scan = false;
             self.player_resources_mut().advance_heart_piece_count();
             let sfx = 0x2d | self.link_calculate_sfx_pan();
             self.set_sound_effect_2(sfx);
         } else if item == 1 {
             self.overworld_set_song_list();
         } else {
+            bottle_scan = true;
+        }
+        if bottle_scan {
             self.item_receipt_give_bottled_item(item);
         }
 
@@ -1610,6 +1749,30 @@ impl ZeldaState {
     }
 
     pub(super) fn item_receipt_give_bottled_item(&mut self, item: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09893e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09893e);
+        // Both ROM searches run from the last table entry down. Their
+        // bodies are priced independently from the inventory mutation.
+        let mut bottled = None;
+        for j in (0..ITEM_RECEIPT_BOTTLED_ITEM_IDS.len()).rev() {
+            b.block(0x098942);
+            if ITEM_RECEIPT_BOTTLED_ITEM_IDS[j] == item {
+                b.taken(0x098947); bottled = Some(j); break;
+            }
+            b.block(0x098949);
+            if j != 0 { b.taken(0x09894a); }
+        }
+        if bottled.is_none() { b.block(0x09894c); }
+        if bottled.is_some() {
+            b.block(0x09894e);
+            for j in 0..4 {
+                b.block(0x098956);
+                if self.game_state.inventory.items.bottle(j) < 2 { b.block(0x09895e); break; }
+                b.taken(0x09895c); b.block(0x098967);
+                if j != 3 { b.taken(0x09896a); }
+            }
+        }
         if let Some(j) = ITEM_RECEIPT_BOTTLED_ITEM_IDS
             .iter()
             .position(|&candidate| candidate == item)
@@ -1618,10 +1781,31 @@ impl ZeldaState {
                 .inventory_items_mut()
                 .fill_first_empty_bottle_with(j as u8 + 2)
             {
+                b.block(0x098999);
                 return;
             }
         }
 
+        b.block(0x09896c);
+        let mut potion = None;
+        for j in (0..ITEM_RECEIPT_POTION_ITEM_IDS.len()).rev() {
+            b.block(0x098970);
+            if ITEM_RECEIPT_POTION_ITEM_IDS[j] == item {
+                b.taken(0x098975); potion = Some(j); break;
+            }
+            b.block(0x098977);
+            if j != 0 { b.taken(0x098978); }
+        }
+        if potion.is_none() { b.block(0x09897a); }
+        if potion.is_some() {
+            b.block(0x09897c);
+            for j in 0..4 {
+                b.block(0x098984);
+                if self.game_state.inventory.items.bottle(j) == 2 { b.block(0x09898c); break; }
+                b.taken(0x09898a); b.block(0x098994);
+                if j != 3 { b.taken(0x098997); }
+            }
+        }
         if let Some(j) = ITEM_RECEIPT_POTION_ITEM_IDS
             .iter()
             .position(|&candidate| candidate == item)
@@ -1631,6 +1815,7 @@ impl ZeldaState {
                 .replace_first_empty_bottle_with(j as u8 + 3)
             {}
         }
+        b.block(0x098999);
     }
 
     pub(super) fn module17_save_and_quit(&mut self) {
@@ -1826,6 +2011,19 @@ impl ZeldaState {
     }
 
     pub(super) fn link_calculate_sfx_pan(&self) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dbb67));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dbb67);
+        b.block(0x0dbba8);
+        let relative = self.game_state.player.follower_link.x().wrapping_sub(
+            self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(80));
+        if relative < 80 { b.taken(0x0dbbb7); }
+        else {
+            b.block(0x0dbbb9);
+            if (relative as i16) < 0 { b.taken(0x0dbbbd); }
+            else { b.block(0x0dbbbf); }
+        }
+        b.block(0x0dbbc0);
         Self::calculate_sfx_pan_with_scroll(
             self.game_state.player.follower_link.x(),
             self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),

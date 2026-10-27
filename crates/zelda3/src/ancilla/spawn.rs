@@ -1032,7 +1032,15 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_add_ancilla(&mut self, a: u8, y: u8) -> Option<usize> {
-        let k = self.ancilla_alloc_init(a, y)?;
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x099ce2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x099ce2);
+        let allocation = self.ancilla_alloc_init(a, y);
+        b.block(0x099ce7);
+        let Some(k) = allocation else {
+            b.taken(0x099ce9); b.block(0x099d16); return None;
+        };
+        b.block(0x099ceb);
         let value = a;
         self.ancilla_slot_view_mut(k).set_ancilla_type(value);
         let value = self.game_state.player.follower_link.lower_level_state();
@@ -1064,16 +1072,35 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn ancilla_alloc_init(&mut self, ty: u8, limit: u8) -> Option<usize> {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ff577));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ff577);
         if self.game_state.system_signals.bugs_fixed() >= BUGFIX_POLY_RENDERER {
             self.tile_detect_position_mut()
                 .set_collision_bits(u16::from(limit.wrapping_add(1)));
         }
 
-        let n = (0..5)
-            .filter(|&i| self.ancilla_slot_view(i).ancilla_type() == ty)
-            .count();
+        let mut n = 0;
+        for i in (0..5).rev() {
+            b.block(0x0ff580);
+            if self.ancilla_slot_view(i).ancilla_type() == ty {
+                b.block(0x0ff585); n += 1;
+            } else { b.taken(0x0ff583); }
+            b.block(0x0ff586);
+            if i != 0 { b.taken(0x0ff587); }
+        }
+        b.block(0x0ff589);
         if limit as usize + 1 == n {
+            b.taken(0x0ff58b); b.block(0x0ff5c1);
             return None;
+        }
+
+        b.block(0x0ff58d);
+        if ty == 7 { b.taken(0x0ff591); }
+        else {
+            b.block(0x0ff593);
+            if ty == 8 { b.taken(0x0ff595); }
+            else { b.block(0x0ff597); }
         }
 
         let start = if ty == 7 || ty == 8 {
@@ -1082,9 +1109,13 @@ impl ZeldaState {
             4
         };
         for j in (0..=start).rev() {
+            b.block(0x0ff599);
             if self.ancilla_slot_view(j).ancilla_type() == 0 {
+                b.taken(0x0ff59c); b.block(0x0ff5c0);
                 return Some(j);
             }
+            b.block(0x0ff59e);
+            if j != 0 { b.taken(0x0ff59f); }
         }
 
         // ancilla_alloc_rotate ($03C4) is also ancilla_arr25[2] / arr26[4] on
@@ -1093,12 +1124,26 @@ impl ZeldaState {
         // `$0C4A,X` raw for any X.
         let mut k = i32::from(self.ancilla_alloc_rotate());
         loop {
+            b.block(0x0ff5a1);
             k -= 1;
             if k < 0 {
+                b.block(0x0ff5a6);
                 k = i32::from(limit);
-            }
+            } else { b.taken(0x0ff5a4); }
+            b.block(0x0ff5ab);
+            if (0xc4au16 & 255) + k as u16 > 255 { b.crossing(0x0ff5ae); }
             let old_type = self.ram[crate::game_state::constants::ANCILLA_TYPE + k as usize];
+            if old_type == 0x3c { b.taken(0x0ff5b3); }
+            else {
+                b.block(0x0ff5b5);
+                if old_type == 0x13 { b.taken(0x0ff5b7); }
+                else {
+                    b.block(0x0ff5b9);
+                    if old_type == 0x0a { b.taken(0x0ff5bb); }
+                }
+            }
             if old_type == 0x3c || old_type == 0x13 || old_type == 0x0a {
+                b.block(0x0ff5c0);
                 self.set_ancilla_alloc_rotate(k as u8);
                 if k as usize >= crate::game_state::ANCILLA_SLOT_COUNT {
                     // The ROM would now build the ancilla in a slot past the
@@ -1112,10 +1157,13 @@ impl ZeldaState {
                 }
                 return Some(k as usize);
             }
+            b.block(0x0ff5bd);
             if k == 0 {
                 break;
             }
+            b.taken(0x0ff5be);
         }
+        b.block(0x0ff5c0);
         self.set_ancilla_alloc_rotate(0);
         None
     }

@@ -13111,3 +13111,51 @@ pass, and `git diff --check` passes. All **3,261** recorded ledger/cache input
 files retain size and nanosecond mtime. Evidence uses about **1.0 GiB**, below
 3 GB. Changes are confined to this tool, its tests and this documentation;
 there are no native/runtime edits, GPU runs, cargo fmt, commits or pushes.
+
+## Continuous lagless 3
+
+Verified partial stop on `codex/continuous3`, base `f4feec79`. The continuous live frontier advances from **94,853 to 142,087**: **142,087 clean iterations**, last clean index **142,086**. Continuous LIVE-sound ending acceptance remains unfinished. All replays use corrected `full-v2`, recorded inputs/RNG and `--report 0`; continuous lanes omit `--seed-every`. Evidence: `target/continuous3/`.
+
+| Iteration | Mechanism | General repair / stopping point | Furthest clean continuous live iteration |
+| ---: | --- | --- | ---: |
+| 94,853 | The song request was priced before its source work and bus stalls. The port omitted the ROM's semantically empty bottle-search call for non-bottle awards; caller, graphics-wrapper, panning and allocation work also lacked prices. | Restore the source fall-through in lagless mode; price six complete source routines; compose timed prefixes with the currently valid immutable HDMA lease. The request moves from slot 3 to slot 4 of five. Native/source polls are both nonzero at 94,853 and zero at 94,854. | 142,086 |
+| 142,087, room `$0033` | The next pendant still publishes in slot 3 of five. Native polls zero; source remains nonzero. Its priced producer is 1,362 master clocks below the next NMI boundary. Complete instruction work is still 10,368 clocks short; the receipt owner's 4,496 exclusive clocks remain unpriced. | Open. Remaining prefix work needs ordered source ownership; no added delay, forced answer or scene exception is installed. | 142,086 |
+
+**70 blocks / 226 instructions** price the animated-sheet wrapper `$00:D4ED`, Link receipt caller `$07:99AD`, bottle search `$09:893E`, allocation wrapper `$09:9CE2`, allocator `$0F:F577`, and Link panning `$0D:BB67` plus its shared tail. All **1,795 existing rows remain byte-identical**. Five fixture tests cover **142 unmodified-ROM cases per feature configuration**, including source child-call presence, selectors, bottle contents, panning boundaries, allocation failure/reuse and receipt methods. Existing child scalars are retained; these six self bodies previously had no price. Their source/native exclusive totals at iteration 94,215 agree exactly: **814 / 1,100 / 1,450 / 724 / 772 / 414** clocks. These are scoped work checks, not full-route CPU equivalence.
+
+The restored fall-through preserves default/ROM-timing's prior path. Lagless observes the original bottle-search call even when it changes no inventory byte. Prefix HDMA uses the same program, descriptor and ownership checks as completed-main accounting; a later program mutation invalidates subsequent prefixes. No hold classifier or admission predicate was widened. The new bus test checks before/at/after the first crossing, agreement with completed-main timing, and program-change invalidation.
+
+At the first producer, instruction work before the store rises by **5,012** clocks. Its P2 wall clock changes **1,424,600 → 1,432,970**: 5,012 instruction clocks, 168 additional main HDMA clocks, 160 refresh clocks and the induced 3,030-clock lag handler. This crosses the unchanged 1,429,472-clock fourth-field boundary. The completed instruction counter rises by exactly **5,274** clocks; the caller's remaining 262 clocks follow the store. No price was fitted to the boundary.
+
+### Absolute SPC diagnosis at the next frontier
+
+The fresh pinned renderless capture matches **154,801 consecutive original PCM hashes**, **82,527,744 stereo pairs**. It honors the compare lock, starts cold and uses no checkpoint. The pinned trace core is SHA-256 `6f112667f7b590c3f789630171ce9af79b1793245ad2e14080522146ffd6d498`. Original CPU port times are `sample_base * 32 + apu_cycle_after`; selected commands/polls cross-check against their DSP phase/debt, and all **4,255 SMP output stores** independently reconstruct exactly. The earlier capture's **4,217** SMP stores and its known 94,848 poll also verify. An intermediate analysis double-counted DSP progress in CPU receipts; the retained reconstruction report and numbers below are corrected. Runtime was not driven by those measurements.
+
+| Event, absolute SPC cycles | Original | Native |
+| --- | ---: | ---: |
+| `$13` command arrival | 2,629,764,771 | 2,624,325,065 |
+| Output port 0 becomes zero | 2,640,646,230 | 2,635,210,132 |
+| Final all-voice KOFF | 2,640,646,311 | 2,635,210,213 |
+| Poll at 142,087 | 2,640,634,415 | 2,635,226,326 |
+
+Normalize clocks at iteration 141,450. Native song age at the poll exceeds original by **31,617 SPC cycles**: publication **+34,106**, callback clock **0**, poll observation phase **−2,489**. Native polls **16,194 cycles after** its zero store; original polls **11,815 before** its zero. Both drivers write final KOFF **81 cycles after** zero. Command-to-zero duration differs by **+3,608** cycles; that timer/instruction residual remains unattributed. This establishes the dominant publication/prefix timing gap without claiming identical PCM, note envelopes or exact poll timing.
+
+The exact clean cold prefix **passes** `--gate --expect-iterations 142087`, completing all **142,087** iterations without a state, RNG or command difference. The complete cold boundary run finishes **142,088 iterations** with exactly one song-state comparison; its unchanged strict gate **FAILS by 1**. RNG, APU-read consumption and ordinary command comparisons are clean. The earlier exploratory full live run was interrupted after its first difference was found; it is not a completed gate or ending receipt. `frontier-gate.log`, `frontier-classes.jsonl`, `second-absolute-spc-measurements.json` and `clock-reconstruction-verification.json` bind this stopping point.
+
+### Full verification
+
+All three final native runs and their unchanged `--gate --expect-iterations 1473123` summaries exit 0: **PASS (unexplained=0, complete=True)**. Counts are missing holds / excess holds / false-positive iterations:
+
+| Lane | Seeding | Gate | Missing / excess / FP |
+| --- | --- | --- | ---: |
+| ROM answers | `--seed-every 2000` | PASS | **3,727 / 0 / 0** |
+| Live SPC answers | `--seed-every 2000 --live-apu-reads` | PASS | **3,992 / 261 / 74** |
+| Recorded answers, continuous | None, including no post-polygon resync | PASS | **3,727 / 0 / 0** |
+
+The supplied main ROM baseline is **3,736 / 0 / 0**: **9 missing holds restored**, with excess and FP still zero. ROM/continuous recorded predictors are byte-identical, including **98,950 held callbacks**, **102,677 source lag NMIs**, and **5,153 masked callbacks**. Live census totals are **98,946 held / 5,141 masked**. Every runtime hold count equals P2 in all three lanes.
+
+The recorded continuous lane has **1,473,123 clean WRAM iterations**, clean ordinary RNG/APU consumption, no polygon or lag-state comparisons, and no first divergence. It enters `$19` at **1,452,678**, `$1A` at **1,456,869**, and finishes **1,473,122**, `$1A/$22`, with **20,445 ending iterations**. The live seeded gate uses the existing classification rules: **3,735 polygon and 221 song-state comparisons**, including **60 unconsumed / 60 extra RNG draws and two commands within the song classification**. Its ordinary RNG/APU consumption is clean. These periodically seeded results do not supersede the failing continuous live frontier.
+
+Final asset-backed Zelda libraries: default **2,709 passed / 1 known spotlight failure / 3 ignored**; reduced **2,244 / 0 / 2**. The sole failure remains `closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`, `Some(1047868)` versus `Some(170442)`. All **1,502 ledger files** retain size, nanosecond mtime and SHA-256; none were added or removed. `census-totals.json`, the three gate logs, `source-pricing-verification.json`, `producer-prefix-proof.json`, `ledger-after-integrity.json` and `verification.json` retain the handoff.
+
+The final default 200k ledger matches every record and EOF. Both ordinary builds are warning-free; existing library-test warnings remain separate. Seven block-generator tests pass. Both CPU SNES libraries pass **504 / 0 / 7 ignored**. No GPU execution, `--video`, cached-av, cache/ledger write, cargo fmt, commit or push occurred. Output and retained evidence are under `target/continuous3/`, below 3 GB. No one-off repository script was created.

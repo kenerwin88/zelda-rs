@@ -17,20 +17,31 @@ impl ZeldaState {
         chest_position: u16,
         caller: ItemReceiptCaller,
     ) -> GameCallStatus {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0799ad));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0799ad);
         if self.game_state.player.follower_link.has_auxiliary_state() {
+            b.block(0x0799b4);
             self.follower_link_state_mut().clear_auxiliary_state();
             self.follower_link_state_mut().set_incapacitated_timer(0);
             self.follower_link_state_mut().clear_blink_countdown();
             self.follower_link_state_mut().clear_state_bits();
-        }
+        } else { b.taken(0x0799b2); }
+        b.block(0x0799be);
         self.follower_link_state_mut().set_receive_item_index(item);
         if item == 0x3e {
+            b.block(0x0799c5);
             self.ancilla_sfx3_near(0x2e);
-        }
+        } else { b.taken(0x0799c3); }
+        b.block(0x0799ca);
         self.follower_link_state_mut().set_item_holding_timer(0x60);
+        let method = self.game_state.player.follower_link.item_receipt_method();
+        if method == 0 { b.taken(0x0799d2); }
+        else { b.block(0x0799d4); if method != 3 { b.taken(0x0799d6); } }
         if self.game_state.player.follower_link.item_receipt_method() == 0
             || self.game_state.player.follower_link.item_receipt_method() == 3
         {
+            b.block(0x0799d8);
             self.follower_link_state_mut().clear_state_bits();
             self.follower_link_state_mut().set_button_mask_b_y(0);
             self.follower_link_state_mut().set_y_button_action_flags(0);
@@ -45,9 +56,11 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .set_sprite_damage_disable_timer(1);
             if item == 0x20 {
+                b.block(0x0799fe);
                 self.follower_link_state_mut().set_item_hold_pose(2);
-            }
+            } else { b.taken(0x0799fc); }
         }
+        b.block(0x079a02);
         let call_status = self.ancilla_add_item_receipt_from(0x22, 4, chest_position, caller);
         if call_status.is_suspended() {
             return call_status;
@@ -61,10 +74,21 @@ impl ZeldaState {
             assert_eq!(native_item, item, "native Link receipt returned to another caller");
             return;
         }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0799ad));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        for (block, branch, candidate) in [(0x079a0b, 0x079a10, 0x20),
+            (0x079a12, 0x079a14, 0x37), (0x079a16, 0x079a18, 0x38),
+            (0x079a1a, 0x079a1c, 0x39)] {
+            b.block(block);
+            if item == candidate { b.taken(branch); break; }
+        }
         if item != 0x20 && item != 0x37 && item != 0x38 && item != 0x39 {
+            b.block(0x079a1e);
             self.hud_refresh_icon();
         }
+        b.block(0x079a22);
         self.link_cancel_dash();
+        b.block(0x079a25);
     }
 
     pub(super) fn link_handle_liftables(&mut self) -> u8 {

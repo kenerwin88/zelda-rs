@@ -3673,11 +3673,41 @@ impl ZeldaState {
 
     /// ROM: `DecodeAnimatedSpriteTile_variable`
     pub(super) fn decode_animated_sprite_tile_variable(&mut self, a: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00d4ed));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x00d4ed);
+        if a == 0x23 { b.taken(0x00d4f5); }
+        else {
+            b.block(0x00d4f7);
+            if a >= 0x37 { b.taken(0x00d4f9); }
+            else {
+                b.block(0x00d4fb);
+                if a == 0x0c { b.taken(0x00d4ff); }
+                else {
+                    b.block(0x00d501);
+                    if a >= 0x24 { b.taken(0x00d503); }
+                    else { b.block(0x00d505); }
+                }
+            }
+        }
         self.replay_trace_ram_watch("loadgfx-before-decode-animated-sprite-tile");
         let secondary_sheet = animated_sprite_tile_secondary_sheet(a);
+        b.block(0x00d507);
         self.decompress_sprite_graphics_fixed_buffer(secondary_sheet.into(), true);
+        b.block(0x00d50a);
         self.decompress_sprite_graphics_fixed_buffer(0x5a, false);
-        self.write_to4_bpp_buffer_at_7f4000(a);
+        if self.lag_free {
+            b.block(0x00d50f);
+            if (0xd469u16 & 255) + u16::from(a.wrapping_mul(2)) > 255 { b.crossing(0x00d519); }
+            // D4ED inlines D4DB's conversions; price its caller instructions
+            // on the actual sides of those child calls.
+            let src = ANIMATED_SPRITE_TILE_SOURCE_OFFSETS.get(a as usize).copied().unwrap_or(0);
+            let tmp = self.graphics_combined_decompression_buffers();
+            self.expand3_to_4_high_from_slice(0xbd40, &tmp, src, 0, 2);
+            b.block(0x00d528);
+            self.expand3_to_4_high_from_slice(0xbd80, &tmp, src + 0x180, 0, 2);
+            b.block(0x00d533);
+        } else { self.write_to4_bpp_buffer_at_7f4000(a); }
         self.replay_trace_ram_watch("loadgfx-after-decode-animated-sprite-tile");
     }
 
