@@ -43,14 +43,28 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Zora_Draw(int k) {  // 8598f5
     pub(super) fn zora_draw(&mut self, k: usize) {
+        // $05:9730 JSR $98F5: whole two-tile writer; prep remains a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0598f5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0598f5);
         let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x0598f8);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let d = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         for i in (0..2usize).rev() {
             let j = d + i;
             let f = ZORA_DRAW_FLAGS[j];
+            b.block(0x059901);
+            let tile_y = y.wrapping_add(ZORA_DRAW_Y_OFFSETS[j] as i16 as u16);
+            if tile_y.wrapping_add(16) < 256 { b.taken(0x05992a); }
+            else { b.block(0x05992c); }
+            b.block(0x059930);
+            if f & 0x0f != 0 { b.taken(0x059940); }
+            else { b.block(0x059942); }
+            b.block(0x059944);
+            if i != 0 { b.taken(0x059957); }
             self.set_oam_helper0_at(
                 oam,
                 x.wrapping_add(ZORA_DRAW_X_OFFSETS[j] as i16 as u16),
@@ -61,6 +75,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x059959);
     }
 
     // -----------------------------------------------------------------------
@@ -84,23 +99,38 @@ impl ZeldaState {
     /// `Sprite_Fireball` through its `Sprite_MoveXY`; returns `false` on the
     /// inactive return and the Link-damage kill.
     pub(super) fn sprite_fireball_until_after_movement(&mut self, k: usize) -> bool {
+        // $05:9683..9724: RTS-dispatched fireball; caller/child bodies are separate.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059683);
         let value = self.sprite_slot_view(k).e();
 
         self.sprite_slot_view_mut(k).set_ignore_projectile(value);
         if self.sprite_slot_view(k).delay_main() != 0 {
+            b.block(0x05968b);
             self.oam_allocate_from_region_c(4);
         }
-        self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Unpriced);
+        else { b.taken(0x059689); }
+        b.block(0x059691);
+        // $05:9691 JSL $06:DBF8: whole small-draw wrapper.
+        self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Rom06DBF8);
+        b.block(0x059695);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return false;
         }
+        b.block(0x059698);
         self.fireball_spawn_trail_garnish(k);
+        b.block(0x05969c);
         // $05:969C JSL $06:F121: complete body, caller opcode unchanged.
-        if self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121) {
+        let hit = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
+        b.block(0x0596a0);
+        if hit {
+            b.block(0x0596a2);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             return false;
         }
+        b.taken(0x0596a0);
+        b.block(0x0596a6);
         if let Some(SpriteMainCpuBoundary::ZoraFireballMovement {
             slot,
             checkpoint,
@@ -139,31 +169,43 @@ impl ZeldaState {
     /// `Sprite_Fireball` after `Sprite_MoveXY`: the frame-gated tile
     /// collision kill and the shield-reflect check.
     pub(super) fn sprite_fireball_after_movement(&mut self, k: usize) {
-        if self.game_state.world.location.is_indoors()
-            && self.sprite_slot_view(k).delay_aux1() == 0
-            && (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0
-            && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0
-        {
-            let value = 0;
-            self.sprite_slot_view_mut(k).set_state(value);
-            return;
-        }
-
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0596a9);
+        if self.game_state.world.location.is_indoors() {
+            b.block(0x0596ad);
+            if self.sprite_slot_view(k).delay_aux1() == 0 {
+                b.block(0x0596b2);
+                if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0 {
+                    b.block(0x0596b9);
+                    let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                    b.block(0x0596bc);
+                    if collision != 0 {
+                        b.taken(0x0596bc);
+                        b.block(0x0596a2);
+                        self.sprite_slot_view_mut(k).set_state(0);
+                        return;
+                    }
+                } else { b.taken(0x0596b7); }
+            } else { b.taken(0x0596b0); }
+        } else { b.taken(0x0596ab); }
+        b.block(0x0596be);
         if self.game_state.player.follower_link.is_bunny_mirror()
-            || self
-                .game_state
-                .player
-                .follower_link
-                .sprite_damage_disable_timer()
-                != 0
-            || sign8(self.game_state.player.follower_link.state_bits())
-            || self.game_state.inventory.items.shield_type() < 2
-            || self.game_state.player.follower_link.lower_level_state()
-                != self.sprite_slot_view(k).floor()
-        {
-            return;
+            || self.game_state.player.follower_link.sprite_damage_disable_timer() != 0 {
+            b.taken(0x0596c4); b.block(0x059724); return;
         }
-
+        b.block(0x0596c6);
+        if sign8(self.game_state.player.follower_link.state_bits()) {
+            b.taken(0x0596c9); b.block(0x059724); return;
+        }
+        b.block(0x0596cb);
+        if self.game_state.inventory.items.shield_type() < 2 {
+            b.taken(0x0596d1); b.block(0x059724); return;
+        }
+        b.block(0x0596d3);
+        if self.game_state.player.follower_link.lower_level_state() != self.sprite_slot_view(k).floor() {
+            b.taken(0x0596d8); b.block(0x059724); return;
+        }
+        b.block(0x0596da);
         let mut hb = SpriteHitBox {
             r0_xlo: 0,
             r8_xhi: 0,
@@ -179,10 +221,14 @@ impl ZeldaState {
             r7_spr_ysize: 0,
         };
         self.sprite_setup_hit_box(k, &mut hb, SpriteHitBoxEntry::Unpriced);
+        b.block(0x0596de);
         let mut j = self.game_state.player.follower_link.facing_index() & 3;
         if self.game_state.player.follower_link.button_b_frames() != 0 {
+            b.block(0x0596e6);
             j = usize::from(SPRITE_FIREBALL_OFFSETS[j]);
         }
+        else { b.taken(0x0596e4); }
+        b.block(0x0596ea);
         let x = self
             .game_state
             .player
@@ -201,12 +247,17 @@ impl ZeldaState {
         hb.r1_ylo = y as u8;
         hb.r9_yhi = (y >> 8) as u8;
         hb.r3 = SPRITE_FIREBALL_HEIGHTS[j];
-        if self.check_if_hit_boxes_overlap(&hb) {
+        let overlap = self.check_if_hit_boxes_overlap(&hb);
+        b.block(0x059715);
+        if overlap {
+            b.block(0x059717);
             self.sprite_place_rupulse_spark_2(k);
+            b.block(0x05971b);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             self.sprite_sfx_queue_sfx2_with_pan(k, 6);
-        }
+        } else { b.taken(0x059715); }
+        b.block(0x059724);
     }
 
     // -----------------------------------------------------------------------
@@ -1358,11 +1409,13 @@ impl ZeldaState {
     }
 
     pub(super) fn swamola_prepare_head(&mut self, k: usize) {
+        // $1D:9F72 JSL $1D:F614: complete angle conversion.
         let j = usize::from(Self::sprite_convert_velocity_to_angle(
             self.sprite_slot_view(k).x_velocity(),
             self.sprite_slot_view(k)
                 .y_velocity()
                 .wrapping_add(self.sprite_slot_view(k).z_velocity()),
+            self.lag_free,
         ));
         let value = SWAMOLA_DRAW_LOCAL_GRAPHICS[j];
         self.sprite_slot_view_mut(k).set_graphics(value);

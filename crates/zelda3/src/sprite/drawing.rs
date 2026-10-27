@@ -1,7 +1,7 @@
 //! Sprite coordinate preparation, OAM correction, multi-draw, single-draw, and shadows.
 
 use crate::zelda_rtl::sprite::{
-    SpriteShadowEntry, SpriteSingleLargeEntry, SpriteSingleSmallEntry,
+    SpriteDistressEntry, SpriteShadowEntry, SpriteSingleLargeEntry, SpriteSingleSmallEntry,
 };
 use super::*;
 
@@ -1258,13 +1258,31 @@ impl ZeldaState {
     // void Sprite_DrawDistress_custom(uint16 xin, uint16 yin, uint8 time) {  // 86a733
     //   ...see sprite.c...
     // }
-    pub(in crate::zelda_rtl) fn sprite_draw_distress_custom(&mut self, xin: u16, yin: u16, time: u8) {
+    pub(in crate::zelda_rtl) fn sprite_draw_distress_custom(
+        &mut self, xin: u16, yin: u16, time: u8,
+        entry: SpriteDistressEntry,
+    ) {
+        // $06:A733..A78D: complete far-call writer; RegionA owns allocation.
+        let marked = self.lag_free && entry == SpriteDistressEntry::Rom06A733;
+        let _scope = marked.then(|| crate::cycle_ledger::routine(0x06a733));
+        let b = crate::cycle_ledger::blocks(marked);
+        b.block(0x06a733);
         self.oam_allocate_from_region_a(0x10);
+        b.block(0x06a739);
         if (time & 0x18) == 0 {
+            b.taken(0x06a73d);
+            b.block(0x06a78d);
             return;
         }
+        b.block(0x06a73f);
         let mut oam = self.game_state.oam.current_pointer_usize();
         for i in (0..4).rev() {
+            b.block(0x06a744);
+            let y = yin.wrapping_add(SPRITE_DRAW_DISTRESS_CUSTOM_Y_OFFSETS[i] as i16 as u16);
+            if y.wrapping_add(16) < 256 { b.taken(0x06a76c); }
+            else { b.block(0x06a76e); }
+            b.block(0x06a772);
+            if i != 0 { b.taken(0x06a78a); }
             self.set_oam_helper0_at(
                 oam,
                 xin.wrapping_add(SPRITE_DRAW_DISTRESS_CUSTOM_X_OFFSETS[i] as i16 as u16),
@@ -1275,6 +1293,8 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x06a78c);
+        b.block(0x06a78d);
     }
 
     // void SpriteDraw_FallingHelmaBeetle(int k) {  // 86fd17

@@ -12,6 +12,12 @@ use crate::types::{
 // Explicit ROM call paths. Unpriced skips added wrapper markers; existing
 // scalar and instruction-stepped child costs retain their original ownership.
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpriteDistressEntry {
+    Unpriced,
+    Rom06A733,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpriteMoveEntry {
     Unpriced,
     Rom06E93E,

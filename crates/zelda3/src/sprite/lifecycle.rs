@@ -1,5 +1,7 @@
 //! Sprite inactivity, damage, death, drops, carrying, stunning, and absorption.
 
+
+use crate::zelda_rtl::sprite::SpriteDistressEntry;
 use crate::zelda_rtl::sprite::{
     SpriteDamageFromEntry, SpriteMoveEntry, SpriteMoveZEntry, SpritePausedEntry, SpriteRecoilEntry,
     SpriteShadowEntry, SpriteSingleLargeEntry, SpriteSingleSmallEntry, SpriteTileCollisionEntry,
@@ -213,21 +215,28 @@ impl ZeldaState {
     //   return false;
     // }
     pub(in crate::zelda_rtl) fn sprite_check_if_link_is_busy(&self) -> bool {
+        // $07:F4D0..F4F0: whole far-call predicate and actual five-slot scan.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07f4d0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07f4d0);
         if self.game_state.player.follower_link.has_auxiliary_state()
-            || self.game_state.player.follower_link.item_hold_pose() != 0
-            || self
-                .game_state
-                .player
-                .follower_link
-                .is_lifting_or_carrying()
-        {
-            return true;
+            || self.game_state.player.follower_link.item_hold_pose() != 0 {
+            b.taken(0x07f4d6); b.block(0x07f4ee); return true;
         }
+        b.block(0x07f4d8);
+        if self.game_state.player.follower_link.is_lifting_or_carrying() {
+            b.taken(0x07f4dd); b.block(0x07f4ee); return true;
+        }
+        b.block(0x07f4df);
         for i in (0..=4usize).rev() {
+            b.block(0x07f4e1);
             if self.ancilla_slot_view(i).ancilla_type() == 0x27 {
-                return true;
+                b.taken(0x07f4e6); b.block(0x07f4ee); return true;
             }
+            b.block(0x07f4e8);
+            if i != 0 { b.taken(0x07f4e9); }
         }
+        b.block(0x07f4eb);
         false
     }
 
@@ -1557,7 +1566,8 @@ impl ZeldaState {
                 let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
                     return;
                 };
-                self.sprite_draw_distress_custom(x, y.wrapping_sub(8), delay.wrapping_add(20));
+                // $06:FC36 JSL $06:A733: complete distress writer.
+                self.sprite_draw_distress_custom(x, y.wrapping_sub(8), delay.wrapping_add(20), SpriteDistressEntry::Rom06A733);
                 return;
             }
             let value = 63;

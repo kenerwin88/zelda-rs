@@ -1,3 +1,4 @@
+use crate::zelda_rtl::sprite::SpriteDistressEntry;
 use crate::zelda_rtl::sprite::{
     SpriteDamageToEntry, SpriteHitBoxEntry, SpriteMoveEntry, SpriteMoveZEntry, SpriteRecoilEntry,
     SpriteShadowEntry,
@@ -2093,4 +2094,146 @@ fn marker40_prepared_draw_wrapper_matches_rom() {
         |s|s.cpu.k==0x1e && (0x87f0..0x87f5).contains(&s.cpu.pc),||{
             native.sprite_draw_multiple_prepared_marked(0,&STALFOS_KNIGHT_DRAW_FRAMES[..5],(0x40,0x40,0));
         });
+}
+
+#[test]
+fn marker41_vitreous_eye_complete_body_matches_rom() {
+    for slot in [0usize, 15] {
+        for (state, gfx, frame, hit, near_x, near_y) in [
+            (0, 0, 0, 0, false, false), (0, 1, 1, 0, true, true),
+            (1, 0, 0, 0, false, false), (1, 0, 1, 0, true, false),
+            (1, 0, 1, 0, true, true), (1, 0, 0, 1, true, true),
+            (2, 0, 0, 0, false, false), (2, 0, 1, 0, true, false),
+            (2, 0, 1, 0, true, true),
+        ] {
+            let mut native = marker29_state();
+            native.write_wram_byte(0xfa0, slot as u8);
+            for (a, v) in [(0xe20, 0xbe), (0xdd0, 9), (0xd80, state),
+                (0xdc0, gfx), (0xe80, 0x20), (0xea0, hit), (0xcaa, 0x80),
+                (0xed0, if near_x { 0x40 } else { 0x80 }), (0xeb0, 0),
+                (0xec0, if near_y { 0x40 } else { 0x80 }), (0xe30, 0),
+                (0xd90, if near_x { 0x40 } else { 0x80 }), (0xda0, 0),
+                (0xdb0, if near_y { 0x40 } else { 0x80 }), (0xde0, 0)] {
+                native.write_wram_byte(a + slot, v);
+            }
+            native.write_wram_byte(0x1a, frame);
+            native.write_wram_byte(0x4d, 1); // Damage children reject without altering AI.
+            native.sync_native_game_state_from_ram();
+            let Some(machine) = marker29_machine(&native, 0x1de773, slot) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x1dc222, machine,
+                |s| s.cpu.k == 0x1d && (0xe773..0xe893).contains(&s.cpu.pc), || {
+                    let _parent = crate::cycle_ledger::routine(0x1dc222);
+                    native.sprite_be_vitreous_eye(slot);
+                });
+        }
+    }
+}
+
+#[test]
+fn marker41_swamola_angle_matches_rom() {
+    for x in [0u8, 1, 31, 127, 128, 255] {
+        for y in [0u8, 1, 31, 127, 128, 255] {
+            let mut native = marker29_state();
+            native.write_wram_byte(0, y);
+            native.write_wram_byte(1, x);
+            let Some(machine) = marker29_machine(&native, 0x1df614, 0) else { return };
+            let mut result = 0;
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x1df614, machine,
+                |s| s.cpu.k == 0x1d && (0xf614..0xf65d).contains(&s.cpu.pc), || {
+                    result = ZeldaState::sprite_convert_velocity_to_angle(x, y, true);
+                });
+            assert_eq!(result, source.snes().cpu.a as u8);
+        }
+    }
+}
+
+#[test]
+fn marker41_distress_complete_writer_matches_rom() {
+    for time in [0u8, 8, 16, 24] {
+        for (x, y) in [(0u16, 0u16), (255, 239), (256, 255), (65535, 65535)] {
+            let mut native = marker29_state();
+            native.write_wram_word(0, x);
+            native.write_wram_word(2, y);
+            native.write_wram_byte(6, time);
+            let Some(machine) = marker29_machine(&native, 0x06a733, 0) else { return };
+            crate::cycle_ledger::assert_rom_marker_work(0x06a733, machine,
+                |s| s.cpu.k == 6 && (0xa733..0xa78e).contains(&s.cpu.pc), || {
+                    native.sprite_draw_distress_custom(x, y, time, SpriteDistressEntry::Rom06A733);
+                });
+        }
+    }
+}
+
+#[test]
+fn marker41_fireball_complete_body_matches_rom() {
+    for slot in [0usize, 15] {
+        for (indoors, delay, aux, shield, frame, b_frames, floor) in [
+            (0, 0, 0, 0, 1, 0, 0), (1, 1, 0, 0, 1, 0, 0),
+            (1, 0, 1, 0, 0, 0, 0), (1, 0, 0, 0, 0, 0, 0),
+            (1, 0, 1, 2, 1, 0, 1), (1, 0, 1, 2, 1, 0, 0),
+            (1, 0, 1, 2, 1, 1, 0),
+        ] {
+            let mut native = marker29_state();
+            native.write_wram_byte(0xfa0, slot as u8);
+            for (a, v) in [(0xe20, 0x55), (0xdd0, 9), (0xdf0, delay),
+                (0xe00, aux), (0xdc0, 0), (0xd10, 0x40), (0xd00, 0x40),
+                (0xf20, floor), (0xe40, 1), (0xcaa, 0x80)] {
+                native.write_wram_byte(a + slot, v);
+            }
+            for (a, v) in [(0x1b, indoors), (0x1a, frame), (0x3c, b_frames),
+                (0xf35a, shield), (0x2f, 0)] {
+                native.write_wram_byte(a, v);
+            }
+            native.sync_native_game_state_from_ram();
+            let Some(mut machine) = marker29_machine(&native, 0x059683, slot) else { return };
+            machine.cpu.a = 1; // $05:967B supplies sprite E to the fallthrough.
+            crate::cycle_ledger::assert_rom_marker_work(0x05b5d3, machine,
+                |s| s.cpu.k == 5 && (0x9683..0x9725).contains(&s.cpu.pc), || {
+                    let _parent = crate::cycle_ledger::routine(0x05b5d3);
+                    native.sprite_fireball(slot);
+                });
+        }
+    }
+}
+
+#[test]
+fn marker41_zora_writer_matches_rom() {
+    for slot in [0usize, 15] {
+        for gfx in [0u8, 3, 12] {
+            for y in [0u16, 239, 255, 256] {
+                let mut native = marker29_state();
+                native.write_wram_byte(0xfa0, slot as u8);
+                native.write_wram_byte(0xdc0 + slot, gfx);
+                native.write_wram_byte(0xdd0 + slot, 9);
+                native.write_wram_byte(0xe20 + slot, 0x55);
+                native.write_wram_word(0xfda, y);
+                native.sync_native_game_state_from_ram();
+                let Some(machine) = marker29_machine(&native, 0x0598f5, slot) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x0598f5, machine,
+                    |s| s.cpu.k == 5 && (0x98f5..0x995b).contains(&s.cpu.pc), || {
+                        native.zora_draw(slot);
+                    });
+            }
+        }
+    }
+}
+
+#[test]
+fn marker41_busy_predicate_matches_rom() {
+    for (aux, pose, state, hook) in [(1, 0, 0, -1), (0, 1, 0, -1),
+        (0, 0, 0x80, -1), (0, 0, 0, -1), (0, 0, 0, 0), (0, 0, 0, 4)] {
+        let mut native = marker29_state();
+        for (a, v) in [(0x4d, aux), (0x2da, pose), (0x308, state)] {
+            native.write_wram_byte(a, v);
+        }
+        if hook >= 0 { native.write_wram_byte(0xc4a + hook as usize, 0x27); }
+        native.sync_native_game_state_from_ram();
+        let Some(machine) = marker29_machine(&native, 0x07f4d0, 0) else { return };
+        let mut busy = false;
+        let source = crate::cycle_ledger::assert_rom_marker_work(0x07f4d0, machine,
+            |s| s.cpu.k == 7 && (0xf4d0..0xf4f1).contains(&s.cpu.pc), || {
+                busy = native.sprite_check_if_link_is_busy();
+            });
+        assert_eq!(busy, source.snes().cpu.c);
+    }
 }

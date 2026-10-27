@@ -1794,24 +1794,41 @@ impl ZeldaState {
     //     return kConvertVelocityToAngle_Tab1[(x >> 2) + s];
     //   }
     // }
-    pub(in crate::zelda_rtl) fn sprite_convert_velocity_to_angle(x: u8, y: u8) -> u8 {
+    pub(in crate::zelda_rtl) fn sprite_convert_velocity_to_angle(x: u8, y: u8, marked: bool) -> u8 {
+        // $1D:F614..F65C: whole far-call body, M8/X8.
+        let _scope = marked.then(|| crate::cycle_ledger::routine(0x1df614));
+        let b = crate::cycle_ledger::blocks(marked);
+        b.block(0x1df614);
         let mut x = x;
         let mut y = y;
         let s = (((y >> 7) + (x >> 7) * 2) * 8) as usize;
         if sign8(x) {
+            b.block(0x1df62f);
             x = x.wrapping_neg();
         }
+        else { b.taken(0x1df62d); }
+        b.block(0x1df632);
         if sign8(y) {
+            b.block(0x1df638);
             y = y.wrapping_neg();
         }
+        else { b.taken(0x1df636); }
+        b.block(0x1df63b);
         // Both lookups index the contiguous ROM region: a magnitude past 31
         // runs off its 8-entry quadrant block into the following bytes, as
         // the ROM does (route host 1310660 read x-dominant index 39).
-        if x >= y {
+        let result = if x >= y {
+            b.block(0x1df643);
+            if 0xd4 + ((y >> 2) as usize) + s > 0xff { b.crossing(0x1df64b); }
             sprite_convert_velocity_to_angle_rom_byte(((y >> 2) as usize) + s)
         } else {
+            b.taken(0x1df641);
+            b.block(0x1df650);
+            if 0xf4 + ((x >> 2) as usize) + s > 0xff { b.crossing(0x1df658); }
             sprite_convert_velocity_to_angle_rom_byte(32 + ((x >> 2) as usize) + s)
-        }
+        };
+        b.block(0x1df65b);
+        result
     }
 
     // -----------------------------------------------------------------

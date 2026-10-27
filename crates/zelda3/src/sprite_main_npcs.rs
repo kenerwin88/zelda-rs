@@ -1,4 +1,5 @@
 //! Ported NPC handlers from sprite_main.c — Bee / Cucco / vendor clusters.
+
 //!
 //! Each method preserves a 1:1 mapping to the C source (sprite_main.c lines
 //! 1426, 9367..10286, 12877, 13269, 23975..24166). The original C body is
@@ -10,6 +11,7 @@
 //! chains) are deliberately not ported here. They are listed near the bottom
 //! with a one-line skip note so the signature-drift scoreboard tells the truth.
 
+use crate::zelda_rtl::sprite::SpriteDistressEntry;
 use crate::zelda_rtl::sprite::{
     SpriteDamageFromEntry, SpriteDamageToEntry, SpriteHitBoxEntry, SpriteInactiveEntry,
     SpriteMoveEntry, SpriteRecoilEntry, SpriteShadowEntry, SpriteSingleSmallEntry,
@@ -1006,7 +1008,8 @@ impl ZeldaState {
             return;
         };
         let time = self.game_state.frame.frame_counter;
-        self.sprite_draw_distress_custom(info.0, info.1, time);
+        // $06:A60C JSR $A727 falls through into the complete $A733 writer.
+        self.sprite_draw_distress_custom(info.0, info.1, time, SpriteDistressEntry::Rom06A733);
     }
 
     // ----- Internal helpers ported to back the above handlers -----------

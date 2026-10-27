@@ -621,6 +621,7 @@ impl ZeldaState {
                     let angle = Self::sprite_convert_velocity_to_angle(
                         self.sprite_slot_view(k).x_velocity(),
                         self.sprite_slot_view(k).y_velocity(),
+                        false,
                     );
                     let vi = usize::from(angle.wrapping_sub(2) & 0x0f);
                     self.sprite_slot_view_mut(j)

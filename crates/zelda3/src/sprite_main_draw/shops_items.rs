@@ -1,5 +1,7 @@
 //! Shops, minigame prizes, collectible items, fairies, and item receipts.
 
+
+use crate::zelda_rtl::sprite::SpriteDistressEntry;
 use crate::zelda_rtl::sprite::{
     SpriteDamageFromEntry, SpriteDamageToEntry, SpriteInactiveEntry, SpriteMoveEntry,
     SpriteMoveZEntry, SpritePausedEntry, SpriteShadowEntry, SpriteSingleLargeEntry,
@@ -1645,7 +1647,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
-        self.sprite_draw_distress_custom(info_x, info_y, self.game_state.frame.frame_counter);
+        self.sprite_draw_distress_custom(info_x, info_y, self.game_state.frame.frame_counter, SpriteDistressEntry::Unpriced);
     }
 
     pub(in crate::zelda_rtl) fn archery_game_guy_draw(&mut self, k: usize) {

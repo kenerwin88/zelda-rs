@@ -1,5 +1,7 @@
 //! Ported SpritePrep_* helpers from sprite_main.c.
 
+
+use crate::zelda_rtl::sprite::SpriteDistressEntry;
 use crate::zelda_rtl::sprite::{
     SpriteInactiveEntry, SpriteMoveEntry, SpriteMoveZEntry, SpriteSingleLargeEntry,
     SpriteSingleSmallEntry, SpriteSpawnInfo, SpriteTileCollisionEntry,
@@ -3095,7 +3097,7 @@ impl ZeldaState {
         let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
-        self.sprite_draw_distress_custom(x, y, self.game_state.frame.frame_counter);
+        self.sprite_draw_distress_custom(x, y, self.game_state.frame.frame_counter, SpriteDistressEntry::Unpriced);
     }
 
     pub(super) fn spawn_apple(&mut self, k: usize) {

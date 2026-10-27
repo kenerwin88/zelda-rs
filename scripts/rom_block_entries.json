@@ -203,5 +203,11 @@
   {"entry": "00ef51", "end": "00ef56", "m8": false, "x8": false},
   {"entry": "00ef56", "end": "00ef77", "m8": false, "x8": false},
   {"entry": "00ef77", "end": "00ef87", "data_bank": 0},
-  {"entry": "00ef87", "end": "00ef8a"}
+  {"entry": "00ef87", "end": "00ef8a"},
+  {"entry":"1de773","end":"1de893"},
+  {"entry":"1df614","end":"1df65d"},
+  {"entry":"06a733","end":"06a78e"},
+  {"entry":"059683","end":"059725"},
+  {"entry":"0598f5","end":"05995b"},
+  {"entry":"07f4d0","end":"07f4f1"}
 ]

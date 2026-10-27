@@ -834,7 +834,7 @@ impl ZeldaState {
         if (self.game_state.frame.frame_counter & 3) == 0 {
             let pt = self.sprite_project_speed_towards_link(k, 31);
             self.sprite_slot_view_mut(k)
-                .set_a(ZeldaState::sprite_convert_velocity_to_angle(pt.x, pt.y));
+                .set_a(ZeldaState::sprite_convert_velocity_to_angle(pt.x, pt.y, false));
         }
 
         self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
@@ -1129,7 +1129,7 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).increment_ai_state();
                         let pp = self.sprite_project_speed_towards_link(k, 31);
                         self.sprite_slot_view_mut(k).set_direction(
-                            ZeldaState::sprite_convert_velocity_to_angle(pp.x, pp.y) >> 1,
+                            ZeldaState::sprite_convert_velocity_to_angle(pp.x, pp.y, false) >> 1,
                         );
                         self.sprite_slot_view_mut(k).set_delay_main(95);
                         return;
@@ -2497,6 +2497,7 @@ impl ZeldaState {
             let value = ZeldaState::sprite_convert_velocity_to_angle(
                 self.sprite_slot_view(k).x_velocity(),
                 self.sprite_slot_view(k).y_velocity(),
+                false,
             ) & 0x0f;
             self.sprite_slot_view_mut(k).set_direction(value);
         }

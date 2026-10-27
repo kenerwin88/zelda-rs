@@ -2173,7 +2173,7 @@ fn sprite_convert_velocity_to_angle_matches_c_tables() {
         (0xf0, 0, 8),
         (0, 0xf0, 12),
     ] {
-        assert_eq!(ZeldaState::sprite_convert_velocity_to_angle(x, y), expected);
+        assert_eq!(ZeldaState::sprite_convert_velocity_to_angle(x, y, false), expected);
     }
 }
 

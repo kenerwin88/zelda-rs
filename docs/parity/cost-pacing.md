@@ -12641,3 +12641,40 @@ Both final full CPU census gates **PASS**, **1,473,123 iterations per lane**, un
 All **48 crystal/pendant phases** remain within one; stable outcomes match batch 3. The retained **default 200k ledger matches every record and EOF**. Default and reduced ordinary builds are warning-free; existing lib-test warnings remain. Default library: **2,683 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,218 pass / 0 failures / 2 ignored**. Both CPU SNES libraries: **504 / 0 / 7**. Block generator/worklist, routine-coverage, inverse, exact regeneration and `git diff --check` pass.
 
 `remaining-worklist.json` retains **937 refreshed missing iterations** in the requested modules; the **69 inherited rows outside those modules** are preserved separately as unprofiled, not asserted unchanged. All **1,512 supplied ledger/cache files** retain size and mtime, with no files added. Raw profiles/predictors were summarized and deleted; retained evidence is **258.5 MB**, below 3 GB. No GPU run, --video, cached-av, Snes9x, GPU test, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.
+
+
+## Cost-pacing batch 41 — verified partial stop
+
+On `codex/cost-pacing41`, main `e6f9ffcd`: **43 predicted / 43 actual ordinary-gameplay flips**. The **120-frame aim was not reached**; this is a verified partial batch. Evidence: `target/cost-pacing41/`. No main controls were repeated; the permitted fresh ROM predictor reproduces **3,983/0/0**, with **1,451 in 07/00** and **865 in 09/00** across **2,316 missing iterations**. `ranked-owners-summary.json` and `cohort.json` retain the frames-flipped ranking and every inverse shortfall; raw owner gaps include aliases and are not additive prices.
+
+Complete Vitreous-eye entry/state tails, Swamola angle conversion, distress writer, fireball, Zora writer and busy predicate add **87 blocks / 368 instructions**; all **1,453** existing rows are unchanged. ROM callers and the eye's RTS table are checked in `source-pricing-audit.json`. Fireball uses the existing complete small-draw selector. Distress has one entry with explicit `Unpriced` / `Rom06A733` selectors: only the confirmed Cucco fallthrough and falling-sprite calls are priced; pink-ball and archery reuse stay unpriced. Other angle callers stay raw. No loaders, transition logic, classifiers or game-state writes changed.
+
+The eye's old **524-clock lagless prefix scalar is deleted**, with full ROM markers replacing it. The other selected routines had zero scalar charges. Existing default/ROM-timing accounting remains intact. On the exact matched cohort:
+
+| Routine | Old scalar clocks | New marker clocks | Net clocks | Independent predicted flips |
+| --- | ---: | ---: | ---: | ---: |
+| eye `$1d:e773` | 387,236 | 755,802 | 368,566 | 13 |
+| angle `$1d:f614` | 0 | 340,124 | 340,124 | 7 |
+| busy `$07:f4d0` | 0 | 324,410 | 324,410 | 5 |
+| fireball `$05:9683` | 0 | 1,013,144 | 1,013,144 | 4 |
+| distress `$06:a733` | 0 | 140,312 | 140,312 | 4 |
+| zora-draw `$05:98f5` | 0 | 364,714 | 364,714 | 3 |
+| small-writer `$06:dcef` | 0 | 591,404 | 591,404 | 1 |
+| small-wrapper `$06:dbf8` | 0 | 122,740 | 122,740 | 0 |
+
+**3,652,650 new marker clocks − 387,236 retired scalar clocks = 3,265,414 net clocks**. Every cohort main-counter change reconciles to this partition. Independent predictions overlap; the combined prediction uses their disjoint net clocks. `frame-flips.json` records any prediction/actual differences and every module's gains. These are native executed-work receipts, not equivalent-call-sequence or physical-NMI proof.
+
+Six proportionate `assert_rom_marker_work` fixtures pass in both complete library suites, including angle table crossings, clipping, short-circuit gates, AI tails and the actual five-slot busy scan. The old eye setup-only test now measures its complete non-AI return and supplies the caller's current-slot byte. Original full-suite manifests are retained; rebuilt test binaries recheck this corrected case, with explicit replacements in the final manifests. Both full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero; runtime holds equal P2 throughout. These are periodically seeded logical gates, not continuous-route or A/V acceptance. Counts are missing / excess / FP:
+
+| Lane / scope | Before | After |
+| --- | ---: | ---: |
+| ROM full | 3,983/0/0 | **3,898/0/0** |
+| ROM 07/00 | 1,451/0/0 | **1,433/0/0** |
+| ROM 09/00 | 865/0/0 | **840/0/0** |
+| Live full | supplied baseline reused | **4,597/592/132** |
+| Live 07/00 | supplied baseline reused | **1,433/105/19** |
+| Live 09/00 | supplied baseline reused | **840/0/0** |
+
+All **48 crystal/pendant phases** remain within one, with stable outcomes unchanged. The retained schema-3 **default 200k ledger matches every record and EOF**; `default-reference.json` binds the recovered available reference and input hashes. Library pass/fail/ignored: default **2683/1/3** (only the known spotlight failure), reduced **2218/0/2**. Both ordinary builds are warning-free; existing lib-test warnings are separate. Python block/worklist, routine-coverage and shortfall suites, exact regeneration and `git diff --check` pass.
+
+All **1,512 supplied ledger/cache files** retain size and mtime. Frozen source/binary hashes, complete library manifests, commands, prediction/clock summaries and pruning hashes bind the stop. Large raw artifacts were deleted after summaries; evidence is below **3 GB**. No GPU, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit/push or scratch repository script was used. Remaining owner pricing and the 120-frame target are unfinished.

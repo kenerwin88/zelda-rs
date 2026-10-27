@@ -2072,13 +2072,11 @@ impl ZeldaState {
 
     // void Sprite_BE_VitreousEye(int k) {  // 9de773
     pub(super) fn sprite_be_vitreous_eye(&mut self, k: usize) {
-        if self.lag_free {
-            // $1D:E773..E798: 416 clocks of coordinate setup, JSL draw
-            // (62), JSR inactive (46). Y is 0/2/4/6, so neither word
-            // table crosses a page. Both child bodies retain their scopes;
-            // this RTS-dispatched body stays in $1D:C222's caller frame.
-            crate::cycle_ledger::charge(416 + 62 + 46);
-        }
+        // $1D:C237[$BE-$BD] dispatches to $E773. The complete entry and
+        // its BEQ/JMP state tails stay in the RTS-dispatch caller's owner.
+        // Replaces the former 524-clock prefix; child bodies stay separate.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1de773);
         let j = ((self.sprite_slot_view(k).subtype2() >> 4) & 3) as usize;
         let cur_x = self
             .game_state
@@ -2096,22 +2094,34 @@ impl ZeldaState {
         self.sprite_workspace_mut().set_current_sprite_y(cur_y);
         // ROM $1D:E794 JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x1de798);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1de79b);
         self.sprite_slot_view_mut(k).increment_subtype2();
         if self.sprite_slot_view(k).graphics() != 0 {
+            b.block(0x1de7a3);
             return;
         }
+        b.taken(0x1de7a1);
+        b.block(0x1de7a4);
         // ROM $1D:E7A4 JSL $06:F2AA
         self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
+        b.block(0x1de7a8);
         // $1D:E7A8 JSL $06:F121: complete body, caller opcode unchanged.
         self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
+        b.block(0x1de7ac);
         if self.sprite_slot_view(k).f() == 14 {
+            b.block(0x1de7b3);
             self.sprite_slot_view_mut(k).set_f(5);
         }
+        else { b.taken(0x1de7b1); }
+        b.block(0x1de7b8);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.taken(0x1de7bb);
+                b.block(0x1de7c4);
                 let link_x = self.game_state.player.follower_link.x();
                 let link_y = self.game_state.player.follower_link.y();
                 let mut sprite = self.sprite_slot_view_mut(k);
@@ -2121,64 +2131,75 @@ impl ZeldaState {
                 sprite.set_subtype((link_y >> 8) as u8);
             }
             1 => {
+                b.block(0x1de7bd);
+                b.taken(0x1de7bf);
+                b.block(0x1de7d9);
                 if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1DE8C5) {
                     return;
                 }
+                b.block(0x1de7dc);
                 if (((k as u8) ^ self.game_state.frame.frame_counter) & 1) == 0 {
+                    b.block(0x1de7e3);
                     let x = ((self.sprite_slot_view(k).head_direction() as u16) << 8)
                         | self.sprite_slot_view(k).g() as u16;
                     let y = ((self.sprite_slot_view(k).subtype() as u16) << 8)
                         | self.sprite_slot_view(k).anim_clock() as u16;
                     // ROM $1D:E84A, $1D:E7F9
                     let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 16);
+                    b.block(0x1de7fd);
                     self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
                     self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
                 }
+                else { b.taken(0x1de7e1); }
+                b.block(0x1de807);
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
-                if self
-                    .sprite_slot_view(k)
-                    .g()
-                    .wrapping_sub(self.sprite_slot_view(k).x_low())
-                    .wrapping_add(4)
-                    < 8
-                    && self
-                        .sprite_slot_view(k)
-                        .anim_clock()
-                        .wrapping_sub(self.sprite_slot_view(k).y_low())
-                        .wrapping_add(4)
-                        < 8
-                {
+                b.block(0x1de80a);
+                let near_x = self.sprite_slot_view(k).g()
+                    .wrapping_sub(self.sprite_slot_view(k).x_low()).wrapping_add(4) < 8;
+                if near_x { b.block(0x1de818); }
+                else { b.taken(0x1de816); }
+                let near_y = self.sprite_slot_view(k).anim_clock()
+                    .wrapping_sub(self.sprite_slot_view(k).y_low()).wrapping_add(4) < 8;
+                if near_x && !near_y { b.taken(0x1de824); }
+                if near_x && near_y {
+                    b.block(0x1de826);
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                 }
+                b.block(0x1de829);
             }
             2 => {
+                b.block(0x1de7bd);
+                b.block(0x1de7c1);
+                b.block(0x1de82a);
                 if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1DE8C5) {
                     return;
                 }
+                b.block(0x1de82d);
                 if (((k as u8) ^ self.game_state.frame.frame_counter) & 1) == 0 {
+                    b.block(0x1de834);
                     let x = ((self.sprite_slot_view(k).b() as u16) << 8)
                         | self.sprite_slot_view(k).a() as u16;
                     let y = ((self.sprite_slot_view(k).direction() as u16) << 8)
                         | self.sprite_slot_view(k).c() as u16;
                     // ROM $1D:E84A, $1D:E7F9
                     let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 16);
+                    b.block(0x1de84e);
                     self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
                     self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
                 }
+                else { b.taken(0x1de832); }
+                b.block(0x1de858);
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
-                if self
-                    .sprite_slot_view(k)
-                    .a()
-                    .wrapping_sub(self.sprite_slot_view(k).x_low())
-                    .wrapping_add(4)
-                    < 8
-                    && self
-                        .sprite_slot_view(k)
-                        .c()
-                        .wrapping_sub(self.sprite_slot_view(k).y_low())
-                        .wrapping_add(4)
-                        < 8
-                {
+                b.block(0x1de85b);
+                let near_x = self.sprite_slot_view(k).a()
+                    .wrapping_sub(self.sprite_slot_view(k).x_low()).wrapping_add(4) < 8;
+                if near_x { b.block(0x1de869); }
+                else { b.taken(0x1de867); }
+                let near_y = self.sprite_slot_view(k).c()
+                    .wrapping_sub(self.sprite_slot_view(k).y_low()).wrapping_add(4) < 8;
+                if near_x && !near_y { b.taken(0x1de875); }
+                if near_x && near_y {
+                    b.block(0x1de877);
                     {
                         let value = self.sprite_slot_view(k).a();
                         self.sprite_slot_view_mut(k).set_x_low(value);
@@ -2197,6 +2218,7 @@ impl ZeldaState {
                     }
                     self.sprite_slot_view_mut(k).set_ai_state(0);
                 }
+                b.block(0x1de892);
             }
             _ => {}
         }
@@ -2744,7 +2766,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------
 
     fn sprite_convert_velocity_to_angle_for_small_bosses(&mut self, xv: i8, yv: i8) -> u8 {
-        Self::sprite_convert_velocity_to_angle(xv as u8, yv as u8)
+        Self::sprite_convert_velocity_to_angle(xv as u8, yv as u8, false)
     }
 
     /// The shadow draw updates the record it is given; these callers keep theirs.

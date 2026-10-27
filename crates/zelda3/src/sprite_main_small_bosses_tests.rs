@@ -5,7 +5,7 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
-fn vitreous_eye_setup_price_matches_executed_rom_prefix() {
+fn vitreous_eye_non_ai_body_price_matches_executed_rom() {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -14,10 +14,11 @@ fn vitreous_eye_setup_price_matches_executed_rom_prefix() {
         for subtype in [0u8, 16, 32, 48, 255] {
             let mut native = fresh_state();
             let mut image = native.wram_image().into_owned();
+            image[0xfa0] = slot as u8;
             image[0xdd0 + slot] = 9;
             image[0xe20 + slot] = 0xbe;
             image[0xe80 + slot] = subtype;
-            image[0xdc0 + slot] = 1; // stop before the still-unpriced AI
+            image[0xdc0 + slot] = 1; // take the non-AI return
             image[0xfd8..0xfdc].copy_from_slice(&[0xfe, 0xff, 1, 0]);
             image[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
             image[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
@@ -44,7 +45,7 @@ fn vitreous_eye_setup_price_matches_executed_rom_prefix() {
             for _ in 0..2000 {
                 let cpu = &source.snes().cpu;
                 let parent = cpu.sp == 0x1fc && cpu.k == 0x1d;
-                let last = parent && cpu.pc == 0xe798;
+                let last = parent && cpu.pc == 0xe7a3;
                 let step = source.step().unwrap();
                 if parent {
                     owned += step.transactions.iter()
@@ -53,7 +54,6 @@ fn vitreous_eye_setup_price_matches_executed_rom_prefix() {
                 if last { finished = true; break; }
             }
             assert!(finished);
-            assert_eq!(owned, 524);
             let actual = crate::cycle_ledger::measure_routine_self_work(0x1d_c222, || {
                 let _parent = crate::cycle_ledger::routine(0x1d_c222);
                 native.sprite_be_vitreous_eye(slot);

@@ -1132,6 +1132,7 @@ impl ZeldaState {
                     let d = Self::sprite_convert_velocity_to_angle(
                         self.sprite_slot_view(k).x_velocity(),
                         self.sprite_slot_view(k).y_velocity(),
+                        false,
                     )
                     .wrapping_sub(self.sprite_slot_view(k).direction());
                     if d == 0 {
