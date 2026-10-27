@@ -417,7 +417,8 @@ impl ZeldaState {
                     });
                 return;
             }
-            self.sprite_move_xy(k);
+            // $06:A628 JSR $E92C: complete call; partial X/Y resumes above stay raw.
+            self.sprite_move_xy_marked(k, 0x06e93e);
             self.complete_active_cucco_after_movement(k, helper_ordinal);
         } else {
             let value = 255;
@@ -651,6 +652,19 @@ impl ZeldaState {
     //   Deadrock walking/petrified state machine.
     // }
     pub(super) fn sprite_27_deadrock(&mut self, k: usize) {
+        // $06:927B RTS table $9283[$27] selects $948A; children stay separate.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06948a);
+        if self.sprite_slot_view(k).delay_aux2() != 0 {
+            b.block(0x06948f);
+            if self.sprite_slot_view(k).delay_aux2() & 4 != 0 { b.taken(0x069491); b.block(0x06949e); }
+            else { b.block(0x069493); }
+        } else {
+            b.taken(0x06948d); b.block(0x069497);
+            if self.sprite_slot_view(k).ai_state() == 2 { b.taken(0x06949c); b.block(0x069493); }
+            else { b.block(0x06949e); }
+        }
+        b.block(0x0694a1);
         let j = if if self.sprite_slot_view(k).delay_aux2() != 0 {
             (self.sprite_slot_view(k).delay_aux2() & 4) != 0
         } else {
@@ -666,20 +680,33 @@ impl ZeldaState {
         let value = (self.sprite_slot_view(k).oam_flags() & !0x40) | DEAD_ROCK_OAM_FLAGS[j];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.sprite_draw_single_large(k);
+        b.block(0x0694b5);
         if self.sprite_return_if_inactive(k) {
             return;
         }
-        if self.sprite_slot_view(k).f() == 0
-            && (self.sprite_check_damage_from_link(k) & PLAYER_DAMAGE_CARRY_MASK_DRAW) != 0
-            && self.game_state.system_signals.sound_effect_1() == 0
-        {
-            self.sprite_sfx_queue_sfx2_with_pan(k, 0x0b);
-        }
-        if self.sprite_check_damage_to_link_same_layer(k) {
-            self.sprite_nullify_hookshot_drag();
-            self.sprite_repel_dash();
-        }
+        b.block(0x0694b8);
+        if self.sprite_slot_view(k).f() == 0 {
+            b.block(0x0694bd);
+            let hit = self.sprite_check_damage_from_link(k) & PLAYER_DAMAGE_CARRY_MASK_DRAW != 0;
+            b.block(0x0694c0);
+            if hit {
+                b.block(0x0694c2);
+                if self.game_state.system_signals.sound_effect_1() == 0 {
+                    b.block(0x0694c7);
+                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x0b);
+                } else { b.taken(0x0694c5); }
+            } else { b.taken(0x0694c0); }
+        } else { b.taken(0x0694bb); }
+        b.block(0x0694cd);
+        let hit = self.sprite_check_damage_to_link_same_layer_marked(k);
+        b.block(0x0694d0);
+        if hit {
+            b.block(0x0694d2); self.sprite_nullify_hookshot_drag();
+            b.block(0x0694d6); self.sprite_repel_dash();
+        } else { b.taken(0x0694d0); }
+        b.block(0x0694da);
         if self.sprite_slot_view(k).f() == 14 {
+            b.block(0x0694e1);
             let value = 2;
             self.sprite_slot_view_mut(k).set_ai_state(value);
             let value = 255;
@@ -687,39 +714,61 @@ impl ZeldaState {
             let value = 64;
             self.sprite_slot_view_mut(k).set_delay_aux2(value);
         }
+        else { b.taken(0x0694df); }
+        b.block(0x0694f0);
         if self.sprite_return_if_recoiling(k) {
             return;
         }
+        b.block(0x0694f3);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x069506);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x06950b);
                     self.sprite_slot_view_mut(k).and_flags2(!0x80);
                     self.sprite_slot_view_mut(k).and_deflection_bits(!4);
                     self.sprite_slot_view_mut(k).and_flags3(!0x40);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     // ROM Sprite_27_Deadrock $06:9524: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
                     let value = self.get_random_number_with_carry().masked_adc(31, 32);
+                    b.block(0x069528);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let dir = if self.sprite_slot_view(k).b().wrapping_add(1) == 4 {
+                        b.block(0x069539);
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_b(value);
-                        self.sprite_direction_to_face_link(k)
+                        let direction = self.sprite_direction_to_face_link(k);
+                        b.block(0x06953f);
+                        direction
                     } else {
+                        b.taken(0x069537); b.block(0x069542);
                         self.sprite_slot_view_mut(k).add_b(1);
-                        self.get_random_number() & 3
+                        let direction = self.get_random_number() & 3;
+                        b.block(0x069546);
+                        direction
                     };
                     self.deadrock_set_dir(k, dir, &DEAD_ROCK_X_VELOCITIES, &DEAD_ROCK_Y_VELOCITIES);
-                }
+                } else { b.taken(0x069509); b.block(0x069558); }
             }
             1 => {
+                b.block(0x069559);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x06955e);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     let value = 32;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 } else {
-                    self.sprite_move_xy(k);
-                    if self.sprite_check_tile_collision(k) != 0 {
+                    b.taken(0x06955c); b.block(0x069567);
+                    // $06:9567 JSR $E92C: complete movement, not a checkpoint suffix.
+                    self.sprite_move_xy_marked(k, 0x06e93e);
+                    b.block(0x06956a);
+                    let collision = self.sprite_check_tile_collision(k);
+                    b.block(0x06956d);
+                    if collision != 0 {
+                        b.block(0x069572);
                         let dir = self.sprite_slot_view(k).direction() ^ 1;
                         self.deadrock_set_dir(
                             k,
@@ -728,6 +777,7 @@ impl ZeldaState {
                             &DEAD_ROCK_Y_VELOCITIES,
                         );
                     } else {
+                        b.taken(0x069570); b.block(0x069579);
                         let value = self.sprite_slot_view(k).subtype2().wrapping_add(1);
                         self.sprite_slot_view_mut(k).set_subtype2(value);
                         let value = (self.sprite_slot_view(k).direction() << 1)
@@ -737,20 +787,29 @@ impl ZeldaState {
                 }
             }
             2 => {
+                b.block(0x06958f);
                 self.sprite_slot_view_mut(k).or_flags2(0x80);
                 self.sprite_slot_view_mut(k).or_deflection_bits(4);
                 self.sprite_slot_view_mut(k).or_flags3(0x40);
                 if (self.game_state.frame.frame_counter & 1) == 0 {
+                    b.block(0x0695ad);
                     if self.sprite_slot_view(k).delay_aux1() == 0 {
+                        b.block(0x0695b2);
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_ai_state(value);
                         let value = 16;
                         self.sprite_slot_view_mut(k).set_delay_main(value);
-                    } else if self.sprite_slot_view(k).delay_aux1() == 0x20 {
-                        let value = 0x40;
-                        self.sprite_slot_view_mut(k).set_delay_aux2(value);
+                    } else {
+                        b.taken(0x0695b0); b.block(0x0695bb);
+                        if self.sprite_slot_view(k).delay_aux1() == 0x20 {
+                            b.block(0x0695bf);
+                            let value = 0x40;
+                            self.sprite_slot_view_mut(k).set_delay_aux2(value);
+                        } else { b.taken(0x0695bd); }
+                        b.block(0x0695c4);
                     }
                 } else {
+                    b.taken(0x0695ab); b.block(0x0695c5);
                     let value = self.sprite_slot_view(k).delay_aux1().wrapping_add(1);
                     self.sprite_slot_view_mut(k).set_delay_aux1(value);
                 }
@@ -760,6 +819,8 @@ impl ZeldaState {
     }
 
     fn deadrock_set_dir(&mut self, k: usize, dir: u8, xvel: &[u8; 4], yvel: &[u8; 4]) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069548);
         let value = dir;
         self.sprite_slot_view_mut(k).set_direction(value);
         let idx = usize::from(dir);
@@ -767,6 +828,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         let value = yvel[idx];
         self.sprite_slot_view_mut(k).set_y_velocity(value);
+        b.block(0x069558);
     }
 
     // -----------------------------------------------------------------------

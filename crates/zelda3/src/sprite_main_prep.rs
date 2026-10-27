@@ -1141,6 +1141,30 @@ impl ZeldaState {
         self.game_state.sprites.workspace.prep_shared_counter() as i32
     }
 
+    // The allocation prefix is instruction-identical in $1D:E475 and $1E:A488.
+    // `entry` identifies ROM instructions, never a scene or a fitted price.
+    fn garnish_alloc_overwrite_old_marked(&mut self, entry: u32) -> usize {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(entry);
+        for k in (0..30).rev() {
+            b.block(entry + 4);
+            if self.garnish_slot_view(k).is_empty() {
+                b.taken(entry + 8);
+                return k;
+            }
+            b.block(entry + 10);
+            if k != 0 { b.taken(entry + 11); }
+        }
+        b.block(entry + 13);
+        self.sprite_workspace_mut().decrement_prep_shared_counter();
+        if sign8(self.game_state.sprites.workspace.prep_shared_counter()) {
+            b.block(entry + 18);
+            self.sprite_workspace_mut().set_prep_shared_counter(29);
+        } else { b.taken(entry + 16); }
+        b.block(entry + 23);
+        self.game_state.sprites.workspace.prep_shared_counter() as usize
+    }
+
     pub(super) fn garnish_set_x(&mut self, k: usize, x: u16) {
         let value = x as u8;
         self.garnish_slot_view_mut(k).set_x_low(value);
@@ -1976,7 +2000,10 @@ impl ZeldaState {
     }
 
     pub(super) fn lightning_spawn_garnish(&mut self, k: usize) {
-        let j = self.garnish_alloc_overwrite_old() as usize;
+        // $1D:E420 JSR $E475: whole allocation/publication body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1de475));
+        let j = self.garnish_alloc_overwrite_old_marked(0x1de475);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1de48f);
         let value = 9;
         self.garnish_slot_view_mut(j).set_garnish_type(value);
         self.garnish_state_mut().set_active_type(9);
@@ -1992,7 +2019,10 @@ impl ZeldaState {
     }
 
     pub(super) fn laser_beam_build_up_garnish(&mut self, k: usize) {
-        let j = self.garnish_alloc_overwrite_old() as usize;
+        // $1E:A469 JSR $A488: whole allocation/publication body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ea488));
+        let j = self.garnish_alloc_overwrite_old_marked(0x1ea488);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1ea4a2);
         let value = 4;
         self.garnish_slot_view_mut(j).set_garnish_type(value);
         self.garnish_state_mut().set_active_type(4);

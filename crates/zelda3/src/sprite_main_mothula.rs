@@ -2696,17 +2696,27 @@ impl ZeldaState {
 
     // void Sprite_C2_Boulder(int k) {  // 9dcfcb
     pub(super) fn sprite_c2_boulder(&mut self, k: usize) {
+        // $1D:C22F RTS table $C237[$C2-$BD] enters $CFCB.
+        // Complete entries only; checkpoint suffixes keep their raw entry.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dcfcb);
         if self.game_state.world.location.is_outdoors() {
+            b.taken(0x1dcfcd);
             self.boulder_outdoors_main(k);
             return;
         }
+        b.block(0x1dcfcf);
         if self.game_state.sprites.system.chr_halfslot_state() < 3 {
+            b.block(0x1dcfd6);
             // ROM $1D:CFD6
             self.sprite_draw_single_small_long_marked(k);
         }
+        else { b.taken(0x1dcfd4); }
+        b.block(0x1dcfda);
         if self.sprite_return_if_inactive(k) {
             return;
         }
+        b.block(0x1dcfdd);
         let value = (self.game_state.frame.frame_counter << 2) & 0xc0;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         if let Some(SpriteMainCpuBoundary::BoulderMovement {
@@ -2729,27 +2739,43 @@ impl ZeldaState {
             }
         }
         self.sprite_move_xyz_bank(k, 0x1de95d);
-        self.boulder_indoors_after_movement(k);
+        self.boulder_indoors_after_movement_body(k, true);
     }
 
     /// `Sprite_C2_Boulder` (indoors) after `Sprite_MoveXYZ`: the frame-gated
     /// Link damage check and tile-collision kill.
     fn boulder_indoors_after_movement(&mut self, k: usize) {
+        self.boulder_indoors_after_movement_body(k, false);
+    }
+
+    fn boulder_indoors_after_movement_body(&mut self, k: usize, marked: bool) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        b.block(0x1dcfeb);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) != 0 {
+            b.taken(0x1dcff0); b.block(0x1dd029);
             return;
         }
+        b.block(0x1dcff2);
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let link_x = self.game_state.player.follower_link.x();
         let link_y = self.game_state.player.follower_link.y();
-        if cur_x.wrapping_sub(link_x).wrapping_add(4) < 16
-            && cur_y.wrapping_sub(link_y).wrapping_sub(4) < 12
-        {
+        let in_x = cur_x.wrapping_sub(link_x).wrapping_add(4) < 16;
+        let in_y = cur_y.wrapping_sub(link_y).wrapping_sub(4) < 12;
+        if in_x { b.block(0x1dd003); } else { b.taken(0x1dd001); }
+        if in_x && in_y {
+            b.block(0x1dd012);
             self.sprite_attempt_damage_to_link_plus_recoil(k);
-        }
-        if self.sprite_check_tile_collision(k) != 0 {
+        } else if in_x { b.taken(0x1dd010); }
+        b.block(0x1dd018);
+        b.block(0x1dd021);
+        let collision = self.sprite_check_tile_collision(k);
+        b.block(0x1dd024);
+        if collision != 0 {
+            b.block(0x1dd026);
             self.sprite_slot_view_mut(k).set_state(0);
-        }
+        } else { b.taken(0x1dd024); }
+        b.block(0x1dd029);
     }
 
     pub(super) fn complete_boulder_movement(
@@ -2767,11 +2793,15 @@ impl ZeldaState {
 
     // void Boulder_OutdoorsMain(int k) {  // 9dd02a
     pub(super) fn boulder_outdoors_main(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dd02a);
         self.sprite_slot_view_mut(k).set_object_priority(0x30);
         self.boulder_draw(k);
+        b.block(0x1dd032);
         if self.sprite_return_if_inactive(k) {
             return;
         }
+        b.block(0x1dd035);
         let value = self
             .sprite_slot_view(k)
             .subtype2()
@@ -2779,23 +2809,34 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_subtype2(value);
         // $1D:D03F JSR $1D:C211: both complete damage calls.
         self.sprite_check_damage_both_marked(k, 0x1dc211);
+        b.block(0x1dd042);
         self.sprite_move_xyz_bank(k, 0x1de95d);
+        b.block(0x1dd045);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         if sign8(self.sprite_slot_view(k).z()) {
+            b.block(0x1dd050);
             self.sprite_slot_view_mut(k).set_z(0);
             // ROM $1D:D053 -> $1D:8094 -> $06:E496
             let mut j = usize::from(self.sprite_check_tile_collision_long(k) != 0);
+            b.block(0x1dd056);
+            if j == 0 { b.taken(0x1dd05b); } else { b.block(0x1dd05d); }
+            b.block(0x1dd05e);
             self.sprite_slot_view_mut(k)
                 .set_z_velocity(BOULDER_Z_VELOCITIES[j] as u8);
             self.sprite_slot_view_mut(k)
                 .set_y_velocity(BOULDER_Y_VELOCITIES[j] as u8);
-            j += usize::from(self.get_random_number() & 1) * 2;
+            let random = self.get_random_number() & 1;
+            b.block(0x1dd06e);
+            if random == 0 { b.taken(0x1dd070); } else { b.block(0x1dd072); }
+            j += usize::from(random) * 2;
+            b.block(0x1dd074);
             self.sprite_slot_view_mut(k)
                 .set_x_velocity(BOULDER_X_VELOCITIES[j] as u8);
             self.sprite_slot_view_mut(k)
                 .set_direction(((j & 2) as u8).wrapping_sub(1));
             self.sprite_sfx_queue_sfx2_with_pan(k, 0xb);
-        }
+        } else { b.taken(0x1dd04e); }
+        b.block(0x1dd087);
     }
 
     // void Sprite_9C_Zoro(int k) {  // 9e9bc8

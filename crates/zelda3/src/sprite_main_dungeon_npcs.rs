@@ -2902,7 +2902,8 @@ impl ZeldaState {
         if self.cucco_do_movement_xy(k) != 0 {
             self.sprite_slot_view_mut(k).negate_x_velocity();
             self.sprite_slot_view_mut(k).negate_y_velocity();
-            self.sprite_move_xy(k);
+            // $06:A796 JSR $E92C after the inversion.
+            self.sprite_move_xy_marked(k, 0x06e93e);
             self.sprite_halve_speed_xy(k);
             self.sprite_halve_speed_xy(k);
             self.bawk_bawk(k);
@@ -2985,10 +2986,18 @@ impl ZeldaState {
     //   Sprite_MoveXY(k);
     //   return Sprite_CheckTileCollision(k);
     // }
-    fn cucco_do_movement_xy(&mut self, k: usize) -> u8 {
-        self.sprite_move_xy(k);
+    pub(super) fn cucco_do_movement_xy(&mut self, k: usize) -> u8 {
+        // $06:A6B7/$A6FF/$A7B8 fallthrough: complete three-instruction body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a7bb));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a7bb);
+        // $06:A7BB JSR $E92C: whole XY body, collision tail priced separately.
+        self.sprite_move_xy_marked(k, 0x06e93e);
         // ROM $06:A7BE JSL $06:E496
-        self.sprite_check_tile_collision_long(k)
+        b.block(0x06a7be);
+        let collision = self.sprite_check_tile_collision_long(k);
+        b.block(0x06a7c2);
+        collision
     }
 
     // ----- Smithy cluster -----------------------------------------------

@@ -12459,3 +12459,28 @@ Both final full census gates **PASS**, **1,473,123 iterations per lane**, unexpl
 All **48 crystal/pendant phases** remain within one frame and stable outcomes match. The retained **default 200k ledger matches all records and EOF**; default/ROM-timing accounting is unchanged. Both ordinary builds are warning-free; existing lib-test warnings remain separate. Default library: **2,650 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,185 pass / 0 fail / 2 ignored**. Both CPU SNES suites: **504 / 0 / 7**. Generator/worklist, routine-coverage and inverse tests, exact regeneration and `git diff --check` pass.
 
 All **1,512** supplied ledger/cache files retain size and mtime. Hashes, commands, disjoint suite manifests and `verification.json` bind this stop. Raw predictors/profiles were deleted after summaries; evidence is **210.0 MB**, below 3 GB. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, cache write, cargo fmt, commit/push or one-off repository script was used. The remaining owner worklist and independent per-routine causal isolation are unfinished.
+
+## Verified batch 40 on `codex/cost-pacing40` (main `3d102ee8`)
+
+**100 predicted / 100 actual ordinary-gameplay flips**, on the **same 100 iterations**: **38 in 07/00**, **62 in 09/00**. Pricing stopped at that target. Three additional 0F/00 flips bring the full ROM improvement to **103**; no new missing iterations appear. Evidence: `target/cost-pacing40/`.
+
+The requested fresh main predictor identifies **2,416 missing iterations**. Full-context before/after profiles reconcile every native total; they replace 53 context-dependent bounded rows. The retained batch-39 census remains the baseline. `owner-predictions.md` gives every raw-owner and admitted-marker prediction; `ranked-owners.json` retains the ranking and per-iteration shortfalls. Already charged drawing, velocity, ground, shadow, inactive and layer aliases receive no second price. Shared module/transition code and divergent ancilla predicates remain outside this batch.
+
+Complete ROM bodies/callers cover Cucco/guard movement, Deadrock, boulder control/drawing/Z motion, the guard's map16 probe, lightning/laser garnish allocation, and Stalfos drawing. The prepared Stalfos path prices its complete executed writer, leaving its skipped coordinate preparation unpriced. Call sites and RTS tables are ROM-checked. **115 blocks / 475 instructions** are added; all **1,230 existing rows are byte-identical**. Twelve new `assert_rom_marker_work` fixtures pass in both complete suites; reused movement bodies retain their existing fixtures. The width-independent `$1D:D018 SEP` join is fixture-covered. All prices are lagless-only markers selected by actual branches/loops, without fitted residuals, scene thresholds/multipliers/tables, or parent/child double charging.
+
+**7,617,748 new marker clocks** reconcile on every cohort iteration, with **zero scalar or attribution delta**. Independent admitted-owner flip predictions overlap: `$05:DF6C` 14; `$06:84E2` 12; `$1E:A488` 11; `$1D:C222` 9; `$06:E92C`, `$06:E93E`, `$1D:E98B`, `$1D:D185` 6 each; `$1D:E475` 5; `$1E:FF62` 2; `$06:E932`, `$06:F15C` 1 each; the other ten admitted owners 0. Their disjoint clocks predict the combined 100 flips, all observed. Source/marker receipts do not establish equivalent call sequences or physical NMI placement.
+
+Both final full census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero, every hold equal to P2. These are CPU logical gates, not continuous-route or exact A/V proof. Counts below are missing / excess / FP.
+
+| Lane / scope | Retained batch 39 | Batch 40 |
+| --- | ---: | ---: |
+| ROM full | 4352/0/0 | **4249/0/0** |
+| ROM 07/00 | 1489/0/0 | **1451/0/0** |
+| ROM 09/00 | 927/0/0 | **865/0/0** |
+| Live SPC full | 5052/593/132 | **4945/589/131** |
+| Live SPC 07/00 | 1489/106/19 | **1451/102/18** |
+| Live SPC 09/00 | 927/0/0 | **865/0/0** |
+
+All **48 crystal/pendant phases** remain within one; stable outcomes match batch 39. The **default 200k ledger matches all records and EOF**; default/ROM-timing accounting is unchanged. Zelda library pass/fail/ignored: **default 2666/1/3** (only the known spotlight failure), **reduced 2201/0/2**. Both ordinary builds are warning-free; the existing lib-test-only warning remains separate. Generator/worklist (9), routine coverage (4), shortfall (6), exact regeneration and `git diff --check` pass.
+
+All **1,512 supplied ledger/cache files** retain size and mtime. Complete test manifests, source/binary hashes, per-owner predictions, marker deltas and pruning hashes bind this stop. Large raw artifacts were deleted after summaries; evidence is below **3 GB**. No GPU run, Snes9x execution, oracle-cache write, cargo fmt, commit or push was used.

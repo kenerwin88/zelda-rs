@@ -63,7 +63,7 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_move_z_marked(&mut self, k: usize, entry: u32) {
-        // $06:E96C and $1E:FF62 are byte-identical complete Z movers.
+        // $06:E96C, $1E:FF62 and $1D:E98B are identical complete Z movers.
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
         let b = crate::cycle_ledger::blocks(self.lag_free);
         let delta = entry - 0x06e96c;
@@ -843,7 +843,9 @@ impl ZeldaState {
         let xyz = if entry == 0x1eff34 { 0x1eff1e } else { 0x1de948 };
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(xyz));
         crate::cycle_ledger::blocks(self.lag_free).block(xyz);
-        self.sprite_move_z(k);
+        // $1E:FF1E JSR $FF62 / $1D:E948 JSR $E98B: only the
+        // call opcode belongs to XYZ; the complete Z body is separate.
+        self.sprite_move_z_marked(k, if entry == 0x1eff34 { 0x1eff62 } else { 0x1de98b });
         self.sprite_move_xy_bank_body(k, entry, xyz + 3);
     }
 

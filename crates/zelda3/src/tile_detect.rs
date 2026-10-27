@@ -54,6 +54,10 @@ impl ZeldaState {
     /// The guard's forward probe reads the whole-map16 attribute table
     /// (`Overworld_ReadTileAttribute`) instead of the map8 catalog.
     pub(super) fn overworld_map16_tile_definition_at_location(&self, x: u16, y: u16) -> NativeTile {
+        // $0D:C2BA JSL $05:FAA2: complete map16 attribute lookup.
+        // The probe's caller marker includes only the JSL opcode.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05faa2));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05faa2);
         let map16 = self.overworld_map16_at_location(x, y);
         NativeTile::from_cartridge(self.asset_u8(164, usize::from(map16)))
     }

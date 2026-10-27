@@ -143,9 +143,15 @@ impl ZeldaState {
     //   Four large rotating tiles plus large shadow.
     // }
     pub(in crate::zelda_rtl) fn boulder_draw(&mut self, k: usize) {
+        // $1D:D02F JSR $D185: complete draw caller, excluding its children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd185));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dd185);
         let base = (((self.sprite_slot_view(k).subtype2() >> 3) & 3) as usize) * 4;
         self.sprite_draw_multiple(k, &BOULDER_DRAW_FRAMES[base..base + 4]);
+        b.block(0x1dd1a3);
         self.sprite_draw_large_shadow2(k);
+        b.block(0x1dd1a7);
     }
 
     // -----------------------------------------------------------------------

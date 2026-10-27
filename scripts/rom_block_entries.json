@@ -162,5 +162,22 @@
   {"entry": "01b758", "end": "01b759"},
   {"entry": "01b759", "end": "01b7ef", "m8": false, "x8": false},
   {"entry": "01b7ef", "end": "01b83e", "m8": false, "x8": false},
-  {"entry": "01fe41", "end": "01feac", "m8": false, "x8": false}
+  {"entry": "01fe41", "end": "01feac", "m8": false, "x8": false},
+  {"entry":"1dcfcb","end":"1dd018"},
+  {"entry":"1dd018","end":"1dd02a"},
+  {"entry":"1dd02a","end":"1dd088"},
+  {"entry":"1dd185","end":"1dd1a8"},
+  {"entry":"1de98b","end":"1de9ad"},
+  {"entry":"06a7bb","end":"06a7c3"},
+  {"entry":"05faa2","end":"05faca"},
+  {"entry":"1de475","end":"1de4c8"},
+  {"entry":"1ea488","end":"1ea4e7"},
+  {"entry":"06948a","end":"0694fa"},
+  {"entry":"069506","end":"0695c9"},
+  {"entry":"069559","end":"0695c9"},
+  {"entry":"06958f","end":"0695c9"},
+  {"entry":"05df78","end":"05dfe5"},
+  {"entry":"1e87f0","end":"1e87f5"},
+  {"entry":"1eae04","end":"1eae46"},
+  {"entry":"1eae4e","end":"1eaea4"}
 ]

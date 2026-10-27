@@ -761,11 +761,13 @@ impl ZeldaState {
         }
         if (self.sprite_slot_view(k).subtype() & 7) < 5 {
             if self.sprite_slot_view(k).wall_collision() == 0 {
-                self.sprite_move_xy(k);
+                // $05:C2A2 / $05:C2AA JSR $F9ED: complete same-bank XY.
+                self.sprite_move_xy_marked(k, 0x05fa00);
             }
             self.sprite_check_tile_collision(k);
         } else {
-            self.sprite_move_xy(k);
+            // $05:C2A2 / $05:C2AA JSR $F9ED: complete same-bank XY.
+                self.sprite_move_xy_marked(k, 0x05fa00);
         }
         true
     }

@@ -586,7 +586,7 @@ impl ZeldaState {
             return;
         };
         crate::cycle_ledger::charge(16 + 108);
-        self.sprite_draw_multiple_words_with_info_charged(k, src, info, true);
+        self.sprite_draw_multiple_words_with_info_charged(k, src, info, true, false);
         crate::cycle_ledger::charge(50 + 44);
     }
 
@@ -733,7 +733,30 @@ impl ZeldaState {
             }),
             info,
             false,
+            false,
         );
+    }
+
+    /// $1E:AE2E JSR $87F0 -> JSL $05:DF6C. This native entry reuses
+    /// prepared coordinates, so price only the complete executed draw loop
+    /// ($05:DF78..DFE4), not the skipped coordinate-preparation call/body.
+    pub(in crate::zelda_rtl) fn sprite_draw_multiple_prepared_marked(
+        &mut self, k: usize, src: &[DrawMultipleData], info: (u16, u16, u8),
+    ) {
+        let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87f0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e87f0);
+        {
+            let _body = self.lag_free.then(|| crate::cycle_ledger::routine(0x05df6c));
+            b.block(0x05df78); b.block(0x05df7a);
+            self.sprite_draw_multiple_words_with_info_charged(k,
+                src.iter().map(|e| DrawMultipleWordData {
+                    x: e.x as i16 as u16, y: e.y as i16 as u16,
+                    char_flags: e.char_flags, ext: e.ext,
+                }), info, false, true);
+            b.block(0x05dfe1); b.block(0x05dfe4);
+        }
+        b.block(0x1e87f4);
     }
 
     /// The Sprite_DrawMultiple entry loop. With `ledger`, each entry charges
@@ -748,7 +771,9 @@ impl ZeldaState {
         src: impl IntoIterator<Item = DrawMultipleWordData>,
         info: (u16, u16, u8),
         ledger: bool,
+        marked: bool,
     ) {
+        let b = crate::cycle_ledger::blocks(marked && self.lag_free);
         let (info_x, info_y, info_flags) = info;
         // r4 is always 0 in C's Sprite_PrepOamCoordOrDoubleRet (sprite.c:1843).
         let info_r4: u8 = 0;
@@ -784,6 +809,14 @@ impl ZeldaState {
                         + 540,
                 );
             }
+            b.block(0x05df83);
+            if y.wrapping_add(0x10) < 0x100 { b.taken(0x05dfa1); }
+            else { b.block(0x05dfa3); }
+            b.block(0x05dfa9);
+            if override_active { b.block(0x05dfb7); }
+            else { b.taken(0x05dfb5); }
+            b.block(0x05dfbd);
+            if !first { b.taken(0x05dfdf); }
             first = false;
             self.set_oam_helper0_at(oam, x, y, d as u8, (d >> 8) as u8, entry.ext);
             oam += 4;

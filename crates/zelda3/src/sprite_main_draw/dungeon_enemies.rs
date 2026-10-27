@@ -13,15 +13,24 @@ impl ZeldaState {
     //   sprite_main.c:21654.
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_stalfos_knight_head(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        // $1E:AE07 JSR $AE4E: full head writer, no separately charged children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1eae4e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eae4e);
         if self.sprite_slot_view(k).graphics() == 2 {
+            b.taken(0x1eae53); b.block(0x1eaea3);
             return;
         }
+        b.block(0x1eae55);
         let i = (self.sprite_slot_view(k).head_direction() & 3) as usize;
         let oam = self.game_state.oam.current_pointer_usize();
         let y = info
             .y
             .wrapping_add(self.sprite_slot_view(k).c() as u16)
             .wrapping_sub(12);
+        if y.wrapping_add(16) < 256 { b.taken(0x1eae81); }
+        else { b.block(0x1eae83); }
+        b.block(0x1eae88);
         self.set_oam_helper0_at(
             oam,
             info.x,
@@ -30,6 +39,7 @@ impl ZeldaState {
             info.flags | STALFOS_KNIGHT_HEAD_FLAGS[i],
             2,
         );
+        b.block(0x1eaea3);
     }
 
     // -----------------------------------------------------------------------
@@ -505,11 +515,17 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void StalfosKnight_Draw(int k) {  // 9eae04
     pub(in crate::zelda_rtl) fn stalfos_knight_draw(&mut self, k: usize) {
+        // $1E:AAB2 JSR $AE04: whole caller; prep/head/draw/shadow remain children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1eae04));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eae04);
         let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
+        b.block(0x1eae07);
         self.sprite_draw_stalfos_knight_head(k, &info);
+        b.block(0x1eae0a);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
@@ -517,7 +533,8 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 5;
-        self.sprite_draw_multiple_with_info(k, &STALFOS_KNIGHT_DRAW_FRAMES[base..base + 5], tuple);
+        self.sprite_draw_multiple_prepared_marked(k, &STALFOS_KNIGHT_DRAW_FRAMES[base..base + 5], tuple);
+        b.block(0x1eae31);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_sub(4));
@@ -531,6 +548,7 @@ impl ZeldaState {
             flags: info.flags,
         };
         self.sprite_draw_shadow_custom(k, &mut shadow_info, 18);
+        b.block(0x1eae45);
     }
 
     // -----------------------------------------------------------------------
