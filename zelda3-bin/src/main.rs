@@ -8,6 +8,8 @@
 mod asset_palette_commands;
 mod asset_source_dump_commands;
 mod audio_trace;
+#[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
+mod pcm_windows;
 mod developer_destinations;
 mod developer_modern_map;
 mod developer_room_commands;
@@ -218,6 +220,18 @@ fn main() {
     if args.get(1).map(String::as_str) == Some("--standalone-smoke") {
         run_standalone_smoke(&args[2..]);
         return;
+    }
+    if args.get(1).map(String::as_str) == Some("--render-audio-cpu") {
+        #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
+        {
+            pcm_windows::run(&args[2..]);
+            return;
+        }
+        #[cfg(not(all(feature = "parity-debug", feature = "rom-timing")))]
+        {
+            eprintln!("--render-audio-cpu requires parity-debug and rom-timing");
+            process::exit(2);
+        }
     }
     if args.get(1).map(String::as_str) == Some("--sram-smoke") {
         run_sram_smoke();
