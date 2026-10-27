@@ -1440,6 +1440,7 @@ impl ZeldaState {
     }
 
     pub(super) fn interrupt_nmi_audio_parts(&mut self) {
+        self.native_publish_apu_requests();
         self.trace_nmi_audio_inputs();
         let music_control = self.game_state.system_signals.music_control();
         // Cycle ledger, Interrupt_NMI music port ($00:80C9-$00:8100):

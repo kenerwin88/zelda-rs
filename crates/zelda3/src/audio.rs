@@ -23,7 +23,7 @@ const MSU_STATE_FINISHED_PLAYING: u8 = 1;
 const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 const AUDIO_SNAPSHOT_MAGIC: [u8; 4] = *b"Z3AU";
-const AUDIO_SNAPSHOT_VERSION: u16 = 8;
+const AUDIO_SNAPSHOT_VERSION: u16 = 9;
 const AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR: u16 = 1;
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
@@ -422,6 +422,8 @@ impl ModernAudioCommandQueue {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 struct ModernAudioRuntime {
     queue: ModernAudioCommandQueue,
+    lagless_sample_clock: crate::spc_driver_clock::LaglessSampleClock,
+    lagless_output_tail: [i16; 4],
     renderer: ModernAudioEngine,
     sequencer: ModernAudioSequencer,
     #[serde(default)]
@@ -689,7 +691,7 @@ impl ZeldaState {
     /// runtime state instead.
     pub fn zelda_audio_snapshot_bytes(&self) -> Vec<u8> {
         let (payload, has_oracle_sidecar) =
-            snapshot_state::encode_v8(&self.audio).expect("audio snapshot serialize failed");
+            snapshot_state::encode_v9(&self.audio).expect("audio snapshot serialize failed");
         let flags = if has_oracle_sidecar {
             AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
         } else {
@@ -735,7 +737,7 @@ impl ZeldaState {
                 return Err("audio snapshot header is truncated".to_string());
             }
             let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-            if !matches!(version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | AUDIO_SNAPSHOT_VERSION) {
+            if !matches!(version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | AUDIO_SNAPSHOT_VERSION) {
                 return Err(format!("unsupported audio snapshot version {version}"));
             }
             let flags = u16::from_le_bytes([bytes[6], bytes[7]]);
@@ -763,6 +765,14 @@ impl ZeldaState {
         };
         let restored = match version {
             AUDIO_SNAPSHOT_VERSION => {
+                let (state, has_oracle_sidecar) = snapshot_state::decode_v9(payload)?;
+                let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
+                if flag_has_sidecar != has_oracle_sidecar {
+                    return Err("audio snapshot oracle sidecar flag mismatch".to_string());
+                }
+                state
+            }
+            8 => {
                 let (state, has_oracle_sidecar) = snapshot_state::decode_v8(payload)?;
                 let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
                 if flag_has_sidecar != has_oracle_sidecar {
@@ -986,15 +996,14 @@ impl ZeldaState {
         if self.audio.modern.driver_clock.is_none() {
             self.audio.modern.queue.acknowledge_input();
         }
-        // The sequencer and SPC driver clock advance on the native 32 kHz DSP
-        // timeline (534 samples per 60 Hz frame). Hosts request one frame of
-        // audio at THEIR output rate (e.g. 735 @ 44.1 kHz, 801 @ 48 kHz);
-        // advancing the drivers by that raw count would speed music and
-        // acknowledgment timing up by rate/32000. Normalize exactly like the
-        // engine's mixer does: near-native windows advance verbatim, anything
-        // else advances one native frame, and the engine resamples its native
-        // mix to the requested output size.
-        let native_samples: u32 = {
+        // Hosts request output-rate samples (e.g. 735 at 44.1 kHz), while
+        // the SPC and mixer use native DSP pairs. Lagless retains fractional
+        // hardware field time across callbacks. The default path keeps its
+        // existing normalization: near-native windows advance verbatim and
+        // other output sizes advance one 534-pair native window.
+        let native_samples: u32 = if self.lag_free {
+            self.audio.modern.lagless_sample_clock.next_samples()
+        } else {
             let requested = samples.max(0) as usize;
             const NATIVE: usize = crate::game_output::AUDIO_INTERNAL_SAMPLES_PER_FRAME;
             if (400..=NATIVE).contains(&requested) {
@@ -1115,10 +1124,17 @@ impl ZeldaState {
             eprintln!("music_window events={frame:?}");
             eprintln!("music_window clock={:?}", self.zelda_spc_driver_clock_debug_summary());
         }
-        self.audio
-            .modern
-            .renderer
-            .render_frame(&frame, audio_buffer, samples, channels);
+        if self.lag_free && channels == 2 && samples > 0 {
+            let mut native = vec![0; native_samples as usize * 2];
+            self.audio.modern.renderer.render_frame(
+                &frame, &mut native, native_samples as i32, channels);
+            resample_lagless_callback(&native, audio_buffer, samples as usize,
+                &mut self.audio.modern.lagless_output_tail,
+                self.audio.modern.lagless_sample_clock.last_window());
+        } else {
+            self.audio.modern.renderer.render_frame(&frame, audio_buffer, samples, channels);
+        }
+
         if self.audio.msu_player.has_file && channels == 2 {
             self.msu_player_mix(audio_buffer, samples);
         }
@@ -1331,7 +1347,7 @@ impl ZeldaState {
 
     pub(super) fn native_lagless_song_upload_return(&self) -> Option<u64> {
         self.audio.modern.driver_clock.as_ref().map_or(Some(0), |clock|
-            clock.preview_lagless_song_upload_return())
+            clock.preview_lagless_song_upload_return(self.audio.modern.lagless_sample_clock.clone().next_samples()))
     }
 
     pub(super) fn native_song_upload_return(&self) -> Option<snes::CpuRasterPosition> {
@@ -1560,3 +1576,27 @@ mod tests;
 #[cfg(test)]
 #[path = "audio/conformance_tests.rs"]
 mod conformance_tests;
+
+/// Resample on the continuous fractional hardware clock, with two pairs of
+/// causal history. The interpolation phase is never reset at a callback, even
+/// when its native sample count changes. Two-pair latency avoids reading a
+/// future pair at the end of a window; no padding or dropped input is needed.
+fn resample_lagless_callback(native: &[i16], output: &mut [i16], pairs: usize,
+    tail: &mut [i16; 4], window: (u64, u64, u64)) {
+    let (phase, duration, denominator) = window;
+    let divisor = i128::from(denominator) * pairs as i128;
+    for pair in 0..pairs {
+        let position = i128::from(phase) * pairs as i128
+            + pair as i128 * i128::from(duration) - 2 * divisor;
+        let index = position.div_euclid(divisor) as isize;
+        let fraction = position.rem_euclid(divisor);
+        for channel in 0..2 {
+            let sample = |at: isize| if at < 0 { tail[((at + 2) * 2) as usize + channel] }
+                else { native[at as usize * 2 + channel] };
+            let left = i128::from(sample(index));
+            let right = i128::from(sample(index + 1));
+            output[pair * 2 + channel] = (left + (right - left) * fraction / divisor) as i16;
+        }
+    }
+    tail.copy_from_slice(&native[native.len() - 4..]);
+}

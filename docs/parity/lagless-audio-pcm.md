@@ -162,3 +162,52 @@ The ordinary capture build is **warning-free**, and `git diff --check` passes. T
 No runtime change was made, so the full seeded censuses and default 200k ledger comparison were **not rerun**. The supplied main ROM census **3,838 missing / 0 excess / 0 false positives** and the previously verified default 200k equality remain prior evidence, not fresh checks of a repair. Fresh continuous live-prefix pacing is **8,395 held versus 8,542 source lag NMIs**, with 250 masked callbacks; this is neither a seeded full-route live count nor a passing continuous gate. There are no before/after repair counts or boundary-regression claims because no repair was installed.
 
 `verification.json` binds the capture binary, source, plans, receipts and derived evidence. The original and producer captures honor the compare lock and disable video. Artifacts remain below **3 GB**. No GPU run, ledger write, oracle-cache write, cargo fmt, commit or push occurred. The next implementation must resolve general publication and live-poll ownership, test before/equality/after its timing boundary, and then run both seeded gates, the default 200k check and a fresh continuous live replay.
+
+## Live sound continuous 2
+
+Two general lagless mechanisms are implemented in the uncommitted working tree based on main `0f08d0f1`. Request publication now records each write to `$012C..$012F` at its cycle-ledger prefix, uses the existing P2 elapsed-clock rule (including refresh, interrupt/worker ownership and raster waits), and applies the write exactly once before the corresponding callback's NMI samples it. Equality advances to the next callback slot. Music, ambient, both SFX bytes, word setters, clears, and compatibility WRAM writes use the same path. Multiple writes within a slot retain last-write-wins behavior; a deadline beyond an iteration survives into the next one. No song ID, source lag count, oracle answer, or added callback delay selects a deadline. The existing SFX-consumer checkpoint clears only a request whose priced NMI has elapsed.
+
+### Continuous live frontier
+
+The final CPU-only replay uses recorded inputs/RNG, `--report 0 --live-apu-reads`, and no `--seed-every`. It completes 94,860 iterations, with **94,853 clean iterations, indices 0–94,852**. Ordinary WRAM, RNG, APU-read consumption and ordinary command comparisons remain clean. Its strict summary gate still **FAILS with seven song-state differences** after the next live divergence; this is not a full continuous pass.
+
+| Iteration | Mechanism and evidence | Status |
+| --- | --- | --- |
+| **94,848** | Premature command publication plus fixed-534 callback clock from continuous 1. The poll now reads live nonzero, matching source `$13`. | Fixed at this boundary; uninterrupted replay passes it. |
+| **94,853** | Remaining producer-prefix placement and poll-phase gap. Native reads zero; source still reads `$13`, then reads zero at 94,854. P2 places `$13` on callback **index 3 of five** in iteration 94,215, rather than the first callback. The original request was authored after its four held NMIs, with the port store in 94,216. Prefix pricing/observation is still insufficient for exact live timing. | Not fixed; no extra delay or forced poll answer was added. |
+
+`frontier-timing.json` retains the selected raw observations. Iteration 94,215 starts at native callback 102,844; its queues retain `$15` for callbacks 102,844–102,846 and first contain `$13` at **102,847**, then retain that command state at 102,848. Iteration 94,216 starts at 102,849. Repeated queue values are retained command state, not repeated producer stores. Native polls remain nonzero through 94,852. Evidence: `continuous.log`, `continuous-gate.log`, `continuous-timing.jsonl.zst`, `state-command/`, and `state-poll/`, all under `target/live-songend2/`.
+
+### Fractional callback clock and playback
+
+`LaglessSampleClock` accumulates the existing Snes9x ratio **15,664 / 328,125 SPC cycles per master clock**, divided by **32 SPC cycles per stereo pair**. It uses the existing non-interlace field clock: 357,368 master clocks, with the four-clock short scanline every other field. No callback rounds its duration independently. The long-term budget is **533.122002285714 stereo pairs per callback**, or **28.095927 fewer SPC cycles per callback** than the former 17,088-cycle budget. Upload-return forecasting peeks the same next window, without advancing the accumulator. Default/ROM-timed advancement retains its previous path.
+
+The hardware accumulator is **not an exact per-host oracle count reconstruction**. The retained PCM-verified capture contains 103,741 hosts: one 457-pair reset partial frame, 90,419 hosts with 533 pairs, 12,989 with 534, and **332 with 532**. Across hosts 1–103,740, the nominal field accumulator produces **55,306,076 pairs**, versus the oracle's **55,306,077**. Its cumulative difference stays between −2 and 0 pairs in that measured window; **95,623 / 103,740 individual host counts match**. Instruction-boundary callback jitter and the reset partial frame are not supplied by a field-duration accumulator. Thus the requested exact per-host proof remains unmet; no oracle counts were fed back into runtime scheduling. `clock-oracle-verification.json` records the source hash and complete error distributions. For the diagnosis’s specific **632-callback interval from 94,216 to 94,848**, the final native clock advances **336,933 pairs**, exactly the source interval’s count, instead of 337,488: the former **17,760-cycle clock excess is removed**.
+
+Stereo playback renders the actual 533/534-pair native window before resampling to the requested output size, including **735 pairs at 44.1 kHz**. Linear interpolation follows the continuous fractional clock and carries two previous pairs across callbacks, avoiding block padding, gaps and phase resets. Its causal history adds two native pairs of latency. At an unchanged callback rate, playback is **0.164419% slower**, pitch is **2.848821 cents lower**, and a passage takes **0.164690% longer** than the former fixed-534 path. This is a rate calculation and CPU output-continuity test, not an audio-device audition. Version-9 audio snapshots retain the fractional clock and interpolation history, preserve version-8 decoding, and the outer play checkpoint magic is bumped to `Z3RSPC27`.
+
+### Verification
+
+The final production build is warning-free. The **194 audio tests**, **16 pacing tests**, and the exact **two-million-callback accumulator test** pass. Boundary tests cover all four request latches before, at and after a hold boundary and verify one-shot consumption. Playback tests cross alternating native window sizes with a continuous ramp, checking stereo agreement and no boundary gap; snapshot tests verify the clock/history and subsequent output after restore. The library-test build reports **24 pre-existing unused-method warnings**; these were not suppressed.
+
+The final binary's default **200,000-frame ledger comparison passes every record and EOF**, including state, display, SRAM and audio hashes. The source ledger and oracle cache were read-only. No GPU run, `cargo fmt`, commit or push was performed.
+
+### Full seeded censuses
+
+Both final lanes complete **1,473,123 iterations** with **`PASS (unexplained=0, complete=True)`**. Each uses `--seed-every 2000` and recorded inputs/RNG. These gates permit the existing classified song/lag/polygon differences and do not supersede the continuous frontier above.
+
+| Measure | Before live, fresh retained baseline | After live | After ROM answers |
+| --- | ---: | ---: | ---: |
+| Missing holds | 4,535 | **4,477** | **3,838** |
+| Excess holds | 590 | **520** | **0** |
+| Zero-source-lag iterations with a native hold (FP) | 132 | **98** | **0** |
+| Held callbacks | 98,732 | 98,720 | 98,839 |
+| Masked callbacks | 5,119 | 5,126 | 5,145 |
+
+The ROM lane exactly retains the supplied main baseline of **3,838 missing / 0 excess / 0 FP**. Live missing holds fall by **58**, excess by **70**, and FP by **34**. The fresh measured before totals are 590 / 132 rather than the brief's approximate 596 / 133; the table uses the actual retained-binary capture. All held-frame decisions in the common clean prefix through iteration 94,847 are unchanged (`clean-prefix-hold-changes.json`).
+
+Evidence: `before-live-gate.log`, `after-{rom,live}-gate.log`, corresponding replay logs and predictor CSVs, and `census-totals.json`. The before binary was retained before building the repairs. The after gates, final continuous capture and final default-200k comparison use `final-zelda3`.
+
+The complete default library suite finishes with **2,693 passed / 1 known failure / 3 default-ignored tests**. The sole failure is `cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`, with the existing `Some(1047868)` versus `Some(170442)` assertion. `library-tests-final.log` retains the full result. No additional failure was hidden by the audio or pacing selections.
+
+The retained artifact set is about **0.65 GB** after removing build caches, and the temporary asset-input symlink is removed. Build intermediates briefly exceeded the requested 3 GB cap during compilation; they were pruned rather than retained. `verification.json` binds the final and baseline binaries, test executable, source patch, inputs, gates and reported limitations. All retained output is under `target/live-songend2/`.

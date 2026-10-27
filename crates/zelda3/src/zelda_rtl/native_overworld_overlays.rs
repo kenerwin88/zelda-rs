@@ -61,7 +61,7 @@ impl ZeldaState {
             if owned {continue;}
             match at {
                 0x11=>self.game_state.frame.set_submodule(v),
-                0x12d=>self.game_state.system_signals.set_ambient_sound_effect(v),
+                0x12d=>self.set_ambient_sound_effect(v),
                 0x17=>self.set_pending_nmi_subroutine(v),
                 0x710=>self.set_core_update_disable_flag(v),
                 _=>return Err(at),

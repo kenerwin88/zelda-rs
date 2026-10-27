@@ -160,7 +160,7 @@ use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 /// 23 (2026-10-23): inventory resources/equipment are authoritative owners;
 /// older checkpoints can contain native fields saved before deferred adoption.
 /// 24 (2026-10-23): save-progress records/runtime bytes are authoritative too.
-const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC26";
+const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC27";
 #[cfg(feature = "rom-timing")]
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
 #[cfg(feature = "rom-timing")]

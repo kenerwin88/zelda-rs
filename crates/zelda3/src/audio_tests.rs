@@ -977,7 +977,8 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
         ))
     );
 
-    let mut invalid_bank = snapshot.clone();
+    let (v8_payload, _) = snapshot_state::encode_v8(&state.audio).unwrap();
+    let mut invalid_bank = with_header(8, expected_flags, &v8_payload);
     *invalid_bank.last_mut().unwrap() = 0xff;
     assert!(restored
         .zelda_audio_restore_from_bytes(&invalid_bank)
@@ -1046,4 +1047,48 @@ fn spiral_stair_sound_reaches_the_spc_clock_only_after_nmi_sampling() {
     assert_eq!(state.game_state.system_signals.sound_effect_1(), 0);
     assert_ne!(state.zelda_audio_snapshot_bytes(), control.zelda_audio_snapshot_bytes(),
         "the sampled sound must reach the audio transport");
+}
+
+#[test]
+fn lagless_playback_resampling_keeps_boundary_history() {
+    let mut tail = [-2, -2, -1, -1];
+    let mut start = 0i16;
+    let mut previous = -2;
+    let mut clock = crate::spc_driver_clock::LaglessSampleClock::default();
+    for _ in 0..20 {
+        let count = clock.next_samples() as i16;
+        let native: Vec<i16> = (0..count).flat_map(|x| [start + x, start + x]).collect();
+        let mut output = vec![0; 735 * 2];
+        super::resample_lagless_callback(&native, &mut output, 735, &mut tail, clock.last_window());
+        for pair in output.chunks_exact(2) {
+            assert_eq!(pair[0], pair[1]);
+            assert!((0..=1).contains(&(pair[0] - previous)));
+            previous = pair[0];
+        }
+        start += count;
+    }
+}
+
+#[test]
+fn lagless_audio_snapshot_keeps_fractional_clock_and_output_history() {
+    let mut state = ZeldaState::new();
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    state.set_assets(&assets).unwrap();
+    state.set_lag_free(true);
+    let mut audio = vec![0; 735 * 2];
+    for _ in 0..7 { state.zelda_render_audio(&mut audio, 735, 2); }
+    let snapshot = state.zelda_audio_snapshot_bytes();
+    let mut resumed = ZeldaState::new();
+    resumed.set_lag_free(true);
+    resumed.zelda_audio_restore_from_bytes(&snapshot).unwrap();
+    for _ in 0..20 {
+        let mut other = vec![0; 735 * 2];
+        state.zelda_render_audio(&mut audio, 735, 2);
+        resumed.zelda_render_audio(&mut other, 735, 2);
+        assert_eq!(audio, other);
+        assert_eq!(state.audio.modern.lagless_sample_clock.last_window(),
+            resumed.audio.modern.lagless_sample_clock.last_window());
+        assert_eq!(state.audio.modern.lagless_output_tail, resumed.audio.modern.lagless_output_tail);
+    }
 }

@@ -30,8 +30,9 @@ pub(crate) struct NativePacing {
     record_closing_handler: bool,
     wait_wall: [u64; 3],
     predictions: [u32; 3],
-    early_sound: Option<[u8; 2]>,
-    late_sound: Option<[u8; 2]>,
+    apu_entry: [u8; 4],
+    apu_writes: Vec<(u32, usize, u8)>,
+    apu_callback: Option<u32>,
     finished_main: u64,
     finished_lag_worker: u64,
     main_dma: u64,
@@ -85,8 +86,12 @@ impl ZeldaState {
         self.native_pacing.worker_segments.clear();
         self.native_pacing.predictions = [0; 3];
         if self.lag_free { self.native_begin_bus_lease(); }
-        self.native_pacing.early_sound = None;
-        self.native_pacing.late_sound = None;
+        self.native_pacing.apu_entry = self.native_apu_latches();
+        // Preserve any stores whose P2 deadline lies beyond this iteration.
+        let consumed = self.native_pacing.apu_callback.take().unwrap_or(0);
+        for write in &mut self.native_pacing.apu_writes {
+            write.0 = write.0.saturating_sub(consumed);
+        }
     }
 
     pub(super) fn native_record_closing_handler(&mut self) {
@@ -261,22 +266,51 @@ impl ZeldaState {
         }
     }
 
-    /// Retain the queue consumed by an elapsed NMI before a later native
-    /// consumer inspects it. Delivery is published on the first callback;
-    /// commands queued by the remaining main suffix reach the final one.
+    fn native_apu_latches(&self) -> [u8; 4] {
+        let s = &self.game_state.system_signals;
+        [s.music_control(), s.ambient_sound_effect(), s.sound_effect_1(), s.sound_effect_2()]
+    }
+
+    fn native_restore_apu_latches(&mut self, values: [u8; 4]) {
+        self.set_music_control(values[0]);
+        self.set_ambient_sound_effect(values[1]);
+        self.set_sound_effect_1(values[2]);
+        self.set_sound_effect_2(values[3]);
+    }
+
+    /// Capture the producer's elapsed P2 clock, before semantic main runs on.
+    /// Equality belongs to the callback after the NMI boundary just crossed.
+    pub(crate) fn native_time_apu_request(&mut self, port: usize, value: u8) {
+        if !self.native_main_cost_active() { return; }
+        let elapsed = self.native_cost_elapsed(self.native_main_work())[2];
+        self.native_pacing.apu_writes.push(((elapsed / (1364 * 262)) as u32, port, value));
+    }
+
+    /// Replay latch stores once, immediately before the matching NMI samples
+    /// them. Multiple stores in one interval retain ordinary last-write wins.
+    pub(crate) fn native_publish_apu_requests(&mut self) {
+        let Some(callback) = self.native_pacing.apu_callback else { return; };
+        let mut values = self.native_apu_latches();
+        self.native_pacing.apu_writes.retain(|&(at, port, value)| {
+            if at <= callback { values[port] = value; false } else { true }
+        });
+        self.native_restore_apu_latches(values);
+        self.native_pacing.apu_callback = Some(callback + 1);
+    }
+
+    /// A native consumer after an elapsed NMI sees its one-shot SFX cleared.
+    /// The timed publication queue retains the earlier producer separately.
     pub(super) fn native_checkpoint_sound_queue(&mut self) {
-        if !self.native_pacing.accounting || self.native_pacing.song_upload
-            || self.native_pacing.early_sound.is_some() { return; }
-        let main = self.native_main_work();
-        if self.native_cost_elapsed(main)[2] < 1364 * 262 {
-            return;
+        if !self.native_pacing.accounting || self.native_pacing.song_upload { return; }
+        let crossed = (self.native_cost_elapsed(self.native_main_work())[2] / (1364 * 262)) as u32;
+        if crossed == 0 { return; }
+        for port in 2..4 {
+            let authored = self.native_pacing.apu_writes.iter().rev()
+                .find(|write| write.1 == port).map_or(0, |write| write.0);
+            if authored < crossed {
+                if port == 2 { self.set_sound_effect_1(0); } else { self.set_sound_effect_2(0); }
+            }
         }
-        let sounds = [self.game_state.system_signals.sound_effect_1(),
-            self.game_state.system_signals.sound_effect_2()];
-        self.native_pacing.early_sound = Some(sounds);
-        // $00:811E..812D transfers and clears these queues at every NMI.
-        self.set_sound_effect_1(0);
-        self.set_sound_effect_2(0);
     }
 
     pub fn native_cost_predictions(&self) -> [u32; 3] {
@@ -322,13 +356,8 @@ impl ZeldaState {
             (elapsed[i] / (1364 * 262)) as u32);
         // P2 includes the source refresh stalls and the generic raster barrier.
         self.native_pacing.pending = self.native_pacing.pending.max(self.native_pacing.predictions[2]);
-        if let Some(sounds) = self.native_pacing.early_sound.take() {
-            self.native_pacing.late_sound = Some([
-                self.game_state.system_signals.sound_effect_1(),
-                self.game_state.system_signals.sound_effect_2()]);
-            self.set_sound_effect_1(sounds[0]);
-            self.set_sound_effect_2(sounds[1]);
-        }
+        self.native_restore_apu_latches(self.native_pacing.apu_entry);
+        self.native_pacing.apu_callback = Some(0);
     }
 
     pub fn native_presentation_pending(&self) -> bool {
@@ -448,12 +477,6 @@ impl ZeldaState {
     /// repeat. Existing polygon lag phases already ran at the closing NMI.
     pub(super) fn run_native_held_frame(&mut self, input: u16) {
         self.native_pacing.pending -= 1;
-        if self.native_pacing.pending == 0 {
-            if let Some(sounds) = self.native_pacing.late_sound.take() {
-                self.set_sound_effect_1(sounds[0]);
-                self.set_sound_effect_2(sounds[1]);
-            }
-        }
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.capture_display_snapshot();
         self.interrupt_nmi(input, None, false);
@@ -509,6 +532,33 @@ fn advance_main_cost(main: u64, elapsed: u64, handler: u64, worker: u64, after_i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn all_apu_latches_publish_before_at_and_after_hold_boundary_once() {
+        for delta in [-1i64, 0, 1] {
+            for port in 0..4 {
+                let mut game = ZeldaState::default();
+                game.set_lag_free(true);
+                game.lag_free_frame_master_start = crate::cycle_ledger::master();
+                game.native_begin_main_cost();
+                game.native_pacing.entry_handler = 0;
+                game.native_pacing.entry_lag_handler = 0;
+                crate::cycle_ledger::charge((1324 * 262i64 + delta) as u64);
+                let mut values = [0; 4];
+                values[port] = 0x13;
+                game.native_restore_apu_latches(values);
+                crate::cycle_ledger::charge(400_000);
+                game.native_finish_main_cost();
+                for callback in 0..4 {
+                    game.native_publish_apu_requests();
+                    let delivery = if delta < 0 { 0 } else { 1 };
+                    assert_eq!(game.native_apu_latches()[port], if callback == delivery { 0x13 } else { 0 });
+                    game.native_restore_apu_latches([0; 4]);
+                }
+                assert!(game.native_pacing.apu_writes.is_empty());
+            }
+        }
+    }
 
     #[test]
     fn diagnostic_shortfall_is_the_first_clock_reaching_the_requested_hold() {

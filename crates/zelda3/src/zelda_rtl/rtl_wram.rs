@@ -155,6 +155,9 @@ impl ZeldaState {
     }
 
     pub(crate) fn write_wram_byte(&mut self, address: usize, value: u8) {
+        if (0x12c..=0x12f).contains(&address) {
+            self.native_time_apu_request(address - 0x12c, value);
+        }
         if !self.game_state.frame.write_owned_byte(address, value) && !self.game_state.system_signals.write_owned_byte(address, value) && !self.game_state.inventory.write_owned_byte(address, value) { self.ram[address] = value; }
     }
 

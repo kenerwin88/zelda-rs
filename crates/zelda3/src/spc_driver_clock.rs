@@ -38,8 +38,36 @@ const NMI_AUDIO_VCOUNTER: u64 = 225;
 // CPU-derived cycle gaps on the output callback clock.
 const NMI_AUDIO_NOMINAL_ENTRY_HCLOCK: u64 = 84;
 // Snes9x 1.63's NTSC main-CPU-to-APU conversion ratio.
-const SNES9X_APU_RATIO_NUMERATOR: u64 = 15_664;
-const SNES9X_APU_RATIO_DENOMINATOR: u64 = 328_125;
+const SNES9X_APU_RATIO_NUMERATOR: u64 = snes::snes9x_apu_clock::SNES9X_NTSC_APU_CLOCK_NUMERATOR as u64;
+const SNES9X_APU_RATIO_DENOMINATOR: u64 = snes::snes9x_apu_clock::SNES9X_NTSC_APU_CLOCK_DENOMINATOR as u64;
+/// Exact NTSC callback duration on the DSP sample lattice. The residue is
+/// retained across callbacks; rounding each field separately loses time.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LaglessSampleClock {
+    remainder: u64,
+    frame: u64,
+}
+
+impl LaglessSampleClock {
+    pub(crate) fn last_window(&self) -> (u64, u64, u64) {
+        let denominator = SNES9X_APU_RATIO_DENOMINATOR * APU_CYCLES_PER_DSP_SAMPLE;
+        let duration = (snes_frame_start_master_clock(self.frame)
+            - snes_frame_start_master_clock(self.frame - 1)) * SNES9X_APU_RATIO_NUMERATOR;
+        ((self.remainder + denominator - duration % denominator) % denominator, duration, denominator)
+    }
+
+    pub(crate) fn next_samples(&mut self) -> u32 {
+        const DEN: u64 = SNES9X_APU_RATIO_DENOMINATOR * APU_CYCLES_PER_DSP_SAMPLE;
+        let master = snes_frame_start_master_clock(self.frame + 1)
+            - snes_frame_start_master_clock(self.frame);
+        self.frame += 1;
+        self.remainder += master * SNES9X_APU_RATIO_NUMERATOR;
+        let samples = self.remainder / DEN;
+        self.remainder %= DEN;
+        samples as u32
+    }
+}
+
 const SMP_CPU_LOOKAHEAD_CYCLES: u64 = 19;
 // Main-CPU instruction paths through the ROM's $80:8888 LoadSongBank
 // routine, expressed in SNES master clocks. These are protocol timings, not
@@ -1073,7 +1101,7 @@ impl AbsoluteDspEventClock {
         transfer.timed_command = true;
         transfer.interleave_host_cpu = true;
         // Place the command on the continuous output clock. The callback
-        // index is not a physical field clock with the fixed 534-pair budget.
+        // index alone does not describe the continuous output clock.
         let master = apu_cycle_to_snes_master_clock(self.absolute_apu_cycle) + phase;
         transfer.mark_command_scheduled_at_master_clock(master);
         self.completed_song_bank_port_clear_master_clock = None;
@@ -1082,10 +1110,10 @@ impl AbsoluteDspEventClock {
             snes_master_clock_to_apu_cycle(master), 0, 0xff));
     }
 
-    pub(crate) fn preview_lagless_song_upload_return(&self) -> Option<u64> {
-        let end = self.absolute_apu_cycle + 534 * APU_CYCLES_PER_DSP_SAMPLE;
+    pub(crate) fn preview_lagless_song_upload_return(&self, samples: u32) -> Option<u64> {
+        let end = self.absolute_apu_cycle + u64::from(samples) * APU_CYCLES_PER_DSP_SAMPLE;
         let mut preview = self.clone();
-        preview.advance_lagless(Default::default(), 534, 0);
+        preview.advance_lagless(Default::default(), samples, 0);
         let clear = preview.completed_song_bank_port_clear_master_clock?;
         // $00:88FF PLP/RTS, $8923 CLI/RTL and caller LDA/STA $4200.
         let restored = advance_snes_cpu_master_clock(clear, 174);
@@ -1418,7 +1446,7 @@ fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4]
 fn lagless_host_port_target_cycles(frame_index: u64, writes: HostPortWrites, entry: u64) -> [u64; 4] {
     // Keep the CPU path and the fractional CPU->SPC conversion phase. Only
     // translate the batch's epoch: one accepted lagless NMI belongs to this
-    // callback's output clock (534 pairs), regardless of physical field drift.
+    // callback's continuous output clock.
     // `entry` is at or ahead of execution; no individual store is clamped.
     let master = snes_frame_start_master_clock(frame_index.saturating_sub(1))
         + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE
@@ -1744,5 +1772,23 @@ mod tests {
 
         assert_eq!(common[1] - ambient[1], 4);
         assert!(ambient.windows(2).skip(1).all(|pair| pair[0] < pair[1]));
+    }
+}
+
+#[cfg(test)]
+mod lagless_sample_clock_tests {
+    use super::*;
+
+    #[test]
+    fn accumulator_matches_exact_hardware_ratio_for_two_million_callbacks() {
+        let mut clock = LaglessSampleClock::default();
+        let mut total = 0u64;
+        for host in 1..=2_000_000u64 {
+            let count = clock.next_samples();
+            assert!((533..=534).contains(&count));
+            total += u64::from(count);
+            assert_eq!(total, snes_frame_start_master_clock(host) * SNES9X_APU_RATIO_NUMERATOR
+                / (SNES9X_APU_RATIO_DENOMINATOR * 32));
+        }
     }
 }

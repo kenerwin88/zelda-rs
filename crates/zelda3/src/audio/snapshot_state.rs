@@ -246,6 +246,8 @@ impl ModernAudioRuntimeV7 {
 
     fn into_current(self) -> ModernAudioRuntime {
         ModernAudioRuntime {
+            lagless_sample_clock: Default::default(),
+            lagless_output_tail: [0; 4],
             queue: self.queue.into_current(),
             renderer: self.renderer,
             sequencer: self.sequencer,
@@ -299,12 +301,41 @@ impl CompactModernAudioStateSnapshotV7 {
     }
 }
 
+// Preserve the version-8 wire layout when adding callback clock/history.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ModernAudioRuntimeV8 {
+    queue: ModernAudioCommandQueue,
+    renderer: ModernAudioEngine,
+    sequencer: ModernAudioSequencer,
+    driver_clock: Option<crate::spc_driver_clock::AbsoluteDspEventClock>,
+    sample_bank_id: u8,
+    sample_bank_generation: u32,
+}
+
+impl ModernAudioRuntimeV8 {
+    fn capture(runtime: &ModernAudioRuntime) -> Self {
+        Self {
+            queue: runtime.queue.clone(), renderer: runtime.renderer.clone(),
+            sequencer: runtime.sequencer.clone(), driver_clock: runtime.driver_clock.clone(),
+            sample_bank_id: runtime.sample_bank_id, sample_bank_generation: runtime.sample_bank_generation,
+        }
+    }
+    fn into_current(self) -> ModernAudioRuntime {
+        ModernAudioRuntime {
+            queue: self.queue, renderer: self.renderer, sequencer: self.sequencer,
+            driver_clock: self.driver_clock, sample_bank_id: self.sample_bank_id,
+            sample_bank_generation: self.sample_bank_generation,
+            lagless_sample_clock: Default::default(), lagless_output_tail: [0; 4],
+        }
+    }
+}
+
 /// Version-8 payload persists VWF command-publication metadata alongside the
 /// audio queue so checkpoint continuation cannot separate the marker from its
 /// command batch.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CompactModernAudioStateSnapshotV8 {
-    modern: ModernAudioRuntime,
+    modern: ModernAudioRuntimeV8,
     legacy_compatibility: LegacyAudioCompatibilityState,
     volume_transition_step_float: [f32; 4],
     volume_transition_target_float: [f32; 4],
@@ -317,7 +348,7 @@ struct CompactModernAudioStateSnapshotV8 {
 impl CompactModernAudioStateSnapshotV8 {
     fn capture(state: &AudioState) -> Self {
         Self {
-            modern: state.modern.clone(),
+            modern: ModernAudioRuntimeV8::capture(&state.modern),
             legacy_compatibility: state.legacy_compatibility,
             volume_transition_step_float: state.volume_transition_step_float,
             volume_transition_target_float: state.volume_transition_target_float,
@@ -330,7 +361,7 @@ impl CompactModernAudioStateSnapshotV8 {
 
     fn into_audio_state(self) -> AudioState {
         AudioState {
-            modern: self.modern,
+            modern: self.modern.into_current(),
             legacy_compatibility: self.legacy_compatibility,
             volume_transition_step_float: self.volume_transition_step_float,
             volume_transition_target_float: self.volume_transition_target_float,
@@ -579,21 +610,54 @@ pub(super) fn decode_v4(payload: &[u8]) -> Result<(AudioState, bool), String> {
     Ok((state, has_oracle_sidecar))
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AudioSnapshotV9 {
+    previous: AudioSnapshotV8,
+    clock: crate::spc_driver_clock::LaglessSampleClock,
+    output_tail: [i16; 4],
+}
+
+impl AudioSnapshotV9 {
+    fn capture(state: &AudioState) -> Result<Self, String> {
+        Ok(Self {
+            previous: AudioSnapshotV8 {
+                modern: CompactModernAudioStateSnapshotV8::capture(state),
+                oracle_sidecar: capture_oracle_sidecar(state)?,
+                sample_bank_id: state.modern.renderer.sample_bank_id(),
+                sequencer_backend: SnapshotSequencerBackend::Native,
+            },
+            clock: state.modern.lagless_sample_clock.clone(),
+            output_tail: state.modern.lagless_output_tail,
+        })
+    }
+}
+
+pub(super) fn encode_v9(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
+    let snapshot = AudioSnapshotV9::capture(state)?;
+    let sidecar = snapshot.previous.oracle_sidecar.is_some();
+    Ok((bincode::serialize(&snapshot).map_err(|e| e.to_string())?, sidecar))
+}
+
+pub(super) fn decode_v9(payload: &[u8]) -> Result<(AudioState, bool), String> {
+    let snapshot: AudioSnapshotV9 = bincode::deserialize(payload).map_err(|e| e.to_string())?;
+    let old = bincode::serialize(&snapshot.previous).map_err(|e| e.to_string())?;
+    let (mut state, sidecar) = decode_v8(&old)?;
+    state.modern.lagless_sample_clock = snapshot.clock;
+    state.modern.lagless_output_tail = snapshot.output_tail;
+    Ok((state, sidecar))
+}
+
 impl serde::Serialize for AudioState {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        AudioSnapshotV8 {
-            modern: CompactModernAudioStateSnapshotV8::capture(self),
-            oracle_sidecar: capture_oracle_sidecar(self).map_err(serde::ser::Error::custom)?,
-            sample_bank_id: self.modern.renderer.sample_bank_id(),
-            sequencer_backend: SnapshotSequencerBackend::Native,
-        }
+        AudioSnapshotV9::capture(self).map_err(serde::ser::Error::custom)?
         .serialize(serializer)
     }
 }
 
 impl<'de> serde::Deserialize<'de> for AudioState {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let snapshot = AudioSnapshotV8::deserialize(deserializer)?;
+        let v9 = AudioSnapshotV9::deserialize(deserializer)?;
+        let snapshot = v9.previous;
         let sample_bank_id = snapshot.sample_bank_id;
         if !crate::modern_sample_bank::is_valid_bank(sample_bank_id) {
             return Err(serde::de::Error::custom(format!(
@@ -606,6 +670,8 @@ impl<'de> serde::Deserialize<'de> for AudioState {
             ));
         }
         let mut state = snapshot.modern.into_audio_state();
+        state.modern.lagless_sample_clock = v9.clock;
+        state.modern.lagless_output_tail = v9.output_tail;
         restore_v8_renderer_sample_bank_identity(&mut state, sample_bank_id);
         restore_oracle_sidecar(
             state,

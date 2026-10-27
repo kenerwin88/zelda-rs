@@ -777,8 +777,8 @@ impl ZeldaState {
                 0x10c => self.game_state.frame.set_saved_module_for_menu(v),
                 0x10a => self.game_state.system_signals.set_game_over_check_flag(v),
                 0x4aa => self.game_state.system_signals.set_restart_check_flag(v),
-                0x12d => self.game_state.system_signals.set_ambient_sound_effect(v),
-                0x12e => self.game_state.system_signals.set_sound_effect_1(v),
+                0x12d => self.set_ambient_sound_effect(v),
+                0x12e => self.set_sound_effect_1(v),
                 0xa0..=0xa1 => { assert!(self.game_state.world.write_entrance_byte(at, v)); }
                 0x223 => self.game_state.world.transient.tile_interaction_shared_flag = v,
                 0xaa4 => self.game_state.world.palette_theme.set_misc_sprites_graphics_index(v),

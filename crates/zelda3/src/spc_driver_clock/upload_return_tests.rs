@@ -309,7 +309,7 @@ fn lagless_upload_forecast_uses_the_return_suffix_and_does_not_retire_the_receiv
     transfer.next_host_access_master_clock = Some(1000);
     clock.song_bank_transfer = Some(transfer);
     let before = bincode::serialize(&clock).unwrap();
-    assert_eq!(clock.preview_lagless_song_upload_return(),
+    assert_eq!(clock.preview_lagless_song_upload_return(534),
         Some(advance_snes_cpu_master_clock(1090, 174)));
     assert_eq!(bincode::serialize(&clock).unwrap(), before);
     assert!(clock.song_bank_transfer.is_some());
@@ -321,9 +321,9 @@ fn lagless_upload_forecast_uses_the_return_suffix_and_does_not_retire_the_receiv
     let end = 534 * APU_CYCLES_PER_DSP_SAMPLE;
     let master_end = apu_cycle_to_snes_master_clock(end);
     clock.completed_song_bank_port_clear_master_clock = Some(master_end);
-    assert_eq!(clock.preview_lagless_song_upload_return(), None);
+    assert_eq!(clock.preview_lagless_song_upload_return(534), None);
     clock.completed_song_bank_port_clear_master_clock = Some(master_end - 1000);
-    assert!(clock.preview_lagless_song_upload_return().is_some());
+    assert!(clock.preview_lagless_song_upload_return(534).is_some());
 }
 
 

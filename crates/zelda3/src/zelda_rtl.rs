@@ -12105,12 +12105,14 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_ambient_sound_effect(&mut self, value: u8) {
+        self.native_time_apu_request(1, value);
         self.system_signals_mut().set_ambient_sound_effect(value);
     }
 
     #[track_caller]
     pub(crate) fn set_sound_effect_1(&mut self, value: u8) {
         crate::types::ww_check(0x12e, 1, "sound_effect_1", u32::from(value));
+        self.native_time_apu_request(2, value);
         self.system_signals_mut().set_sound_effect_1(value);
     }
 
@@ -12131,6 +12133,7 @@ impl ZeldaState {
                 caller.line(),
             );
         }
+        self.native_time_apu_request(3, value);
         self.system_signals_mut().set_sound_effect_2(value);
     }
 
@@ -12139,23 +12142,29 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_sound_effect_1_word(&mut self, value: u16) {
+        self.native_time_apu_request(2, value as u8);
+        self.native_time_apu_request(3, (value >> 8) as u8);
         self.system_signals_mut().set_sound_effect_1_word(value);
     }
 
     pub(crate) fn set_ambient_sound_effect_word(&mut self, value: u16) {
-        self.system_signals_mut()
-            .set_ambient_sound_effect_word(value);
+        self.native_time_apu_request(1, value as u8);
+        self.native_time_apu_request(2, (value >> 8) as u8);
+        self.system_signals_mut().set_ambient_sound_effect_word(value);
     }
 
     pub(crate) fn clear_sound_effect_1(&mut self) {
+        self.native_time_apu_request(2, 0);
         self.system_signals_mut().clear_sound_effect_1();
     }
 
     pub(crate) fn clear_sound_effect_2(&mut self) {
+        self.native_time_apu_request(3, 0);
         self.system_signals_mut().clear_sound_effect_2();
     }
 
     pub(crate) fn clear_ambient_sound_effect(&mut self) {
+        self.native_time_apu_request(1, 0);
         self.system_signals_mut().clear_ambient_sound_effect();
     }
 

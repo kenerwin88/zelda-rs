@@ -6,6 +6,7 @@ use super::*;
 
 impl ZeldaState {
     pub(crate) fn set_music_control(&mut self, value: u8) {
+        self.native_time_apu_request(0, value);
         self.system_signals_mut().set_music_control(value);
     }
 
