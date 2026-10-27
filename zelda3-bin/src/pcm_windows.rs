@@ -156,6 +156,10 @@ fn original(args: &[String]) -> Result<()> {
     let plan: Plan = serde_json::from_slice(&fs::read(debug_env::var_os("ZELDA3_DEBUG_PCM_WINDOWS")
         .ok_or("missing capture plan")?)?)?;
     let mut capture = NoteCapture::open(&plan)?;
+    // Sparse bus receipts share the PCM selection, but retain the core's raw
+    // cycle/phase fields so command arrival and gameplay polls can be compared
+    // without rounding either boundary to a callback or an output sample.
+    let mut ports = create(plan.output.join("ports.jsonl"))?;
     let frames: u32 = args[3].parse()?;
     // Conservative exclusive lock, even though this mode never renders.
     let _lock = crate::oracle_lock::acquire_snes9x_compare_lock_mode(true);
@@ -187,6 +191,14 @@ fn original(args: &[String]) -> Result<()> {
             return Err(format!("original PCM mismatch at {host}").into());
         }
         let raw = core.debug_dsp_register_writes().ok_or("core lacks DSP register trace")?;
+        if plan.ranges.iter().any(|[lo, hi]| (*lo..=*hi).contains(&host)) {
+            let cpu = core.debug_apu_port_writes_exact()?.ok_or("core lacks APUI trace")?;
+            let smp = core.debug_smp_output_port_writes_exact()?.ok_or("core lacks SMP port trace")?;
+            serde_json::to_writer(&mut ports, &serde_json::json!({
+                "host": host, "sample": capture.samples, "cpu": cpu, "smp": smp
+            }))?;
+            ports.write_all(b"\n")?;
+        }
         // The pinned buffer holds 1024 writes; a full buffer is ambiguous.
         if raw.len() >= 1024 { return Err("DSP trace capacity reached".into()); }
         let writes: Vec<_> = raw.iter().map(|w| (capture.samples as i64 + i64::from(w.output_sample),
@@ -198,6 +210,7 @@ fn original(args: &[String]) -> Result<()> {
             }), &writes, &audio, true)?;
         if host % 10000 == 0 { eprintln!("original host={host} seconds={:.1}", started.elapsed().as_secs_f64()); }
     }
+    ports.flush()?;
     capture.finish(true, serde_json::json!({"oracle_eof": ledger.next().is_none(),
         "core_sha256": manifest["cache_identity"]["core_sha256"], "seconds": started.elapsed().as_secs_f64()}))
 }

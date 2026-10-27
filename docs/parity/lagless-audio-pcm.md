@@ -112,3 +112,53 @@ python3 scripts/lagless_audio_notes.py "$OUTPUT/original-full" "$OUTPUT/live-ful
 ```
 
 Existing capture files are not overwritten. Disk was checked before long runs; this study remains under **3 GB**. No GPU run, live video comparison, cached-av execution, oracle-cache write, ledger modification, `cargo fmt`, commit or push was performed.
+
+## Live sound continuous 1
+
+**Verified diagnosis stop at main `f4e5641b`, branch `codex/live-songend1`; no runtime fix.** Cold replay uses recorded inputs/RNG, `--live-apu-reads`, and no `--seed-every`. It reproduces the first live divergence at **94,848**. The clean prefix contains 94,848 iterations (last clean index **94,847**); the diagnostic run completes 94,857 iterations and its required census gate **FAILS with nine song-state comparisons**. No later live frontier is claimed. Evidence is under `target/live-songend1/`, principally `diagnosis.json`, `recorder-verification.json`, `native-timing.jsonl.zst`, `native.log`, and `original/ports.jsonl`.
+
+| Live divergence | Mechanism | Fix | Furthest continuous live result |
+| --- | --- | --- | --- |
+| **94,848**, `$07/$00`, room `$00C8`; native song poll zero versus original `$13` | **Class 5, premature publication during held item-receipt work**, plus different callback-clock and poll phases. Native has given the song 100,782 more SPC cycles when this poll reads its acknowledgement. | None. A general publication/observation phase repair remains required; no fitted delay, forced answer, or song exception was added. | **94,847 clean**; diagnostic execution through **94,856**. |
+
+### Absolute SPC measurements
+
+The pinned renderless Snes9x capture matches **103,741 consecutive original PCM hashes**, covering **55,306,534 stereo pairs**. Independent reconstruction verifies every emitted edge against raw DSP writes: original **8,566,550 writes**, native counts in `recorder-verification.json`. Both lanes start cold; no SPC checkpoint initializes either capture. Sparse CPU APUI and SMP output-port receipts were added to the existing original-audio capture harness, sharing its selected PCM ranges and fail-closed trace-capacity checks. Gameplay, pricing and audio runtime source are unchanged.
+
+All coordinates below are **absolute SPC cycles**, not callback counts or milliseconds. Original CPU receipt cycles are reconstructed from the cumulative output sample count and the core's `apu_cycle_after`. The DSP sample counter increments after phase 27: subtract 32 at raw phases **28–31**. This mapping independently reproduces **all 4,217** absolute SMP output-store timestamps in the window, including phases 27, 28 and 29. Native note timestamps are `sample * 32 + phase`; their SPC rebase origin is retained separately in the instruction trace.
+
+| Event | Original absolute SPC cycle | Native absolute SPC cycle | Original since command | Native since command |
+| --- | ---: | ---: | ---: | ---: |
+| `$13` CPU-to-SPC port write | 1,758,669,007 | 1,757,415,403 | 0 | 0 |
+| Driver output port 0 becomes zero | 1,769,555,263 | 1,768,298,319 | 10,886,256 | 10,882,916 |
+| Final all-voice KOFF | 1,769,555,344 | 1,768,298,400 | 10,886,337 | 10,882,997 |
+| Poll at logical iteration 94,848 | 1,769,453,260 | 1,768,300,438 | 10,784,253 | 10,885,035 |
+
+The native poll reads the acknowledged state from the preceding audio callback: its output cursor is **1,768,300,416**, with actual SPC execution **22 cycles ahead**, at 1,768,300,438. It does not advance to a timed CPU bus read in lagless mode. The original reads `$2140` at `$08:C400`, host **103720**, **V0/H218**; its receipt places the chip at 1,769,453,260. The native zero-store cycle comes from `state-poll/0-spc.txt`: `$08E5 MOV $00F4+X,A`, `X=A=0`, starts at 1,768,298,313 and stores on the final cycle of its `[4,1,1]` sequence. Both chips emit the final KOFF exactly **81 cycles after the zero store**.
+
+### Which term differs
+
+The apparent early song end is dominated by **early command arrival relative to the logical CPU work**, rather than a song shortened by six callbacks. Iteration **94,215** consumes **five callbacks / four holds** on the native side. Its first callback, **102845**, already delivers `$13`; all five native callback queues contain the new song. Original callbacks **103083–103087** still deliver the old command state. A separate cold, PCM-verified `wram,nmi` trace shows the request latch `$012C=$13` authored only at **host 103087, V235/H76, `$09:88B7`**, after those held NMIs. The actual original port store follows at **host 103088, V225/H530, `$00:80F6`**, in iteration **94,216**. The earlier observation of 633 callbacks and zero holds from 94,216 through 94,848 therefore began **after** the premature native publication.
+
+The native producer is `misc.rs::complete_ancilla_add_item_receipt`, after graphics work in `ancilla_add_item_receipt_from`; `rtl_native_pacing.rs` publishes the completed semantic main state before playing its presentation holds. Its sound checkpoint handles selected SFX queues, not a general timed music-command publication. A repair must preserve the source producer phase across graphics/caller suspension and NMI, including one-shot delivery on resume; simply moving every song to the last callback has not been justified.
+
+Normalize both clocks at the start of logical iteration 94,216, then compare command-to-poll intervals:
+
+| Contribution to native extra song time at poll | SPC cycles |
+| --- | ---: |
+| Command publication phase: native −85,397 versus original +47 from that boundary | **+85,444** |
+| Callback clock over the same logical span: native 10,799,616 versus original 10,781,856 | **+17,760** |
+| Poll observation phase: native +22 versus original +2,444 | **−2,422** |
+| **Total**, independently equal to 10,885,035 − 10,784,253 | **+100,782** |
+
+The native lane advances a fixed **534 pairs per callback**; the original emits its actual variable sample counts. This clock contribution is distinct from the SPC timer/driver tempo. The song's command-to-final-KOFF interval differs by only **−3,340 cycles**, below two 2,048-cycle driver timer periods. That residual initial/timer/instruction phase has not been fully attributed and is not claimed exact.
+
+Both captures contain **221 KON voice edges** over the song window, with identical **per-voice ordered SRCN and pitch sequences**: counts by voice are **31, 18, 31, 31, 31, 31, 23, 25**. Cross-voice ordering sometimes differs; `per-voice-onsets.json` retains the comparison. There is no extra/missing KON in these per-voice sequences and no evidence of a sustained tempo-rate error large enough to explain the boundary. This does not assert identical mixed PCM, note envelopes, pitch contours, or sample RAM. The source poll is **102,003 cycles before** its zero store; the native poll is **2,119 cycles after** its zero store.
+
+### Verification and limits
+
+The ordinary capture build is **warning-free**, and `git diff --check` passes. The asset-backed audio library selection passes **192 tests**. Its first invocation ran before the required root asset link existed and failed eight missing-file fixtures; the corrected run is `audio-tests-assets.log`. The library test build also reports existing unused-method warnings; those were not changed or suppressed. The temporary asset link was removed after testing.
+
+No runtime change was made, so the full seeded censuses and default 200k ledger comparison were **not rerun**. The supplied main ROM census **3,838 missing / 0 excess / 0 false positives** and the previously verified default 200k equality remain prior evidence, not fresh checks of a repair. Fresh continuous live-prefix pacing is **8,395 held versus 8,542 source lag NMIs**, with 250 masked callbacks; this is neither a seeded full-route live count nor a passing continuous gate. There are no before/after repair counts or boundary-regression claims because no repair was installed.
+
+`verification.json` binds the capture binary, source, plans, receipts and derived evidence. The original and producer captures honor the compare lock and disable video. Artifacts remain below **3 GB**. No GPU run, ledger write, oracle-cache write, cargo fmt, commit or push occurred. The next implementation must resolve general publication and live-poll ownership, test before/equality/after its timing boundary, and then run both seeded gates, the default 200k check and a fresh continuous live replay.
