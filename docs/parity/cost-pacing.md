@@ -12869,3 +12869,98 @@ Both full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplai
 All **48 crystal/pendant phases** remain within one; stable outcomes match load batch 5. The **default 200k ledger matches every record and EOF**. Both ordinary builds are warning-free; existing lib-test warnings remain separate. Default library pass/fail/ignored: **2,699/1/3**, only the known spotlight failure. Reduced: **2,234/0/2**. Both CPU SNES libraries: **504/0/7**. Block/worklist, routine-coverage, inverse, exact regeneration and diff checks pass.
 
 The refreshed worklist retains **2,240 missing gameplay iterations**. All **1,512 supplied ledger/cache files** retain size and mtime, with none added. Large raw profiles and predictors were summarized, hashed and deleted; retained evidence is about **244 MB**, below 3 GB. No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test, oracle-cache write, cargo fmt, commit/push or scratch repository script was used.
+
+## Systematic gap audit 1
+
+On `codex/gap-audit1`, main `c6ab27c3`: **a smaller systematic omission is real: P2 omitted refresh during its opening and repeated lag handlers.** The general correction restores **207 ROM holds**, including **18 in 07/00 and 13 in 09/00**. Most of the ordinary-gameplay gap remains in main instruction accounting. No dominant missing per-access or per-line price was identified. Evidence: `target/gap-audit1/`.
+
+The fresh main cohort contains **2,273 missing gameplay iterations** (1,433 dungeon, 840 overworld). The supplied batch-42 survivor cohort is a separate, retained **2,240-row** measurement: its lower median inverse is **17,606**, lower 90th percentile **37,988** clocks. Its conventional interpolated median is 17,622. Batch 42's **35 restored frames are not in this branch or its before/after results**. `decomposition.json` keeps current-main, current-main-on-survivor-IDs, and actual retained batch-42 values separate.
+
+### Source and native components
+
+Retained source structural/routine hashes match batch 10's receipts. Every source and native exclusive routine sum reconciles to its independent main counter on all 2,273 rows. The following table uses the frozen current-main missing population; clocks are master clocks, and the native column is before the correction.
+
+| Main-interval component | Source | Native |
+| --- | ---: | ---: |
+| Instructions | 729,268,968 | 659,453,400 |
+| Refresh | 22,743,160 | 20,588,200 |
+| Main DMA | 0 | 0 |
+| HDMA | 22,145,596 | 20,509,484 |
+| Raster waits / polling | 0 | 0 |
+| Main interval | 774,157,724 | 700,551,084 |
+
+The **73,606,640-clock** main-interval gap contains **69,815,568 instruction clocks (94.85%)**, 2,154,960 refresh clocks and 1,636,112 HDMA clocks. Source interrupt-refresh ambiguity counts are zero, so these main HDMA residuals are exact. Refresh and HDMA run over different amounts of source/native work; their differences are not independent missing prices. On the actual retained batch-42 survivors, the corresponding main gap is **69,442,622**, including **65,877,622 instruction clocks**.
+
+For complete interrupt decomposition, the existing CPU-only `logical_frame_ledger` example now has opt-in `ZELDA3_LEDGER_TIMING_AUDIT=1`, using the existing `ZELDA3_LEDGER_PROFILE` selection. It splits instruction and interrupt-entry transactions at their receipt timestamp and tracks main, opening NMI, lag NMI, IRQ, polygon and idle ownership, refresh, DMA requests, memory accesses and ROM/WRAM read bytes. Idle wait-loop CPU work is excluded from active iteration time. No duration is inferred from host widths or NMI-return scanlines.
+
+Fresh reset-driven source runs cover **273 selected iterations: 9 missing, 6 correctly held and 258 correctly unheld**, in adjacent dungeon/overworld windows. Their main CPU and wall totals agree with the independent structural/routine observers, and recaptured missing rows agree with the retained source receipts. Bounded native controls match the canonical full-census rows in every predictor column. `combined-sample-decomposition.json` retains every row and separate module/status groups.
+
+Below are rounded **mean clocks per iteration, source / native before correction**. Handler totals use each side's actual accepted lag count; the missing population therefore has different numbers of lag handlers.
+
+| Component | Missing (9) | Correctly held (6) | Correctly unheld (258) |
+| --- | ---: | ---: | ---: |
+| Main instructions | 568,559 / 539,507 | 537,319 / 525,766 | 203,848 / 186,011 |
+| Main refresh | 17,711 / 16,809 | 16,727 / 16,380 | 6,351 / 5,809 |
+| Main DMA | 0 / 0 | 0 / 0 | 0 / 0 |
+| Main HDMA | 16,896 / 16,105 | 15,714 / 15,672 | 6,258 / 5,637 |
+| Opening NMI, CPU + DMA + wall stalls | 36,018 / 34,961 | 40,011 / 38,838 | 35,758 / 34,711 |
+| Intervening lag NMIs | 5,519 / 2,357 | 4,665 / 4,545 | 0 / 0 |
+| Separate IRQ ownership | 332 / 0 | 0 / 0 | 162 / 0 |
+| Polygon ownership | 0 / 0 | 0 / 0 | 0 / 0 |
+| Active interval total | 645,034 / 609,738 | 614,436 / 601,201 | 252,376 / 232,167 |
+
+The native IRQ/poly column is the separately represented P2 ownership residual. That residual is zero on every frozen gameplay miss; native elapsed reconciles exactly as main CPU + DMA + HDMA + refresh + waits + opening handler + held-count times lag handler. All retained source entry thread flags are zero; this alone does not prove the absence of a later activation. Outside the 273 fresh samples, source opening/IRQ durations remain unavailable and are recorded as null, not zero.
+
+There are **397 source IRQ events on 197** frozen misses. The additional IRQ window measures two representative misses, 390579 and 390877: each has **1,412 IRQ CPU clocks + 80 refresh = 1,492 wall clocks**, against main-instruction gaps of **37,630 / 39,626**. Its 56 unheld controls each execute one **706 + 40 = 746-clock** IRQ, with no polygon work. This exposes a smaller inactive-thread IRQ ownership lane; it does not explain the large main gap. Its event placement and ledger ownership need admission before pricing `$00:82D8`; the remaining IRQ durations are not extrapolated from these two cases. See `irq-decomposition.json` and `interrupt-coverage.json`.
+
+### Hardware diagnosis and correction
+
+The observed source ROM uses **MEMSEL=0** in every sampled main instruction. The **5,221,550 sampled main bus-access records** produce zero cartridge/WRAM speed mismatches after accounting for each record's byte width. The static pricer already distinguishes eight-clock slow-ROM/WRAM accesses, six-clock register/internal work and twelve-clock slow I/O. Across the full frozen cohort, **5,327,628 executions at declared marker PCs**, totaling **138,583,728 clocks**, all lie within the pricer's independently derived branch/access-speed bounds. This does not establish complete scalar or instruction coverage.
+
+OLS is diagnostic only. For the retained post-batch-42 cohort, main-instruction-gap R² is **0.044** against instruction count, **0.044** against instruction-fetch ROM bytes, **0.041** against main scanline equivalents, and **0.035** against measured HDMA clocks; jointly these explain **0.094**. Current-main values are similarly weak. Instructions without declared markers alone explain **0.046** on current main. Bus-record/cartridge-read-byte/WRAM-read-byte counts in the fresh controls explain **0.130 / 0.182 / 0.061**. The fresh read-byte fields classify cartridge/WRAM bus windows; instruction-fetch ROM bytes are separately counted from retained PC receipts. These selected populations and correlated quantities do not supply causal prices; no fitted coefficient enters runtime.
+
+Evaluating `40*ceil((source_CPU + source_DMA + source_HDMA)/1324)` on the **same source work** leaves just **-4,320 signed clocks total**, within **±80 per row**. Native reported refresh has zero discrepancy from its own work formula. Thus the large main refresh difference is primarily the consequence of missing instruction work, rather than a missing refresh rate.
+
+The opening handler is different: source **CPU + DMA exactly equals the old native H budget on all 273 controls**, while physical refresh stalls are absent from that budget. For example, **34,480 CPU+DMA becomes 35,520 wall clocks**, and **3,030 lag-handler CPU becomes 3,110 wall clocks**. This is independently observed hardware time, including correctly held/unheld controls, not a lag-count regression.
+
+The correction uses the existing pinned source's nominal **H=12 NMI origin**, the nominal **H=536 refresh pause**, and **40 clocks per 1,364-clock line** (1,324 work clocks remain). For handler work `x`, pauses are zero below `536-12=524`; otherwise `1 + floor((x-524)/1324)`. Its wall budget is `x + 40*pauses`. Physical interrupt jitter and the hardware's 534/538 alternation can shift one pause; this remains a nominal P2 model. [SNES timing reference](https://wiki.superfamicom.org/timing).
+
+Only lagless main-entry accounting converts retained **raw CPU+DMA** closing budgets into wall budgets. The underlying NMI instruction/DMA ledger and its other consumers remain unchanged. Opening/repeated worker shares use the converted budgets, preserving their hardware deadline. The HDMA initialization admission guard avoids counting handler refresh twice and retains one refresh event of endpoint uncertainty. Every ROM lease/decline flag is identical before/after. Main's existing refresh rule, raster barriers, field length and classifier are unchanged.
+
+The new `nmi_refresh_budget_matches_executed_rom_lag_handlers` test executes the unmodified ROM through `RomCpuTimingProbe` in three module contexts and matches physical wall time, including 80 refresh clocks. The example's three tests independently cover ROM/WRAM/I/O byte accounting, SlowROM/FastROM distinctions and real probe interrupt-entry splitting. All 25 pacing tests pass. Against the full fresh sample, corrected opening wall budgets are **exact on 270 rows and 40 clocks low on three**; corrected lag budgets at the observed source handler counts match exactly.
+
+### Remaining owner worklist
+
+The fixed frozen **69,815,568-clock main-instruction gap is unchanged**: not one ROM main-work counter changes anywhere in the complete census. The correction closes only **31 of 2,273** ordinary-gameplay misses. Further main pricing remains necessary; the data does not support a global instruction/access/scanline multiplier.
+
+`owner-worklist-after.json` ranks the **2,242 remaining gameplay misses**, using their new P2 inverses and the frozen, reconciled main profiles. **These are raw exclusive ownership differences, not additive or admitted prices**; aliases can move work between rows. Independent closure counts overlap. No replacement routine price was shipped.
+
+| Owner | Signed clocks | Independent inverse closures | Required ownership work |
+| --- | ---: | ---: | --- |
+| `$06:DC10` SingleLarge drawing | 6,337,572 | 158 | Fold separately priced drawing/preparation children before admitting writer instructions. |
+| `$1E:8B19` SpriteActive3 | 5,677,748 | 67 | Reconcile JMP/state tails and the separate pending batch-42 markers. |
+| `$00:80B5` Module_MainRouting | 5,493,466 | 60 | JML module-body attribution; this is not a new per-iteration tax. |
+| `$07:E245` Link velocity | 4,689,466 | 58 | Normalize shared movement tails against existing child prices. |
+| `$06:E4AB` Tile collision 2 | 4,168,352 | 56 | Audit remaining executed atomic tile/attribute branches and returns. |
+| `$07:807F` Link control | 4,806,412 | 55 | Fold separately scoped state handlers before pricing dispatcher self work. |
+| `$06:84E2` Sprite slot dispatch | 3,230,040 | 46 | Preserve priced inactive/paused prefixes; reconcile active tails. |
+| `$1D:C222` SpriteActive4 | 2,190,760 | 44 | Preserve admitted marker bodies; resolve remaining state ownership. |
+
+The largest raw signed owner is only about 9% of the frozen instruction gap, but the unresolved aliases prevent treating that percentage as proof of a final per-owner distribution. The instruction total is independently reconciled. The inactive-thread IRQ lane above is a separate, smaller timing/ownership worklist.
+
+### Census results and verification
+
+Both fresh main controls and both candidate full CPU census gates **PASS**, **1,473,123 iterations per lane**, unexplained zero. Every runtime hold equals P2. Missing/excess count lag NMIs; FP counts zero-source-lag iterations.
+
+| Lane / scope | Fresh main missing / excess / FP | Corrected |
+| --- | ---: | ---: |
+| ROM full | 3,771 / 0 / 0 | **3,564 / 0 / 0** |
+| ROM 07/00 | 1,433 / 0 / 0 | **1,415 / 0 / 0** |
+| ROM 09/00 | 840 / 0 / 0 | **827 / 0 / 0** |
+| Live full | 4,413 / 523 / 99 | **4,205 / 522 / 99** |
+
+ROM gains **207 holds on 207 iterations**, loses **zero**, and retains **every main-work counter and lease/decline flag**. The other 176 restored holds are outside 07/00+09/00. Live gains 255 holds and loses 48, net +207; actual APU-read feedback changes 1,257 main-work rows, with no instruction-price changes. These are fresh measurements; no earlier live baseline is substituted.
+
+The candidate **default 200k ledger matches every record and EOF**, as does the fresh main control. Default/ROM-timing instruction accounting is unchanged. Both ordinary builds are warning-free; existing lib-test warnings remain separate. Default library: **2,698 pass / 1 known spotlight failure / 3 ignored**. Reduced: **2,233 pass / 0 failures / 2 ignored**. Both CPU SNES libraries: **504 pass / 0 failures / 7 ignored** each. Complete final manifests are under `candidate/`. Initial asset-path test failures are superseded by these full final suites using the valid flat pack and ignored local asset symlink. This is the verified stopping point.
+
+Source subset gzip files retain the original selected routine, structural and instruction receipts with verified decompression hashes. The supplied 1,512-file ledger/cache snapshot matches the pre-existing batch-42 reference. Evidence remains below **3 GB**. No GPU execution, --video, cached-av, external Snes9x, GPU test, oracle-cache/shared-ledger write, cargo fmt, commit/push or scratch repository script was used. These periodically seeded CPU gates and selected source probes do not establish continuous-route or exact A/V acceptance.

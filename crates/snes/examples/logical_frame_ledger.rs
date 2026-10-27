@@ -44,6 +44,11 @@
 //! `ZELDA3_LEDGER_BLOCK_PROFILE=1` also writes per-PC instruction receipts
 //! for the same complete iterations to instruction-profile.csv. These feed
 //! scripts/rom_block_worklist.py; routine totals cannot identify executed blocks.
+//! `ZELDA3_LEDGER_TIMING_AUDIT=1` adds `timing-audit.csv` for that selection,
+//! separating main, opening/lag NMI, IRQ, polygon and idle instruction time,
+//! DMA requests, refresh events, bus accesses and ROM/WRAM read bytes.
+//! Interrupt-edge refresh attribution retains an explicit ambiguity count;
+//! wall minus CPU/DMA/refresh is a residual, not a new timing price.
 
 use sha2::{Digest, Sha256};
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
@@ -162,6 +167,98 @@ fn wram_offset(address: u32) -> Option<u32> {
 
 fn system_bank(address: u32) -> bool {
     (address >> 16) & 0x7f < 0x40
+}
+
+/// Optional source-only timing diagnostics. Interrupt entry is split at its
+/// receipt timestamp; idle wait-loop instructions never become main work.
+/// Refresh at an interrupt edge is retained with the preceding instruction,
+/// so component residuals at those edges have a 40-clock attribution bound.
+#[derive(Default)]
+struct TimingAudit {
+    index: u64,
+    owner: &'static str,
+    stack: Vec<&'static str>,
+    rows: std::collections::BTreeMap<(u64, &'static str), [u64; 15]>,
+}
+
+impl TimingAudit {
+    fn observe(&mut self, step: &snes::SourceCpuStepReceipt, machine: &snes::Snes,
+        next_index: u64, previous_sp: u16, refresh: u64, dma: u64,
+        selection: &[(u64, u64)]) {
+        if step.origin_pc == 0x008038 && self.stack.is_empty() { self.owner = "main"; }
+        let owner = if self.stack.is_empty() && previous_sp >> 8 != 1 { "poly" }
+            else if self.owner.is_empty() { "idle" } else { self.owner };
+        let interrupt = match step.accepted_interrupt {
+            Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. }) => Some((started_at, true)),
+            Some(SourceCpuAcceptedInterrupt::Irq { started_at, .. }) => Some((started_at, false)),
+            None => None,
+        };
+        let end = interrupt.map_or(step.ended_at, |(at, _)| at);
+        let selected = |i| selection.iter().any(|&(lo, hi)| (lo..=hi).contains(&i));
+        if selected(self.index) {
+            let row = self.rows.entry((self.index, owner)).or_default();
+            row[0] += end.master_cycles() - step.started_at.master_cycles();
+            row[1] += step.transactions.iter().filter(|t| t.started_at < end)
+                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+            row[2] += refresh * 40;
+            row[3] += dma;
+            row[4] += 1;
+            row[12] += u64::from(interrupt.is_some() && refresh != 0);
+            row[13] += u64::from(machine.fast_mem);
+            for access in step.accesses.iter().filter(|a| a.timestamp < end) {
+                row[5] += 1;
+                row[6] += u64::from(access.charged_master_cycles);
+                let bytes = match access.kind {
+                    SourceCpuBusAccessKind::Read { width, .. }
+                    | SourceCpuBusAccessKind::Write { width, .. } => u64::from(width),
+                    SourceCpuBusAccessKind::ReadLong { .. } => 3,
+                    _ => 1,
+                };
+                if wram_offset(access.address).is_some() || access.address & 0x408000 != 0 {
+                    let speed = if access.address & 0x800000 != 0
+                        && access.address & 0x408000 != 0 && machine.fast_mem { 6 } else { 8 };
+                    row[14] += u64::from(u64::from(access.charged_master_cycles) != bytes * speed);
+                }
+                if !matches!(access.kind, SourceCpuBusAccessKind::Write { .. }) {
+                    let class = if wram_offset(access.address).is_some() { 8 }
+                        else if access.address & 0x408000 != 0 { 7 } else { 9 };
+                    row[class] += bytes;
+                }
+                row[10] += u64::from(access.charged_master_cycles == 6);
+                row[11] += u64::from(access.charged_master_cycles == 8);
+            }
+        }
+        if step.opcode == RTI { self.owner = self.stack.pop().unwrap_or("idle"); }
+        if step.origin_pc == 0x00805d && self.stack.is_empty() { self.owner = "idle"; }
+        if let Some((at, nmi)) = interrupt {
+            let new_owner = if nmi && opens_iteration(0, machine.ram[NMI_BOOLEAN]) {
+                self.index = next_index;
+                self.stack.clear();
+                self.owner = "idle";
+                "entry"
+            } else if nmi { "lag" } else { "irq" };
+            self.stack.push(self.owner);
+            self.owner = new_owner;
+            if selected(self.index) {
+                let row = self.rows.entry((self.index, new_owner)).or_default();
+                row[0] += step.ended_at.master_cycles() - at.master_cycles();
+                row[1] += step.transactions.iter().filter(|t| t.started_at >= at)
+                    .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+            }
+        }
+    }
+
+    fn write(&self, path: PathBuf) -> Result<(), Box<dyn Error>> {
+        let mut file = BufWriter::new(fs::File::create(path)?);
+        writeln!(file, "iteration,owner,wall,cpu,refresh,dma,instructions,accesses,bus_master,rom_read_bytes,wram_read_bytes,other_read_bytes,six_clock_accesses,eight_clock_accesses,refresh_edges,memsel_instructions,rom_wram_speed_mismatches")?;
+        for ((index, owner), row) in &self.rows {
+            write!(file, "{index},{owner}")?;
+            for value in row { write!(file, ",{value}")?; }
+            writeln!(file)?;
+        }
+        file.flush()?;
+        Ok(())
+    }
 }
 
 #[derive(Default, serde::Serialize)]
@@ -344,6 +441,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     let profile_iterations = merged;
+    let mut timing_audit = env::var_os("ZELDA3_LEDGER_TIMING_AUDIT").map(|_| TimingAudit::default());
     let mut profile_output = (!profile_iterations.is_empty()).then(|| {
         let mut writer = BufWriter::new(fs::File::create(out_dir.join("routine-profile.csv"))?);
         writeln!(writer, "iteration,routine,calls,inclusive,exclusive")?;
@@ -506,6 +604,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     && matches!(access.kind, SourceCpuBusAccessKind::Write { .. })
                     && matches!(access.address & 0xffff, 0x420b | 0x4300..=0x437f)) {
                     dma_sizes = std::array::from_fn(|i| exec.machine().snes().dma.channel[i].size);
+                }
+                if let Some(audit) = timing_audit.as_mut() {
+                    audit.observe(step, exec.machine().snes(), next_index, previous_sp,
+                        refresh_events, dma_master, &profile_iterations);
                 }
                 if let Some(frame) = exec.take_captured_frame() {
                     let sha = (!frame.is_empty()).then(|| {
@@ -997,6 +1099,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for ((host, routine), (master, wall)) in &nmi_profile {
         eprintln!("ledger-nmi-profile host={host} routine={routine:06x} master={master} wall={wall}");
     }
+    if let Some(audit) = timing_audit { audit.write(out_dir.join("timing-audit.csv"))?; }
     if let Some(writer) = profile_output.as_mut() {
         if block_profile_enabled {
             let mut blocks = BufWriter::new(fs::File::create(out_dir.join("instruction-profile.csv"))?);
@@ -1041,4 +1144,99 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("logical ledger wrote {emitted} complete iterations over {host_calls} host calls");
     Ok(())
+}
+
+#[cfg(test)]
+mod timing_audit_tests {
+    use super::*;
+    use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, SourcePpuReadState, CartType};
+
+    #[test]
+    fn audit_preserves_probe_bus_bytes_and_slowrom_wram_prices() {
+        // LDA long $7e0000, then STA absolute $2100: ROM, WRAM and I/O.
+        let mut machine = snes::Snes::new();
+        let mut rom = vec![0xea; 0x8000];
+        rom[..7].copy_from_slice(&[0xaf, 0, 0, 0x7e, 0x8d, 0, 0x21]);
+        machine.cart.load(CartType::LoRom, &rom, 0x2000);
+        machine.cpu.pc = 0x8000;
+        machine.cpu.sp = 0x1ff;
+        machine.cpu.e = false;
+        machine.cpu.mf = false;
+        let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(20, 100),
+            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+        let mut probe = RomCpuTimingProbe::new(machine, clock, SourcePpuReadState::snes9x_reset()).unwrap();
+        let mut audit = TimingAudit { owner: "main", ..Default::default() };
+        for _ in 0..2 {
+            let step = probe.step().unwrap();
+            audit.observe(&step, &snes::Snes::new(), 1, 0x1ff, 0, 0, &[(0, 0)]);
+        }
+        let row = audit.rows[&(0, "main")];
+        assert_eq!(row[4], 2);
+        assert_eq!(row[7], 7);
+        assert_eq!(row[8], 2);
+        assert_eq!(row[14], 0);
+        assert_eq!(row[0], row[1]);
+    }
+
+    #[test]
+    fn audit_splits_real_probe_interrupt_entry_from_main() {
+        for latched in [false, true] {
+            let mut machine = snes::Snes::new();
+            machine.cart.load(CartType::LoRom, &vec![0xea; 0x8000], 0x2000);
+            machine.cpu.pc = 0x8000;
+            machine.cpu.sp = 0x1ff;
+            machine.cpu.e = false;
+            machine.ram[NMI_BOOLEAN] = u8::from(latched);
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(20, 100),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut probe = RomCpuTimingProbe::new(machine, clock, SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut step = probe.step().unwrap();
+            let entry = probe.accept_native_nmi().unwrap();
+            let prototype = step.transactions[0];
+            step.transactions.extend(entry.transactions.iter().map(|t| snes::SourceCpuTransaction {
+                kind: t.kind, duration_master_cycles: t.duration_master_cycles,
+                started_at: t.started_at, ended_at: t.ended_at,
+                start_wram_refresh_position: t.start_wram_refresh_position,
+                end_wram_refresh_position: t.end_wram_refresh_position,
+                ..prototype
+            }));
+            step.accesses.extend(entry.accesses);
+            step.ended_at = entry.ended_at;
+            step.accepted_interrupt = Some(SourceCpuAcceptedInterrupt::Nmi {
+                started_at: entry.started_at, interrupted_pc: entry.interrupted_pc,
+            });
+            let mut audit = TimingAudit { owner: "main", ..Default::default() };
+            audit.observe(&step, probe.snes(), 1, 0x1ff, 0, 0, &[(0, 1)]);
+            assert_eq!(audit.rows[&(0, "main")][1], 14);
+            let key = if latched { (0, "lag") } else { (1, "entry") };
+            assert_eq!(audit.rows[&key][1], 62);
+            assert_eq!(audit.rows.values().map(|r| r[0]).sum::<u64>(), 76);
+        }
+    }
+
+    #[test]
+    fn audit_distinguishes_fastrom_fetches_from_eight_clock_wram_data() {
+        for (bank, fast, expected) in [(0, true, 48), (0x80, false, 48), (0x80, true, 40)] {
+            let mut machine = snes::Snes::new();
+            let mut rom = vec![0xea; 0x8000];
+            rom[..4].copy_from_slice(&[0xaf, 0, 0, 0x7e]);
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.fast_mem = fast;
+            machine.cpu.pc = 0x8000;
+            machine.cpu.k = bank;
+            machine.cpu.sp = 0x1ff;
+            machine.cpu.e = false;
+            machine.cpu.mf = false;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(20, 100),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut probe = RomCpuTimingProbe::new(machine, clock, SourcePpuReadState::snes9x_reset()).unwrap();
+            let step = probe.step().unwrap();
+            let mut audit = TimingAudit { owner: "main", ..Default::default() };
+            audit.observe(&step, probe.snes(), 1, 0x1ff, 0, 0, &[(0, 0)]);
+            let row = audit.rows[&(0, "main")];
+            assert_eq!(row[1], expected);
+            assert_eq!((row[7], row[8], row[14]), (4, 2, 0));
+        }
+    }
 }

@@ -10,10 +10,11 @@ fn leading_handler_may_miss_init(handler: u64) -> bool {
     // $00:8135 disables HDMA until $00:8222 (or $82C4). If that interval
     // reaches V0's initialization, enabling later retains the old cursor;
     // it cannot use this composer's freshly initialized per-field program.
-    // Ceil refresh is a conservative placement envelope; the full handler
-    // includes its short post-$420C return suffix, so ambiguous edges decline.
+    // The retained handler is already wall time including refresh. One
+    // refresh event covers its unresolved interrupt/refresh endpoint phase;
+    // retain the old conservative initialization admission boundary.
     let init = FIELD - NMI + u64::from(snes::cpu_timeline::HDMA_INIT_CYCLE);
-    handler + handler.div_ceil(1324) * 40 >= init
+    handler + 40 >= init
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -194,7 +195,7 @@ mod tests {
         assert_eq!(game.native_bus_lease_decline(), 1 << 10);
         // Even an instruction-only handler ending before V0 can span init
         // once refresh is included. The guard follows the hardware event.
-        game.native_pacing.entry_handler = 49_500;
+        game.native_pacing.entry_handler = nmi_handler_wall(49_500);
         assert_eq!(game.native_bus_lease_decline(), 1 << 10);
         game.native_pacing.entry_handler = 28_520;
         assert_eq!(game.native_bus_lease_decline(), 0);

@@ -4,6 +4,17 @@ use super::*;
 #[path = "rtl_native_pacing_bus.rs"]
 mod bus;
 
+/// Nominal NTSC NMI wall budget from CPU + DMA work. The accepted NMI
+/// starts at H=12; WRAM refresh pauses the CPU for 40 clocks near H=536,
+/// leaving 1324 work clocks per subsequent scanline. This is the same
+/// nominal-field approximation as P2, not an instruction price. Physical
+/// interrupt jitter and the 534/538 refresh alternation can move an edge.
+fn nmi_handler_wall(work: u64) -> u64 {
+    let before_refresh = 536 - snes::cpu_timeline::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES;
+    let pauses = if work < before_refresh { 0 } else { 1 + (work - before_refresh) / 1324 };
+    work + pauses * 40
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativePacing {
     pending: u32,
@@ -71,6 +82,10 @@ impl ZeldaState {
         self.native_pacing.entry_handler = self.native_previous_closing_handler();
         self.native_pacing.entry_lag_handler = self.native_pacing.closing_lag_handler
             .unwrap_or(self.native_pacing.last_lag_handler);
+        if self.lag_free {
+            self.native_pacing.entry_handler = nmi_handler_wall(self.native_pacing.entry_handler);
+            self.native_pacing.entry_lag_handler = nmi_handler_wall(self.native_pacing.entry_lag_handler);
+        }
         if self.native_pacing.closing_handler.is_some() {
             self.lag_free_nmi_uploaded_poly = self.native_pacing.closing_poly_upload;
         }
@@ -534,6 +549,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nmi_refresh_budget_matches_executed_rom_lag_handlers() {
+        use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+            CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for mode in [1, 7, 9] {
+            let mut machine = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom)
+                .unwrap().machine().snes().clone();
+            machine.ram.fill(0);
+            machine.ram[0x10] = mode;
+            machine.ram[0x12] = 1;
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0x30);
+            machine.cpu.pc = 0x8000;
+            machine.cpu.sp = 0x1ff;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(225, 12),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut apu = snes::apu::ApuState::new();
+            apu.reset_snes9x_coroutine();
+            source.attach_apu_port_owner(snes::ApuHostPortTiming::new(
+                snes::ApuHostPortProbe::from_snes9x_coroutine(apu).unwrap(),
+                snes::Snes9xApuClockCheckpoint::new(source.timeline().clock_master_cycles(), 0, 0).unwrap(),
+            ).unwrap()).unwrap();
+            let entry = source.accept_native_nmi().unwrap();
+            let start = entry.started_at.master_cycles();
+            let mut work: u64 = entry.transactions.iter()
+                .map(|t| u64::from(t.duration_master_cycles)).sum();
+            for _ in 0..2000 {
+                let step = source.step().unwrap();
+                work += step.transactions.iter()
+                    .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                if source.snes().cpu.pc == 0x8000 { break; }
+            }
+            assert_eq!(source.snes().cpu.pc, 0x8000);
+            let wall = source.timeline().clock_master_cycles() - start;
+            assert_eq!(nmi_handler_wall(work), wall, "mode={mode} CPU={work}");
+            assert_eq!(wall - work, 80);
+        }
+    }
+
+    #[test]
     fn all_apu_latches_publish_before_at_and_after_hold_boundary_once() {
         for delta in [-1i64, 0, 1] {
             for port in 0..4 {
@@ -824,8 +882,8 @@ mod tests {
         game.interrupt_nmi(0, None, false);
         assert_eq!(stripped, u64::from(game.last_nmi_handler_master_cycles().unwrap()));
         game.native_begin_main_cost();
-        assert_eq!(game.native_cost_lag_handler(), stripped);
-        assert_eq!(game.native_cost_entry_handler(), ordinary);
+        assert_eq!(game.native_cost_lag_handler(), nmi_handler_wall(stripped));
+        assert_eq!(game.native_cost_entry_handler(), nmi_handler_wall(ordinary));
     }
 
     #[test]
@@ -896,7 +954,7 @@ mod tests {
         game.native_record_closing_handler();
         game.run_native_held_frame(0);
         game.native_begin_main_cost();
-        assert_eq!(game.native_cost_entry_handler(), u64::from(closing));
+        assert_eq!(game.native_cost_entry_handler(), nmi_handler_wall(u64::from(closing)));
         assert!(game.lag_free_nmi_uploaded_poly);
         game.set_lag_free(false);
         assert!(game.native_pacing.closing_handler.is_none());
