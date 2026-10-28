@@ -1358,3 +1358,195 @@ script was added. Superseded/rejected joins are not counted as accepted proof.
 No GPU execution, `--video`, cached-av, external Snes9x process, full library
 suite, oracle-cache/shared-ledger write, cargo fmt, commit or push was used.
 These are CPU accounting and regression receipts, not exact A/V acceptance.
+
+## M3b result
+
+**Verified local admission checkpoint: GO only for the emitted helper gaps.** Work remains on `codex/shadow-m3a` at `91f8b2d5` plus
+uncommitted M3b edits. No price, pacing rule, P2, classifier, seeding policy
+or serialized product state changes. `sprite_main_draw/*` and the other
+pricing worktree were not touched. No commit or push.
+
+### Frame-local exclusion rule and proof
+
+Let F be one closed continuous source call frame, T its uniquely mapped native
+scope subtree, A the actually equal ordered instruction pairs, and R the
+source opcodes owned by F outside A. Admit R only when:
+
+1. The mapping is one-to-one at this boundary: actual entry, native site,
+   source parent, occurrence counts, source width/DP and native loop argument
+   agree. Eligible-but-unpaired markers do not belong to A.
+2. Every native charge in T belongs to A, including extras and zero-clock
+   events. Unknown work cannot disappear because its numeric cost is zero.
+3. A reviewed synchronous boundary certificate proves no work belonging to F
+   is charged before/after T, on another native scope, through deferred work,
+   or through a separate accounting domain. Unknown ancestor scalars need an
+   explicit disjoint self-instruction certificate; otherwise admission stops.
+   Explicit external PC/model claims intersecting F also stop admission.
+4. The source retirement boundary is complete. Shared tails, child calls,
+   aliases, native mute/deferred phases and interrupt cuts require a specific
+   mapping. The initial certificate rejects child scopes/calls, aliases and
+   any interrupt cut rather than generalizing across them.
+
+Proof: complete native-counter reconciliation puts every charge either in T
+or outside T. Condition 2 gives every charge inside T a distinct source owner
+in A; one-to-one pairing excludes R. Condition 3 excludes every outside charge
+from R. Thus no native charge owns any opcode in R. Conditions 1 and 4 identify
+the exact dynamic source occurrences; removing already-paired ordinals and
+rejecting overlapping certificates makes the admitted gaps disjoint. The
+remaining global O can be arbitrarily large without changing this argument.
+**Zero unmatched clocks in T alone is insufficient**: it does not establish
+conditions 1, 3 or 4.
+
+`local_exclusion.rs` initially certifies only the real JSR frames at
+`$01:93FF` and `$01:93F7`. The native wrapper observes entry and actual width
+without opening a ledger/profiler scope. Its caller is object `$DD`, whose
+inherited `$01:93DC` dispatch boundary is observed separately. A source loop
+pass at `$01:9408` must agree with the native width. All source PCs remain in
+`$0193F7..19428`, M16/X16, DP=0, and the real RTS closes the frame.
+
+The reviewed native helper is only synchronous immutable tile reads and room
+word stores (`object_draw.rs::object_table_helper`, `tile_word`,
+`room_write_current`, `room_write_bg`); these contain no ledger call, mute,
+continuation, queue or later pricing action. The `$DD` caller adds no price.
+The native ancestors' opaque scalars are admitted only at the frozen sites
+listed in `ancestor_scalar_disjoint`: Module_MainRouting's 240-clock selector;
+room-load header/control/floor-call/stream/torch fragments `$873A..88E3`;
+object-stream parsing `$88E4..893B`; subtype-1 decode/dispatch `$893C..8980`.
+These sets exclude helper bodies; selected child bodies own their own work.
+Unknown sites, amounts at fixed dispatch sites and changed site lines fail
+closed. The four reviewed helper/caller source files are hash-pinned in the
+certificate; even an edit preserving all site lines requires renewed review. Source files, rule, native executable and input bytes are bound in the
+retained verification/bridge identities. This is a narrow reviewed certificate,
+not a declaration that all scalars are scope-exclusive.
+
+The last `$93F4 JSR $93F7` returns into `$93F7` again: the caller then executes
+the same helper body as a fallthrough. The native first/middle helper calls
+observe `$93FF`, its bottom helper observes `$93F7`, and its final helper stays
+in the inherited caller frame. That final fallthrough is **not admitted** as
+a second JSR gap. Muted previews do not enter the observation scopes.
+
+Four auditor tests exercise successful exclusion and deliberate missing or
+duplicate mapping, unmatched zero charge, opaque ancestor scalar, external PC
+claim, unclosed/shared-tail frame, interrupt, wrong width/DP, hidden source or
+native child and absent/wrong native loop witness. A temporary-copy counterexample edits a pinned source without moving its site
+lines and must invalidate the certificate. The observer's muted test
+also traverses the new metadata guard. ROM fixtures cover both helper entries,
+widths 1..4, the complete caller at each height 0..3, and its double execution
+of the final shared tail. No source/source-native resume transplant is added.
+
+### Equal-cost conversions and graphics stop
+
+Fourteen generated blocks replace the largest straightforward remaining scalar
+sites: low-plane conversion `$00:D5CE..D618` (animated) and `$00:DFB8..E030`
+(ordinary), M16/X16; the fixed 4,096-byte clear `$09:C47B..C480`, M8/X16;
+and Nx4 `$01:97F0..9812`, M16/X16. The converter retains four versus two inner
+passes, their actual taken branches and the existing tile-loop extra. Nx4
+retains its caller/JMP ownership and column-loop extra. The sprite-clear entry
+prefix and following loaded-mask/history work are unchanged. All **3,000 old
+table rows are byte-unchanged**; all **3,014 rows** regenerate exactly.
+
+Non-lagless converter/Nx4 execution preserves the old scalars. Muted markers
+stay muted. Four new CPU-only fixture tests compare ROM clocks for every
+converted entry/width, short/long loops, converter source-page positions,
+Nx4 destinations, the `$0197ED` JMP/fallthrough caller and the sprite-clear
+suffix. Existing M3a fixtures repeat.
+
+The 9,316,632-clock graphics aggregate remains unmatched. Its recorder removes
+GetNextByte children from the decoder stream, then books child scopes after
+the own aggregate. Bank-wrap work can be booked on the last child instead of
+the child that executed it. The retained own/child vectors do not preserve the
+interleaving positions needed to prove ordered retirement. A sum or sorted PC
+match would not repair this missing witness. No child permutation or equal-total
+waiver is admitted.
+
+### Frozen join, worklist and impact
+
+| Cohort master clocks | M3a | M3b |
+| --- | ---: | ---: |
+| S | 125,893,178 | 125,893,178 |
+| N | 102,146,482 | 102,146,482 |
+| P = Q | 60,533,122 | **64,428,142** |
+| U | 65,360,056 | **61,465,036** |
+| O | 41,613,360 | **37,718,340** |
+| S-N = U-O | 23,746,696 | 23,746,696 |
+| E | 0 | 0 |
+
+Pairing increases **3,895,020 clocks**, reaching 51.18% of S / 63.07% of N.
+The marker contribution is 17,025,320 clocks / 85,171 equal occurrences;
+47,402,822 model clocks in 99 streams are unchanged. All 55 per-iteration
+conservation equations and independently decomposed U/O totals agree. Every
+paired row has equal cost. The original 184 ordering rows (92 mismatches,
+46 one-sided rows on each side; 21,108 clocks on each side) are unchanged.
+Remaining O is 17,214,532 scalar/unmapped-call, 9,316,632 graphics aggregate,
+8,117,526 model mapping, 3,048,542 block mapping and 21,108 ordering clocks.
+
+The source input remains M2b's verified 53,706-iteration continuous prefix,
+with all 55 selected call reconstructions and 324 internal interrupt cuts.
+The unexecuted 1,419,417-iteration source suffix and source EOF remain
+unverified. Native full-route execution does not close that source boundary.
+Local gaps remain in U until a separate pricing batch charges them.
+
+`join-m3b/worklist.json` admits **24 dynamic calls / 832 source opcode
+occurrences / 27,104 clocks**: `$0193FF` contributes 17,472 clocks and
+`$0193F7` contributes 9,632. Rows retain exact ROM PCs, source call/path,
+native scope/site, entry widths, clocks, holds touched and required fixtures.
+All emitted source ordinals are disjoint; an independent pass reproduces the
+labeled source residual clocks and the worklist total.
+
+| Iteration | Combined validated clocks | Full-count inverse shortfall | Holds touched | Reaches inverse |
+| --- | ---: | ---: | ---: | --- |
+| 43,838 | 13,552 | 88,318 | 1 | No |
+| 45,521 | 13,552 | 88,308 | 1 | No |
+
+The union touches **two holds**, with **zero predicted recoveries from this
+worklist alone** in the unchanged fixed context. No prices or holds are added.
+The inverse is secondary impact evidence, not the ownership proof.
+
+**GO for a narrowly scoped pricing batch consuming these exact helper-call
+rows and their fixture contract. STOP for pricing other U, inherited caller
+fallthroughs, graphics aggregates or unmatched scalar/model differences.**
+The native observed wrapper is the admitted destination; charging every use
+of the generic tile-writing helper would also price the unadmitted final
+fallthrough and violate this worklist.
+
+### Verification and retained evidence
+
+The fresh full ROM-lane replay completes **1,473,123 ordered iterations
+and EOF**, with **2,801 missing holds / zero excess / zero zero-lag false
+positives**, and the census gate passes with unexplained differences zero.
+Its complete predictor CSV is **byte-identical** to current Route 6
+(SHA-256 `0202bcc04783742793368ff0cfac72c782beb98a818ced334fe5f5b0933cf594`). The selected
+53,706-iteration observer replay also reproduces the canonical prefix byte
+for byte. No hold was recovered by these equal-cost conversions.
+
+The default **200,000-frame state ledger matches every record and EOF**.
+Default, `--no-default-features` and feature-enabled product builds are
+warning-free, as are enabled/disabled auditor builds. All four new ROM fixture
+tests, four existing M3a fixture tests, four filtered observer tests,
+**32 enabled auditor tests** and **eight disabled auditor tests** pass.
+Lib-test compilation retains the existing dead-code warning class; ordinary
+builds have zero warnings/errors. Initial fixture setup failures (module paths,
+asset initialization, source pointer bank and far-return stack bank) were
+corrected in test code; no product price was changed to satisfy them.
+
+All **69 final bridge-bound identities** rehash successfully; the relocated
+source manifest verifies. The final join takes **44.104 s**, with
+**630,980,608 bytes whole-process peak RSS**, below 2 GiB. A provisional join
+was stopped for indexed boundary lookups; its incomplete outputs were pruned
+and are not counted. Final output occupies **1.898 GB logical /
+1.970 GB allocated**, below 3 GB; disk samples are retained,
+without claiming an absolute transient peak. The last fixture corrections are
+`cfg(test)` only; the full replay and join use the frozen feature executable
+identified in `verification.json`. `git diff --check` passes.
+
+Evidence is under `target/shadow-m3b/`: `verification.json`,
+`full-equality.json`, `native-processes.json`, build/test logs,
+`source-bound/relocation-m3b.json`, `join-m3b/{coverage,worklist}.json`, and
+compressed calls/blocks/iterations/residuals. The M2b originals are read-only;
+the source manifest's three stale sibling code bindings are relocated to
+byte-identical files reconstructed from its recorded commit. `target/shadow-m3a`
+was pruned first as requested. Scratch drivers stayed in `/tmp`.
+
+No GPU execution, video, cached-av, external Snes9x process, full library suite,
+protected-cache/shared-ledger write, cargo fmt, commit or push was used. These
+are CPU accounting/regression checks, not exact A/V acceptance.

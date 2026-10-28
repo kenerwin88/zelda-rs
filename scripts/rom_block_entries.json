@@ -457,5 +457,9 @@
   {"entry": "01b8fa", "end": "01b967", "m8": false, "x8": false, "data_bank": 126},
   {"entry": "018a44", "end": "018a89", "m8": false, "x8": false},
   {"entry": "00913f", "end": "0091c4"},
-  {"entry": "0091d3", "end": "009252"}
+  {"entry": "0091d3", "end": "009252"},
+  {"entry": "00d5ce", "end": "00d619", "m8": false, "x8": false},
+  {"entry": "00dfb8", "end": "00e031", "m8": false, "x8": false},
+  {"entry": "09c47b", "end": "09c482", "x8": false},
+  {"entry": "0197f0", "end": "019813", "m8": false, "x8": false}
 ]

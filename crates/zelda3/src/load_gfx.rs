@@ -3214,17 +3214,29 @@ impl ZeldaState {
     ) {
         let animated = animated && self.lag_free;
         let _scope = crate::cycle_ledger::routine(if animated { 0x00_d5ce } else { 0x00_dfb8 });
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         // $DFB8: STY $0C.
-        crate::cycle_ledger::charge(32);
+        if self.lag_free { b.block(if animated { 0x00d5ce } else { 0x00dfb8 }); }
+        else { crate::cycle_ledger::charge(32); }
         for tile in 0..num {
             // $DFBA-$E02E for one tile (see above).
             // $00:D5D0..D616: 126 + 4*874 + 3*6 + 168 = 3808.
             // Animated low conversion increments its DP source pointers;
             // $00:DFBA..E02E instead uses the 3736-clock four-row variant.
-            crate::cycle_ledger::charge(if animated { 3_808 } else { 3_736 });
+            if self.lag_free {
+                b.block(if animated { 0x00d5d0 } else { 0x00dfba });
+                for row in 0..if animated { 4 } else { 2 } {
+                    b.block(if animated { 0x00d5db } else { 0x00dfc5 });
+                    if row + 1 < if animated { 4 } else { 2 } {
+                        b.taken(if animated { 0x00d60a } else { 0x00e022 });
+                    }
+                }
+                b.block(if animated { 0x00d60c } else { 0x00e024 });
+            } else { crate::cycle_ledger::charge(if animated { 3_808 } else { 3_736 }); }
             if tile + 1 < num {
                 // $E02E: BNE $DFBA taken.
-                crate::cycle_ledger::charge(6);
+                if self.lag_free { b.taken(if animated { 0x00d616 } else { 0x00e02e }); }
+                else { crate::cycle_ledger::charge(6); }
             }
             let src2 = src + 0x10;
             for i in 0..8 {
@@ -3240,8 +3252,9 @@ impl ZeldaState {
             dst += 16;
             src = src2 + 8;
         }
-        // $E030: RTS.
-        crate::cycle_ledger::charge(42);
+        // $E030 / $D618: RTS.
+        if self.lag_free { b.block(if animated { 0x00d618 } else { 0x00e030 }); }
+        else { crate::cycle_ledger::charge(42); }
     }
 
     pub(super) fn do3_to_4_high_to_vram(
@@ -6802,5 +6815,30 @@ fn marker38_palette_restore_flash_matches_rom() {
             |s| s.cpu.k == 0x0e && (0xd83a..0xd8fb).contains(&s.cpu.pc), || {
                 native.palette_restore_bg_from_flash();
             });
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn m3b_low_conversion_entries_and_widths_match_rom() {
+    use crate::zelda_rtl::dungeon::m3a_fixtures::source_work;
+    for animated in [false,true] {
+        for num in [1,2,8,32] {
+            for src in [0x2000,0x20f0] {
+                let mut ram=ZeldaState::new().wram_image().into_owned();
+                ram[2]=0x7e;ram[5]=0x7e;
+                let entry=if animated {0x00d5ce} else {0x00dfb8};
+                let expected=source_work(&ram,entry,false,false,false,src,0,num);
+                let mut native=ZeldaState::new();native.set_lag_free(true);
+                let before=crate::cycle_ledger::master();
+                native.convert_low_buffer(0,&vec![0;0x1000],0,usize::from(num),animated);
+                assert_eq!(crate::cycle_ledger::master()-before,expected);
+                // The preserved scalar path selects the ordinary body.
+                native.set_lag_free(false);
+                let before=crate::cycle_ledger::master();
+                native.convert_low_buffer(0,&vec![0;0x1000],0,usize::from(num),animated);
+                assert_eq!(crate::cycle_ledger::master()-before,32+u64::from(num)*3736+u64::from(num-1)*6+42);
+            }
+        }
     }
 }

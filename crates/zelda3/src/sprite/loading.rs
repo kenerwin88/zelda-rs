@@ -677,7 +677,11 @@ impl ZeldaState {
     pub(in crate::zelda_rtl) fn sprite_reset_all_no_disable_after_fixed_prefix(&mut self) {
         if self.lag_free {
             // $09:C47B..C480 M8/X16: 4096 STA-long,X/DEX/BPL passes.
-            crate::cycle_ledger::charge(4096 * 70 + 4095 * 6);
+            let b = crate::cycle_ledger::blocks(true);
+            for byte in 0..4096 {
+                b.block(0x09c47b);
+                if byte < 4095 { b.taken(0x09c480); }
+            }
         }
         self.sprite_workspace_mut().clear_where_in_room();
         self.sprite_reset_all_after_room_mask_clear();
@@ -2634,4 +2638,15 @@ impl ZeldaState {
             }
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn m3b_sprite_clear_m8_x16_matches_rom() {
+    let mut native=ZeldaState::new();native.set_lag_free(true);
+    let expected=crate::zelda_rtl::dungeon::m3a_fixtures::source_work(
+        &native.wram_image(),0x09c47b,true,true,false,0,0xfff,0);
+    let before=crate::cycle_ledger::master();
+    native.sprite_reset_all_no_disable_after_fixed_prefix();
+    assert_eq!(crate::cycle_ledger::master()-before,expected);
 }

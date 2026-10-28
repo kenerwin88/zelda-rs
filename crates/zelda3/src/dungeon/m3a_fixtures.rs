@@ -1,7 +1,7 @@
 //! CPU-only fixtures for equal-cost scalar replacements and entry aliases.
 use super::*;
 
-pub(super) fn source_work(ram: &[u8], entry: u32, rtl: bool, m8: bool, x8: bool,
+pub(crate) fn source_work(ram: &[u8], entry: u32, rtl: bool, m8: bool, x8: bool,
     a: u16, x: u16, y: u16) -> u64 {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -13,7 +13,10 @@ pub(super) fn source_work(ram: &[u8], entry: u32, rtl: bool, m8: bool, x8: bool,
         carry:false,zero:false,overflow:false,negative:false,
         interrupt_disable:true,decimal:false,accumulator_is_8_bit:m8,index_is_8_bit:x8,
         emulation:false,waiting:false,stack_address:if rtl {0x1fc} else {0x1fd},
-        stack_bytes:if rtl { if bank==0 { &[0x35,0x80,0] } else { &[0x35,0x80,1] } } else { &[0x35,0x80] },
+        stack_bytes:if rtl { match bank {
+            0=>&[0x35,0x80,0],1=>&[0x35,0x80,1],9=>&[0x35,0x80,9],
+            _=>panic!("add a static return-bank fixture for {bank:02x}"),
+        } } else { &[0x35,0x80] },
     };
     let mut run = RomCpuTimingRun::new(&rom,ram,&[0;0x2000],
         &snes::PpuState::default(),&snes::DmaState::default(),[0;4],checkpoint).unwrap();
@@ -23,6 +26,34 @@ pub(super) fn source_work(ram: &[u8], entry: u32, rtl: bool, m8: bool, x8: bool,
         assert!(count<1_000_000,"fixture did not return at {entry:06x}");
     }
     clocks
+}
+
+#[test]
+fn m3b_nx4_entry_and_shared_body_match_rom() {
+    for (entry,columns) in [(0x0197f0,1),(0x0197f0,2),(0x0197f0,3),(0x0197f0,4),(0x0197f0,16),(0x0197f0,32),(0x0197ed,4)] {
+        for dst in [0, 0x100, 0x800] {
+            let mut native=ZeldaState::new();
+            native.set_assets(&std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3_assets.dat")).unwrap()).unwrap();
+            let mut ram=native.wram_image().into_owned();
+            for (i,offset) in [0xbf,0xcb,0xd7,0xda].into_iter().enumerate() {
+                let address=0x7e2000u32+i as u32*128;
+                ram[offset..offset+3].copy_from_slice(&address.to_le_bytes()[..3]);
+            }
+            let expected=source_work(&ram,entry,false,false,false,columns,0,dst);
+            for lagless in [false,true] {
+                native.set_lag_free(lagless);
+                let before=crate::cycle_ledger::master();
+                if entry==0x0197ed { native.room_draw_4x4_by_jump(0,dst/2); }
+                else { native.room_draw_object_nx4(columns,0,dst/2); }
+                assert_eq!(crate::cycle_ledger::master()-before,expected);
+                if entry==0x0197f0 {
+                    let before=crate::cycle_ledger::master();
+                    native.room_data_draw_object_nx4(0,dst/2,columns);
+                    assert_eq!(crate::cycle_ledger::master()-before,expected);
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -69,6 +100,37 @@ fn m3a_quadrant_copy_entries_and_layer_widths_match_rom() {
                         "entry={entry:06x} layer={layer} quadrant={quadrant} lagless={lagless}");
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn m3b_table_helper_real_entries_are_uncharged_and_disjoint_from_fallthrough() {
+    for width in 1..=4u16 {
+        let mut native=ZeldaState::new();
+            native.set_assets(&std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3_assets.dat")).unwrap()).unwrap();native.set_lag_free(true);
+        let mut ram=native.wram_image().into_owned();ram[0xb2..0xb4].copy_from_slice(&width.to_le_bytes());
+        for (i,offset) in [0xbf,0xc2,0xc5].into_iter().enumerate() {
+            let address=0x7e2000u32+i as u32*2;
+            ram[offset..offset+3].copy_from_slice(&address.to_le_bytes()[..3]);
+        }
+        for entry in [0x0193ff,0x0193f7] {
+            let work=source_work(&ram,entry,false,false,false,0,0,0);
+            assert_eq!(work,166+u64::from(width)*330+u64::from(width-1)*6+260+if entry==0x193f7 {112}else{0});
+            let before=crate::cycle_ledger::master();
+            native.object_table_helper_observed(0,0,width,entry);
+            assert_eq!(crate::cycle_ledger::master(),before);
+        }
+        for height in 0..4u16 {
+            ram[0xb2..0xb4].copy_from_slice(&(width-1).to_le_bytes());
+            ram[0xb4..0xb6].copy_from_slice(&height.to_le_bytes());
+            let work=source_work(&ram,0x0193dc,false,false,false,0,0,0);
+            let loops=u64::from(height)*2+1;
+            let helper=166+u64::from(width)*330+u64::from(width-1)*6+260;
+            // Caller owns both INX prefixes and the final fallthrough body;
+            // the actual child calls are loops+1 FF entries and one F7 entry.
+            let children=(loops+2)*helper+112;
+            assert_eq!(work,children+helper+162+46+112+loops*116+(loops-1)*6+46+112);
         }
     }
 }

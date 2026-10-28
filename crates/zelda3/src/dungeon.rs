@@ -514,4 +514,4 @@ mod aux_graphics_publication_tests {
 
 #[cfg(test)]
 #[path = "dungeon/m3a_fixtures.rs"]
-mod m3a_fixtures;
+pub(crate) mod m3a_fixtures;

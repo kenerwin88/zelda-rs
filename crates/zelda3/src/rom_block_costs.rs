@@ -50,6 +50,26 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x00d528, 0x00d533, false, false, 144, 0x000000, &[]),
     // $00:D533: fixed cost
     (0x00d533, 0x00d537, false, false, 94, 0x000000, &[]),
+    // $00:D5CE: fixed cost
+    (0x00d5ce, 0x00d5d0, false, false, 32, 0x000000, &[]),
+    // $00:D5D0: fixed cost
+    (0x00d5d0, 0x00d5db, false, false, 126, 0x000000, &[]),
+    // $00:D5DB: 00d60a taken +6
+    (0x00d5db, 0x00d60c, false, false, 874, 0x00d60a, &[]),
+    // $00:D60C: 00d616 taken +6
+    (0x00d60c, 0x00d618, false, false, 168, 0x00d616, &[]),
+    // $00:D618: fixed cost
+    (0x00d618, 0x00d619, false, false, 42, 0x000000, &[]),
+    // $00:DFB8: fixed cost
+    (0x00dfb8, 0x00dfba, false, false, 32, 0x000000, &[]),
+    // $00:DFBA: fixed cost
+    (0x00dfba, 0x00dfc5, false, false, 126, 0x000000, &[]),
+    // $00:DFC5: 00e022 taken +6
+    (0x00dfc5, 0x00e024, false, false, 1718, 0x00e022, &[]),
+    // $00:E024: 00e02e taken +6
+    (0x00e024, 0x00e030, false, false, 168, 0x00e02e, &[]),
+    // $00:E030: fixed cost
+    (0x00e030, 0x00e031, false, false, 42, 0x000000, &[]),
     // $00:E4E9: fixed cost
     (0x00e4e9, 0x00e503, true, true, 302, 0x000000, &[]),
     // $00:E503: fixed cost
@@ -256,6 +276,12 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x018f81, 0x018f84, false, false, 46, 0x000000, &[]),
     // $01:8F84: fixed cost
     (0x018f84, 0x018f8a, false, false, 144, 0x000000, &[]),
+    // $01:97F0: fixed cost
+    (0x0197f0, 0x0197f2, false, false, 32, 0x000000, &[]),
+    // $01:97F2: 019810 taken +6
+    (0x0197f2, 0x019812, false, false, 572, 0x019810, &[]),
+    // $01:9812: fixed cost
+    (0x019812, 0x019813, false, false, 42, 0x000000, &[]),
     // $01:A8FA: fixed cost
     (0x01a8fa, 0x01a907, false, false, 198, 0x000000, &[]),
     // $01:A90F: 01a914 taken +6
@@ -4030,6 +4056,8 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x09c286, 0x09c28f, true, true, 86, 0x09c28d, &[]),
     // $09:C28F: fixed cost
     (0x09c28f, 0x09c290, true, true, 44, 0x000000, &[]),
+    // $09:C47B: 09c480 taken +6
+    (0x09c47b, 0x09c482, true, false, 70, 0x09c480, &[]),
     // $09:C58F: 09c594 taken +6
     (0x09c58f, 0x09c596, true, true, 112, 0x09c594, &[]),
     // $09:C596: fixed cost

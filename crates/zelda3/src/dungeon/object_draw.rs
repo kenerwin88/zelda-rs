@@ -217,6 +217,14 @@ impl ZeldaState {
     }
 
     /// ROM: `Object_Table_Helper`
+    pub(super) fn object_table_helper_observed(&mut self, src: usize, dsto: u16, width: u16, _entry: u32) {
+        #[cfg(feature = "rom-shadow-audit")]
+        let _scope = crate::rom_shadow_audit::local_scope(_entry,Some(width));
+        self.object_table_helper(src, dsto, width);
+    }
+
+    /// Uncharged tile stores; the caller supplies the real JSR entry to the
+    /// observer. The final fallthrough has no additional source call frame.
     pub(super) fn object_table_helper(&mut self, src: usize, dsto: u16, width: u16) {
         self.room_write_current(dsto, self.tile_word(src, 0));
         for segment in 0..width {
@@ -1230,19 +1238,20 @@ impl ZeldaState {
     /// frame that jumped.
     /// ROM: `RoomData_DrawObject_nx4`
     pub(super) fn room_data_draw_object_nx4(&mut self, src: usize, dsto: u16, columns: u16) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         // $0197F0: STA $0E (the column count).
-        crate::cycle_ledger::charge(32);
+        if self.lag_free { b.block(0x0197f0); } else { crate::cycle_ledger::charge(32); }
         for x in 0..columns {
             // $0197F2-$019810: four tile stores through the line pointers,
             // X += 8, INY twice, DEC $0E, BNE (priced not taken).
-            crate::cycle_ledger::charge(572);
+            if self.lag_free { b.block(0x0197f2); } else { crate::cycle_ledger::charge(572); }
             if x + 1 < columns {
                 // BNE $0197F2 taken for every column but the last.
-                crate::cycle_ledger::charge(6);
+                if self.lag_free { b.taken(0x019810); } else { crate::cycle_ledger::charge(6); }
             }
         }
         // $019812: RTS.
-        crate::cycle_ledger::charge(42);
+        if self.lag_free { b.block(0x019812); } else { crate::cycle_ledger::charge(42); }
         self.room_draw_object_nx4_tiles(src, dsto, columns);
     }
 

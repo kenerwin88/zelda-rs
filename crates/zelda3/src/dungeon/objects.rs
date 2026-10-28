@@ -1048,13 +1048,15 @@ impl ZeldaState {
             | 0xbe
             | 0xbf => {}
             0xdd => {
+                #[cfg(feature = "rom-shadow-audit")]
+                let _scope = crate::rom_shadow_audit::local_scope(0x0193dc,None);
                 let width = width as u16 + 1;
                 let height = height as u16 * 2 + 2;
-                self.object_table_helper(src, dsto, width);
+                self.object_table_helper_observed(src, dsto, width, 0x0193ff);
                 for y in 1..height {
-                    self.object_table_helper(src + 8, dsto + y * 64, width);
+                    self.object_table_helper_observed(src + 8, dsto + y * 64, width, 0x0193ff);
                 }
-                self.object_table_helper(src + 16, dsto + height * 64, width);
+                self.object_table_helper_observed(src + 16, dsto + height * 64, width, 0x0193f7);
                 self.object_table_helper(src + 24, dsto + (height + 1) * 64, width);
             }
             0xdc => {

@@ -8,6 +8,8 @@ use std::{collections::{BTreeMap, BTreeSet}, fs::{self, File}, io::{BufRead, Buf
 
 #[path = "graphics_widths.rs"]
 mod graphics_widths;
+#[path = "local_exclusion.rs"]
+mod local_exclusion;
 mod generated { include!("../../zelda3/src/rom_block_costs.rs"); }
 const LENGTHS:[u8;256]=[
     2,2,2,2,2,2,2,2,1,2,1,1,3,3,3,4,
@@ -152,7 +154,7 @@ struct Scope {id:u64,pc:u32,parent:Option<u64>,site:String}
 #[derive(Clone,Debug,Serialize)]
 struct Charge {#[serde(default)] model:Option<Vec<(Option<u32>,u32,bool)>>,call:Option<u64>,pc:Option<u32>,kind:Option<u8>,width:Option<(bool,bool)>,clocks:u64,site:String,sequence:u64,domain:String}
 #[derive(Default)]
-struct Native {scopes:Vec<Scope>,charges:Vec<Charge>,total:Option<u64>}
+struct Native {scopes:Vec<Scope>,charges:Vec<Charge>,total:Option<u64>,local_widths:BTreeMap<u64,u16>}
 fn read_native(input:&mut impl Iterator<Item=Result<Value>>)->Result<Option<(u64,Native)>> {
     let Some(begin)=input.next() else {return Ok(None);};let begin=begin?;
     if begin["event"]!="begin" {return Err("native event outside cut".into());}
@@ -165,6 +167,7 @@ fn read_native(input:&mut impl Iterator<Item=Result<Value>>)->Result<Option<(u64
             Some("enter")=>{
                 let id=r["call"].as_u64().ok_or("native scope id")?;let pc=r["pc"].as_u64().ok_or("native scope pc")? as u32;
                 if !ids.insert(id) {return Err("duplicate native scope id".into());}
+                if let Some(width)=r["local_width"].as_u64() {n.local_widths.insert(id,u16::try_from(width)?);}
                 n.scopes.push(Scope {id,pc,parent:stack.last().map(|&(id,_)|id),site:r["site"].as_str().ok_or("native scope site")?.into()});
                 stack.push((id,pc));
             }
@@ -332,7 +335,7 @@ fn model_spans(n:&Native, rows:&[Instruction], c:&Calls, mapping:&BTreeMap<u64,u
 #[derive(Deserialize)]
 struct SourceTotal {iteration:Option<u64>,source_master:u64,source_instructions:u64}
 #[derive(Clone,Copy)]
-struct Prediction {main:u64,vwf:u64,missing:u64}
+struct Prediction {main:u64,vwf:u64,missing:u64,shortfall:u64}
 fn predictions(path:&Path)->Result<BTreeMap<u64,Prediction>> {
     let mut lines=BufReader::new(File::open(path)?).lines();
     let h=lines.next().ok_or("predictor header")??;let h:Vec<_>=h.split(',').collect();
@@ -342,7 +345,7 @@ fn predictions(path:&Path)->Result<BTreeMap<u64,Prediction>> {
     for (expected,line) in lines.enumerate() {
         let line=line?;let c:Vec<_>=line.split(',').collect();if c.len()!=h.len(){return Err("predictor row width".into());}
         let id:u64=c[i].parse()?;if id!=expected as u64 {return Err("predictor sequence".into());}
-        result.insert(id,Prediction {main:c[m].parse()?,vwf:c[v].parse()?,missing:c[l].parse::<u64>()?.saturating_sub(c[n].parse()?)});
+        result.insert(id,Prediction {main:c[m].parse()?,vwf:c[v].parse()?,missing:c[l].parse::<u64>()?.saturating_sub(c[n].parse()?),shortfall:c[col("cost_shortfall")?].parse()?});
     }Ok(result)
 }
 
@@ -357,7 +360,8 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
     let charged:u64=n.charges.iter().map(|e|e.clocks).sum();
     if n.total!=Some(charged) || charged.checked_add(p.vwf)!=Some(p.main) {return Err("independent native counter mismatch".into());}
     let mut source_events=Vec::new();let mut native_events=Vec::new();let mut owned=BTreeSet::new();let mut mapped_native=0;
-    let mut model_paired=0u64;let mut model_sequences=BTreeSet::new();
+    let mut model_paired=0u64;let mut model_sequences=BTreeSet::new();let mut model_ordinals=BTreeSet::new();
+    let mut gap_clocks=0;let mut gap_ordinals=BTreeSet::new();
     let mut source_blocks=Vec::new();let mut native_sites=BTreeMap::new();let mut reason=None;
     match calls(rows) {
         Err(e)=>reason=Some(e.to_string()),
@@ -418,7 +422,7 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
             for (start,end,ordinals) in model_spans(n,rows,&c,&mapping,&mut owned,&anchors) {
                 let charges=&n.charges[start..end];
                 let clocks:u64=charges.iter().map(|e|e.clocks).sum();
-                model_paired+=clocks;
+                model_paired+=clocks;model_ordinals.extend(&ordinals);
                 model_sequences.extend(charges.iter().map(|e|e.sequence));
                 writeln!(out.blocks,"{}",json!({"iteration":i,"model_pair":{
                     "rule":"unique_contiguous_graphics_pc_width_child_stream",
@@ -438,16 +442,41 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
                     "native_site":e.site,"native_call":e.call,"master_clocks":e.clocks,"model_instructions":e.model,
                     "witness_master":witness_master,"witness_charge_equal":witness_master.map(|v|v==e.clocks)}))?;
             }
+            // Local exclusion uses actual equal ordered pairs, never merely
+            // eligible markers (which may subsequently fail the ordered join).
+            let (_,exact_pairs)=ordered::pair(&source_events,&native_events)?;
+            let mut paired_source=model_ordinals.clone();let mut paired_native=model_sequences.clone();
+            for pair in exact_pairs.iter().filter(|r|r.status=="paired" && r.delta==0) {
+                let meta=&native_sites[&(pair.key.call,pair.key.pc,pair.key.occurrence)];
+                paired_source.extend(meta["source_ordinals"].as_array().unwrap().iter().map(|v|v.as_u64().unwrap() as usize));
+                paired_native.insert(meta["native_sequence"].as_u64().unwrap());
+                for extra in meta["native_extra_sites"].as_array().unwrap() {paired_native.insert(extra["sequence"].as_u64().unwrap());}
+            }
+            for scope in &n.scopes {
+                let Some(ordinals)=local_exclusion::helper_gap(&c,rows,n,&mapping,scope,&paired_source,&paired_native) else {continue;};
+                if ordinals.is_empty() {continue;}
+                for &j in &ordinals {if !gap_ordinals.insert(j) {return Err("overlapping local exclusion certificates".into());}}
+                let clocks:u64=ordinals.iter().map(|&j|rows[j].master).sum();gap_clocks+=clocks;
+                let call=mapping[&scope.id];
+                out.gaps.push(json!({"iteration":i,"source_call":call,"call_path":call_path(&c,call),
+                    "native_scope":scope.id,"native_site":scope.site,"entry":scope.pc,
+                    "rule":"table_helper_synchronous_closed_leaf_v1","master_clocks":clocks,
+                    "holds_touched":p.missing,"frequency":1,"source_ordinals":ordinals,
+                    "instructions":ordinals.iter().map(|&j|json!({"pc":rows[j].pc,"ordinal":j,"master_clocks":rows[j].master,
+                        "m8":rows[j].m8,"x8":rows[j].x8})).collect::<Vec<_>>(),
+                    "required_fixture":"193F7/193FF M16/X16 width loop and inherited caller tail; once-only JSR ownership",
+                    "pricing_status":"validated_exclusive_gap_not_applied"}));
+            }
             // Keep every source opcode not owned by an admitted block. A native
-            // scalar anywhere in this iteration has no proved instruction set;
-            // no positive source residual becomes an exclusive price by absence.
+            // Local certificates label a disjoint subset; gaps remain in U
+            // until a separate pricing batch actually charges their opcodes.
             for (ordinal,r) in rows.iter().enumerate().filter(|(j,_)|!owned.contains(j)) {
                 let call=c.owners[ordinal];
                 let sites=sites_by_call.get(&call);
                 writeln!(out.residuals,"{}",json!({"iteration":i,"domain":"main_instruction","reason":"source_call_or_block_unmapped",
                     "pc":r.pc,"end":r.pc+length(r.opcode,r.m8,r.x8),"ordinal":ordinal,"master_clocks":r.master,"call_path":call_path(&c,call),
                     "native_site_candidates":sites,"affected_missing_holds":p.missing,"missing_holds_covered":0,
-                    "m8":r.m8,"x8":r.x8,"dp":r.dp,"db":r.db,"scalar_exclusion_proved":false}))?;
+                    "m8":r.m8,"x8":r.x8,"dp":r.dp,"db":r.db,"scalar_exclusion_proved":gap_ordinals.contains(&ordinal)}))?;
             }
         }
     }
@@ -468,7 +497,9 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
         "model_paired_master":model_paired,"decoded_source_blocks":source_blocks.len(),"mapped_native_block_clocks":mapped_native,
         "alignment":"continuous_source_ordered_marker_subset","exact":exact,"call_frame_failure":reason,
         "source_independent_equal":true,"native_independent_equal":true,"continuous_interrupt_cuts":rows.iter().filter(|r|r.interrupt_after).count(),
-        "validated_exclusive_gap_clocks":0,"missing_holds_covered":0,
+        "validated_exclusive_gap_clocks":gap_clocks,"missing_holds_covered":0,
+        "combined_gap_inverse":{"added_main_clocks":gap_clocks,"full_count_shortfall":p.shortfall,
+            "reaches_full_count_inverse":p.shortfall>0 && gap_clocks>=p.shortfall,"fixed_context_only":true},
         "unpaired_source_clocks":source-source_events.iter().map(|e|e.clocks).sum::<u64>()-model_paired,
         "unpaired_native_clocks":p.main-native_events.iter().map(|e|e.clocks).sum::<u64>()-model_paired});
     writeln!(out.iterations,"{summary}")?;out.summaries.push(summary);Ok(())
@@ -481,6 +512,7 @@ fn call_path(c:&Calls,mut id:u64)->Vec<u32> {
 /// ROM SOURCE_OUT PREDICTOR EVENTS FRESH_OUT. Streams one source iteration;
 /// never writes ROM bytes or interpreter checkpoints to the report.
 pub fn run(rom:&Path,source:&Path,predictor:&Path,events:&Path,out:&Path)->Result<()> {
+    local_exclusion::verify_certificate_sources()?;
     let source_manifest=if source.join("manifest-frozen.json").exists() {source.join("manifest-frozen.json")}else{source.join("manifest.json")};
     let manifest:Manifest=serde_json::from_reader(File::open(&source_manifest)?)?;manifest.verify()?;
     let coverage:Value=serde_json::from_reader(File::open(source.join("coverage.json"))?)?;
@@ -490,6 +522,7 @@ pub fn run(rom:&Path,source:&Path,predictor:&Path,events:&Path,out:&Path)->Resul
         Identity::bind(&source.join("coverage.json"))?,Identity::bind(predictor)?,Identity::bind(events)?,
         Identity::bind(Path::new("crates/rom-shadow-audit/src/bridge.rs"))?,Identity::bind(Path::new("crates/rom-shadow-audit/src/ordered.rs"))?,
         Identity::bind(Path::new("crates/rom-shadow-audit/src/graphics_widths.rs"))?,
+        Identity::bind(Path::new("crates/rom-shadow-audit/src/local_exclusion.rs"))?,
         Identity::bind(Path::new("crates/zelda3/src/rom_block_costs.rs"))?,Identity::bind(&std::env::current_exe()?)?,Identity::bind(&source_manifest)?];
     if bound[0].sha256!="66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb" {return Err("generated blocks ROM mismatch".into());}
     let rom=fs::read(rom)?;let prediction=predictions(predictor)?;let mut native=json_rows(events)?;
@@ -540,10 +573,18 @@ pub fn run(rom:&Path,source:&Path,predictor:&Path,events:&Path,out:&Path)->Resul
     let write=|name:&str,value:&Value|->Result<()> {let mut f=File::options().create_new(true).write(true).open(out.join(name))?;serde_json::to_writer_pretty(&mut f,value)?;writeln!(f)?;Ok(())};
     write("coverage.json",&json!({"identities":bound,"source_checked":checked,"entry_variants":ordinary,
         "ordinary_missing_iterations":seen.len(),"summaries":output.summaries,"bridge_rule_counts":output.rules,
-        "pricing_verdict":"STOP","reason":"scalar instruction ownership and unmatched call/block paths remain unproved"}))?;
+        "pricing_verdict":if output.gaps.is_empty(){"STOP"}else{"GO_LOCAL_ONLY"},"reason":"only certified local gaps may be priced; remaining scalar and call paths stay unresolved"}))?;
+    let mut ranked=output.gaps.clone();ranked.sort_by_key(|r|std::cmp::Reverse(r["master_clocks"].as_u64().unwrap_or(0)));
+    let mut touched=BTreeMap::new();
+    for gap in &output.gaps {touched.insert(gap["iteration"].as_u64().unwrap(),gap["holds_touched"].as_u64().unwrap());}
     write("worklist.json",&json!({"validated_positive_gaps":output.gaps,"negative_price_repairs":output.overcharges,
-        "top_gaps_by_clocks":[],"top_gaps_by_missing_holds_covered":[],"missing_holds_covered":0,
-        "admission":"STOP","reason":"no exclusive positive gap has a scalar-disjoint ownership proof"}))?;
+        "top_gaps_by_clocks":ranked,"top_gaps_by_missing_holds_covered":[],"missing_holds_covered":0,
+        "holds_touched":touched.values().sum::<u64>(),"affected_iterations":touched.keys().collect::<Vec<_>>(),
+        "validated_gap_clocks":output.gaps.iter().map(|g|g["master_clocks"].as_u64().unwrap()).sum::<u64>(),
+        "admission":if output.gaps.is_empty(){"STOP"}else{"GO_LOCAL_ONLY"},
+        "combined_per_iteration_inverse":output.summaries.iter().filter(|s|s["validated_exclusive_gap_clocks"].as_u64().unwrap_or(0)>0)
+            .map(|s|json!({"iteration":s["iteration"],"missing_holds":s["missing_holds"],"inverse":s["combined_gap_inverse"]})).collect::<Vec<_>>(),
+        "reason":"only local boundary certificates admit gaps; holds touched are not recovery"}))?;
     Ok(())
 }
 

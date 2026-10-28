@@ -176,12 +176,16 @@ fn ordered_charge(clocks:u64,site:&'static std::panic::Location<'static>) {
 }
 #[track_caller]
 pub(crate) fn scope_enter(pc:u32) {
+    scope_enter_with_width(pc,None);
+}
+#[track_caller]
+fn scope_enter_with_width(pc:u32,local_width:Option<u16>) {
     let site=std::panic::Location::caller();
     ORDERED.with(|o| if let Some(s)=o.borrow_mut().as_mut() {
         let call=s.next_call;s.next_call+=1;s.calls.push((call,pc));
         if s.active {
             emit(s,serde_json::json!({"event":"enter","sequence":s.sequence,"call":call,"pc":pc,
-                "site":format!("{}:{}:{}",site.file(),site.line(),site.column())}));}
+                "site":format!("{}:{}:{}",site.file(),site.line(),site.column()),"local_width":local_width}));}
     });
 }
 pub(crate) fn scope_exit(pc:u32) {
@@ -189,6 +193,19 @@ pub(crate) fn scope_exit(pc:u32) {
         let call=s.calls.pop().expect("observer scope stack");assert_eq!(call.1,pc);
         if s.active {emit(s,serde_json::json!({"event":"exit","sequence":s.sequence,"call":call}));}
     });
+}
+
+/// Observe an otherwise unannotated boundary without opening a ledger scope,
+/// changing profiling, or unmuting preview work. This guard owns metadata only.
+pub(crate) struct LocalScope(Option<u32>);
+#[track_caller]
+pub(crate) fn local_scope(pc:u32,width:Option<u16>) -> LocalScope {
+    if crate::cycle_ledger::is_muted() { return LocalScope(None); }
+    scope_enter_with_width(pc,width);
+    LocalScope(Some(pc))
+}
+impl Drop for LocalScope {
+    fn drop(&mut self) { if let Some(pc)=self.0 { scope_exit(pc); } }
 }
 
 #[cfg(test)]
@@ -212,6 +229,7 @@ mod ordered_tests {
             super::model(vec![(Some(0xe843),17,true)]);
             crate::cycle_ledger::charge(17);
             crate::cycle_ledger::muted(|| {
+                let _local = super::local_scope(0x0193ff,None);
                 let _scope=crate::cycle_ledger::routine(0x008781);
                 crate::cycle_ledger::blocks(true).block(0x008781);
             });
