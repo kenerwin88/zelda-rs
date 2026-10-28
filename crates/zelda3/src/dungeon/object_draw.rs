@@ -1684,7 +1684,20 @@ impl ZeldaState {
         // 952 each, BNE taken once: +6) + $018A7D (136)] = 8 * 2,102, + 7
         // taken BNE $018A46 (42) + CLC / RTS (56) = 16,946. Same blocks as the
         // general translation above.
-        crate::cycle_ledger::charge_routine(0x01_8a44, 16_946);
+        let _scope = crate::cycle_ledger::routine(0x01_8a44);
+        if self.lag_free {
+            // $01:8A44..8A88, M16/X16: same fixed n=8 path, no child bodies.
+            let b = crate::cycle_ledger::blocks(true);
+            b.block(0x018a44);
+            for block in 0..8 {
+                b.block(0x018a46);
+                b.block(0x018a4b); b.taken(0x018a7b);
+                b.block(0x018a4b);
+                b.block(0x018a7d);
+                if block < 7 { b.taken(0x018a85); }
+            }
+            b.block(0x018a87);
+        } else { crate::cycle_ledger::charge(16_946); }
         let mut cursor = dst;
         for _ in 0..8 {
             for _ in 0..2 {

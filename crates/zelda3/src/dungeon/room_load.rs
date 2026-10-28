@@ -1556,13 +1556,39 @@ impl ZeldaState {
         // (918, BNE taken on 15 of every 16), eight row steps (172, BNE
         // taken on seven) and the 332-cycle tail with its RTL; the copy is
         // the same for every quadrant.
-        crate::cycle_ledger::charge_routine(
-            0x00_913f,
-            254 + 128 * 918 + 120 * 6 + 8 * 172 + 7 * 6 + 332,
-        );
+        let _scope = crate::cycle_ledger::routine(0x00_913f);
+        self.mark_quadrant_copy(false);
         let quadrant = self.game_state.dungeon.room_load.quadrant_upload_index() as usize;
         let work = self.begin_dungeon_quadrant_upload(ROOM_BG2_TILEMAP_BASE, quadrant, 0);
         self.complete_dungeon_quadrant_upload(work);
+    }
+
+    /// $00:913F..91C3 / $00:91D3..9251, M8/X8 entry, REP -> M16/X16.
+    /// Exact replacement of the fixed copy scalar; no DMA work is included.
+    pub(super) fn mark_quadrant_copy(&self, bg1: bool) {
+        if !self.lag_free {
+            crate::cycle_ledger::charge(254 + 128 * 918 + 120 * 6 + 8 * 172 + 7 * 6
+                + if bg1 { 268 } else { 332 });
+            return;
+        }
+        let b = crate::cycle_ledger::blocks(true);
+        let (head, copy, inner, row, outer, tail) = if bg1 {
+            (0x0091d3, 0x0091e7, 0x00922b, 0x00922d, 0x00923c, 0x00923e)
+        } else {
+            (0x00913f, 0x009153, 0x009197, 0x009199, 0x0091a8, 0x0091aa)
+        };
+        b.block(head);
+        for y in 0..8 {
+            for x in 0..16 {
+                b.block(copy);
+                if x < 15 { b.taken(inner); }
+            }
+            b.block(row);
+            if y < 7 { b.taken(outer); }
+        }
+        // The native quadrant selector is 0..15 plus the low layer nibble;
+        // $912F,X cannot cross a page. Preserve the scalar's no-extra path.
+        b.block(tail);
     }
 
     pub(in crate::zelda_rtl) fn complete_dungeon_quadrant_upload(&mut self, mut work: DungeonQuadrantUploadWork) {

@@ -433,7 +433,7 @@ impl ZeldaState {
     fn tile_map_prep_not_water_on_tag_body(&mut self) {
         // $00:91D3..9251: the $00:913F copy over the BG1 tilemap, with the
         // 268-cycle tail (target page + $10) and its RTL.
-        crate::cycle_ledger::charge(254 + 128 * 918 + 120 * 6 + 8 * 172 + 7 * 6 + 268);
+        self.mark_quadrant_copy(true);
         self.dungeon_prepare_next_room_quadrant_upload_from(
             ROOM_BG1_TILEMAP_BASE,
             self.game_state.dungeon.room_load.quadrant_upload_index() as usize,

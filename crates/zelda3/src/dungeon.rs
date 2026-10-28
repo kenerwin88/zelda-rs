@@ -511,3 +511,7 @@ mod aux_graphics_publication_tests {
         assert_eq!(&ram[0x6000..0x9000], bytes.as_slice());
     }
 }
+
+#[cfg(test)]
+#[path = "dungeon/m3a_fixtures.rs"]
+mod m3a_fixtures;

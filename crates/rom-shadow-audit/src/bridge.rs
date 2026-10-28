@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::{BTreeMap, BTreeSet}, fs::{self, File}, io::{BufRead, BufReader, Write}, path::Path};
 
+#[path = "graphics_widths.rs"]
+mod graphics_widths;
 mod generated { include!("../../zelda3/src/rom_block_costs.rs"); }
 const LENGTHS:[u8;256]=[
     2,2,2,2,2,2,2,2,1,2,1,1,3,3,3,4,
@@ -148,7 +150,7 @@ fn json_rows(path:&Path)->Result<impl Iterator<Item=Result<Value>>> {
 #[derive(Debug,Serialize)]
 struct Scope {id:u64,pc:u32,parent:Option<u64>,site:String}
 #[derive(Clone,Debug,Serialize)]
-struct Charge {call:Option<u64>,pc:Option<u32>,kind:Option<u8>,width:Option<(bool,bool)>,clocks:u64,site:String,sequence:u64,domain:String}
+struct Charge {#[serde(default)] model:Option<Vec<(Option<u32>,u32,bool)>>,call:Option<u64>,pc:Option<u32>,kind:Option<u8>,width:Option<(bool,bool)>,clocks:u64,site:String,sequence:u64,domain:String}
 #[derive(Default)]
 struct Native {scopes:Vec<Scope>,charges:Vec<Charge>,total:Option<u64>}
 fn read_native(input:&mut impl Iterator<Item=Result<Value>>)->Result<Option<(u64,Native)>> {
@@ -175,7 +177,7 @@ fn read_native(input:&mut impl Iterator<Item=Result<Value>>)->Result<Option<(u64
                 let path:Vec<_>=r["path"].as_array().ok_or("native charge path")?.iter()
                     .map(|v|Ok((v[0].as_u64().ok_or("path id")?,v[1].as_u64().ok_or("path pc")? as u32))).collect::<Result<_>>()?;
                 if path!=stack {return Err("native charge path mismatch".into());}
-                n.charges.push(Charge {call:stack.last().map(|&(id,_)|id),pc:r["pc"].as_u64().map(|v|v as u32),
+                n.charges.push(Charge {model:serde_json::from_value(r["model_instructions"].clone())?,call:stack.last().map(|&(id,_)|id),pc:r["pc"].as_u64().map(|v|v as u32),
                     kind:r["kind"].as_u64().map(|v|v as u8),width:serde_json::from_value(r["declared_width"].clone())?,
                     clocks:r["clocks"].as_u64().ok_or("native charge clocks")?,site:r["site"].as_str().ok_or("native charge site")?.into(),
                     sequence:sequence-1,domain:r["domain"].as_str().ok_or("native charge domain")?.into()});
@@ -249,6 +251,7 @@ fn map_scopes(n:&Native,c:&Calls,rows:&[Instruction])->Result<(BTreeMap<u64,u64>
 fn native_blocks<'a>(n:&'a Native,mapping:&BTreeMap<u64,u64>)->(Vec<NativeBlock>,Vec<&'a Charge>) {
     let mut blocks:Vec<NativeBlock>=Vec::new();let mut unmatched=Vec::new();
     for e in &n.charges {
+        if e.model.is_some() { unmatched.push(e); continue; }
         let call=e.call.and_then(|id|mapping.get(&id).copied());
         let pc=e.pc;let kind=e.kind;
         if let (Some(call),Some(pc),Some(0))=(call,pc,kind) {
@@ -267,6 +270,63 @@ fn native_blocks<'a>(n:&'a Native,mapping:&BTreeMap<u64,u64>)->(Vec<NativeBlock>
         unmatched.push(e);
     }
     (blocks,unmatched)
+}
+
+/// Match complete contiguous model instruction streams, never a PC multiset.
+/// Real source call reconstruction is already verified. A unique stream must
+/// stay under the mapped native ancestor, with exact per-PC widths and costs.
+/// Aggregated own/child booking is intentionally withheld: its charge order
+/// differs from source retirement and bank-wrap work may be booked on the last
+/// child. Its witnesses remain available, but cannot become an apparent pair.
+fn model_spans(n:&Native, rows:&[Instruction], c:&Calls, mapping:&BTreeMap<u64,u64>,
+    owned:&mut BTreeSet<usize>, anchors:&[(u64,usize,usize)]) -> Vec<(usize,usize,Vec<usize>)> {
+    let parents:BTreeMap<_,_>=n.scopes.iter().map(|s|(s.id,s.parent)).collect();
+    let widths:BTreeMap<_,_>=graphics_widths::WIDTHS.iter().map(|&(p,m,x)|(p,(m,x))).collect();
+    let mut positions:BTreeMap<u32,Vec<usize>>=BTreeMap::new();
+    for (j,r) in rows.iter().enumerate() {positions.entry(r.pc).or_default().push(j);}
+    let returns:BTreeSet<_>=rows.iter().filter(|r|matches!(r.opcode,0x60|0x6b)
+        && !(0xe843..0xe852).contains(&r.pc)).map(|r|r.pc).collect();
+    let mut result=Vec::new();let mut at=0;let mut cursor=0;
+    while at<n.charges.len() {
+        let start=at;
+        while at<n.charges.len() && n.charges[at].model.as_ref().is_some_and(|s|s.len()==1) {
+            let pc=n.charges[at].model.as_ref().unwrap()[0].0;at+=1;
+            // A completed non-byte-reader call is a retirement boundary.
+            // The next modeled call need not include its unpriced caller.
+            // Pair each entire bounded stream uniquely; never bridge the gap.
+            if pc.is_some_and(|p|returns.contains(&p)) {break;}
+        }
+        if at==start {at+=1;continue;}
+        let steps=&n.charges[start..at];
+        let Some(first)=steps[0].model.as_ref().unwrap()[0].0 else {continue;};
+        let mut ancestor=steps[0].call;
+        let mut source_ancestor=None;
+        while let Some(id)=ancestor {
+            if let Some(&call)=mapping.get(&id) {source_ancestor=Some(call);break;}
+            ancestor=parents.get(&id).copied().flatten();
+        }
+        let Some(ancestor)=source_ancestor else {continue;};
+        let candidates:Vec<_>=positions.get(&first).into_iter().flatten().copied().filter(|&j| {
+            if j<cursor || j+steps.len()>rows.len() {return false;}
+            if anchors.iter().any(|&(sequence,lo,hi)|
+                (sequence<steps[0].sequence && hi>=j) ||
+                (sequence>steps.last().unwrap().sequence && lo<j+steps.len())) {return false;}
+            steps.iter().zip(&rows[j..]).enumerate().all(|(offset,(e,r))| {
+                let (pc,clocks,child)=e.model.as_ref().unwrap()[0];
+                let mut parent=Some(c.owners[j+offset]);
+                while parent.is_some_and(|p|p!=ancestor) {parent=c.frames[parent.unwrap() as usize].parent;}
+                pc==Some(r.pc) && u64::from(clocks)==e.clocks && e.clocks==r.master
+                    && widths.get(&r.pc)==Some(&(r.m8,r.x8)) && r.dp&255==0 && !r.emulation
+                    && child==(r.pc>=0xe843 && r.pc<0xe852)
+                    && parent==Some(ancestor) && !owned.contains(&(j+offset))
+            })
+        }).collect();
+        // Ambiguous identical spans remain unmatched; no guessed call pairing.
+        if candidates.len()!=1 {continue;}
+        let j=candidates[0];let ordinals:Vec<_>=(j..j+steps.len()).collect();
+        owned.extend(&ordinals);cursor=j+steps.len();result.push((start,at,ordinals));
+    }
+    result
 }
 
 #[derive(Deserialize)]
@@ -297,6 +357,7 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
     let charged:u64=n.charges.iter().map(|e|e.clocks).sum();
     if n.total!=Some(charged) || charged.checked_add(p.vwf)!=Some(p.main) {return Err("independent native counter mismatch".into());}
     let mut source_events=Vec::new();let mut native_events=Vec::new();let mut owned=BTreeSet::new();let mut mapped_native=0;
+    let mut model_paired=0u64;let mut model_sequences=BTreeSet::new();
     let mut source_blocks=Vec::new();let mut native_sites=BTreeMap::new();let mut reason=None;
     match calls(rows) {
         Err(e)=>reason=Some(e.to_string()),
@@ -349,9 +410,33 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
                 native_events.push(Event {key:Key {call:b.call,pc:b.pc,kind:0,occurrence:k.2,m8:b.m,x8:b.x},
                     clocks:b.clocks,site:b.site.clone(),domain:"instruction".into()});
             }
+            let anchors:Vec<_>=native_sites.values().map(|v| {
+                let ord=v["source_ordinals"].as_array().unwrap();
+                (v["native_sequence"].as_u64().unwrap(),ord[0].as_u64().unwrap() as usize,
+                    ord.last().unwrap().as_u64().unwrap() as usize)
+            }).collect();
+            for (start,end,ordinals) in model_spans(n,rows,&c,&mapping,&mut owned,&anchors) {
+                let charges=&n.charges[start..end];
+                let clocks:u64=charges.iter().map(|e|e.clocks).sum();
+                model_paired+=clocks;
+                model_sequences.extend(charges.iter().map(|e|e.sequence));
+                writeln!(out.blocks,"{}",json!({"iteration":i,"model_pair":{
+                    "rule":"unique_contiguous_graphics_pc_width_child_stream",
+                    "source_ordinals":ordinals,"native_sequences":charges.iter().map(|e|e.sequence).collect::<Vec<_>>(),
+                    "source_master":clocks,"native_master":clocks,"signed_error":0}}))?;
+            }
             for e in &unmatched {
-                writeln!(out.residuals,"{}",json!({"iteration":i,"domain":e.domain,"reason":"native_scalar_or_call_unmapped",
-                    "native_site":e.site,"native_call":e.call,"master_clocks":e.clocks}))?;
+                if model_sequences.contains(&e.sequence) {continue;}
+                let reason=match &e.model {
+                    Some(steps) if steps.len()!=1=>"aggregate_graphics_booking_requires_child_order",
+                    Some(steps) if steps[0].0.is_none()=>"graphics_pc_unavailable",
+                    Some(_)=>"graphics_stream_path_width_call_or_occurrence_unmapped",
+                    None=>"native_scalar_or_call_unmapped",
+                };
+                let witness_master=e.model.as_ref().map(|steps|steps.iter().map(|s|u64::from(s.1)).sum::<u64>());
+                writeln!(out.residuals,"{}",json!({"iteration":i,"domain":e.domain,"reason":reason,
+                    "native_site":e.site,"native_call":e.call,"master_clocks":e.clocks,"model_instructions":e.model,
+                    "witness_master":witness_master,"witness_charge_equal":witness_master.map(|v|v==e.clocks)}))?;
             }
             // Keep every source opcode not owned by an admitted block. A native
             // scalar anywhere in this iteration has no proved instruction set;
@@ -367,8 +452,8 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
         }
     }
     let (paired,paired_rows)=ordered::pair(&source_events,&native_events)?;
-    let c=Conservation {source,native:p.main,paired_source:paired.paired_source,paired_native:paired.paired_native,
-        unmatched_source:source-paired.paired_source,unmatched_native:p.main-paired.paired_native,
+    let c=Conservation {source,native:p.main,paired_source:paired.paired_source+model_paired,paired_native:paired.paired_native+model_paired,
+        unmatched_source:source-paired.paired_source-model_paired,unmatched_native:p.main-paired.paired_native-model_paired,
         signed_error:paired.signed_error,unequal_pairs:paired.unequal_pairs};
     let exact=c.check()?;
     for r in paired_rows {
@@ -380,12 +465,12 @@ fn process(rom:&[u8],rows:&[Instruction],n:&Native,p:Prediction,total:&SourceTot
     if let Some(reason)=&reason {writeln!(out.residuals,"{}",json!({"iteration":i,"reason":"source_call_frame_unmapped","detail":reason,
         "master_clocks":source,"native_master":p.main}))?;}
     let summary=json!({"iteration":i,"conservation":c,"missing_holds":p.missing,"source_instructions":rows.len(),
-        "decoded_source_blocks":source_blocks.len(),"mapped_native_block_clocks":mapped_native,
+        "model_paired_master":model_paired,"decoded_source_blocks":source_blocks.len(),"mapped_native_block_clocks":mapped_native,
         "alignment":"continuous_source_ordered_marker_subset","exact":exact,"call_frame_failure":reason,
         "source_independent_equal":true,"native_independent_equal":true,"continuous_interrupt_cuts":rows.iter().filter(|r|r.interrupt_after).count(),
         "validated_exclusive_gap_clocks":0,"missing_holds_covered":0,
-        "unpaired_source_clocks":source-source_events.iter().map(|e|e.clocks).sum::<u64>(),
-        "unpaired_native_clocks":p.main-native_events.iter().map(|e|e.clocks).sum::<u64>()});
+        "unpaired_source_clocks":source-source_events.iter().map(|e|e.clocks).sum::<u64>()-model_paired,
+        "unpaired_native_clocks":p.main-native_events.iter().map(|e|e.clocks).sum::<u64>()-model_paired});
     writeln!(out.iterations,"{summary}")?;out.summaries.push(summary);Ok(())
 }
 fn call_path(c:&Calls,mut id:u64)->Vec<u32> {
@@ -404,6 +489,7 @@ pub fn run(rom:&Path,source:&Path,predictor:&Path,events:&Path,out:&Path)->Resul
         Identity::bind(&source.join("iterations.jsonl.zst"))?,Identity::bind(&source.join("entry-kinds.jsonl.zst"))?,
         Identity::bind(&source.join("coverage.json"))?,Identity::bind(predictor)?,Identity::bind(events)?,
         Identity::bind(Path::new("crates/rom-shadow-audit/src/bridge.rs"))?,Identity::bind(Path::new("crates/rom-shadow-audit/src/ordered.rs"))?,
+        Identity::bind(Path::new("crates/rom-shadow-audit/src/graphics_widths.rs"))?,
         Identity::bind(Path::new("crates/zelda3/src/rom_block_costs.rs"))?,Identity::bind(&std::env::current_exe()?)?,Identity::bind(&source_manifest)?];
     if bound[0].sha256!="66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb" {return Err("generated blocks ROM mismatch".into());}
     let rom=fs::read(rom)?;let prediction=predictions(predictor)?;let mut native=json_rows(events)?;
@@ -510,7 +596,7 @@ mod tests {
                 "enter"=>{let id=e["call"].as_u64().unwrap();n.scopes.push(Scope {id,pc:e["pc"].as_u64().unwrap() as u32,parent:stack.last().copied(),site:"fixture.rs:1:1".into()});stack.push(id);}
                 "exit"=>{stack.pop();}
                 _=>n.charges.push(Charge {call:e["call"][0].as_u64(),pc:e["pc"].as_u64().map(|v|v as u32),kind:e["kind"].as_u64().map(|v|v as u8),
-                    width:serde_json::from_value(e["declared_width"].clone()).unwrap(),clocks:e["clocks"].as_u64().unwrap(),site:"fixture.rs:1:1".into(),sequence:e["sequence"].as_u64().unwrap(),domain:"marker_instruction".into()}),
+                    model:None,width:serde_json::from_value(e["declared_width"].clone()).unwrap(),clocks:e["clocks"].as_u64().unwrap(),site:"fixture.rs:1:1".into(),sequence:e["sequence"].as_u64().unwrap(),domain:"marker_instruction".into()}),
             }
         }n
     }
@@ -580,4 +666,52 @@ mod tests {
         assert!(blocks(&rom,&rows,&c).unwrap()[0].extras.is_empty());
         rows[at].x=None;assert!(blocks(&rom,&rows,&c).unwrap().is_empty());
     }
+    #[test]
+    fn model_spans_reject_width_child_order_cost_duplicates_and_owned_opcodes() {
+        let mut rows=trace(vec![r(0x8038,0x20,511,0xe843,509),
+            r(0xe843,0xa7,509,0xe845,509),r(0xe845,0xa6,509,0xe847,509),
+            r(0xe847,0x60,509,0x803b,511),r(0x803b,0xea,511,0x805d,511),r(0x805d,0xea,511,0x805e,511)]);
+        rows[1].x8=false;rows[2].x8=false;
+        let c=calls(&rows).unwrap();
+        let mut n=Native::default();
+        n.scopes.push(Scope{id:10,pc:0x8034,parent:None,site:"fixture".into()});
+        for (seq,pc) in [0xe843,0xe845].into_iter().enumerate() {
+            n.charges.push(Charge{model:Some(vec![(Some(pc),10,true)]),call:Some(10),pc:None,kind:None,width:None,
+                clocks:10,site:"fixture".into(),sequence:seq as u64,domain:"scalar_unmapped".into()});
+        }
+        let mapping=[(10,0)].into();
+        assert_eq!(model_spans(&n,&rows,&c,&mapping,&mut BTreeSet::new(),&[]).len(),1);
+        assert!(model_spans(&n,&rows,&c,&mapping,&mut [1].into(),&[]).is_empty());
+        let mut wrong=rows.clone();wrong[2].x8=true;
+        assert!(model_spans(&n,&wrong,&c,&mapping,&mut BTreeSet::new(),&[]).is_empty());
+        n.charges[0].model.as_mut().unwrap()[0].2=false;
+        assert!(model_spans(&n,&rows,&c,&mapping,&mut BTreeSet::new(),&[]).is_empty());
+        n.charges[0].model.as_mut().unwrap()[0].2=true;
+        n.charges[0].clocks=11;
+        assert!(model_spans(&n,&rows,&c,&mapping,&mut BTreeSet::new(),&[]).is_empty());
+        n.charges[0].clocks=10;n.charges.swap(0,1);
+        assert!(model_spans(&n,&rows,&c,&mapping,&mut BTreeSet::new(),&[]).is_empty());
+        n.charges.swap(0,1);n.charges.push(n.charges[1].clone());
+        assert!(model_spans(&n,&rows,&c,&mapping,&mut BTreeSet::new(),&[]).is_empty());
+    }
+
+    #[test]
+    fn model_return_cut_keeps_unpriced_caller_on_source_unmatched_side() {
+        let mut rows=vec![r(0xe2ce,0xab,511,0xe2cf,511),r(0xe2cf,0x6b,511,0x803c,514),
+            r(0x803c,0x22,514,0xe5af,511),r(0xe5af,0xa2,511,0xe5b1,511)];
+        rows[3].m8=false;
+        let c=Calls {frames:vec![Call{id:0,parent:None,entry:0x8034,aliases:[0x8034].into(),
+            return_pc:0,return_sp:0,entry_sp:511,closed:true}],owners:vec![0;4],rules:BTreeMap::new()};
+        let mut n=Native::default();
+        n.scopes.push(Scope{id:10,pc:0x8034,parent:None,site:"fixture".into()});
+        for (seq,pc) in [0xe2ce,0xe2cf,0xe5af].into_iter().enumerate() {
+            n.charges.push(Charge{model:Some(vec![(Some(pc),10,false)]),call:Some(10),pc:None,kind:None,width:None,
+                clocks:10,site:"fixture".into(),sequence:seq as u64,domain:"scalar_unmapped".into()});
+        }
+        let mut owned=BTreeSet::new();
+        let spans=model_spans(&n,&rows,&c,&[(10,0)].into(),&mut owned,&[]);
+        assert_eq!(spans.len(),2);assert_eq!(owned,[0,1,3].into());
+        assert!(!owned.contains(&2),"missing caller cannot retire as model work");
+    }
+
 }

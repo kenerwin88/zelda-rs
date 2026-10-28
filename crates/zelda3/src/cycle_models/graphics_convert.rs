@@ -14,8 +14,18 @@ pub(crate) struct Instruction {
     pub master_cycles: u32,
     pub publication: Option<Publication>,
     source_read: Option<SourceRead>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "rom-shadow-audit"))]
+    #[serde(skip)]
     pub pc: u32,
+}
+
+#[cfg(any(test, feature = "rom-shadow-audit"))]
+impl Instruction {
+    /// Checkpoints exclude dev metadata. Zero after restore means unavailable,
+    /// never a claimed instruction at PC zero.
+    pub(crate) fn audit_pc(&self) -> Option<u32> {
+        (self.pc != 0).then_some(self.pc)
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -48,7 +58,7 @@ impl ConversionWork {
     pub(crate) fn common_high(data: &[u8]) -> Self {
         let mut work = Self::new(true, data, 64);
         work.instructions.truncate(work.instructions.len() - 2);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "rom-shadow-audit"))]
         for instruction in &mut work.instructions {
             instruction.pc += 0x11e; // $E5AF loop duplicated at $E6CD
         }
@@ -308,7 +318,7 @@ impl Builder {
             master_cycles,
             publication: None,
             source_read: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "rom-shadow-audit"))]
             pc: u32::from(_pc),
         });
     }

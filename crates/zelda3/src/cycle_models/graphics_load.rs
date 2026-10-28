@@ -20,7 +20,8 @@ pub(crate) struct Instruction {
     pub master_cycles: u32,
     pub routine: u32,
     pub publication: Option<Publication>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "rom-shadow-audit"))]
+    #[serde(skip)]
     pub pc: Option<u32>,
 }
 
@@ -242,8 +243,8 @@ impl SheetWork {
                                 self.decompressor
                             },
                             publication,
-                            #[cfg(test)]
-                            pc: None,
+                            #[cfg(any(test, feature = "rom-shadow-audit"))]
+                            pc: step.pc,
                         });
                     }
                 }
@@ -268,8 +269,8 @@ impl SheetWork {
                         // return address, so the ROM loader owns its clocks.
                         routine: self.prefix[0].routine,
                         publication,
-                        #[cfg(test)]
-                        pc: Some(step.pc),
+                        #[cfg(any(test, feature = "rom-shadow-audit"))]
+                        pc: step.audit_pc(),
                     });
                 }
                 _ => unreachable!(),
@@ -305,7 +306,7 @@ impl Builder {
                 master_cycles,
                 routine: self.routine,
                 publication: None,
-                #[cfg(test)]
+                #[cfg(any(test, feature = "rom-shadow-audit"))]
                 pc: Some(_pc),
             });
         }

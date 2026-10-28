@@ -1209,3 +1209,152 @@ available. No absolute transient peak measurement is claimed.
 No full library suite, GPU run, video, cached-av, external Snes9x process,
 protected-cache/shared-ledger write, cargo fmt, commit or push was performed.
 This is a residual-analysis stop; no prices or recovered holds are admitted.
+
+## M3a result
+
+**Verified observation/marker checkpoint; pricing admission remains STOP.**
+Work is on `codex/shadow-m3a`, starting at `f7086d71` (main `f4ddea8d`
+plus M2/M2b/M2c). No price, P2 rule, classifier, seed policy or serialized
+product state changed. No commit or push was made. The other pricing worktree
+and `sprite_main_draw/*` were not edited.
+
+### Graphics witnesses and ordered pairing
+
+The six requested `load_gfx` charge sites now expose dev-only instruction
+PCs, existing charge sequence/array occurrence, native scope ancestry and
+`GetNextByte` child membership behind `rom-shadow-audit`. The tileset,
+sheet-loader and conversion models forward their existing PCs; the decoder
+labels its existing steps with a static control-flow map decoded by
+`scripts/rom_block_costs.py`. That map contains no prices and reads no ROM at
+runtime. The aggregate decoder records its own instructions separately from
+every E843 child, including the last child. The old charge amounts and the
+last-record bank-wrap booking remain intact.
+
+All added PC fields are `serde(skip)`. Serialization fixtures verify that
+changing them changes no payload bytes. Restored conversion metadata reports
+an unavailable PC, rather than claiming instruction zero. Unavailable metadata
+cannot pair; it never reconstructs CPU state or feeds pricing/scheduling.
+No new environment switch was introduced.
+
+The bridge pairs only a unique, contiguous instruction stream under a mapped
+source ancestor, with exact PCs, entry-width contracts, source DP assumptions,
+child classification and **each instruction's cost**. Existing marker anchors
+and monotonic source ordinals preserve order and prohibit double ownership.
+A completed non-E843 RTS/RTL cuts a stream: an unpriced intervening caller stays
+source-unmatched. Tests reject wrong width, child membership, cost, reordered
+or duplicate steps and already-owned source opcodes, and specifically preserve
+that missing caller. Aggregate own/child booking still needs an ordering proof;
+its numeric equality alone does not admit a pair or a price.
+
+### Equal-cost marker replacements
+
+The generator adds **23 blocks**; all **2,977 existing rows are byte-unchanged**
+and the resulting 3,000-row table regenerates exactly. Source-address comments
+remain beside the replacements and in the generated table.
+
+| Replacement | Source instruction ownership |
+| --- | --- |
+| Basic attributes | `$01:B8FA..B966`, including both attribute predicates, flip merges, loop/tail branches and REP/SEP widths. The existing B8E3/B8EC/B8F3 entry/prologue scalars stay unchanged. |
+| Fixed floor n=8 | `$01:8A44..8A88`, two copy passes per block and actual taken branches; exactly 16,946 clocks. General-n and other caller partitions stay unchanged. |
+| Quadrant copy | `$00:913F..91C3`, 128 eight-word copies, eight row steps and the existing tail. |
+| BG1 copy | `$00:91D3..9251`, with its existing C4-entry predicate charge kept separate. Both D3 and C4 entries are tested. |
+
+Only lagless execution uses the markers. Non-lagless execution retains each
+old scalar and branch extra; muted work remains muted. **296 unmodified-ROM
+fixture cases** cover all three attribute entries, predicate boundaries,
+full/partial loop and final-counter paths, both floor planes, all quadrant
+selectors/layer nibbles and both BG1 aliases. Each is checked against both the
+lagless marker path and the preserved scalar path, giving **592 native checks**.
+An initial fixture attempted an invalid out-of-range full attribute load; it
+was corrected to the normal full load and a bounded short full-entry case.
+No product behavior was changed to accommodate that fixture.
+
+### Frozen 55-iteration join
+
+The source lane is the retained, independently verified M2b continuous prefix;
+no new source execution or native import at an interrupt is claimed. All 55
+source call reconstructions and their 324 internal interrupt cuts remain valid.
+The final bridge also reproduces M2b's original **3,197,516 paired clocks** on
+its original native events.
+
+Some original source-manifest code paths pointed into an active sibling
+worktree. Verification correctly rejected its changed block-entry file. The
+three code bindings (entries, table and source executor) were reconstructed
+from the recorded Git commit with **exact original byte lengths and SHA-256s**
+and relocated into private `source-bound/` evidence. Original manifests and
+inputs were not changed; the relocation receipt preserves their identities.
+
+| Cohort master clocks | M2b | M3a |
+| --- | ---: | ---: |
+| S | 125,893,178 | 125,893,178 |
+| N | 102,146,482 | 102,146,482 |
+| P = Q | 3,197,516 | **60,533,122** |
+| U | 122,695,662 | 65,360,056 |
+| O | 98,948,966 | 41,613,360 |
+| S-N = U-O | 23,746,696 | 23,746,696 |
+| E | 0 | 0 |
+
+Pairing increases by **57,335,606 clocks**, reaching **48.08% of S / 59.26%
+of N**. The final paired work is **13,130,300 block clocks in 64,273 marker
+occurrences**, plus **47,402,822 model clocks in 99 bounded streams**. Every
+paired row is equal-cost. An independent decomposition of the final block and
+residual streams reproduces **each of the 55 U and O counters**, as well as
+the bridge's per-iteration conservation equations.
+
+Remaining O is 21,109,552 legacy scalar/unmapped-call clocks, 9,316,632
+aggregate graphics clocks requiring child-order proof, 8,117,526 model clocks
+with unresolved path/width/call/occurrence mapping, 3,048,542 block-mapping
+clocks and 21,108 ordered-kernel clocks. U is 65,338,948 ordinary source
+residual clocks plus the same 21,108 kernel clocks. The original **184 kernel
+rows** remain: 92 ordered mismatches and 46 one-sided rows on each side.
+No EAA4 commutation, sorting or global scalar-exclusion waiver was introduced.
+
+**Validated exclusive gaps: zero. Negative-price repairs: zero. Added prices
+and recovered holds: zero.** Remaining unmatched work is evidence to
+investigate, not an additive price. The source suffix of 1,419,417 iterations
+and source EOF remain unverified; a full native census does not close that
+source-audit boundary.
+
+### Verification and retained evidence
+
+The fresh ROM-lane full-v2 census completes **1,473,123 ordered iterations
+and EOF**, with **2,801 missing holds / zero excess / zero zero-lag false
+positives**, and its census gate passes with unexplained WRAM/RNG/APU differences
+zero. Its **entire predictor CSV is byte-identical** to the current-main Route 6
+reference (SHA-256 `0202bcc04783742793368ff0cfac72c782beb98a818ced334fe5f5b0933cf594`). This proves equal per-iteration
+main counters, not merely an equal route total. No holds were recovered.
+
+The final default **200,000-frame state ledger matches every record and EOF**.
+All three final product builds (default, `--no-default-features`, feature-on)
+are warning-free. Four new M3a tests, four filtered observer tests, three
+model-local graphics tests, three decoder tests, **28 enabled auditor tests**
+and **eight disabled-feature tests** pass. The existing CPU-only graphics
+fixtures also pass **37 initializer, 329 sheet-loader, 48 common-sprite and 32
+standalone-conversion cases**; decoder fixtures now compare their PC labels
+instruction by instruction on every supported cartridge sheet. Marker fixtures
+exercise both lagless and scalar paths. Lib-test builds retain pre-existing
+dead-code warnings; ordinary builds have zero warnings/errors.
+
+The full census uses the frozen feature binary named in `verification.json`.
+The final feature build additionally repeats the 53,706-iteration observer
+window: predictor, compressed ordered events, routine/block/object/sprite
+profiles and stdout are **all seven byte-identical** to that census build's
+prefix. The last source change only makes restored, nonserialized PC metadata
+explicitly unavailable; it neither changes prices nor supplies state to the
+counter. The native/source join remains bound to the same cohort bytes.
+
+`git diff --check` passes. The final source manifest re-verifies successfully.
+Retained private output occupies **2.458 GB logical / 2.554 GB allocated**,
+below 3,000,000,000 bytes. Disk samples are retained; no absolute transient peak
+is claimed.
+
+Evidence is under `target/shadow-m3a/`: `verification.json`,
+`full-equality.json`, `native-processes.json`, final build/test logs,
+`source-bound/relocation-m3a.json`, `join-verified/{coverage,worklist}.json`,
+its compressed calls/blocks/iterations/residuals, and `m3a-summary.json`.
+Scratch analysis/driver programs were kept in `/tmp`; no one-off repository
+script was added. Superseded/rejected joins are not counted as accepted proof.
+
+No GPU execution, `--video`, cached-av, external Snes9x process, full library
+suite, oracle-cache/shared-ledger write, cargo fmt, commit or push was used.
+These are CPU accounting and regression receipts, not exact A/V acceptance.

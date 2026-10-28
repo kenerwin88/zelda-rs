@@ -33,7 +33,8 @@ pub(crate) struct Instruction {
     pub master_cycles: u32,
     pub routine: u32,
     pub publication: Option<Publication>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "rom-shadow-audit"))]
+    #[serde(skip)]
     pub pc: Option<u32>,
 }
 
@@ -416,8 +417,8 @@ impl TilesetWork {
                                 p => SheetPublication::Conversion(p),
                             },
                         }),
-                        #[cfg(test)]
-                        pc: Some(step.pc),
+                        #[cfg(any(test, feature = "rom-shadow-audit"))]
+                        pc: step.audit_pc(),
                     })
                 }
             };
@@ -451,7 +452,7 @@ fn convert_step(step: SheetInstruction, destination: usize) -> Instruction {
             destination,
             publication,
         }),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "rom-shadow-audit"))]
         pc: step.pc,
     }
 }
@@ -472,7 +473,7 @@ impl Builder {
             master_cycles,
             routine: self.routine,
             publication: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "rom-shadow-audit"))]
             pc: Some(_pc),
         });
     }

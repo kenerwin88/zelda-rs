@@ -119,6 +119,9 @@ pub(crate) struct DecompressStore {
 pub(crate) struct DecompressInstruction {
     pub(crate) master_cycles: u32,
     pub(crate) in_get_next_byte: bool,
+    #[cfg(any(test, feature = "rom-shadow-audit"))]
+    #[serde(skip)]
+    pub(crate) pc: Option<u32>,
     pub(crate) action: Option<DecompressAction>,
 }
 
@@ -210,6 +213,8 @@ fn charge_instructions(
         instruction(DecompressInstruction {
             master_cycles: u32::try_from(cycles).expect("one decompressor instruction fits u32"),
             in_get_next_byte: false,
+            #[cfg(any(test, feature = "rom-shadow-audit"))]
+            pc: None,
             action: None,
         });
     }
@@ -225,6 +230,8 @@ fn charge_action(
     instruction(DecompressInstruction {
         master_cycles: cycles as u32,
         in_get_next_byte: false,
+        #[cfg(any(test, feature = "rom-shadow-audit"))]
+        pc: None,
         action: Some(action),
     });
 }
@@ -238,6 +245,13 @@ fn decompress_cost_with_stores(
     mut emit: impl FnMut(DecompressStore),
     mut instruction: impl FnMut(DecompressInstruction),
 ) -> DecompressCost {
+    #[cfg(any(test, feature = "rom-shadow-audit"))]
+    let mut witness = PcWitness::new(entry);
+    #[cfg(any(test, feature = "rom-shadow-audit"))]
+    let mut instruction = |mut step: DecompressInstruction| {
+        step.pc = witness.step(step.master_cycles);
+        instruction(step);
+    };
     // `[$00],Y` accesses: the 24-bit destination plus the 16-bit output
     // cursor, priced by the bus rule at that address.
     let write_cost = |cursor: u16| LONG_INDIRECT_WITHOUT_ACCESS + data_access_cost(destination.wrapping_add(u32::from(cursor)));
@@ -569,6 +583,8 @@ mod tests {
             }
             let pc = run.pc();
             let step = run.step().master_cycles;
+            assert_eq!(instructions.get(index).and_then(|i|i.pc), Some(pc),
+                "decompressor PC witness {entry:?} sheet {sheet:#04x} step {index}");
             assert_eq!(instructions.get(index).map(|i| (i.master_cycles, i.in_get_next_byte)),
                 Some((step, (0x00_e843..=0x00_e852).contains(&pc))),
                 "{entry:?} sheet {sheet:#04x}: instruction {index} at {pc:06x}, elapsed={master}");
@@ -657,5 +673,38 @@ mod tests {
             }
         }
         assert_eq!(wrapped, 7, "the table names every bank-crossing stream");
+    }
+}
+
+// This cursor labels the existing native timeline. It never changes a price,
+// output, branch or serialized continuation, and fails closed on lost flow.
+#[cfg(any(test, feature = "rom-shadow-audit"))]
+#[path = "decompress_witness.rs"]
+mod witness_flow;
+#[cfg(any(test, feature = "rom-shadow-audit"))]
+struct PcWitness { pc: Option<u32>, returns: Vec<u32> }
+#[cfg(any(test, feature = "rom-shadow-audit"))]
+impl PcWitness {
+    fn new(entry: DecompressEntry) -> Self {
+        Self { pc: Some(match entry { DecompressEntry::Sprite => 0xe772,
+            DecompressEntry::Background => 0xe783, DecompressEntry::BackgroundTables => 0xe78f }),
+            returns: Vec::new() }
+    }
+    fn step(&mut self, clocks: u32) -> Option<u32> {
+        let pc = self.pc?;
+        let Ok(index) = witness_flow::FLOW.binary_search_by_key(&pc, |r|r.0) else {
+            self.pc = None; return None;
+        };
+        let (_,next,opcode,target,_) = witness_flow::FLOW[index];
+        self.pc = match opcode {
+            0x20 => { self.returns.push(next); Some(target) }
+            0x60 => self.returns.pop(),
+            0x4c | 0x80 => Some(target),
+            0x10 | 0x30 | 0x90 | 0xb0 | 0xd0 | 0xf0 => match clocks {
+                16 => Some(next), 22 => Some(target), _ => None,
+            },
+            _ => Some(next),
+        };
+        Some(pc)
     }
 }

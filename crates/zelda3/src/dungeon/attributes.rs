@@ -148,10 +148,11 @@ impl ZeldaState {
     /// The loop of Dungeon_LoadBasicAttribute_full from $01:B8FA, unscoped so
     /// that the three entries ($01B8E3, $01B8EC, $01B8F3) can each own it.
     fn dungeon_load_basic_attribute_body(&mut self, loops: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         for loop_index in 0..loops {
             // $01B8FA-$01B918: both tile words, the two attribute lookups,
             // SEP #$20, CMP #$10 with BCC priced not taken.
-            crate::cycle_ledger::charge(374);
+            if self.lag_free { b.block(0x01b8fa); } else { crate::cycle_ledger::charge(374); }
             let i = self
                 .game_state
                 .dungeon
@@ -170,40 +171,40 @@ impl ZeldaState {
             let attr1 = self.dungeon_tile_definition(tile1 as usize).cartridge_attribute();
             if attr0 < 0x10 {
                 // BCC $01B92A taken.
-                crate::cycle_ledger::charge(6);
+                if self.lag_free { b.taken(0x01b918); } else { crate::cycle_ledger::charge(6); }
             } else {
                 // $01B91A-$01B91C: CMP #$1C, BCS priced not taken.
-                crate::cycle_ledger::charge(32);
+                if self.lag_free { b.block(0x01b91a); } else { crate::cycle_ledger::charge(32); }
                 if attr0 >= 0x1c {
                     // BCS $01B92A taken.
-                    crate::cycle_ledger::charge(6);
+                    if self.lag_free { b.taken(0x01b91c); } else { crate::cycle_ledger::charge(6); }
                 } else {
                     // $01B91E-$01B927: merge tile0's flip bits into the attribute.
-                    crate::cycle_ledger::charge(136);
+                    if self.lag_free { b.block(0x01b91e); } else { crate::cycle_ledger::charge(136); }
                 }
             }
             // $01B92A-$01B930: STA $02, LDA $04, CMP #$10, BCC priced not taken.
-            crate::cycle_ledger::charge(80);
+            if self.lag_free { b.block(0x01b92a); } else { crate::cycle_ledger::charge(80); }
             if attr1 < 0x10 {
                 // BCC $01B941 taken.
-                crate::cycle_ledger::charge(6);
+                if self.lag_free { b.taken(0x01b930); } else { crate::cycle_ledger::charge(6); }
             } else {
                 // $01B932-$01B934: CMP #$1C, BCS priced not taken.
-                crate::cycle_ledger::charge(32);
+                if self.lag_free { b.block(0x01b932); } else { crate::cycle_ledger::charge(32); }
                 if attr1 >= 0x1c {
                     // BCS $01B941 taken.
-                    crate::cycle_ledger::charge(6);
+                    if self.lag_free { b.taken(0x01b934); } else { crate::cycle_ledger::charge(6); }
                 } else {
                     // $01B936-$01B93F: merge tile1's flip bits into the attribute.
-                    crate::cycle_ledger::charge(122);
+                    if self.lag_free { b.block(0x01b936); } else { crate::cycle_ledger::charge(122); }
                 }
             }
             // $01B941-$01B959: pack both attributes, store the word at
             // $7F2000+$B4, $B4 += 2, $B2 += 4, DEC $00, BNE (priced not taken).
-            crate::cycle_ledger::charge(364);
+            if self.lag_free { b.block(0x01b941); } else { crate::cycle_ledger::charge(364); }
             if loop_index + 1 < loops {
                 // BNE $01B8FA taken for every loop but the last.
-                crate::cycle_ledger::charge(6);
+                if self.lag_free { b.taken(0x01b959); } else { crate::cycle_ledger::charge(6); }
             }
             let a0 = self.attribute_for_bg_tile(tile0);
             let a1 = self.attribute_for_bg_tile(tile1);
@@ -226,7 +227,7 @@ impl ZeldaState {
                 .set_draw_width_indicator_word(width);
         }
         // $01B95B-$01B960: LDA $B4, CMP #$2000, BNE priced not taken.
-        crate::cycle_ledger::charge(72);
+        if self.lag_free { b.block(0x01b95b); } else { crate::cycle_ledger::charge(72); }
         if self
             .game_state
             .dungeon
@@ -235,14 +236,14 @@ impl ZeldaState {
             == 0x2000
         {
             // $01B962: INC $0200.
-            crate::cycle_ledger::charge(62);
+            if self.lag_free { b.block(0x01b962); } else { crate::cycle_ledger::charge(62); }
             self.increment_overworld_map_state();
         } else {
             // BNE $01B965 taken.
-            crate::cycle_ledger::charge(6);
+            if self.lag_free { b.taken(0x01b960); } else { crate::cycle_ledger::charge(6); }
         }
         // $01B965-$01B966: PLB / RTS.
-        crate::cycle_ledger::charge(70);
+        if self.lag_free { b.block(0x01b965); } else { crate::cycle_ledger::charge(70); }
     }
 
     fn attribute_for_bg_tile(&self, tile: u16) -> NativeTile {
@@ -1305,6 +1306,49 @@ impl ZeldaState {
                 self.write_attr1(j + xy(0, 1), attr.with_palace_transition());
             }
             i += 2;
+        }
+    }
+}
+
+#[cfg(test)]
+mod m3a_tests {
+    use super::*;
+    #[test]
+    fn m3a_basic_attribute_entries_and_branch_widths_match_rom() {
+        use super::super::m3a_fixtures::source_work;
+        for variant in 0..3 {
+            for attr0 in [0x0f, 0x10, 0x1b, 0x1c] {
+                for attr1 in [0x0f, 0x10, 0x1b, 0x1c] {
+                    for final_page in [false, true] {
+                        let mut state = ZeldaState::new();
+                        state.set_lag_free(true);
+                        state.dungeon_room_parser_mut().write_tile_attribute_byte(0, attr0);
+                        state.dungeon_room_parser_mut().write_tile_attribute_byte(1, attr1);
+                        let loops = if variant == 2 { if final_page { 0x1000 } else { 1 } } else { 0x40 };
+                        for i in 0..0x1000 {
+                            state.dungeon_room_tilemaps_mut().set_room_tilemap_word_by_byte_offset(
+                                ROOM_BG2_TILEMAP_BASE, i * 4, 0xc000);
+                            state.dungeon_room_tilemaps_mut().set_room_tilemap_word_by_byte_offset(
+                                ROOM_BG2_TILEMAP_BASE, i * 4 + 2, 0x4001);
+                        }
+                        let height = if variant == 2 { 0 } else if final_page { 0x2000u16.wrapping_sub(loops as u16 * 2) } else { 2 };
+                        state.dungeon_room_load_mut().set_draw_height_indicator_word(height);
+                        let mut ram = state.wram_image().into_owned();
+                        ram[0..2].copy_from_slice(&(loops as u16).to_le_bytes());
+                        let entry = [0x01b8b4,0x01b8ec,0x01b8f3][variant];
+                        let expected = source_work(&ram,entry,variant==0,variant!=2,true,0,0,0);
+                        for lagless in [false,true] {
+                            let mut state=state.clone();state.set_lag_free(lagless);
+                            let before = crate::cycle_ledger::master();
+                            match variant { 0 => state.dungeon_load_attribute_selectable(),
+                                1 => state.dungeon_load_basic_attribute_full(0x40),
+                                _ => state.dungeon_load_basic_attribute_full(loops) }
+                            assert_eq!(crate::cycle_ledger::master()-before,expected,
+                                "variant={variant} attrs={attr0:x}/{attr1:x} final={final_page} lagless={lagless}");
+                        }
+                    }
+                }
+            }
         }
     }
 }

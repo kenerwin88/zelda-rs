@@ -2800,7 +2800,7 @@ impl ZeldaState {
         if let Some(Publication::Graphics { destination, publication }) = instruction.publication {
             self.retire_sheet_load_instruction(destination, crate::cycle_models::graphics_load::Instruction {
                 master_cycles: instruction.master_cycles, routine: instruction.routine,
-                publication: Some(publication), #[cfg(test)] pc: instruction.pc,
+                publication: Some(publication), #[cfg(any(test, feature = "rom-shadow-audit"))] pc: instruction.pc,
             });
             if let crate::cycle_models::graphics_load::Publication::Conversion(
                 crate::cycle_models::graphics_convert::Publication::VramWord { offset, .. }
@@ -2808,6 +2808,11 @@ impl ZeldaState {
                 self.ppu.vram_pointer = (destination as u16).wrapping_add(offset).wrapping_add(1);
             }
             return;
+        }
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing() {
+            crate::rom_shadow_audit::model(vec![(instruction.pc, instruction.master_cycles,
+                instruction.routine == 0xe843)]);
         }
         crate::cycle_ledger::charge_in_routine(instruction.routine, u64::from(instruction.master_cycles));
         match instruction.publication {
@@ -3007,6 +3012,26 @@ impl ZeldaState {
             stream_source_offset(entry, sheet),
             0x7e_0000 + dst as u32,
         );
+        #[cfg(feature = "rom-shadow-audit")]
+        let mut children = if crate::rom_shadow_audit::observing() {
+            let (witness_cost, _, steps) = crate::cycle_models::decompress::decompress_instruction_timeline(
+                entry, sheet, stream, stream_source_offset(entry, sheet), 0x7e_0000 + dst as u32);
+            assert_eq!(witness_cost, cost);
+            let mut own = Vec::new();
+            let mut children = Vec::new();
+            let mut child = Vec::new();
+            for step in steps {
+                let row = (step.pc, step.master_cycles, step.in_get_next_byte);
+                if step.in_get_next_byte {
+                    child.push(row);
+                    if step.pc == Some(0xe851) { children.push(std::mem::take(&mut child)); }
+                } else { own.push(row); }
+            }
+            assert!(child.is_empty());
+            assert_eq!(children.len() as u64, cost.get_next_byte_calls);
+            crate::rom_shadow_audit::model(own);
+            Some(children.into_iter())
+        } else { None };
         crate::cycle_ledger::charge(cost.master - cost.get_next_byte_master);
         let Some(last_call) = cost.get_next_byte_calls.checked_sub(1) else {
             return;
@@ -3015,8 +3040,12 @@ impl ZeldaState {
         // a bank end (if any) costs 56 more, booked on the last record here
         // since only the per-host total is compared.
         for _ in 0..last_call {
+            #[cfg(feature = "rom-shadow-audit")]
+            if let Some(children) = &mut children { crate::rom_shadow_audit::model(children.next().unwrap()); }
             crate::cycle_ledger::charge_routine(0x00_e843, GET_NEXT_BYTE_MASTER);
         }
+        #[cfg(feature = "rom-shadow-audit")]
+        if let Some(children) = &mut children { crate::rom_shadow_audit::model(children.next().unwrap()); }
         crate::cycle_ledger::charge_routine(
             0x00_e843,
             cost.get_next_byte_master - last_call * GET_NEXT_BYTE_MASTER,
@@ -3248,6 +3277,10 @@ impl ZeldaState {
         &mut self, dst: usize, instruction: crate::cycle_models::graphics_convert::Instruction,
     ) {
         use crate::cycle_models::graphics_convert::Publication;
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing() {
+            crate::rom_shadow_audit::model(vec![(instruction.audit_pc(), instruction.master_cycles, false)]);
+        }
         crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
         match instruction.publication {
             Some(Publication::VramWord { offset, value }) => self.ppu.vram[dst + usize::from(offset)] = value,
@@ -3268,6 +3301,11 @@ impl ZeldaState {
     ) {
         use crate::cycle_models::graphics_load::Publication;
         use crate::cycle_models::graphics_convert::Publication as Conversion;
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing() {
+            crate::rom_shadow_audit::model(vec![(instruction.pc, instruction.master_cycles,
+                instruction.routine == 0xe843)]);
+        }
         crate::cycle_ledger::charge_in_routine(instruction.routine, u64::from(instruction.master_cycles));
         match instruction.publication {
             Some(Publication::Byte { address, value }) => self.ram[address] = value,
