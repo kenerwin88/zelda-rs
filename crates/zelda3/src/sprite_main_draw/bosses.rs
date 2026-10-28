@@ -576,7 +576,108 @@ impl ZeldaState {
     }
 
     // -----------------------------------------------------------------------
-    // void Sprite_7A_Agahnim(int k) {  // 9ed330
+    // void Agahnim_Attack(int k) {  // 9ed566
+    pub(super) fn agahnim_attack(&mut self, k: usize) {
+        // $1E:D566..D60A: complete RTS-selected attack body. Palette,
+        // damage, projection, sound and attack-spawn children stay separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ed566));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ed566);
+        let delay = self.sprite_slot_view(k).delay_main();
+        if delay == 192 {
+            b.block(0x1ed56d);
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x27);
+            b.block(0x1ed574);
+        }
+        else { b.taken(0x1ed56b); }
+        b.block(0x1ed575);
+        if delay >= 239 { b.taken(0x1ed577); }
+        else {
+            b.block(0x1ed579);
+            if delay >= 16 { b.taken(0x1ed57b); }
+        }
+        if !(16..239).contains(&delay) {
+            b.block(0x1ed57d);
+            if self.game_state.world.region.is_in_dark_world() { b.taken(0x1ed581); }
+            else { b.block(0x1ed583); }
+            b.block(0x1ed585);
+            let filter_k = if self.game_state.world.region.is_in_dark_world() {
+                k
+            } else {
+                2
+            };
+            self.AgahnimWarpShadowFilter(filter_k);
+            b.block(0x1ed589);
+        } else {
+            b.block(0x1ed58c);
+            if k != 0 { b.taken(0x1ed58d); }
+            if k == 0 {
+                b.block(0x1ed58f);
+                // $1E:D58F JSR $1E:C267: complete two-call body.
+                self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
+                let value = 0;
+                b.block(0x1ed592);
+                self.sprite_slot_view_mut(k).set_ignore_projectile(value);
+            }
+        }
+        b.block(0x1ed595);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x1ed59a);
+            self.sprite_slot_view_mut(k).add_ai_state(1);
+            let value = 39;
+            self.sprite_slot_view_mut(k).set_delay_main(value);
+            return;
+        }
+        b.taken(0x1ed598);
+        b.block(0x1ed5a3);
+        if self.sprite_slot_view(k).delay_main() >= 128 {
+            b.block(0x1ed5a7);
+            self.sprite_apply_speed_towards_link(k, 2);
+            b.block(0x1ed5ae);
+            let idx = ((self.sprite_slot_view(k).y_velocity() as i8 as i32 + 2) * 5
+                + 2
+                + self.sprite_slot_view(k).x_velocity() as i8 as i32)
+                .clamp(0, 24) as usize;
+            let value = SPRITE_7_A_AGAHNIM_DIRECTIONS[idx];
+            self.sprite_slot_view_mut(k).set_direction(value);
+            self.sprite_apply_speed_towards_link(k, 32);
+            b.block(0x1ed5cd);
+            if self.sprite_slot_view(k).subtype() == 4 {
+                b.block(0x1ed5d4);
+                let value = 3;
+                self.sprite_slot_view_mut(k).set_direction(value);
+            } else { b.taken(0x1ed5d2); }
+            b.block(0x1ed5d9);
+        } else { b.taken(0x1ed5a5); }
+        b.block(0x1ed5da);
+        if self.sprite_slot_view(k).delay_main() == 112 {
+            b.block(0x1ed5de);
+            self.agahnim_perform_attack(k);
+            b.block(0x1ed5e2);
+        } else { b.taken(0x1ed5dc); }
+        b.block(0x1ed5e3);
+        let j = usize::from(self.sprite_slot_view(k).delay_main() >> 4);
+        let value = ATTACK_POSE_OFFSETS_BY_DELAY[j];
+        self.sprite_slot_view_mut(k).set_a(value);
+        let t = HEAD_TURN_STEPS_BY_DELAY[j];
+        let value = if t != 0 {
+            b.block(0x1ed5f3);
+            t.wrapping_add(
+                HEAD_TURN_DIRECTION_BASES
+                    [usize::from(self.sprite_slot_view(k).direction()).min(5)],
+            )
+        } else {
+            b.taken(0x1ed5f1);
+            t
+        };
+        b.block(0x1ed5fa);
+        self.sprite_slot_view_mut(k).set_head_direction(value);
+        let value = SPRITE_7_A_AGAHNIM_GRAPHICS_1
+            [usize::from(self.sprite_slot_view(k).direction()).min(5)]
+            + self.sprite_slot_view(k).a();
+        self.sprite_slot_view_mut(k).set_graphics(value);
+    }
+
     pub(super) fn sprite_7_a_agahnim(&mut self, k: usize) {
         self.agahnim_draw(k);
         if self.sprite_slot_view(k).pause() != 0 {
@@ -624,64 +725,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_graphics(value);
                 }
             }
-            3 => {
-                let delay = self.sprite_slot_view(k).delay_main();
-                if delay == 192 {
-                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x27);
-                }
-                if !(16..239).contains(&delay) {
-                    let filter_k = if self.game_state.world.region.is_in_dark_world() {
-                        k
-                    } else {
-                        2
-                    };
-                    self.AgahnimWarpShadowFilter(filter_k);
-                } else if k == 0 {
-                    // $1E:D58F JSR $1E:C267: complete two-call body.
-                    self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
-                    let value = 0;
-                    self.sprite_slot_view_mut(k).set_ignore_projectile(value);
-                }
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_view_mut(k).add_ai_state(1);
-                    let value = 39;
-                    self.sprite_slot_view_mut(k).set_delay_main(value);
-                    return;
-                }
-                if self.sprite_slot_view(k).delay_main() >= 128 {
-                    self.sprite_apply_speed_towards_link(k, 2);
-                    let idx = ((self.sprite_slot_view(k).y_velocity() as i8 as i32 + 2) * 5
-                        + 2
-                        + self.sprite_slot_view(k).x_velocity() as i8 as i32)
-                        .clamp(0, 24) as usize;
-                    let value = SPRITE_7_A_AGAHNIM_DIRECTIONS[idx];
-                    self.sprite_slot_view_mut(k).set_direction(value);
-                    self.sprite_apply_speed_towards_link(k, 32);
-                    if self.sprite_slot_view(k).subtype() == 4 {
-                        let value = 3;
-                        self.sprite_slot_view_mut(k).set_direction(value);
-                    }
-                } else if self.sprite_slot_view(k).delay_main() == 112 {
-                    self.agahnim_perform_attack(k);
-                }
-                let j = usize::from(self.sprite_slot_view(k).delay_main() >> 4);
-                let value = ATTACK_POSE_OFFSETS_BY_DELAY[j];
-                self.sprite_slot_view_mut(k).set_a(value);
-                let t = HEAD_TURN_STEPS_BY_DELAY[j];
-                let value = if t != 0 {
-                    t.wrapping_add(
-                        HEAD_TURN_DIRECTION_BASES
-                            [usize::from(self.sprite_slot_view(k).direction()).min(5)],
-                    )
-                } else {
-                    t
-                };
-                self.sprite_slot_view_mut(k).set_head_direction(value);
-                let value = SPRITE_7_A_AGAHNIM_GRAPHICS_1
-                    [usize::from(self.sprite_slot_view(k).direction()).min(5)]
-                    + self.sprite_slot_view(k).a();
-                self.sprite_slot_view_mut(k).set_graphics(value);
-            }
+            3 => self.agahnim_attack(k),
             4 => {
                 let value = self.sprite_slot_view(k).delay_main();
                 self.sprite_slot_view_mut(k).set_ignore_projectile(value);
@@ -1318,7 +1362,7 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = usize::from((self.sprite_slot_view(k).subtype2() >> 1) & 1) * 4;
-        self.moldorm_draw_multiple(k, &GIANT_MOLDORM_SEG_A_DRAW_FRAMES[base..base + 4]);
+        self.sprite_draw_multiple_bank1d(k, &GIANT_MOLDORM_SEG_A_DRAW_FRAMES[base..base + 4]);
     }
 
     pub(super) fn giant_moldorm_draw_segment_c_or_tail(&mut self, k: usize, lookback: i32) {
@@ -1361,16 +1405,17 @@ impl ZeldaState {
             + (self.sprite_slot_view(k).delay_aux1() & 2);
         let base = (t as usize) * 4;
         let base = base.min(GIANT_MOLDORM_HEAD_DRAW_FRAMES.len() - 4);
-        self.moldorm_draw_multiple(k, &GIANT_MOLDORM_HEAD_DRAW_FRAMES[base..base + 4]);
+        self.sprite_draw_multiple_bank1d(k, &GIANT_MOLDORM_HEAD_DRAW_FRAMES[base..base + 4]);
     }
 
-    fn moldorm_draw_multiple(&mut self, k: usize, src: &[DrawMultipleData]) {
+    pub(in crate::zelda_rtl) fn sprite_draw_multiple_bank1d(&mut self, k: usize, src: &[DrawMultipleData]) -> PrepOamCoordsRet {
         // $1D:8549..854D: JSL/RTS only, excluding the existing drawing body.
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8549));
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x1d8549);
-        self.sprite_draw_multiple(k, src);
+        let info = self.sprite_draw_multiple(k, src);
         b.block(0x1d854d);
+        info
     }
 
     // -----------------------------------------------------------------------

@@ -50,12 +50,20 @@ impl ZeldaState {
     //   Single small flame body tile.
     // }
     pub(super) fn poe_draw(&mut self, k: usize) {
+        // $06:9786..97D7: inline writer; preparation owns its double return.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x069786));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069786);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        b.block(0x069789);
         let d = usize::from(self.sprite_slot_view(k).direction() & 1);
         let ch = POE_DRAW_CHARS[((self.sprite_slot_view(k).subtype2() >> 3) & 3) as usize];
         let oam = self.game_state.oam.current_pointer_usize();
+        if y.wrapping_add(9).wrapping_add(16) < 256 { b.taken(0x0697bb); }
+        else { b.block(0x0697bd); }
+        b.block(0x0697c1);
         self.set_oam_helper0_at(
             oam,
             x.wrapping_add(POE_DRAW_X_OFFSETS[d] as i16 as u16),

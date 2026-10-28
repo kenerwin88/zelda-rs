@@ -1414,9 +1414,15 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SwamolaRipples_Draw(int k) {  // 9d9f1d
     pub(super) fn swamola_ripples_draw(&mut self, k: usize) {
+        // $1D:9F1D..9F3B, including its real JMP to the separately owned
+        // $8549 wrapper. Allocation and drawing retain their child prices.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d9f1d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1d9f1d);
         self.oam_allocate_from_region_b(8);
+        b.block(0x1d9f23);
         let base = usize::from((self.sprite_slot_view(k).delay_main() >> 2) & 3) * 2;
-        self.sprite_draw_multiple(k, &SWAMOLA_RIPPLES_DRAW_FRAMES[base..base + 2]);
+        self.sprite_draw_multiple_bank1d(k, &SWAMOLA_RIPPLES_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------

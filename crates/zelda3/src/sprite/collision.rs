@@ -239,7 +239,13 @@ impl ZeldaState {
     //   link_z_coord = 0;
     // }
     pub(in crate::zelda_rtl) fn sprite_apply_recoil_to_link(&mut self, k: usize, vel: u8) {
+        // $06:F688..F69E: self projection caller and stores. The E991
+        // projection child already owns its instruction work.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f688));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06f688);
         let pt = self.sprite_project_speed_towards_link(k, vel);
+        b.block(0x06f68c);
         self.follower_link_state_mut()
             .set_actual_velocity_xy(pt.x, pt.y);
         {

@@ -14729,3 +14729,140 @@ proof matrices and the final patch bind this stop. Evidence remains below
 or shared-ledger write, cargo fmt, commit, push or one-off repository script
 was used. Remaining pricing and continuous live ending acceptance remain
 unfinished.
+
+## Route pricing 5
+
+**Verified partial CPU-only stop on `codex/route5`, base `7269ccfa`.**
+Evidence: `target/route5/`. The single final unsharded ROM census uses
+read-only **full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate
+**PASSes all 1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**,
+and every runtime hold equals P2.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,842 | **2,820** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 461 | **457** |
+| 461,989..1,473,122 | 2,255 | **2,237** |
+
+Missing holds fall **2,842 → 2,820**:
+**22 restored**, **0 lost**, no new missing iteration or changed source context.
+`baseline-identity.json` binds the retained Route 4 predictor/profile and both
+binary hashes to this exact base; the intervening main change is documentation.
+No duplicate main census or seeded live census was run. The whole-route raw
+owner ranking is recomputed on **2,809 missing iterations**,
+with the existing exact multi-hold inverses checked before reuse. Parent/alias
+scores remain ownership worklists, not additive prices. Ties prefer the earlier
+route iteration. `remaining-owner-ranking.json` retains the refreshed residual.
+
+### Admitted instruction work
+
+Eight complete self bodies/entries add **51 blocks /
+264 instructions** from `scripts/rom_block_costs.py`.
+All **2,883 existing generated rows remain byte-identical**.
+Every marker is lagless-only and cites its source address. These self bodies
+had **zero legacy `charge(N)` scalars** and retain none. Existing child scalars,
+default/ROM-timing accounting and game-state operations are unchanged.
+
+| Self family, including selected existing wrappers | Entry | New clocks on frozen misses | Independent executed-marker flips |
+| --- | --- | ---: | ---: |
+| Agahnim attack state | `$1E:D566` | 47,736 | 5 |
+| Swamola ripple drawing | `$1D:9F1D` | 48,832 | 4 |
+| Fish drawing / no-graphics entry | `$1D:8483` | 41,770 | 2 |
+| Snapdragon drawing | `$06:9E02` | 5,340 | 2 |
+| Poe drawing | `$06:9786` | 70,048 | 2 |
+| Thief drawing | `$1D:CC9E` | 53,998 | 2 |
+| Recoil-to-Link caller | `$06:F688` | 12,384 | 2 |
+| Middle-Aged Man drawing | `$06:BDAC` | 1,476 | 1 |
+
+These independent scores overlap. The retained original instruction subset
+covers **2,019** current missing iterations and separately
+predicts **15 joint recoveries**. Its individual
+scores are Agahnim **5**, Swamola ripples **4**, Fish **2**, Thief **2**,
+recoil caller **2**, and **0** for each of the other three drawings. Complete
+standalone ROM fixtures establish the admitted bodies beyond this subset;
+zero subset coverage or recoveries is not promoted to a whole-route gain.
+Higher collision/velocity, drawing, module and slot-parent gaps retain their
+existing scalar/instruction/child ownership. **Module09 is untouched**;
+Route 2's all-entry retirement partition remains unestablished.
+
+Agahnim's existing state-3 arm becomes its actual `$1E:D566` RTS-selected
+body, preserving its operations and leaving palette, sound, damage, projection
+and attack-spawn children separate. Fish prices both its `$8483` entry and real
+back-branch to `$847E`, with both drawing calls and its coordinate return
+separate. Poe follows the actual clipping branch. Thief prices the actual OAM
+indirect-read page crossing and pause branch.
+
+Swamola ripples and Thief select the already generated `$1D:8549` wrapper only
+at their real JMP/JSR. The existing Moldorm wrapper is generalized to return
+its existing drawing result; previous Moldorm callers retain identical work.
+Snapdragon and Middle-Aged Man select `$06:DC64`'s 16-clock prefix once; the
+already priced DC66 body remains separate. The recoil-to-Link body is genuinely
+unpriced self work around its already priced E991 projection child. No parent
+plus child double charge is installed. `pricing-audit.json` checks the ROM
+bindings and table preservation.
+
+The higher ancilla collision candidate `$08:8DAE` is not admitted: ROM
+`$8DFE` uses sprite direction for its deflection lookup while native uses
+ancilla direction. Guard parry `$06:EB76` also remains unpriced because its
+EB94 partial-entry retirement partition is unresolved. Cucco/Swamola caller
+handoffs and existing scalar-priced mirror-portal, boulder and screen-flash
+bodies receive no additional tax.
+
+The Blind-head candidate is withdrawn before census verification. Its new ROM
+fixture finds `$1D:E93D CMP #$CE` returns normally from recoil for Blind's head,
+where native returns early for every type except `$7A`. All candidate markers,
+generated rows and the fixture are removed; no success-only price or behavior
+repair is installed. The failure witness remains in `dev-fixtures2.log`.
+`admission-notes.json` retains these boundaries; remaining owners are not
+claimed exhausted.
+
+**281,584 new marker clocks = 281,584 signed main-counter clocks**
+on every frozen missing row, with **0 work mismatches**.
+Original instruction work grouped into generated blocks, including only the
+newly selected existing wrapper/selector calls, agrees on all
+**2,019 covered rows**, with
+**0 source mismatches**. The unchanged full-cohort inverse
+predicts **20** recoveries; observed cohort recovery is
+**22**, with **2 prediction exceptions**.
+`work-proof.json`, compressed original instruction work and `frame-flips.json.gz`
+retain the matrices. The two fixed-inverse exceptions are **395,492** and
+**887,995**: respectively **1,176 / 448 new instruction clocks** change the
+existing iris raster wait from **0 to 270,026 / 269,670** clocks, restoring
+one hold each. `prediction-exception-rows.json` retains both controls; no price,
+threshold or caller admission is adjusted for these barrier effects.
+These are instruction-work and logical-scheduling checks,
+not physical CPU/NMI or exact A/V proof. No price is fitted to lag counts;
+no classifier, pacing rule, scene threshold/multiplier/table or SPC/APU behavior
+changes.
+
+### Continuous live and final verification
+
+The single cold live lane uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, and zero post-initial
+reseeds. It completes all **500,000 tested iterations**. Its first classified
+state difference is **380,880**, category **`song-end-poll`**,
+compared with base **380,880**. The last clean index is
+**380,879**. The unchanged strict gate reports
+`census gate: FAIL (unexplained=119240, complete=True)`. This completed bounded receipt is not full-route live
+or ending acceptance. `live-classification-summary.json` retains the first
+rows and counts; complete classified rows are compressed directly through a
+FIFO. Post-divergence observations do not extend the clean prefix.
+
+All **eight new `assert_rom_marker_work` fixtures / 710 ROM cases per feature
+configuration** pass. Touched-area checks pass **166 drawing, 118 sprite-helper
+and 15 dungeon-NPC tests**. **Nine Python generator/worklist tests**, exact table
+regeneration and `git diff --check` pass. Both production builds are warning-free;
+pre-existing default/reduced lib-test warning groups remain separate. Full
+library suites, GPU tests and seeded live censuses were not run.
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio.
+
+All **1,512 protected ledger/cache input files** retain the same file set,
+sizes and nanosecond mtimes. Frozen source/binary hashes, commands, complete
+gates, proof matrices and final patch bind this stop. Retained evidence is
+approximately **459.5 MB**, below **3 GB**. No GPU run, `--video`, cached-av,
+Snes9x execution, protected-cache/shared-ledger write, cargo fmt, commit, push
+or one-off repository script was used. Remaining route pricing and continuous
+live ending acceptance remain unfinished.

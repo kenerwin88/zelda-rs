@@ -1448,7 +1448,13 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MiddleAgedMan_Draw(int k) {  // 86bdac
     pub(in crate::zelda_rtl) fn middle_aged_man_draw(&mut self, k: usize) {
+        // $06:BDAC..BDC0, plus its DC64 selector, excluding child bodies.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06bdac));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06bdac);
         let mut info = self.sprite_draw_multiple_player_deferred(k, &MIDDLE_AGED_MAN_DRAW_FRAMES);
+        b.block(0x06bdbe);
+        b.block(0x06dc64);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 

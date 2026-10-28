@@ -54,20 +54,33 @@ impl ZeldaState {
     //   Two fish body tiles plus three splash tiles at z-adjusted y.
     // }
     pub(in crate::zelda_rtl) fn fish_draw(&mut self, k: usize) {
+        // $1D:8483..84F0 plus $847E's no-graphics entry; drawing and
+        // coordinate children own their bodies, not a combined draw tax.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8483));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1d8483);
         if self.sprite_slot_view(k).graphics() == 0 {
+            b.taken(0x1d8489);
+            b.block(0x1d847e);
             self.sprite_prep_oam_coord(k);
+            b.block(0x1d8482);
             return;
         }
+        b.block(0x1d848b);
         let cur_x = self.game_state.sprites.workspace.current_sprite_x();
         self.sprite_workspace_mut()
             .set_current_sprite_x(cur_x.wrapping_add(4));
         let base = usize::from(self.sprite_slot_view(k).graphics().wrapping_sub(1)) * 2;
         self.sprite_draw_multiple(k, &FISH_DRAW_FRAMES[base..base + 2]);
+        b.block(0x1d84a9);
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let z = self.sprite_slot_view(k).z();
         self.sprite_workspace_mut()
             .set_current_sprite_y(cur_y.wrapping_add(z as u16));
         let j = (z >> 2).min(2) as usize;
+        if z >> 2 < 2 { b.taken(0x1d84c5); }
+        else { b.block(0x1d84c7); }
+        b.block(0x1d84c9);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
@@ -75,7 +88,9 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
         self.sprite_draw_multiple(k, &FISH_DRAW_FRAMES2[j * 3..j * 3 + 3]);
+        b.block(0x1d84ec);
         self.sprite_get16_bit_coords(k);
+        b.block(0x1d84f0);
     }
 
     // -----------------------------------------------------------------------

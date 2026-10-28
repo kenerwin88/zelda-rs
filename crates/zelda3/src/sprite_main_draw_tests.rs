@@ -3837,3 +3837,191 @@ fn route4_energy_ball_caller_and_trail_match_rom() {
     }
     eprintln!("route4 Energy ball: {cases} ROM cases");
 }
+
+#[test]
+fn route5_swamola_ripples_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for delay in [0u8, 4, 8, 12, 255] {
+            for y in [0x40u16, 0xf8, 0x200] {
+                let mut n = prefix3_moldorm_state(k, y);
+                n.write_wram_byte(0xdf0 + k, delay);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n, 0x1d9f1d, k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x1d9f1d, s,
+                    |s| s.cpu.k == 0x1d && (0x9f1d..0x9f3c).contains(&s.cpu.pc),
+                    || n.swamola_ripples_draw(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route5 Swamola ripples: {cases} ROM cases");
+}
+
+#[test]
+fn route5_snapdragon_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..8u8 {
+            for (y, pause) in [(0x40u16, 0u8), (0xf8, 0), (0x200, 0), (0x40, 1)] {
+                let mut n = prefix3_moldorm_state(k, y);
+                n.write_wram_byte(0xdc0 + k, gfx);
+                n.write_wram_byte(0xf00 + k, pause);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n, 0x069e02, k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x069e02, s,
+                    |s| s.cpu.k == 6 && ((0x9e02..0x9e1f).contains(&s.cpu.pc)
+                        || s.cpu.pc == 0xdc64), || n.snap_dragon_draw(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route5 Snapdragon: {cases} ROM cases");
+}
+
+#[test]
+fn route5_middle_aged_man_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for (y, pause, floor, sorting) in [
+            (0x40u16, 0u8, 0u8, 0u8), (0xf8, 0, 0, 0), (0x200, 0, 0, 0),
+            (0x40, 1, 0, 0), (0x40, 0, 1, 0), (0x40, 0, 0, 1),
+        ] {
+            let mut n = prefix3_moldorm_state(k, y);
+            n.write_wram_byte(0xf00 + k, pause);
+            n.write_wram_byte(0xf20 + k, floor);
+            n.write_wram_byte(0xfb3, sorting);
+            n.sync_native_game_state_from_ram();
+            let s = marker29_machine(&n, 0x06bdac, k).expect("ROM fixture");
+            crate::cycle_ledger::assert_rom_marker_work(0x06bdac, s,
+                |s| s.cpu.k == 6 && ((0xbdac..0xbdc1).contains(&s.cpu.pc)
+                    || s.cpu.pc == 0xdc64), || n.middle_aged_man_draw(k));
+            cases += 1;
+        }
+    }
+    eprintln!("route5 Middle-Aged Man: {cases} ROM cases");
+}
+
+#[test]
+fn route5_poe_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for direction in 0..2u8 {
+            for phase in [0u8, 8, 16, 24, 255] {
+                for y in [0x40u16, 0xe7, 0xe8, 0xf8, 0x200] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    n.write_wram_byte(0xde0 + k, direction);
+                    n.write_wram_byte(0xe80 + k, phase);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x069786, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x069786, s,
+                        |s| s.cpu.k == 6 && (0x9786..0x97d8).contains(&s.cpu.pc),
+                        || n.poe_draw(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route5 Poe: {cases} ROM cases");
+}
+
+#[test]
+fn route5_thief_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..6u8 {
+            for head in 0..4u8 {
+                for (y, pause, oam) in [(0x40u16, 0u8, 0x800u16),
+                    (0xf8, 0, 0x8fd), (0x200, 0, 0x800), (0x40, 1, 0x800)] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    for (a, v) in [(0xdc0, gfx), (0xeb0, head), (0xf00, pause)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_word(0x90, oam);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x1dcc9e, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x1dcc9e, s,
+                        |s| s.cpu.k == 0x1d && (0xcc9e..0xccdb).contains(&s.cpu.pc),
+                        || n.thief_draw(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route5 Thief: {cases} ROM cases");
+}
+
+#[test]
+fn route5_agahnim_attack_matches_rom() {
+    let mut cases = 0;
+    for k in 0..3usize {
+        for dark in [0u8, 1] {
+            for (delay, subtype, direction) in [(0u8, 0u8, 0u8), (1, 0, 1),
+                (15, 0, 2), (16, 0, 3), (111, 0, 4), (112, 0, 5),
+                (112, 4, 3), (127, 0, 2), (128, 0, 0), (192, 4, 0),
+                (238, 0, 0), (239, 0, 0), (255, 0, 0)] {
+                let mut n = prefix3_moldorm_state(k, 0x40);
+                for (a, v) in [(0xe20, 0x7a), (0xd80, 3), (0xdf0, delay),
+                    (0xe30, subtype), (0xde0, direction), (0xef0, 0x80)] {
+                    n.write_wram_byte(a + k, v);
+                }
+                n.write_wram_byte(0xfff, dark);
+                n.write_wram_word(0x22, 0x180);
+                n.write_wram_word(0x20, 0x180);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n, 0x1ed566, k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x1ed566, s,
+                    |s| s.cpu.k == 0x1e && (0xd566..0xd60b).contains(&s.cpu.pc),
+                    || n.agahnim_attack(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route5 Agahnim: {cases} ROM cases");
+}
+
+#[test]
+fn route5_link_recoil_caller_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for velocity in [0u8, 1, 8, 16, 24, 32, 48, 127, 255] {
+            for (x, y) in [(0x40u16, 0x40u16), (0x10, 0x80), (0x80, 0x10)] {
+                let mut n = prefix3_moldorm_state(k, 0x40);
+                n.write_wram_word(0x22, x);
+                n.write_wram_word(0x20, y);
+                n.write_wram_word(0x24, 0x1234);
+                n.sync_native_game_state_from_ram();
+                let mut s = marker29_machine(&n, 0x06f688, k).expect("ROM fixture");
+                s.cpu.a = u16::from(velocity);
+                crate::cycle_ledger::assert_rom_marker_work(0x06f688, s,
+                    |s| s.cpu.k == 6 && (0xf688..0xf69f).contains(&s.cpu.pc),
+                    || n.sprite_apply_recoil_to_link(k, velocity));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route5 Link recoil: {cases} ROM cases");
+}
+
+#[test]
+fn route5_fish_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..6u8 {
+            for z in [0u8, 7, 8, 24, 255] {
+                for y in [0x40u16, 0xf8, 0x200] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    n.write_wram_byte(0xdc0 + k, gfx);
+                    n.write_wram_byte(0xf70 + k, z);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x1d8483, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x1d8483, s,
+                        |s| s.cpu.k == 0x1d && (0x847e..0x84f1).contains(&s.cpu.pc),
+                        || n.fish_draw(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route5 Fish: {cases} ROM cases");
+}

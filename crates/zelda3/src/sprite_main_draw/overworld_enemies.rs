@@ -472,8 +472,14 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SnapDragon_Draw(int k) {  // 869e02
     pub(super) fn snap_dragon_draw(&mut self, k: usize) {
+        // $06:9E02..9E1E and the actual DC64 selector; DC66 stays separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x069e02));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069e02);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
         let mut info = self.sprite_draw_multiple(k, &SNAP_DRAGON_DRAW_FRAMES[base..base + 4]);
+        b.block(0x069e1c);
+        b.block(0x06dc64);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 

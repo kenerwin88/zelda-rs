@@ -2430,13 +2430,21 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn thief_draw(&mut self, k: usize) {
+        // $1D:CC9E..CCDA; $8549 and shadow remain separately owned children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dcc9e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dcc9e);
         let gfx = self.sprite_slot_view(k).graphics() as usize;
-        let mut info = self.sprite_draw_multiple(k, &THIEF_DRAW_FRAMES[gfx * 2..gfx * 2 + 2]);
+        let mut info = self.sprite_draw_multiple_bank1d(k, &THIEF_DRAW_FRAMES[gfx * 2..gfx * 2 + 2]);
+        b.block(0x1dccb9);
         if self.sprite_slot_view(k).pause() == 0 {
+            b.block(0x1dccbe);
+            if (self.game_state.oam.current_pointer() & 255) + 3 > 255 { b.crossing(0x1dcccb); }
             self.thief_draw_apply_head_overrides_for_dn(k);
             // ROM $1D:CCD5
             self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
-        }
+        } else { b.taken(0x1dccbc); }
+        b.block(0x1dccd9);
     }
 
     // void NiceThief_Animate(int k) {  // sprite_main.c:25047
