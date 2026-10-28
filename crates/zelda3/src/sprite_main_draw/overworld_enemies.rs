@@ -195,18 +195,42 @@ impl ZeldaState {
     //   Variable one/four tile body selected by sprite_graphics.
     // }
     pub(super) fn leever_draw(&mut self, k: usize) {
+        // $06:CE45..CEBF: caller and inline writer; coordinate child is separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ce45));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ce45);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        b.block(0x06ce48);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let d = (self.sprite_slot_view(k).graphics() as usize).min(13);
         for i in (0..=LEEVER_DRAW_COUNTS[d] as usize).rev() {
             let j = d * 4 + i;
             let charnum = LEEVER_DRAW_CHARS[j];
+            b.block(0x06ce56);
+            if 0xaf + j * 2 > 255 { b.crossing(0x06ce63); }
+            let tile_y = y.wrapping_add(LEEVER_DRAW_Y_OFFSETS[j] as i16 as u16);
+            if tile_y.wrapping_add(16) < 256 { b.taken(0x06ce7f); }
+            else { b.block(0x06ce81); }
+            b.block(0x06ce85);
             let mut f = flags;
+            if charnum >= 0x60 { b.taken(0x06ce91); }
+            else {
+                b.block(0x06ce93);
+                if charnum == 0x28 { b.taken(0x06ce95); }
+                else {
+                    b.block(0x06ce97);
+                    if charnum != 0x38 { b.taken(0x06ce99); }
+                }
+            }
             if charnum >= 0x60 || charnum == 0x28 || charnum == 0x38 {
+                b.block(0x06ce9b);
                 f &= 0xf0;
             }
+            b.block(0x06cea1);
+            if j > 0 { b.crossing(0x06ceb1); }
+            if i > 0 { b.taken(0x06cebc); }
             self.set_oam_helper0_at(
                 oam,
                 x.wrapping_add(LEEVER_DRAW_X_OFFSETS[j] as i16 as u16),
@@ -217,6 +241,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x06cebe);
     }
 
     // -----------------------------------------------------------------------

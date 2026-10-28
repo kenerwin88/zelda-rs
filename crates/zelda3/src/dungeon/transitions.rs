@@ -1213,22 +1213,44 @@ impl ZeldaState {
 
     /// ROM: `DungeonTransition_MoveLinkOutDoor`
     pub(super) fn dungeon_transition_move_link_out_door(&mut self) -> bool {
+        // $02:C191..C1E4: complete direction/coordinate update and carry return.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c191));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02c191);
         let index = self.game_state.dungeon.room_runtime.landing_class() as usize
             + self.screen_transition() as usize * 5;
         let target = STAIRCASE_LANDING_COORDINATES[index] as u8;
         let step = if self.screen_transition() & 1 != 0 {
+            b.block(0x02c1a4);
             (-2i16) as u16
         } else {
+            b.taken(0x02c1a2);
             2
         };
+        b.block(0x02c1a6);
         if self.screen_transition() & 2 == 0 {
+            b.block(0x02c1ab);
+            if (step as i16) < 0 { b.taken(0x02c1af); }
+            else { b.block(0x02c1b1); }
+            b.block(0x02c1b2);
             let y = self.game_state.player.follower_link.y().wrapping_add(step);
             self.follower_link_state_mut().set_y(y);
-            (y as u8 & 0xfe) == target
+            let done = (y as u8 & 0xfe) == target;
+            if done { b.taken(0x02c1c4); b.block(0x02c1e3); }
+            else { b.block(0x02c1c6); }
+            done
         } else {
+            b.taken(0x02c1a9);
+            b.block(0x02c1c8);
+            if (step as i16) < 0 { b.taken(0x02c1cc); }
+            else { b.block(0x02c1ce); }
+            b.block(0x02c1cf);
             let x = self.game_state.player.follower_link.x().wrapping_add(step);
             self.follower_link_state_mut().set_x(x);
-            (x as u8 & 0xfe) == target
+            let done = (x as u8 & 0xfe) == target;
+            if done { b.block(0x02c1e3); }
+            else { b.taken(0x02c1e1); b.block(0x02c1c6); }
+            done
         }
     }
 
@@ -2267,5 +2289,56 @@ impl ZeldaState {
                 .wrapping_add(delta);
             self.room_bounds_mut().set_y_bound(index, value);
         }
+    }
+}
+
+#[cfg(test)]
+mod prefix3_tests {
+    use super::*;
+
+    #[test]
+    fn prefix3_move_link_out_door_matches_rom() {
+        use snes::{CartType, Snes};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| root.join("saves/zelda3.sfc"));
+        let Ok(rom) = std::fs::read(path) else { return };
+        let mut cases = 0;
+        for direction in 0..4u8 {
+            for landing in 0..5u8 {
+                let target = STAIRCASE_LANDING_COORDINATES[landing as usize + direction as usize * 5];
+                for offset in [0u16, 2, 4, 255] {
+                    let mut n = ZeldaState::new();
+                    let mut image = n.wram_image().into_owned();
+                    image[0x10] = 7;
+                    image[0x418] = direction;
+                    image[0x4e] = landing;
+                    let coordinate = (target as u8 as u16).wrapping_add(offset);
+                    image[0x20..0x22].copy_from_slice(&coordinate.to_le_bytes());
+                    image[0x22..0x24].copy_from_slice(&coordinate.to_le_bytes());
+                    n.import_wram_image(&image);
+                    n.sync_native_game_state_from_ram();
+                    n.set_lag_free(true);
+                    let mut s = Snes::new();
+                    s.cart.load(CartType::LoRom, &rom, 0x2000);
+                    s.ram.copy_from_slice(&n.wram_image());
+                    s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+                    s.cpu.e = false;
+                    s.cpu.unpack_flags(0x30);
+                    s.cpu.k = 2;
+                    s.cpu.db = 2;
+                    s.cpu.pc = 0xc191;
+                    s.cpu.sp = 0x1fa;
+                    let mut done = false;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x02c191, s,
+                        |s| s.cpu.k == 2 && (0xc191..0xc1e5).contains(&s.cpu.pc),
+                        || done = n.dungeon_transition_move_link_out_door());
+                    assert_eq!(source.snes().cpu.c, done);
+                    assert_eq!(&source.snes().ram[0x20..0x24], &n.wram_image()[0x20..0x24]);
+                    cases += 1;
+                }
+            }
+        }
+        eprintln!("prefix3 door movement: {cases} ROM cases");
     }
 }

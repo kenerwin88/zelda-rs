@@ -3209,10 +3209,25 @@ impl ZeldaState {
     }
 
     pub(super) fn fairy_check_if_touchable(&mut self, k: usize) {
+        // $06:D011..D02F: both message compares and the width-independent return.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d011));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d011);
         let msg = self.game_state.messaging.dialogue_message_index.value();
+        if self.game_state.frame.submodule != 2 { b.taken(0x06d015); }
+        else {
+            b.block(0x06d017);
+            if msg == 0xc9 { b.taken(0x06d01f); }
+            else {
+                b.block(0x06d021);
+                if msg != 0xca { b.taken(0x06d024); }
+            }
+        }
         if self.game_state.frame.submodule == 2 && (msg == 0xc9 || msg == 0xca) {
+            b.block(0x06d026);
             self.sprite_slot_view_mut(k).set_delay_aux4(40);
         }
+        b.block(0x06d02d);
     }
 
     pub(super) fn buzzblob_select_new_direction(&mut self, k: usize) {

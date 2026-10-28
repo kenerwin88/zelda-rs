@@ -1,7 +1,7 @@
 //! Agahnim, Helmasaur, Moldorm, Lanmolas, and other boss draw routines.
 
 use crate::zelda_rtl::sprite::{
-    PrepOamCoordsRet, SpriteDamageBothEntry, SpriteDamageFromEntry, SpriteDamageToEntry,
+    DrawMultipleData, PrepOamCoordsRet, SpriteDamageBothEntry, SpriteDamageFromEntry, SpriteDamageToEntry,
     SpriteHitBoxEntry, SpriteInactiveEntry, SpriteMoveEntry, SpriteMoveZEntry, SpritePausedEntry,
     SpriteRecoilEntry, SpriteShadowEntry, SpriteSingleLargeEntry, SpriteSingleSmallEntry,
     SpriteSpawnInfo, SpriteTileCollisionEntry,
@@ -1152,13 +1152,19 @@ impl ZeldaState {
     }
 
     pub(super) fn giant_moldorm_draw(&mut self, k: usize) {
+        // $1D:D881..D8F1: self instructions only; each child owns its body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd881));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dd881);
         let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1dDoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(prepped);
         let value = 11;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
+        b.block(0x1dd884);
         self.sprite_draw_moldorm_eyeballs(k, &info);
+        b.block(0x1dd88c);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
@@ -1172,28 +1178,45 @@ impl ZeldaState {
         self.moldorm_history_mut(j).set_position(x, y);
 
         self.sprite_draw_moldorm_head(k);
+        b.block(0x1dd8c4);
         if self.sprite_slot_view(k).b() < 4 {
+            b.block(0x1dd8cb);
             self.giant_moldorm_draw_segment_ab(k, 16);
+            b.block(0x1dd8ce);
             if self.sprite_slot_view(k).b() < 3 {
+                b.block(0x1dd8d5);
                 self.giant_moldorm_draw_segment_ab(k, 28);
+                b.block(0x1dd8d8);
                 if self.sprite_slot_view(k).b() < 2 {
+                    b.block(0x1dd8df);
                     self.sprite_draw_moldorm_segment_c(k);
+                    b.block(0x1dd8e2);
                     if self.sprite_slot_view(k).b() == 0 {
+                        b.block(0x1dd8e7);
                         self.moldorm_handle_tail(k);
-                    }
-                }
-            }
-        }
+                    } else { b.taken(0x1dd8e5); }
+                } else { b.taken(0x1dd8dd); }
+            } else { b.taken(0x1dd8d3); }
+        } else { b.taken(0x1dd8c9); }
+        b.block(0x1dd8ea);
         self.giant_moldorm_incremental_segment_explosion(k);
+        b.block(0x1dd8ed);
         let cur_x = u16::from(self.sprite_slot_view(k).x_low())
             | (u16::from(self.sprite_slot_view(k).x_high()) << 8);
         let cur_y = u16::from(self.sprite_slot_view(k).y_low())
             | (u16::from(self.sprite_slot_view(k).y_high()) << 8);
         self.sprite_workspace_mut().set_current_sprite_x(cur_x);
         self.sprite_workspace_mut().set_current_sprite_y(cur_y);
+        b.block(0x1dd8f1);
     }
 
     pub(super) fn giant_moldorm_draw_segment_ab(&mut self, k: usize, lookback: i32) {
+        // $1D:D9F8..DA4F / DA50..DA5A, shared DA00 tail exactly once.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(
+            if lookback == 16 { 0x1dd9f8 } else { 0x1dda50 }));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(if lookback == 16 { 0x1dd9f8 } else { 0x1dda50 });
+        b.block(0x1dda00);
         let j =
             (i32::from(self.sprite_slot_view(k).subtype2()).wrapping_sub(lookback) & 0x7f) as usize;
         let cur_x = self
@@ -1217,10 +1240,13 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = usize::from((self.sprite_slot_view(k).subtype2() >> 1) & 1) * 4;
-        self.sprite_draw_multiple(k, &GIANT_MOLDORM_SEG_A_DRAW_FRAMES[base..base + 4]);
+        self.moldorm_draw_multiple(k, &GIANT_MOLDORM_SEG_A_DRAW_FRAMES[base..base + 4]);
     }
 
     pub(super) fn giant_moldorm_draw_segment_c_or_tail(&mut self, k: usize, lookback: i32) {
+        // $1D:DA7E..DAB9 is shared by the C and tail entries, not a child.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dda7e);
         let j =
             (i32::from(self.sprite_slot_view(k).subtype2()).wrapping_sub(lookback) & 0x7f) as usize;
         let cur_x = self
@@ -1241,17 +1267,32 @@ impl ZeldaState {
         let value = (bak & 0x3f)
             | GIANT_MOLDORM_OAM_FLAGS[((self.sprite_slot_view(k).subtype2() >> 1) & 3) as usize];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
-        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
+        self.sprite_draw_single_large(k, if self.lag_free {
+            SpriteSingleLargeEntry::Rom06DBF0
+        } else { SpriteSingleLargeEntry::Unpriced });
+        b.block(0x1ddab5);
         let value = bak;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
     }
 
     pub(super) fn sprite_draw_moldorm_head(&mut self, k: usize) {
+        // $1D:D993..D9B7; the JMP target's call/return is separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd993));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1dd993);
         let t = ((self.sprite_slot_view(k).subtype2() >> 1) & 1)
             + (self.sprite_slot_view(k).delay_aux1() & 2);
         let base = (t as usize) * 4;
         let base = base.min(GIANT_MOLDORM_HEAD_DRAW_FRAMES.len() - 4);
-        self.sprite_draw_multiple(k, &GIANT_MOLDORM_HEAD_DRAW_FRAMES[base..base + 4]);
+        self.moldorm_draw_multiple(k, &GIANT_MOLDORM_HEAD_DRAW_FRAMES[base..base + 4]);
+    }
+
+    fn moldorm_draw_multiple(&mut self, k: usize, src: &[DrawMultipleData]) {
+        // $1D:8549..854D: JSL/RTS only, excluding the existing drawing body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8549));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1d8549);
+        self.sprite_draw_multiple(k, src);
+        b.block(0x1d854d);
     }
 
     // -----------------------------------------------------------------------
@@ -1262,6 +1303,9 @@ impl ZeldaState {
     //   GiantMoldorm_DrawSegment_C_OrTail(k, 0x28);
     // }
     pub(super) fn sprite_draw_moldorm_segment_c(&mut self, k: usize) {
+        // $1D:DA5F..DA7D and shared DA7E..DAB9; no child-body charge.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dda5f));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1dda5f);
         let value = 0;
         self.sprite_slot_view_mut(k).set_graphics(value);
         let cur = self.game_state.oam.current_pointer();
@@ -1274,8 +1318,14 @@ impl ZeldaState {
     }
 
     pub(super) fn moldorm_handle_tail(&mut self, k: usize) {
+        // $1D:DABA..DB16, excluding the tail and damage children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddaba));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ddaba);
         self.sprite_draw_moldorm_tail(k);
+        b.block(0x1ddabd);
         if self.sprite_slot_view(k).delay_aux2() == 0 {
+            b.block(0x1ddac2);
             let value = 1;
             self.sprite_slot_view_mut(k).set_a(value);
             let value = 0;
@@ -1288,6 +1338,7 @@ impl ZeldaState {
             self.sprite_set_y(k, self.game_state.sprites.workspace.current_sprite_y());
             // ROM $1D:DAF5 JSL $06:F2AA
             self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
+            b.block(0x1ddaf9);
             let value = 0;
             self.sprite_slot_view_mut(k).set_a(value);
             let value = 9;
@@ -1296,7 +1347,8 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_deflection_bits(value);
             self.sprite_set_x(k, oldx);
             self.sprite_set_y(k, oldy);
-        }
+        } else { b.taken(0x1ddac0); }
+        b.block(0x1ddb16);
     }
 
     // -----------------------------------------------------------------------
@@ -1308,6 +1360,9 @@ impl ZeldaState {
     //   GiantMoldorm_DrawSegment_C_OrTail(k, 0x30);
     // }
     pub(super) fn sprite_draw_moldorm_tail(&mut self, k: usize) {
+        // $1D:DB17..DB3D and the shared DA7E..DAB9 suffix.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddb17));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1ddb17);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
@@ -1325,6 +1380,13 @@ impl ZeldaState {
     //   sprite_main.c:18033 — two eyeballs cycling around a 16-entry circle.
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_moldorm_eyeballs(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        // $1D:DB9E..DC10: two inline eyes, including inherited ADC carry.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddb9e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ddb9e);
+        if self.sprite_slot_view(k).f() == 0 { b.taken(0x1ddba3); }
+        else { b.block(0x1ddba5); }
+        b.block(0x1ddba9);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let r7: u8 = if self.sprite_slot_view(k).f() != 0 {
             self.game_state.frame.frame_counter
@@ -1337,6 +1399,12 @@ impl ZeldaState {
             let idx = (r6 & 0xf) as usize;
             let x = info.x.wrapping_add(GIANT_MOLDORM_EYE_X_OFFSETS[idx] as u16);
             let y = moldorm_eye_oam_y(info.y, GIANT_MOLDORM_EYE_Y_OFFSETS[idx] as u16);
+            b.block(0x1ddbb4);
+            let (raw_y, carry) = info.y.overflowing_add(GIANT_MOLDORM_EYE_Y_OFFSETS[idx] as u16);
+            if raw_y.wrapping_add(16 + u16::from(carry)) < 256 { b.taken(0x1ddbdb); }
+            else { b.block(0x1ddbdd); }
+            b.block(0x1ddbe1);
+            if i > 0 { b.taken(0x1ddc0d); }
             let cf_idx = ((r6 + r7 as i32) & 0xf) as usize;
             self.set_oam_helper1_at(
                 oam,
@@ -1353,6 +1421,7 @@ impl ZeldaState {
                 break;
             }
         }
+        b.block(0x1ddc0f);
     }
 
     // -----------------------------------------------------------------------

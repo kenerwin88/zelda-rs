@@ -13693,3 +13693,175 @@ No GPU run, `--video`, cached-av, Snes9x execution,
 oracle-cache/shared-ledger write, cargo fmt, commit, push or
 one-off repository script was used. Both prefix deficits and complete
 continuous live acceptance remain unfinished.
+
+## Prefix closure 3
+
+**Verified partial CPU-only stop on `codex/prefix3`, main `af9794d7`.**
+Evidence: `target/prefix3/`. **The live state frontier regresses from 462,626
+to 142,087; this is not a continuous live improvement.** The fresh seeded ROM
+prefix and native routine profiles recompute **750 missing holds in 733
+iterations** through **462,625**.
+All fresh missing rows match the retained preceding batch's predictor in every
+column. The supplied full-main reference is **3,197 / 0 / 0**; no full main
+control or seeded live census was repeated.
+
+### Command window and ranking
+
+The song whose end is polled at **462,626**, room `$0006`, is **`$13`** at source
+iteration **461,989**, source host **500,220**. The native producer is iteration
+**461,988**. The command-to-poll window **461,989..462,625 has zero missing
+holds**. It therefore has no missing-iteration owner to rank. Prices are
+selected from the earlier prefix, not from a song-specific delay.
+
+| Window, inclusive | Before missing / iterations | After missing / iterations |
+| --- | ---: | ---: |
+| 0..94,852 | 99 / 91 | 94 / 86 |
+| 94,853..142,086 | 47 / 47 | 40 / 40 |
+| 142,087..461,988 | 604 / 595 | 512 / 503 |
+| 461,989..462,625 | 0 / 0 | 0 / 0 |
+| Entire 0..462,625 | 750 / 733 | 646 / 629 |
+
+`{first,second,middle,song,prefix}-owner-ranking.json` preserves each exclusive
+source/native difference and inverse on **all 733 missing iterations**, with
+no uncovered rows. Raw independent inverse closures overlap. First-prefix
+leaders are SingleLarge (25), module routing (20), slot dispatch (16), shadow
+(9), and Link velocity (6). Second-prefix module routing and Leever drawing
+have seven each. In the later prefix, routing (85), SingleLarge (63), shadow
+(30), iris (23) and SpriteActive2 (21) precede the archer writer (15) and
+Moldorm eyes (14). Routing/JML bodies, drawing aliases, existing instruction
+models and timing/continuation owners are not admitted as parent taxes.
+The source instruction-only ranking is separately diagnostic: undeclared
+markers do not imply uncharged work when instruction models/scalars own it.
+
+### Admitted instruction work
+
+Thirteen complete self bodies, a disjoint Moldorm draw-multiple wrapper, and
+the existing SingleLarge wrapper at its two actual Moldorm call sites are
+priced. `scripts/rom_block_costs.py` derives **71 new blocks / 477 instructions**;
+all **2,335 existing generated rows remain byte-identical**. Source-address
+comments identify each body. **Every newly priced self body had zero legacy
+`charge(N)` scalar clocks**, and none retains such a self scalar. Existing child
+prices and default/ROM-timing accounting remain unchanged.
+
+| Owner | Entry | New clocks, first / second / later cohort | Independent frames, first / second / later |
+| --- | --- | ---: | ---: |
+| door movement | `$02c191` | 1,828 / 0 / 1,240 | 2 / 0 / 0 |
+| Bot drawing | `$05b89a` | 648 / 2,916 / 0 | 1 / 0 / 0 |
+| fairy touch predicate | `$06d011` | 630 / 1,008 / 5,500 | 1 / 0 / 1 |
+| Leever drawing | `$06ce45` | 0 / 75,628 / 0 | 0 / 7 / 0 |
+| archer weapon | `$05d4d4` | 32,162 / 93,592 / 172,226 | 1 / 0 / 15 |
+| Moldorm caller | `$1dd881` | 0 / 0 / 124,758 | 0 / 0 / 7 |
+| Moldorm head | `$1dd993` | 0 / 0 / 35,148 | 0 / 0 / 2 |
+| Moldorm segment A | `$1dd9f8` | 0 / 0 / 87,000 | 0 / 0 / 6 |
+| Moldorm segment B | `$1dda50` | 0 / 0 / 89,088 | 0 / 0 / 6 |
+| Moldorm segment C | `$1dda5f` | 0 / 0 / 97,092 | 0 / 0 / 6 |
+| Moldorm tail handler | `$1ddaba` | 0 / 0 / 107,358 | 0 / 0 / 7 |
+| Moldorm tail drawing | `$1ddb17` | 0 / 0 / 105,096 | 0 / 0 / 7 |
+| Moldorm eyes | `$1ddb9e` | 0 / 0 / 232,290 | 0 / 0 / 14 |
+| Moldorm drawing wrapper | `$1d8549` | 0 / 0 / 27,144 | 0 / 0 / 2 |
+| Moldorm single-large wrapper | `$06dbf0` | 0 / 0 / 33,060 | 0 / 0 / 2 |
+
+The independent owner predictions overlap. Their disjoint combined work
+predicts **5 + 7 + 92 = 104 restored prefix holds**. Original profiler scopes
+retain `$1D:8549`'s JMP tail in the head/A/B caller: **104 clocks per executed
+call** are moved to the separate wrapper's source accounting, not counted twice.
+The C/tail calls add only the existing `$06:DBF0` wrapper's **190 clocks each**;
+SingleLarge's instruction model and coordinate/shadow children retain their
+existing ownership. Shared `$DA00` and `$DA7E` tails execute once under their
+real entry. Partial or other drawing paths receive no inferred parent price.
+
+The source-selected prediction is **1,325,412 new marker clocks** on the frozen
+cohort. Measured new markers total **1,325,412**; signed main-counter changes
+equal the new markers on every one of the 733 cohort iterations. Source/marker
+work and combined predicted versus observed flips agree on every cohort row.
+`frame-flips.json` retains the complete matrix, with zero mismatches. No price was
+fitted to a lag count, threshold, multiplier or scene table. No classifier,
+SPC/APU behavior, pacing rule or game-state operation changed. These are
+instruction-work/logical-scheduling receipts, not physical NMI or A/V proof.
+
+### Final ROM and continuous live checks
+
+The single final full ROM lane uses read-only **full-v2**, `--report 0
+--seed-every 2000`. Its unchanged gate **PASSes**, all **1,473,123
+iterations**, unexplained **0**. Final missing / excess / FP:
+**3,047 / 0 / 0**. Every runtime hold equals P2 throughout.
+No prefix hold is lost and no newly missing prefix iteration appears.
+
+The final continuous live lane is one cold `--logical-replay full-v2 ...
+--report 0 --live-apu-reads` run, with **no `--seed-every`**. Its first
+classified state comparison is **142,087**, `song-end-poll`,
+room `$0033`: **142,087 state-clean prefix iterations**,
+last clean index **142,086**. The supplied main frontier is
+**462,626**. The run is intentionally stopped after this first boundary and the
+third-command observation, with complete predictor records flushed through
+**688,213**. This is a first-divergence
+receipt, **not a completed full live summary gate or ending pass**.
+`live-first-classification.json`, the directly compressed classification prefix,
+`live-selected-timing.json` and `live-intentional-stop.json` bind it. The audio
+timing stream can have an incomplete encoder footer after termination; its
+complete decoded records and status are explicitly retained. No state rule was widened.
+
+At 142,087 native polls zero while the source still reads `$13`. At the earlier
+94,853 pendant poll both remain nonzero. The higher instruction coverage does
+not produce monotonic live poll agreement; no source price was removed or
+adjusted to recover the old frontier.
+
+The third-command clock below is **after the first live state divergence**.
+It is an observational timestamp, not an independently clean continuation proof.
+
+### SPC clock deficit at the third command
+
+The fresh cold main live control is clean through all **461,990 iterations**.
+It delivers `$13` at absolute native SPC cycle **8,519,255,496**, host **499,373**.
+The final candidate delivers it at **8,521,115,018**, host **499,482**.
+Recovered elapsed time at that same command is **1,859,522 SPC cycles**.
+
+No retained source **CPU port-delivery receipt** covers this later command.
+There is therefore **no exact original bus timestamp** claimed here. The
+read-only source PCM sample stream places host 500,220 at sample **266,678,212**,
+with **533 stereo pairs**. The retained full-source DSP trace independently has
+that same starting sample and observes music `$13` in that callback. Its sample
+grid is **8,533,702,784..8,533,719,840 SPC cycles**. Conservatively including
+one sample at each edge gives command-clock interval
+**8,533,702,752..8,533,719,872**. `source-command-clock-bound.json` retains both
+independent records and explicitly distinguishes this callback bound from an
+exact CPU/SPC bus measurement.
+
+| Native deficit relative to the source command interval | SPC cycles |
+| --- | ---: |
+| Main before | 14,447,256..14,464,376 |
+| Candidate after | 12,587,734..12,604,854 |
+
+`command-clocks.json` retains the exact native timestamps and interval
+arithmetic. Recovering the exact source delivery cycle would require a source
+port receipt that is not present; no Snes9x capture was run. Poll agreement or
+advancement does not establish identical driver phase, PCM or CPU bus timing.
+
+### Verification and stopping boundary
+
+All **14 new `assert_rom_marker_work` fixtures / 1,461 ROM cases per feature
+configuration** pass, including all Leever graphics, archer branches and
+clipping, Moldorm inherited
+ADC carry, shared drawing tails, boss segment selectors, fairy message-width
+branches, and door movement's directions and carry returns. The final touched
+checks pass **132 drawing tests**, **39 preparation tests**, and **one door
+fixture**. The **nine Python generator/worklist tests**, exact table
+regeneration and `git diff --check` pass. Both ordinary production builds are
+warning-free; the default/reduced lib-test builds retain their 24/one
+pre-existing warnings. Full library suites, GPU tests and seeded live censuses
+were not run.
+
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio. All **1,512 supplied ledger/cache files** retain size
+and nanosecond mtime, with none added or removed. Source/binary hashes,
+commands, gate logs and the uncommitted patch bind this stop. Classified live
+rows are compressed directly through a FIFO, avoiding a large raw dump.
+The sandbox denied a cross-session SIGTERM; interrupting the owning exec session
+stopped the replay. Original interrupted compressed bytes are retained, and
+only complete JSON lines are recovered into the finalized classification stream.
+`classification-prefix-recovery.json` binds the original and recovered hashes.
+Retained output is **437.2 MB**, below **3 GB**.
+No GPU run, `--video`, cached-av, Snes9x execution, oracle-cache/shared-ledger
+write, cargo fmt, commit, push or one-off repository script was used.
+Both complete prefix closure and continuous live ending acceptance remain
+unfinished.

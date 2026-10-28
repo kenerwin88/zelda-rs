@@ -294,14 +294,21 @@ impl ZeldaState {
         spr_offs: i32,
         info: &PrepOamCoordsRet,
     ) {
+        // $05:D4D4..D53A: the four inline tiles, with no drawing child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05d4d4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05d4d4);
         let mut oam = ((self.game_state.oam.current_pointer() as i32) + spr_offs * 4) as usize;
         let g_signed = self.sprite_slot_view(k).graphics() as i32 - 14;
         let base: usize = if g_signed < 0 {
+            b.block(0x05d4dc);
             ARCHER_WEAPON_BASE_FRAME_BY_DIRECTION
                 [(self.sprite_slot_view(k).direction() & 3) as usize] as usize
         } else {
+            b.taken(0x05d4da);
             g_signed as usize
         };
+        b.block(0x05d4e4);
         let mut i: i32 = 3;
         loop {
             let j = base * 4 + i as usize;
@@ -311,6 +318,12 @@ impl ZeldaState {
             let y = info
                 .y
                 .wrapping_add(ARCHER_SOLDIER_DRAW_Y_OFFSETS[j] as i16 as u16);
+            b.block(0x05d4eb);
+            if 0xb0 + j * 2 > 255 { b.crossing(0x05d4f8); }
+            if y.wrapping_add(16) < 256 { b.taken(0x05d512); }
+            else { b.block(0x05d514); }
+            b.block(0x05d519);
+            if i > 0 { b.taken(0x05d537); }
             self.set_oam_helper0_at(
                 oam,
                 x,
@@ -325,6 +338,7 @@ impl ZeldaState {
                 break;
             }
         }
+        b.block(0x05d539);
     }
 
     // -----------------------------------------------------------------------

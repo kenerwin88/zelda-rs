@@ -847,6 +847,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Bot_Draw(int k) {  // 85b89a
     pub(super) fn bot_draw(&mut self, k: usize) {
+        // $05:B89A..B8B2: table selection and caller, excluding SingleLarge.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05b89a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05b89a);
         let j = usize::from(self.sprite_slot_view(k).a());
         let value = BOT_DRAW_LOCAL_GRAPHICS[j];
         self.sprite_slot_view_mut(k).set_graphics(value);
@@ -854,6 +858,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         // ROM $05:B8AE JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x05b8b2);
     }
 
     // -----------------------------------------------------------------------
