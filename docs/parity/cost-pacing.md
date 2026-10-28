@@ -14177,3 +14177,162 @@ No GPU run, `--video`, cached-av, Snes9x execution, oracle-cache/shared-ledger
 write, cargo fmt, commit, push or one-off repository script was used.
 The remaining window deficit and continuous live ending acceptance remain
 unfinished.
+
+
+## Route ranking 1
+
+**Verified CPU-only pricing stop on `codex/route1`, main `be4ea8af`.**
+Evidence: `target/route1/`. The fresh whole-route main profile reproduces
+**3,007 missing holds in 2,974 iterations**, with excess/FP **0/0**.
+Retained unmodified-ROM routine receipts cover every missing iteration.
+`owner-ranking.json` is the whole-route worklist, including every owner's
+four-window split, signed exclusive difference, complete closures, frames
+recovered and earliest recovery. Ties prefer the earlier route iteration.
+
+### Whole-route owner worklist
+
+Scores are independent positive source-minus-native exclusive replacements
+against the existing P2 inverse, capped at the missing holds. They overlap and
+are **not additive prices or promised runtime gains**. All nine multi-miss
+iterations use every held-count threshold, rather than counting only complete
+closures. `multi-hold-inverses.json` retains those exact thresholds. A full cold
+read-only observer replay reproduces every main CSV field on those nine rows;
+its observational patch is retained and removed from production source.
+The direct nonzero-window diagnostic did not reproduce the controls and is
+excluded. `inverse-observer-equivalence.json` also checks all 805,127 complete
+records of the interrupted candidate against the observer without differences.
+
+| Raw owner | Frames | 0..94,852 | 94,853..142,086 | 142,087..461,988 | Rest |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `0080b5` Module_MainRouting | 314 | 15 | 7 | 83 | 209 |
+| `06dc10` SpriteDraw_SingleLarge | 282 | 21 | 2 | 65 | 194 |
+| `06e4ab` Sprite_CheckTileCollision2 | 99 | 3 | 0 | 9 | 87 |
+| `1e8b19` SpriteActive3_Main | 92 | 0 | 0 | 7 | 85 |
+| `02b1ff` Overworld_MirrorWarp_ | 90 | 0 | 0 | 7 | 83 |
+| `07e245` Link_HandleVelocity | 89 | 4 | 0 | 8 | 77 |
+| `0684e2` Sprite_ExecuteSingle | 88 | 15 | 3 | 13 | 57 |
+| `07807f` Link_ControlHandler | 87 | 4 | 0 | 4 | 79 |
+| `06dc64` SpriteDraw_Shadow | 86 | 4 | 4 | 1 | 77 |
+| `00f312` IrisSpotlight_ConfigureTable | 85 | 2 | 4 | 23 | 56 |
+| `05b5d3` SpriteActive2_Main | 80 | 0 | 6 | 23 | 51 |
+| `008888` LoadSongBank | 63 | 2 | 3 | 14 | 44 |
+
+The admitted Ropa and Talking Tree callers are the next clear bodies at ranks
+**23/24**, both raw scores **36**, first recovery **472,388**. Their admitted
+self work excludes existing drawing, shadow and selected-state children.
+Map floor numbers rank **42**, score **12**; layout's adjacent score is existing
+scalar work and receives a zero-net replacement. `admission-notes.json` retains
+why higher raw dispatch, collision, velocity, upload, VWF and object parents
+were not admitted as additional body prices. The remaining worklist is not exhausted.
+
+### Admitted instruction work
+
+Thirteen bounded bodies/entries and exact existing wrapper/selector call sites
+use **56 new blocks / 347 ROM instructions** from `scripts/rom_block_costs.py`.
+All **2,495 existing generated rows remain byte-identical**. Markers are
+lagless-only and cite source addresses. The layout caller's **1,952-clock
+legacy scalar** is replaced completely; no priced self body retains a legacy
+`charge(N)` scalar. Existing child prices and default/ROM-timing accounting
+are preserved.
+
+| Admitted family | Net new clocks on all frozen misses |
+| --- | ---: |
+| Talking Tree bounce, bank wrapper and local-dispatch caller | 798,792 |
+| Ropa draw caller and its DC64 selector | 71,862 |
+| Dungeon-map floor numbers; layout scalar replacement adds zero | 142,352 |
+| Ripple drawing, real entries and bank-05 drawing wrapper | 53,738 |
+| Moblin drawing and its DC64 selector | 96,874 |
+| Octorok-stone writer | 329,250 |
+| Falling-humanoid writer | 8,904 |
+| Crab writer | 31,492 |
+
+**1,587,920 added marker clocks − 54,656 retired scalar clocks = 1,533,264
+net instruction clocks**. This equals the signed main-counter increase on
+every one of the 2,974 frozen missing iterations. The newly generated-PC
+clocks also match every retained original instruction receipt on the **2,121
+covered iterations**, with zero discrepancies. These are scoped instruction
+work checks, not equivalent-call-sequence or physical CPU/NMI/A/V proof.
+
+The fixed-inverse joint prediction is **59** recoveries. Actual recovery is
+**61**: Crab's 4,888 new clocks at **165,147 / 167,831** also change the existing
+iris raster wait from **0 to 268,780 / 267,890** clocks, with corresponding
+HDMA changes. `prediction-exception-rows.json` retains both unchanged-context
+rows. No price, threshold, classifier or caller admission was fitted to these
+two barrier effects. No hold is lost and no new missing iteration appears.
+
+### Four inadmissible leaders
+
+- **Module routing:** `$00:80B5` is already a 240-clock dispatcher. Its source
+  frame inherits JML bodies. Genuine gaps include the ordinary Module09
+  `$02:A475..A47D` selector/call, `$A47E..A4B4` scroll-save/call prefix and
+  `$A4B5..A4CC` restore/child-call suffix. Native OverworldCaller paths already
+  retire those instructions. An opcode split exists, but complete, native,
+  partially published and resumed caller entries still need one disjoint
+  partition. Module07/HUD tails already carry separate scalar work. No routing tax.
+- **Slot dispatch:** the 48/128-clock entry/timer caller, 30-clock active tail,
+  local-dispatch split and 260/290-clock RTS dispatches are already priced.
+  Unpriced work remains in actual handlers, such as Octorok control and its
+  inline draw caller around existing coordinate/single-large/move/damage work.
+  Dispatch conversion can replace scalars exactly; an extra whole-slot price
+  cannot separate those selected bodies and native timer resumes.
+- **SingleLarge:** DC10's 46-clock JSR, E41E preparation, DC13 writer and DC66
+  shadow already retire their own instructions. The source DC10 frame includes
+  those aliases and double-return tails. No additional complete-path self
+  instruction was established as unpriced; its existing split must be preserved.
+- **Shadow:** DC66's gates, clip/shape branches, writers and return are already
+  instruction-owned. The specialized guard/attract shadow helper bypasses that
+  model, and some default-entry bindings can omit DC64's 16-clock selector.
+  Guard partial resumes and custom/default entries require a call-site partition
+  before adding work. Ropa/Moblin's proven JMP-to-DC64 selectors are marked once;
+  no common shadow-body price is added. `leader-admission-analysis.json` and
+  the retained instruction breakdown give the concrete owners and limits.
+
+### Final checks
+
+The single completed final ROM census uses read-only corrected **full-v2**,
+`--report 0 --seed-every 2000`. Its unchanged gate **PASSes all 1,473,123
+iterations**, unexplained zero, every runtime hold equal to P2.
+
+| ROM scope | Before missing / excess / FP | After |
+| --- | ---: | ---: |
+| Whole route | 3,007 / 0 / 0 | **2,946 / 0 / 0** |
+| 0..94,852 | 90 / 0 / 0 | **90 / 0 / 0** |
+| 94,853..142,086 | 39 / 0 / 0 | **39 / 0 / 0** |
+| 142,087..461,988 | 492 / 0 / 0 | **475 / 0 / 0** |
+| 461,989..1,473,122 | 2,386 / 0 / 0 | **2,342 / 0 / 0** |
+
+The cold continuous live run uses `--logical-replay full-v2 ... --report 0
+--live-apu-reads --frames 462628`, **without `--seed-every`**. It completes all
+**462,628 iterations**. Its first classified state difference is **142,087**,
+`song-end-poll`, room `$0033`: native reads zero, source `$13`. The clean prefix
+is **142,087 iterations**, last clean index **142,086**, unchanged from main.
+The strict gate **FAILS with 81,842 unexplained items**: 79,101 song-state and
+2,681 polygon state comparisons, plus 30 unconsumed / 30 extra RNG draws within
+the existing classifications. One command difference is also song-classified;
+ordinary WRAM, RNG/APU consumption and command comparisons remain clean.
+Post-divergence observations do not extend the clean prefix. This is a bounded
+first-divergence receipt, not full-route live or ending acceptance.
+No seeded live census was run.
+
+All **10 new ROM fixture tests / 528 cases per feature configuration** pass.
+Touched-area checks pass **147 drawing, 37 messaging and 118 sprite tests**.
+Nine Python generator/worklist tests, exact table regeneration and
+`git diff --check` pass. Both ordinary production builds are warning-free;
+existing default/reduced lib-test warnings remain separate. The final
+**default 200k ledger matches every record and EOF**.
+
+An initial partial census was stopped after the independent source-PC audit
+found one missing six-clock Moblin indirect-read page crossing. The corrected
+check uses the unwrapped base-low plus head offset; 48 new page-edge cases
+cover both sides and equality. `interrupted-before-page-crossing-fix/` retains
+the superseded partial run. The final completed gate above uses the correction.
+No scene exclusion or price taper was added.
+
+All **1,512 protected ledger/cache input files** retain size and nanosecond
+mtime, with none added or removed. Frozen source/binary identities, commands,
+complete gates and the uncommitted patch bind this stop. Evidence occupies
+approximately **840.6 MB**, below **3 GB**. No GPU run, `--video`,
+cached-av, Snes9x execution, cargo GPU test, full library suite, protected-cache
+or shared-ledger write, cargo fmt, commit, push or one-off repository script
+was used. Remaining pricing work and continuous live ending acceptance remain
+unfinished.

@@ -167,11 +167,16 @@ impl ZeldaState {
     // void SpriteDraw_OctorokStoneCrumbling(int k) {  // 86d643 — sprite_main.c:12032
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_octorok_stone_crumbling(&mut self, k: usize) {
+        // $06:D643..D6A1: four inline tiles; coordinate preparation stays a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d643));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d643);
         let info = match self.sprite_prep_oam_coord_or_double_ret(k) {
             Some(p) => PrepOamCoordsRet::from_tuple(p),
             None => return,
         };
         let mut oam = self.game_state.oam.current_pointer_usize();
+        b.block(0x06d646);
         let g = (((self.sprite_slot_view(k).delay_main() >> 1) & 0xc) ^ 0xc) as usize;
         let mut i: i32 = 3;
         loop {
@@ -182,6 +187,12 @@ impl ZeldaState {
             let y = info
                 .y
                 .wrapping_add(OCTOSTONE_DRAW_Y_OFFSETS[j] as i16 as u16);
+            b.block(0x06d657);
+            if 0xf3 + 2 * j > 0xff { b.crossing(0x06d660); }
+            if y.wrapping_add(16) < 256 { b.taken(0x06d67c); }
+            else { b.block(0x06d67e); }
+            b.block(0x06d682);
+            if i != 0 { b.taken(0x06d69e); }
             self.set_oam_helper0_at(oam, x, y, 0xbc, OCTOSTONE_DRAW_FLAGS[j] | 0x2d, 0);
             oam += 4;
             i -= 1;
@@ -189,6 +200,7 @@ impl ZeldaState {
                 break;
             }
         }
+        b.block(0x06d6a0);
     }
 
     // -----------------------------------------------------------------------

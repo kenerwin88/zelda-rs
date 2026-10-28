@@ -5406,43 +5406,61 @@ impl ZeldaState {
 
     /// ROM: `DungeonMap_DrawFloorNumbersByRoom`
     pub(super) fn dungeon_map_draw_floor_numbers_by_room(&mut self, pd: u16, r8: u16) {
+        // $0A:E4F9..E56E: eleven clearing rows and the actual signed floor digits.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ae4f9));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ae4f9);
         let mut p = 0x00deu16;
         loop {
+            b.block(0x0ae500);
             let t = (((p.wrapping_add(pd)) & 0x0fff) >> 1) as usize;
             self.set_messaging_render_buffer_word(t, 0x0f00);
             self.set_messaging_render_buffer_word(t + 1, 0x0f00);
             p = p.wrapping_add(0x40);
-            if p == 0x039e {
-                break;
-            }
+            if p == 0x039e { break; }
+            b.taken(0x0ae51f);
         }
         let t = (((0x035eu16.wrapping_add(pd)) & 0x0fff) >> 1) as usize;
+        b.block(0x0ae521);
         let floor = self.game_state.dungeon_map_display.dungmap_cur_floor();
         let (q1, q2) = if (floor & 0x80) != 0 {
+            b.block(0x0ae529);
+            b.block(0x0ae539);
+            b.block(0x0ae553);
             (
                 0x1f1c,
                 DUNGEON_MAP_FLOOR_NUMBER_TILES[usize::from((!(floor as u8)) & 0x07)],
             )
         } else {
+            b.taken(0x0ae527);
+            b.block(0x0ae52e);
+            b.block(0x0ae539);
+            b.taken(0x0ae551);
+            b.block(0x0ae563);
             (
                 DUNGEON_MAP_FLOOR_NUMBER_TILES[usize::from(floor & 0x0f)],
                 0x1f1d,
             )
         };
+        b.block(0x0ae566);
         self.set_messaging_render_buffer_word(t, q1 & r8);
         self.set_messaging_render_buffer_word(t + 1, q2 & r8);
     }
 
     /// ROM: `DungeonMap_DrawDungeonLayout`
     pub(super) fn dungeon_map_draw_dungeon_layout(&mut self, pd: i32) {
-        if self.lag_free {
-            // $0A:E579..E599: five room-row JSRs/control; child bodies excluded.
-            crate::cycle_ledger::charge(54 + 5 * 362 + 4 * 6 + 64);
-        }
+        // $0A:E579..E599: replace the old 1,952-clock self scalar, not its children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ae579));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ae579);
         for i in 0..5 {
+            b.block(0x0ae57d);
             let arg_x = ((292 + 128 * i + pd) & 0x0fff) >> 1;
             self.dungeon_map_draw_single_row_of_rooms(i, arg_x);
+            b.block(0x0ae58e);
+            if i != 4 { b.taken(0x0ae595); }
         }
+        b.block(0x0ae597);
     }
 
     /// ROM: `DungeonMap_DrawSingleRowOfRooms`
@@ -10235,4 +10253,75 @@ pub(crate) struct DialogueCharacterLoadProgress {
     decoded: Vec<u8>,
     name_ranges: Vec<(usize, usize)>,
     pending_output: Vec<u8>,
+}
+
+#[test]
+fn route1_dungeon_map_floor_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let mut cases = 0;
+    for floor in [0u16, 1, 7, 0xff, 0xfe, 0xf8, 0xffff] {
+        for pd in [0u16, 0x0800, 0x0e00] {
+            for mask in [0xffffu16, 0xefff] {
+                let mut n = ZeldaState::new();
+                n.set_assets(&assets).unwrap();
+                n.write_wram_word(0x20e, floor);
+                n.sync_native_game_state_from_ram();
+                n.set_lag_free(true);
+                let mut s = snes::Snes::new();
+                s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                s.ram.copy_from_slice(&n.wram_image());
+                s.ram[6..8].copy_from_slice(&pd.to_le_bytes());
+                s.ram[8..10].copy_from_slice(&mask.to_le_bytes());
+                s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+                s.cpu.e = false;
+                s.cpu.unpack_flags(0x30);
+                s.cpu.k = 0x0a;
+                s.cpu.db = 0x0a;
+                s.cpu.pc = 0xe4f9;
+                s.cpu.sp = 0x1fa;
+                crate::cycle_ledger::assert_rom_marker_work(0x0ae4f9, s,
+                    |s| s.cpu.k == 0x0a && (0xe4f9..0xe56f).contains(&s.cpu.pc),
+                    || n.dungeon_map_draw_floor_numbers_by_room(pd, mask));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route1 map floors: {cases} ROM cases");
+}
+
+#[test]
+fn route1_dungeon_map_layout_replaces_scalar_with_rom_markers() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let mut cases = 0;
+    for dungeon in 0..13u16 {
+        for pd in [0u16, 0x0800] {
+            let mut n = ZeldaState::new();
+            n.set_assets(&assets).unwrap();
+            n.write_wram_word(0x40c, dungeon * 2);
+            let count = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(dungeon)] & 15;
+            n.write_wram_word(0x20e, 0u16.wrapping_sub(count));
+            n.sync_native_game_state_from_ram();
+            n.set_lag_free(true);
+            let mut s = snes::Snes::new();
+            s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+            s.ram.copy_from_slice(&n.wram_image());
+            s.ram[6..8].copy_from_slice(&pd.to_le_bytes());
+            s.ram[0x1fb..0x1fd].copy_from_slice(&[0xff, 0x7f]);
+            s.cpu.e = false;
+            s.cpu.unpack_flags(0x30);
+            s.cpu.k = 0x0a;
+            s.cpu.db = 0x0a;
+            s.cpu.pc = 0xe579;
+            s.cpu.sp = 0x1fa;
+            crate::cycle_ledger::assert_rom_marker_work(0x0ae579, s,
+                |s| s.cpu.k == 0x0a && (0xe579..0xe59a).contains(&s.cpu.pc),
+                || n.dungeon_map_draw_dungeon_layout(i32::from(pd)));
+            cases += 1;
+        }
+    }
+    eprintln!("route1 map layout: {cases} ROM cases");
 }

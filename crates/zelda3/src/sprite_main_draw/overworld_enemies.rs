@@ -1884,31 +1884,54 @@ impl ZeldaState {
     }
 
     pub(super) fn moblin_draw(&mut self, k: usize) {
+        // $06:9BC4..9C1F plus DC64's selector; shared drawing/shadow stay separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x069bc4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069bc4);
         let gfx = usize::from(self.sprite_slot_view(k).graphics());
         let mut info = self.sprite_draw_multiple(
             k,
             &MOBLIN_DRAW_FRAMES[gfx * 4..gfx * 4 + 4],
         );
+        b.block(0x069bde);
         if self.sprite_slot_view(k).pause() != 0 {
+            b.taken(0x069be1);
+            b.block(0x069c1f);
             return;
         }
+        b.block(0x069be3);
         let mut oam = self.game_state.oam.current_pointer_usize();
         if self.sprite_slot_view(k).delay_aux1() != 0 {
-            for _ in 0..4 {
+            b.block(0x069be8);
+            for i in 0..4 {
+                b.block(0x069bea);
+                if (self.game_state.oam.current_extended_pointer_usize() & 0xff) + i > 0xff {
+                    b.crossing(0x069bea);
+                }
                 let ext_index = (oam - OAM_BUF) / 4;
                 if self.game_state.oam.extended_byte(ext_index) & 2 == 0 {
+                    b.block(0x069bf0);
                     self.oam_state_mut().hide_entry(oam);
-                }
+                } else { b.taken(0x069bee); }
+                b.block(0x069bfb);
+                if i != 3 { b.taken(0x069bfc); }
                 oam += 4;
             }
-        }
+        } else { b.taken(0x069be6); }
+        b.block(0x069bfe);
         let oam = self.game_state.oam.current_pointer_usize()
             + usize::from(MOBLIN_DRAW_OBJ_OFFS[gfx.min(MOBLIN_DRAW_OBJ_OFFS.len() - 1)]) * 4;
+        // ($90),Y tests the unwrapped base-low + head-byte offset.
+        if (self.game_state.oam.current_pointer_usize() & 0xff)
+            + usize::from(MOBLIN_DRAW_OBJ_OFFS[gfx]) * 4 + 3 > 0xff {
+            b.crossing(0x069c12);
+        }
         let j = usize::from(self.sprite_slot_view(k).head_direction() & 3);
         self.oam_state_mut()
             .set_entry_char(oam, MOBLIN_DRAW_HEAD_CHAR[j]);
         self.oam_state_mut()
             .merge_entry_flags(oam, !0x40, ALTAR_ZELDA_HEAD_FLAGS[j]);
+        b.block(0x06dc64);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 

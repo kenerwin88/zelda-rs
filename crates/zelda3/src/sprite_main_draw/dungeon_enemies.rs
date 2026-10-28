@@ -260,9 +260,15 @@ impl ZeldaState {
     //   Three body tiles plus common shadow.
     // }
     pub(super) fn ropa_draw(&mut self, k: usize) {
+        // $06:9EE5..9F04 and DC64's LDA #10; drawing and DC66 stay children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x069ee5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069ee5);
         let base =
             ((self.sprite_slot_view(k).graphics() as usize) * 3).min(ROPA_DRAW_FRAMES.len() - 3);
         let mut info = self.sprite_draw_multiple(k, &ROPA_DRAW_FRAMES[base..base + 3]);
+        b.block(0x069f02);
+        b.block(0x06dc64);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 

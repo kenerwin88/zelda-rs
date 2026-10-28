@@ -1315,14 +1315,32 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_falling_humanoid(&mut self, k: usize) {
+        // $06:FE5B..FEB3: selection, inline writer and correction call only.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06fe5b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06fe5b);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
         let q = usize::from(self.sprite_slot_view(k).graphics());
         let mut oam = self.game_state.oam.current_pointer_usize();
+        b.block(0x06fe5e);
+        if q >= 12 { b.taken(0x06fe6c); }
+        else {
+            b.block(0x06fe6e);
+            if q & 3 != 0 { b.taken(0x06fe70); }
+            else { b.block(0x06fe72); }
+        }
+        b.block(0x06fe74);
         let n = if q < 12 && (q & 3) == 0 { 3 } else { 0 };
         for n_cur in (0..=n).rev() {
             let i = q * 4 + n_cur;
+            b.block(0x06fe76);
+            for (low, pc) in [(0x43, 0x06fe7f), (0x7b, 0x06fe87),
+                (0xb3, 0x06fe8d), (0xeb, 0x06fe93), (0x23, 0x06fea0)] {
+                if low + i > 0xff { b.crossing(pc); }
+            }
+            if n_cur != 0 { b.taken(0x06fea9); }
             self.set_oam_plain_at(
                 oam,
                 x.wrapping_add(SPRITE_DRAW_FALLING_HUMANOID_X_OFFSETS[i] as i16 as u16) as u8,
@@ -1333,7 +1351,9 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x06feab);
         self.sprite_correct_oam_entries(k, n as i32, 0xff);
+        b.block(0x06feb3);
     }
 
     // void ScatterDebris_Draw(int k, Point16U pt) {  // 89f198

@@ -21,13 +21,23 @@ impl ZeldaState {
     //   oam_ext_cur_ptr += 2;
     // }
     pub(super) fn sprite_draw_water_ripple_with_oam_adjust(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059fe5));
+        self.sprite_draw_water_ripple_adjust_body(k);
+    }
+
+    fn sprite_draw_water_ripple_adjust_body(&mut self, k: usize) {
+        // $05:9FE5..9FF9: call, pointer adjustments and RTS. Also a fallthrough.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059fe5);
         self.sprite_draw_water_ripple(k);
+        b.block(0x059fe9);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
         let ext = self.game_state.oam.current_extended_pointer();
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
+        b.block(0x059ff9);
     }
 
     // -----------------------------------------------------------------------
@@ -1111,8 +1121,15 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void WalkingZora_DrawWaterRipples(int k) {  // 859fe0
     pub(super) fn walking_zora_draw_water_ripples(&mut self, k: usize) {
+        // $05:9FE0..9FF9: the nonzero path falls through, without another frame.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059fe0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059fe0);
         if self.sprite_slot_view(k).anim_clock() != 0 {
-            self.sprite_draw_water_ripple_with_oam_adjust(k);
+            self.sprite_draw_water_ripple_adjust_body(k);
+        } else {
+            b.taken(0x059fe3);
+            b.block(0x059ff9);
         }
     }
 
@@ -1131,10 +1148,21 @@ impl ZeldaState {
     //   oam[1].flags = t | 0x40;
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_water_ripple(&mut self, k: usize) {
+        // $05:9FFA..A028: complete caller; DF6C and its 8AB1 wrapper are separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059ffa));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059ffa);
         let frame = self.game_state.frame.frame_counter;
         let base = (WATER_RIPPLE_FRAME_INDICES[((frame >> 2) & 3) as usize] as usize) * 2;
-        self.sprite_draw_multiple(k, &WATER_RIPPLE_DRAW_FRAMES[base..base + 2]);
+        {
+            let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x058ab1));
+            b.block(0x058ab1); // $05:8AB1 JSL DF6C; the called drawing is unchanged.
+            self.sprite_draw_multiple(k, &WATER_RIPPLE_DRAW_FRAMES[base..base + 2]);
+            b.block(0x058ab5);
+        }
+        b.block(0x05a017);
         let oam = self.game_state.oam.current_pointer_usize();
+        if (oam & 0xff) + 3 > 0xff { b.crossing(0x05a019); }
         let t = (self.game_state.oam.entry_flags(oam) & 0x30) | 0x4;
         self.oam_state_mut().set_entry_flags(oam, t);
         self.oam_state_mut().set_entry_flags(oam + 4, t | 0x40);

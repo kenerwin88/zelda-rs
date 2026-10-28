@@ -1991,11 +1991,32 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_25_TalkingTree(int k) {  // 86c0d5
     pub(super) fn sprite_25_talking_tree(&mut self, k: usize) {
-        match self.sprite_slot_view(k).subtype2() {
-            0 => self.talking_tree_mouth(k),
-            1 => self.talking_tree_eye(k),
-            _ => {}
+        // $06:C0D5 bounce -> $1D:F943 bank wrapper -> F94B local dispatch.
+        // Price only caller opcodes; selected mouth/eye bodies keep their owners.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06c0d5);
+        {
+            let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df943));
+            b.block(0x1df943);
+            {
+                let _main = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df94b));
+                b.block(0x1df94b);
+                {
+                    let _entry = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+                    b.block(0x008781);
+                }
+                // After PLY removes the JSL frame, the stack tail is caller work.
+                b.block(0x008784);
+                b.block(0x008799);
+                match self.sprite_slot_view(k).subtype2() {
+                    0 => self.talking_tree_mouth(k),
+                    1 => self.talking_tree_eye(k),
+                    _ => {}
+                }
+            }
+            b.block(0x1df949);
         }
+        b.block(0x06c0d9);
     }
 
     // -----------------------------------------------------------------------

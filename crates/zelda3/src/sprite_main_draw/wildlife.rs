@@ -15,13 +15,23 @@ impl ZeldaState {
     //   Two mirrored 16x16 body tiles plus the common shadow.
     // }
     pub(super) fn crab_draw(&mut self, k: usize) {
+        // $05:9510..956C: complete two-tile writer, excluding prep/far shadow.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059510));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059510);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x059513);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let d = (self.sprite_slot_view(k).graphics() as usize) * 2;
         for i in (0..2).rev() {
             let j = d + i;
+            b.block(0x05951c);
+            if y.wrapping_add(16) < 256 { b.taken(0x059541); }
+            else { b.block(0x059543); }
+            b.block(0x059547);
+            if i != 0 { b.taken(0x059565); }
             self.set_oam_helper0_at(
                 oam,
                 x.wrapping_add(CRAB_DRAW_X_OFFSETS[j] as u16),
@@ -32,9 +42,11 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x059567);
         let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
         // ROM $05:9568
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x05956c);
     }
 
     // -----------------------------------------------------------------------
