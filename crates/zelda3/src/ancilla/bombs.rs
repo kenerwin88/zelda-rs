@@ -555,21 +555,34 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla3_a_big_bomb_explosion(&mut self, k: usize) {
+        // $08:F18D..F27B: timer and nine explosion callers. A7AB's
+        // existing writer, allocation, sound and destructible children stay separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08f18d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08f18d);
+        if self.game_state.frame.submodule != 0 { b.taken(0x08f18f); }
+        else { b.block(0x08f191); }
         if self.game_state.frame.submodule == 0
             && self.ancilla_slot_view_mut(k).tick_work_byte_3() == 0
         {
+            b.block(0x08f199);
             let bomb_phase = self.ancilla_slot_view_mut(k).advance_item_to_link();
             if bomb_phase == 2 {
+                b.block(0x08f1a3);
                 self.ancilla_sfx2_pan(k, 0x0c);
-            }
+            } else { b.taken(0x08f1a1); }
+            b.block(0x08f1a8);
             if bomb_phase == 11 {
+                b.block(0x08f1af);
                 self.ancilla_slot_view_mut(k).clear();
                 return;
             }
+            b.taken(0x08f1ad); b.block(0x08f1b3);
             self.ancilla_slot_view_mut(k)
                 .set_work_byte_3(BOMB_PHASE_TIMERS[bomb_phase as usize]);
-        }
+        } else if self.game_state.frame.submodule == 0 { b.taken(0x08f197); }
 
+        b.block(0x08f1ba);
         self.oam_state_mut().set_priority_word(0x3000);
         let bomb_phase = self.ancilla_slot_view(k).item_to_link() as usize;
         let numframes = BOMB_DRAW_FRAME_COUNTS[bomb_phase] as usize;
@@ -578,6 +591,8 @@ impl ZeldaState {
 
         let mut yy = 0usize;
         for i in (0..=8).rev() {
+            b.block(0x08f1e7);
+            if 0xfa + k > 0xff { b.crossing(0x08f1e9); }
             let x = self
                 .ancilla_get_x(k)
                 .wrapping_add(ANCILLA3_A_BIG_BOMB_EXPLOSION_SUPER_BOMB_EXPLODE_X[i] as i16 as u16)
@@ -586,18 +601,35 @@ impl ZeldaState {
                 .ancilla_get_y(k)
                 .wrapping_add(ANCILLA3_A_BIG_BOMB_EXPLOSION_SUPER_BOMB_EXPLODE_Y[i] as i16 as u16)
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
+            if y >= 256 { b.taken(0x08f222); }
+            else {
+                b.block(0x08f224);
+                if x >= 256 { b.taken(0x08f226); }
+            }
             if x < 256 && y < 256 {
+                b.block(0x08f228);
                 self.ancilla_allocate_oam_from_region_a_or_d_or_f(j * 2, 0x18);
+                b.block(0x08f22f);
                 let base_oam = self.game_state.oam.current_pointer_usize();
                 let oam = base_oam + yy;
                 let next_oam = self.ancilla_draw_explosion(oam, j, 0, numframes, 0x32, x, y);
                 yy += next_oam - oam;
             }
+            b.block(0x08f248);
+            if i != 0 { b.taken(0x08f24b); }
         }
 
+        b.block(0x08f24d);
+        if self.ancilla_slot_view(k).item_to_link() != 3 { b.taken(0x08f252); }
+        else {
+            b.block(0x08f254);
+            if self.ancilla_slot_view(k).work_byte_3() != 1 { b.taken(0x08f259); }
+        }
         if self.ancilla_slot_view(k).item_to_link() == 3
             && self.ancilla_slot_view(k).work_byte_3() == 1
         {
+            b.block(0x08f25b);
+            if 0xfa + k > 0xff { b.crossing(0x08f25b); }
             let old = if self
                 .game_state
                 .enhanced_features
@@ -609,8 +641,10 @@ impl ZeldaState {
             };
             self.follower_state_mut().set_indicator(13);
             self.bomb_check_for_destructibles(self.ancilla_get_x(k), self.ancilla_get_y(k), 0);
+            b.block(0x08f274);
             self.follower_state_mut().set_indicator(old);
         }
+        b.block(0x08f27b);
     }
 
     fn bomb_check_underside_sprite_status(&mut self, k: usize, pt: &mut Point16U) -> Option<u8> {

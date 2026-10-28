@@ -3241,7 +3241,13 @@ impl ZeldaState {
     }
 
     pub(super) fn buzzblob_select_new_direction(&mut self, k: usize) {
+        // $06:D906..D91F: RNG call and the three actual table reads.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d906));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d906);
         let j = (self.get_random_number() & 7) as usize;
+        b.block(0x06d90a);
+        if 0xfe + j > 0xff { b.crossing(0x06d919); }
         self.sprite_slot_view_mut(k)
             .set_x_velocity(BUZZBLOB_SELECT_NEW_DIRECTION_X_VELOCITIES[j] as u8);
         self.sprite_slot_view_mut(k)

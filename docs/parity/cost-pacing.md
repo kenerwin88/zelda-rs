@@ -14471,3 +14471,146 @@ Evidence remains below **3 GB**. No GPU run, `--video`, cached-av, Snes9x
 execution, protected-cache or shared-ledger write, cargo fmt, commit, push,
 or one-off repository script was used. Module09 pricing, remaining route
 pricing and continuous live ending acceptance remain unfinished.
+
+
+## Route pricing 3
+
+**Verified partial CPU-only stop on `codex/route3`, main `1f93f138`.**
+Evidence: `target/route3/`. The single final ROM census **PASSes all
+1,473,123 iterations**, unexplained **0**, with excess/FP **0/0** and every
+runtime hold equal to P2. Missing holds fall **2,919 → 2,878**:
+**41 restored**, **0 lost**, no new missing iteration or changed source context.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,919 | **2,878** |
+| 0..94,852 | 89 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 469 | **466** |
+| 461,989..1,473,122 | 2,322 | **2,286** |
+
+`baseline-identity.json` binds the retained final Route 2 predictor, native
+profiles and binary to this exact committed main. Its seven frozen source hashes
+match HEAD. The whole-route worklist is recomputed on all **2,886 remaining
+missing iterations**, using unchanged exact multi-hold inverses. No duplicate
+main census or seeded live census was run. The supplied seeded live baseline
+**3,178 / 255 / 73** is prior evidence, not a newly measured candidate census.
+
+### Ranking and admitted instruction work
+
+`owner-ranking.json` retains the raw exclusive worklist and four-window split;
+parent/JML, drawing, collision and velocity aliases remain admission work, not
+additive prices. **Module09 is untouched**, including its unresolved entry
+partition. `handler-ranking.json` separately uses original instruction receipts
+on **2,085** current missing iterations. Independent subset predictions
+are charge sparkle **12**, big-bomb caller **10**, Mimic **6**, sword sparkle
+**6**, Buzz Blob caller **1** and direction **1**. Ties prefer the earlier route
+iteration. Firebar's whole-route raw score is **6**; the retained instruction
+subset lacks its complete later-route rows, so its subset score is **zero**.
+Its complete standalone ROM fixture establishes the admitted self price.
+These independent scores overlap and do not promise additive recoveries.
+
+Seven complete self bodies or disjoint entries add **115 blocks /
+548 instructions** from `scripts/rom_block_costs.py`; all **2,653 existing
+rows remain byte-identical**. Every marker is lagless-only and has a source-address
+comment. Actual ROM calls/JMPs are checked. These selected self bodies had
+**zero legacy `charge(N)` scalars** and retain none. Existing child scalars,
+default/ROM-timing accounting and game-state operations are unchanged.
+
+| Admitted self family | Source entry | New self clocks on frozen misses |
+| --- | --- | ---: |
+| Spin-attack charge sparkle | `$08c1ea` | 579,400 |
+| Big-bomb caller | `$08f18d` | 278,830 |
+| Mimic caller / stationary tail | `$1ec79b` | 281,126 |
+| Sword-swing sparkle | `$08d65a` | 381,428 |
+| Firebar inline math / drawing / hit scan | `$1ed049` | 130,234 |
+| Buzz Blob prefix / movement-return suffix | `$06d89a` | 71,358 |
+| Buzz Blob direction selector | `$06d906` | 344 |
+
+The self table excludes **36,030** newly selected clocks in two existing,
+separately scoped children: Firebar's `$1E:8A85` NOP8 at its four actual hardware
+multiply call sites, and Buzz Blob's `$06:D88B` two-damage-call tail at its
+actual JMP. There is no parent-plus-child double charge. Firebar uses DB `$1E`
+for system-bank register prices and real sine saturation/sign branches. Its
+hit scan uses actual OAM page crossings and short-circuit outcomes. Mimic's
+stationary tail executes once; its JMP-to-Eyegore body remains separate.
+The existing recoil second-PLA/RTS price is retained, not added again.
+Big-bomb drawing keeps `$08:A7AB`'s existing scalar writer separate and uses
+the real `$BFA+slot` page crossing in both its loop and destructible suffix.
+
+Buzz Blob's `$06:D89A..D8E4` prefix ends at MoveXY. Its existing X-subpixel
+handoff resumes at the disjoint `$D8E5..D8ED` suffix, without repeating the
+prefix. Complete/split fixtures check equal caller retirement. The separate
+direction child uses the actual `$D8FE+Y` indexed page crossing. No continuation
+field, timing threshold or caller/scene exception was added.
+
+**1,758,750 new marker clocks = 1,758,750 signed main-counter clocks**
+on every frozen missing row, with **0 work mismatches**.
+Original instruction work grouped into generated blocks, with actual branch/page
+costs and the disjoint reused children, agrees on **all 2,085 covered rows**:
+**0 source mismatches**. That independent source subset predicts
+**32** joint recoveries. Across the whole cohort the unchanged inverse applied
+to executed new work predicts **41**; observed recovery is
+**41**, with **0 prediction exceptions**.
+`source-predictions.json`, `work-proof.json`, compressed source instruction work
+and `frame-flips.json.gz` retain every row. These are instruction-work and
+logical-scheduling receipts, not physical CPU/NMI or exact A/V proof.
+No price was fitted to lag counts; no classifier, pacing rule, scene threshold,
+multiplier, scene table, APU or SPC behavior changed.
+
+Fireball trail's higher subset score **9** is not admitted: its source scan
+returns on no free garnish slot, while the native helper casts allocator `-1`
+to a slot and writes it. A separate behavior repair is required; no success-only
+price is installed. Swamola drawing and common sparkle/explosion writers already
+carry self scalars and receive no extra body price. Collision/velocity children
+already carrying scalar or instruction work receive no inferred parent charge.
+Crystal Switch remains zero independent subset recoveries. `admission-notes.json`
+retains these boundaries. `remaining-owner-ranking.json` recomputes the raw
+residual whole-route worklist; remaining owners are not claimed exhausted.
+
+### Continuous live and final verification
+
+The single cold continuous live replay uses read-only **full-v2**, `--report 0
+--live-apu-reads`, **no `--seed-every`**, and **zero post-initial reseeds**.
+It completes all **500,000 tested iterations**, covering the known main frontier. Its first classified state difference is **229,034**, `song-end-poll`, room `$0007`. The clean prefix is **229,034 iterations**, last clean index **229,033**. This **regresses** main's **462,627** frontier. The retained first row is the existing `song-end-poll` classification with reason `rupee sound queue`; native enters `$0E/$02` while source remains `$07/$00`. The unchanged strict gate reports `census gate: FAIL (unexplained=37467, complete=True)`. Remaining continuous live acceptance is unfinished.
+The summary contains **34,300 song-classified and 3,107 polygon state comparisons**,
+plus **30 unconsumed / 30 extra RNG draws** within the existing song classification
+and one classified command comparison. Ordinary RNG/APU consumption and command
+comparisons remain clean. The total of 462,593 clean iterations is not a contiguous
+clean prefix; the first classified difference above determines that prefix.
+This is a completed bounded boundary receipt. Full classified rows are compressed
+directly through a FIFO. Post-divergence
+observations do not extend the clean prefix; no seeded live census was run.
+
+All **seven new `assert_rom_marker_work` fixtures / 1,036 ROM cases per
+feature configuration** pass, including source RNG answers, complete/split
+movement entries, inactive/recoil exits, timer/deletion paths, signed offsets,
+indexed page crossings, Firebar OAM page edges and big-bomb clipping/destructibles.
+Touched-area tests pass **155 drawing, 21 ancilla, 39 preparation and seven
+Mothula tests**. **Nine Python generator/worklist tests**, exact regeneration
+and `git diff --check` pass. Both ordinary production builds are warning-free;
+the pre-existing default/reduced lib-test warnings remain **24 / one**.
+Full library suites and cargo GPU tests were not run.
+
+The initial final census was interrupted after the clean segment starting
+962,000 when the independent source-PC audit found that sword sparkle's native
+X-first naming had associated the two sign branches with reversed ROM PCs.
+The ROM reads Y before X. Their total work was equal, but the annotations were
+corrected and the fixture now checks each negative-sign block's execution count
+separately against the unmodified ROM. The partial run and pre-correction source
+are retained in `interrupted-axis-annotation/`; it is not a completed gate.
+After flushing its profiles, the retained prefix reconciles on all 2,173 missing
+rows and 1,573 source-covered rows with the two marker identities normalized;
+zero counter or source-work differences remain. The corrected candidate receives
+fresh final builds, targeted checks, default ledger and the completed census above.
+The corrected predictor also matches all 965,052 complete interrupted records
+in every field. No price was adjusted to a lag count.
+
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio. All **1,512 protected ledger/cache input files** retain
+the same file set, sizes and nanosecond mtimes. Frozen source/binary hashes,
+commands, gates, matrices and final patch bind this stop. Evidence occupies
+approximately **641.9 MB**, below **3 GB**. No GPU run, `--video`,
+cached-av, Snes9x execution, protected-cache/shared-ledger write, cargo fmt,
+commit, push or one-off repository script was used. Remaining owner pricing,
+Module09 pricing and continuous live ending acceptance remain unfinished.

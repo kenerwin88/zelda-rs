@@ -819,14 +819,26 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_0D_Buzzblob(int k) {  // 86d89a
     pub(in crate::zelda_rtl) fn sprite_0_d_buzzblob(&mut self, k: usize) {
+        // $06:D89A..D8E4: prefix ends at the MoveXY call. A suspended
+        // X-subpixel child resumes at buzzblob_after_movement, without this prefix.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d89a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d89a);
         if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.block(0x06d89f);
             let value = (self.sprite_slot_view(k).object_priority() & 0xf1)
                 | SPRITE_0_D_BUZZBLOB_OBJ_PRIO
                     [usize::from((self.sprite_slot_view(k).delay_aux1() >> 1) & 3)];
             self.sprite_slot_view_mut(k).set_object_priority(value);
-        }
+        } else { b.taken(0x06d89d); }
+        b.block(0x06d8ae);
         self.sprite_cukeman(k);
+        b.block(0x06d8b2);
         self.buzz_blob_draw(k);
+        b.block(0x06d8b5);
+        if self.sprite_slot_view(k).delay_aux1() != 0 { b.block(0x06d8c6); }
+        else { b.taken(0x06d8c4); }
+        b.block(0x06d8c9);
         let value = SPRITE_0_D_BUZZBLOB_LOCAL_GRAPHICS
             [usize::from((self.sprite_slot_view(k).subtype2() >> 3) & 3)]
             + if self.sprite_slot_view(k).delay_aux1() != 0 {
@@ -838,14 +850,19 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x06d8cf);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return;
         }
+        b.block(0x06d8d2);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x06d8da);
             self.buzzblob_select_new_direction(k);
-        }
+        } else { b.taken(0x06d8d8); }
+        b.block(0x06d8dd);
         if self.sprite_slot_view(k).delay_aux1() == 0 {
+            b.block(0x06d8e2);
             if let Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
                 slot,
                 pending: None,
@@ -863,14 +880,21 @@ impl ZeldaState {
             }
             // ROM $06:D8E2
             self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
-        }
+        } else { b.taken(0x06d8e0); }
         self.buzzblob_after_movement(k);
     }
 
     pub(in crate::zelda_rtl) fn buzzblob_after_movement(&mut self, k: usize) {
+        // $06:D8E5..D8ED: shared complete/resumed suffix. D88B's two-call
+        // tail is a separate owner, selected only at this actual JMP site.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d89a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d8e5);
         let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+        b.block(0x06d8e8);
         self.sprite_bounce_off_wall(k);
-        self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Unpriced);
+        b.block(0x06d8eb);
+        self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom06D88B);
     }
 
     // -----------------------------------------------------------------------

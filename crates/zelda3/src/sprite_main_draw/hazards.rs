@@ -918,9 +918,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Firebar_Main(int k) {  // 9ed049
     pub(super) fn firebar_main(&mut self, k: usize) {
+        // $1E:D049..D1C9: complete inline math, four OAM entries and hit scan.
+        // Coordinate, correction and damage children own their bodies. The
+        // real hardware-multiply NOP8 calls are charged separately, once each.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ed049));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ed049);
         let Some((x, y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
+        b.block(0x1ed04c);
         let mut oam = self.game_state.oam.current_pointer_usize();
         self.sprite_workspace_mut().set_shared_scratch_a(info_flags);
         self.draw_scratch_position_mut()
@@ -930,8 +937,44 @@ impl ZeldaState {
             | (u16::from(self.sprite_slot_view(k).b()) << 8);
         let sinval = guruguru_bar_sin(angle, 0x40);
         let cosval = guruguru_bar_sin((angle.wrapping_add(0x80)) & 0x01ff, 0x40);
+        let sine = SHARED_SINE_LOOKUP_TABLE[(angle & 0xff) as usize];
+        let cosine = SHARED_SINE_LOOKUP_TABLE[(angle.wrapping_add(0x80) & 0xff) as usize];
+        if sine >= 256 { b.taken(0x1ed0aa); }
+        else {
+            b.block(0x1ed0ac);
+            { let _nop = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8a85)); b.block(0x1e8a85); }
+            b.block(0x1ed0b2);
+        }
+        b.block(0x1ed0ba);
+        if angle & 0x100 != 0 { b.block(0x1ed0c0); }
+        else { b.taken(0x1ed0be); }
+        b.block(0x1ed0c3);
+        if cosine >= 256 { b.taken(0x1ed0ce); }
+        else {
+            b.block(0x1ed0d0);
+            { let _nop = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8a85)); b.block(0x1e8a85); }
+            b.block(0x1ed0d6);
+        }
+        b.block(0x1ed0de);
+        if angle.wrapping_add(0x80) & 0x100 != 0 { b.block(0x1ed0e4); }
+        else { b.taken(0x1ed0e2); }
+        b.block(0x1ed0e7);
         let flags = ((self.sprite_slot_view(k).subtype2() << 4) & 0xc0) | info_flags;
         for i in (0..4usize).rev() {
+            if i != 3 {
+                b.block(0x1ed11d);
+                { let _nop = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8a85)); b.block(0x1e8a85); }
+                b.block(0x1ed12b);
+                if sinval < 0 { b.block(0x1ed133); }
+                else { b.taken(0x1ed131); }
+                b.block(0x1ed136);
+                { let _nop = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8a85)); b.block(0x1e8a85); }
+                b.block(0x1ed14a);
+                if cosval < 0 { b.block(0x1ed152); }
+                else { b.taken(0x1ed150); }
+                b.block(0x1ed155);
+                if i != 0 { b.taken(0x1ed172); }
+            }
             let m = (i + 1) as i16;
             let xo = i16::from(sinval) * m / 4;
             let yo = i16::from(cosval) * m / 4;
@@ -945,41 +988,62 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x1ed174);
         self.sprite_correct_oam_entries(k, 3, 0xff);
 
+        b.block(0x1ed17d);
         if ((((k as u8) ^ self.game_state.frame.frame_counter) & 3)
             | self.game_state.frame.submodule
             | self.game_state.frame.modal_pause_flag)
             != 0
         {
+            b.taken(0x1ed187); b.block(0x1ed1c9);
             return;
         }
+        b.block(0x1ed189);
 
         let mut oam = self.game_state.oam.current_pointer_usize();
-        for _ in 0..4 {
+        for i in 0..4 {
+            b.block(0x1ed18b);
+            if (self.game_state.oam.current_extended_pointer_usize() & 0xff) + i > 0xff {
+                b.crossing(0x1ed190);
+            }
             let ext_index = (oam - OAM_BUF) / 4;
             if self.game_state.oam.extended_byte(ext_index) & 1 == 0 {
+                b.block(0x1ed197);
+                if (self.game_state.oam.current_pointer_usize() & 0xff) + i * 4 > 0xff {
+                    b.crossing(0x1ed197);
+                }
                 let ox = self.game_state.oam.entry_x(oam);
                 let oy = self.game_state.oam.entry_y(oam);
                 let link_x = self.game_state.player.follower_link.x() as u8;
                 let link_y = self.game_state.player.follower_link.y() as u8;
-                if ox
+                let near_x = ox
                     .wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_h_copy2() as u8)
-                    .wrapping_sub(link_x)
-                    .wrapping_add(12)
-                    < 24
-                    && oy < 0xf0
-                    && oy
-                        .wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_v_copy2() as u8)
-                        .wrapping_sub(link_y)
-                        .wrapping_add(4)
-                        < 16
-                {
-                    self.sprite_attempt_damage_to_link_plus_recoil(k);
+                    .wrapping_sub(link_x).wrapping_add(12) < 24;
+                if !near_x { b.taken(0x1ed1a4); }
+                else {
+                    b.block(0x1ed1a6);
+                    if (self.game_state.oam.current_pointer_usize() & 0xff) + i * 4 + 1 > 0xff {
+                        b.crossing(0x1ed1a7);
+                    }
+                    if oy >= 0xf0 { b.taken(0x1ed1ac); }
+                    else {
+                        b.block(0x1ed1ae);
+                        if oy.wrapping_add(self.game_state.display.ppu_scroll_copy.bg2_v_copy2() as u8)
+                            .wrapping_sub(link_y).wrapping_add(4) < 16 {
+                            b.block(0x1ed1bb);
+                            self.sprite_attempt_damage_to_link_plus_recoil(k);
+                            b.block(0x1ed1c0);
+                        } else { b.taken(0x1ed1b9); }
+                    }
                 }
-            }
+            } else { b.taken(0x1ed195); }
+            b.block(0x1ed1c1);
+            if i != 3 { b.taken(0x1ed1c7); }
             oam += 4;
         }
+        b.block(0x1ed1c9);
     }
 
     // -----------------------------------------------------------------------

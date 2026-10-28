@@ -3541,3 +3541,166 @@ fn route2_ropa_control_and_state_tails_match_rom() {
     }
     eprintln!("route2 Ropa: {cases} ROM cases");
 }
+
+#[test]
+fn route3_buzzblob_complete_and_split_caller_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for (submodule, recoil, delay, aux, split) in [
+            (1u8, 0u8, 1u8, 0u8, false), (0, 8, 1, 0, false),
+            (0, 0, 1, 0, false), (0, 0, 0, 0, false),
+            (0, 0, 1, 1, false), (0, 0, 0, 7, false),
+            (0, 0, 1, 0, true), (0, 0, 0, 0, true),
+        ] {
+            for y in [0x40u16, 0x200] {
+                let mut n = prefix3_moldorm_state(k, y);
+                for (a, v) in [(0xe20, 0x0d), (0xdd0, 9), (0xdf0, delay),
+                    (0xe00, aux), (0xea0, recoil), (0xd50, 16), (0xd40, 0xf0)] {
+                    n.write_wram_byte(a + k, v);
+                }
+                n.write_wram_byte(0x11, submodule);
+                n.write_wram_byte(0xfa0, k as u8);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n, 0x06d89a, k).expect("ROM fixture");
+                let random = std::cell::Cell::new(None);
+                crate::cycle_ledger::assert_rom_marker_work(0x06d89a, s,
+                    |s| {
+                        if s.cpu.k == 6 && s.cpu.pc == 0xd90a {
+                            random.set(Some((s.cpu.a as u8, s.cpu.c)));
+                        }
+                        s.cpu.k == 6 && (0xd89a..0xd8ee).contains(&s.cpu.pc)
+                    }, || {
+                        if let Some((value, carry)) = random.get() {
+                            n.install_rom_random_replay(vec![crate::RomRandomSample::with_carry(
+                                0, value, carry)], 0);
+                            n.rom_random_replay.begin_frame();
+                        }
+                        if split {
+                            n.sprite_main_cpu_boundary = Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+                                slot: k as u8, pending: None,
+                            });
+                        }
+                        n.sprite_0_d_buzzblob(k);
+                        if split {
+                            let Some(SpriteMainCpuBoundary::BuzzblobAfterXSubpixel {
+                                pending: Some((x_low, x_high)), ..
+                            }) = n.sprite_main_cpu_boundary else { panic!("missing movement handoff"); };
+                            n.complete_sprite_move_x_after_subpixel(k, x_low, x_high);
+                            n.sprite_move_y(k, super::sprite::SpriteMoveEntry::Unpriced);
+                            n.buzzblob_after_movement(k);
+                        }
+                    });
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route3 Buzzblob caller: {cases} ROM cases");
+}
+
+#[test]
+fn route3_buzzblob_direction_table_matches_rom() {
+    for k in [0usize, 15] {
+        for seed in 0..32u8 {
+            let mut n = prefix3_moldorm_state(k, 0x40);
+            n.write_wram_byte(0xfa0, k as u8);
+            n.write_wram_byte(0xfa1, seed);
+            n.write_wram_byte(0xfa2, 0xff - seed);
+            n.sync_native_game_state_from_ram();
+            let s = marker29_machine(&n, 0x06d906, k).expect("ROM fixture");
+            let random = std::cell::Cell::new(None);
+            crate::cycle_ledger::assert_rom_marker_work(0x06d906, s,
+                |s| {
+                    if s.cpu.k == 6 && s.cpu.pc == 0xd90a {
+                        random.set(Some((s.cpu.a as u8, s.cpu.c)));
+                    }
+                    s.cpu.k == 6 && (0xd906..0xd920).contains(&s.cpu.pc)
+                }, || {
+                    let (value, carry) = random.get().expect("source RNG returned");
+                    n.install_rom_random_replay(vec![crate::RomRandomSample::with_carry(0, value, carry)], 0);
+                    n.rom_random_replay.begin_frame();
+                    n.buzzblob_select_new_direction(k);
+                });
+        }
+    }
+    eprintln!("route3 Buzzblob direction: 64 ROM cases");
+}
+
+#[test]
+fn route3_firebar_inline_math_and_hit_scan_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for angle in [0u16, 1, 63, 64, 127, 128, 129, 192, 255, 256, 320, 384, 448, 511] {
+            for edge in [false, true] {
+            for (submodule, modal, near, y) in [
+                (0u8, 0u8, false, 0x40u16), (0, 0, true, 0x40),
+                (1, 0, false, 0x40), (0, 1, false, 0x40), (0, 0, true, 0x200),
+            ] {
+                let mut n = prefix3_moldorm_state(k, y);
+                for (a, v) in [(0xe20, 0x7e), (0xdd0, 9), (0xd90, angle as u8),
+                    (0xda0, (angle >> 8) as u8), (0xf60, 0)] {
+                    n.write_wram_byte(a + k, v);
+                }
+                if edge {
+                    n.write_wram_byte(0xd10 + k, 8);
+                    n.write_wram_word(0x90, 0x8fc);
+                    n.write_wram_word(0x92, 0xa5f);
+                }
+                n.write_wram_byte(0x11, submodule);
+                n.write_wram_byte(0xfc1, modal);
+                n.write_wram_byte(0x1a, k as u8);
+                n.write_wram_byte(0xfa0, k as u8);
+                n.write_wram_word(0x22, if near { 0x40 } else { 0x500 });
+                n.write_wram_word(0x20, if near { y } else { 0x500 });
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n, 0x1ed049, k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x1ed049, s,
+                    |s| s.cpu.k == 0x1e && (0xd049..0xd1ca).contains(&s.cpu.pc),
+                    || n.firebar_main(k));
+                cases += 1;
+            }
+            }
+        }
+    }
+    eprintln!("route3 Firebar: {cases} ROM cases");
+}
+
+#[test]
+fn route3_mimic_caller_and_eyegore_entry_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for kind in [0x83u8, 0x84] {
+            for joypad in [0u8, 1, 2, 4, 5, 8, 10] {
+                for (submodule, recoil, aux, defense, b, x, y) in [
+                    (0u8, 0u8, 0u8, 0u8, 1u8, 0x40u16, 0x40u16),
+                    (0, 0, 8, 0, 1, 0x40, 0x500),
+                    (0, 0, 1, 0, 1, 0x500, 0x40),
+                    (0, 0, 1, 1, 1, 0x500, 0x500),
+                    (0, 8, 0, 0, 1, 0x40, 0x40),
+                    (1, 0, 0, 0, 1, 0x40, 0x40),
+                    (1, 0, 0, 0, 0, 0x40, 0x40),
+                ] {
+                    let mut n = prefix3_moldorm_state(k, 0x40);
+                    for (a, v) in [(0xe20, kind), (0xdd0, 9), (0xda0, b), (0xea0, recoil),
+                        (0xe00, aux), (0xd90, joypad), (0xd80, 0), (0xf60, 0), (0xe80, 7)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0x11, submodule);
+                    n.write_wram_byte(0x48, defense);
+                    n.write_wram_byte(0xf0, joypad);
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.write_wram_word(0x22, x);
+                    n.write_wram_word(0x20, y);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x1ec79b, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x1ec79b, s,
+                        // Recoil's second PLA/RTS already belongs to this caller.
+                        |s| s.cpu.k == 0x1e && ((0xc791..0xc839).contains(&s.cpu.pc)
+                            || s.cpu.pc == 0xff18 || (s.cpu.pc == 0xff19 && s.cpu.sp == 0x1fa)),
+                        || n.sprite_83_green_eyegore(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route3 Mimic: {cases} ROM cases");
+}

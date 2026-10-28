@@ -1572,31 +1572,61 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_83_green_eyegore(&mut self, k: usize) {
+        // $1E:C79B..C838, plus the $C791 stationary tail. The JMP to
+        // Eyegore_Main leaves its selected body separate; drawing, movement,
+        // damage, collision and fire-phlegm children keep their own prices.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ec79b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ec79b);
         if self.sprite_slot_view(k).b() == 0 {
+            b.block(0x1ec7a0);
             self.eyegore_main(k);
             return;
         }
+        b.taken(0x1ec79e); b.block(0x1ec7a3);
         self.goriya_draw(k);
+        b.block(0x1ec7a7);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1ec7aa);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1EFE9B) {
             return;
         }
+        b.block(0x1ec7ad);
+        if self.sprite_slot_view(k).delay_aux1() == 0 { b.taken(0x1ec7b0); }
+        else {
+            b.block(0x1ec7b2);
+            if self.sprite_slot_view(k).delay_aux1() != 8 { b.taken(0x1ec7b4); }
+        }
         if self.sprite_slot_view(k).delay_aux1() == 8 {
+            b.block(0x1ec7b6);
             self.sprite_spawn_fire_phlegm(k);
+        }
+        b.block(0x1ec7ba);
+        if self.game_state.player.follower_link.defense_flags() != 0 { b.taken(0x1ec7bf); }
+        else {
+            b.block(0x1ec7c1);
+            if self.game_state.player.follower_link.joypad1h_last() & 0x0f == 0 { b.taken(0x1ec7c8); }
         }
         if self.game_state.player.follower_link.defense_flags() != 0
             || (self.game_state.player.follower_link.joypad1h_last() & 0x0f) == 0
         {
+            b.block(0x1ec791);
             self.sprite_slot_view_mut(k).set_a(0);
             // $1E:C794 enters $1E:C267; complete two-call body.
             self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
             // ROM $1E:C7EE -> $1E:8B2E, $1E:C797 -> $1E:8B2E -> $06:E496
+            b.block(0x1ec797);
             self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E);
+            b.block(0x1ec79a);
             return;
         }
 
+        b.block(0x1ec7ca);
+        if self.sprite_slot_view(k).sprite_type() == 0x84 { b.block(0x1ec7ce); }
+        else { b.taken(0x1ec7cc); }
+        b.block(0x1ec7d0);
         let j = usize::from(
             (self.game_state.player.follower_link.joypad1h_last() & 0x0f)
                 | if self.sprite_slot_view(k).sprite_type() == 0x84 {
@@ -1612,13 +1642,18 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k)
             .set_y_velocity(GORIYA_Y_VELOCITIES[j] as u8);
         if self.sprite_slot_view(k).wall_collision() == 0 {
+            b.block(0x1ec7e8);
             // ROM $1E:C7E8
             self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
         }
+        else { b.taken(0x1ec7e6); }
+        b.block(0x1ec7eb);
         // $1E:C7EB enters $1E:C267; complete two-call body.
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
         // ROM $1E:C7EE -> $1E:8B2E, $1E:C797 -> $1E:8B2E -> $06:E496
+        b.block(0x1ec7ee);
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E);
+        b.block(0x1ec7f1);
         let gfx_idx = usize::from(
             self.sprite_slot_view(k).subtype2().wrapping_add(1) & 12
                 | self.sprite_slot_view(k).direction(),
@@ -1628,17 +1663,34 @@ impl ZeldaState {
             .set_graphics(GORIYA_GRAPHICS[gfx_idx]);
 
         if self.sprite_slot_view(k).sprite_type() == 0x84 {
+            b.block(0x1ec80a);
             let (dir, pt) = self.sprite_direction_and_offset_to_face_link(k);
+            b.block(0x1ec80d);
+            if pt.x.wrapping_add(8) < 16 { b.taken(0x1ec814); }
+            else {
+                b.block(0x1ec816);
+                if pt.y.wrapping_add(8) >= 16 { b.taken(0x1ec81d); }
+            }
+            if pt.x.wrapping_add(8) < 16 || pt.y.wrapping_add(8) < 16 {
+                b.block(0x1ec81f);
+                if self.sprite_slot_view(k).direction() != dir { b.taken(0x1ec823); }
+            }
             if (pt.x.wrapping_add(8) < 16 || pt.y.wrapping_add(8) < 16)
                 && self.sprite_slot_view(k).direction() == dir
             {
+                b.block(0x1ec825);
                 if self.sprite_slot_view(k).a() & 0x1f == 0 {
+                    b.block(0x1ec82c);
                     self.sprite_slot_view_mut(k).set_delay_aux1(16);
                 }
+                else { b.taken(0x1ec82a); }
+                b.block(0x1ec831);
                 self.sprite_slot_view_mut(k).add_a(1);
                 return;
             }
         }
+        else { b.taken(0x1ec808); }
+        b.block(0x1ec835);
         self.sprite_slot_view_mut(k).set_a(0);
     }
 

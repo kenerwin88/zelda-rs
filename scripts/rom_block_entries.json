@@ -413,5 +413,13 @@
   {"entry": "1dde09", "end": "1dde82"},
   {"entry": "1dde5a", "end": "1dde82"},
   {"entry": "1dde66", "end": "1dde82"},
-  {"entry":"09adf4","end":"09ae3e"}
+  {"entry":"09adf4","end":"09ae3e"},
+  {"entry": "08c1ea", "end": "08c22f"},
+  {"entry": "08d65a", "end": "08d704"},
+  {"entry": "06d89a", "end": "06d8ee"},
+  {"entry": "06d906", "end": "06d920"},
+  {"entry":"1ed049","end":"1ed1ca","data_bank":30},
+  {"entry":"1ec79b","end":"1ec839"},
+  {"entry":"1ec791","end":"1ec79b"},
+  {"entry":"08f18d","end":"08f27c"}
 ]

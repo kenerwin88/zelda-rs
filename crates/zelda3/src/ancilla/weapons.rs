@@ -768,18 +768,26 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla26_sword_swing_sparkle(&mut self, k: usize) {
+        // $08:D65A..D703: timer, three-tile writer and signed offsets.
+        // F671 coordinate preparation and F6E1 XY writes own their bodies.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08d65a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08d65a);
         let aux_timer = self.ancilla_slot_view_mut(k).tick_aux_timer();
         if sign8(aux_timer) {
+            b.block(0x08d65f);
             let item_to_link = {
                 let mut sparkle = self.ancilla_slot_view_mut(k);
                 sparkle.set_aux_timer(0);
                 sparkle.advance_item_to_link()
             };
             if item_to_link == 4 {
+                b.block(0x08d66e);
                 self.ancilla_slot_view_mut(k).clear();
                 return;
-            }
-        }
+            } else { b.taken(0x08d66c); }
+        } else { b.taken(0x08d65d); }
+        b.block(0x08d672);
         self.ancilla_set_xy(
             k,
             self.game_state.player.follower_link.x(),
@@ -788,13 +796,29 @@ impl ZeldaState {
 
         let (x, y) = self.ancilla_prep_oam_coord(k);
 
+        b.block(0x08d68a);
+
         let mut j = self.ancilla_slot_view(k).item_to_link() as usize * 3
             + self.ancilla_slot_view(k).direction() as usize * 12;
 
         let mut oam = self.game_state.oam.current_pointer_usize();
-        for _ in (0..=2).rev() {
+        for i in (0..=2).rev() {
+            b.block(0x08d6ac);
             let chr = ANCILLA26_SWORD_SWING_SPARKLE_SWORD_SWING_SPARKLE_CHAR[j];
             if chr != 0xff {
+                b.block(0x08d6b3);
+                if 0xf6 + j > 0xff { b.crossing(0x08d6b5); }
+                // $D5F6 is the Y-offset table ($00/$04 in the ROM);
+                // $D626 is X ($02/$06). Native drawing names X first.
+                if ANCILLA26_SWORD_SWING_SPARKLE_SWORD_SWING_SPARKLE_Y[j] < 0 {
+                    b.block(0x08d6c0);
+                } else { b.taken(0x08d6be); }
+                b.block(0x08d6c3);
+                if 0x26 + j > 0xff { b.crossing(0x08d6c8); }
+                if ANCILLA26_SWORD_SWING_SPARKLE_SWORD_SWING_SPARKLE_X[j] < 0 {
+                    b.block(0x08d6d3);
+                } else { b.taken(0x08d6d1); }
+                b.block(0x08d6d6);
                 // $08:D6DD JSR F6E1: complete XY body, once per executed draw.
                 self.ancilla_set_oam_marked(
                     oam,
@@ -810,10 +834,14 @@ impl ZeldaState {
                         | self.game_state.oam.priority_high(),
                     0,
                 );
-            }
+                b.block(0x08d6e0);
+            } else { b.taken(0x08d6b1); }
+            b.block(0x08d6fd);
+            if i != 0 { b.taken(0x08d700); }
             j += 1;
             oam += 4;
         }
+        b.block(0x08d702);
     }
 
     pub(super) fn ancilla3_b_sword_up_sparkle(&mut self, k: usize) {
@@ -1315,19 +1343,33 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla3_c_spin_attack_charge_sparkle(&mut self, k: usize) {
+        // $08:C1EA..C22E: complete caller, excluding allocation/prep/XY children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08c1ea));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08c1ea);
+        if self.game_state.frame.submodule != 0 { b.taken(0x08c1ec); }
+        else {
+            b.block(0x08c1ee);
+            if self.ancilla_slot_view(k).timer() != 0 { b.taken(0x08c1f1); }
+        }
         if self.game_state.frame.submodule == 0 && self.ancilla_slot_view(k).timer() == 0 {
+            b.block(0x08c1f3);
             let value = 4;
             self.ancilla_slot_view_mut(k).set_timer(value);
             self.ancilla_slot_view_mut(k).add_item_to_link(1);
             if self.ancilla_slot_view(k).item_to_link() == 3 {
+                b.block(0x08c202);
                 let value = 0;
                 self.ancilla_slot_view_mut(k).set_ancilla_type(value);
                 return;
-            }
+            } else { b.taken(0x08c200); }
         }
+        b.block(0x08c206);
         let value = self.ancilla_allocate_oam_from_region_a_or_d_or_f(k, 4) as u8;
+        b.block(0x08c20c);
         self.ancilla_slot_view_mut(k).set_oam_index(value);
         let (x, y) = self.ancilla_prep_oam_coord(k);
+        b.block(0x08c213);
         let j = self.ancilla_slot_view(k).item_to_link() as usize;
         // $08:C219 JSR F6E1: complete XY body, once per executed draw.
         self.ancilla_set_oam_marked(
@@ -1339,6 +1381,7 @@ impl ZeldaState {
                 | self.game_state.oam.priority_high(),
             0,
         );
+        b.block(0x08c21c);
     }
 
     pub(super) fn ancilla04_beam_hit(&mut self, k: usize) {
