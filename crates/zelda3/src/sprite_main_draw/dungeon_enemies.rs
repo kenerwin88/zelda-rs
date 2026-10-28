@@ -214,14 +214,22 @@ impl ZeldaState {
     //   Two large body tiles, with a shadow only for shadow-enabled sprites.
     // }
     pub(super) fn hard_hat_beetle_draw(&mut self, k: usize) {
+        // $06:A4F2..A50B and its DC4C conditional-shadow tail, excluding children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a4f2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a4f2);
         let base = (self.sprite_slot_view(k).graphics() as usize).min(1) * 2;
         let mut info = self.sprite_draw_multiple(
             k,
             &HARD_HAT_BEETLE_DRAW_FRAMES[base..base + 2],
         );
+        b.block(0x06a509);
+        b.block(0x06dc4c);
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
+            b.taken(0x06dc51);
+            b.block(0x06dc64);
             self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
-        }
+        } else { b.block(0x06dc53); }
     }
 
     // -----------------------------------------------------------------------

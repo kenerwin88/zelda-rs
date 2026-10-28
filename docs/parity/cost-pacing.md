@@ -14006,3 +14006,174 @@ live rows are compressed directly through a FIFO. Retained output is
 Snes9x execution, oracle-cache/shared-ledger write, cargo fmt, commit, push or
 one-off repository script was used. Complete prefix closure and continuous
 live ending acceptance remain unfinished.
+
+## Prefix closure 5
+
+**Verified partial CPU-only stop on `codex/prefix5`, main `c1cad2b2`.**
+Evidence: `target/prefix5/`. The fresh main ROM prefix reproduces **511 missing
+holds in 502 iterations** in **142,087..461,988**. The two earlier windows have
+**90 / 39** missing holds in **82 / 39** iterations. No full main control or
+seeded live census was repeated; the supplied main ROM total is **3,041 / 0 / 0**.
+
+### Ranking and admitted instruction work
+
+`middle-owner-ranking.json` uses complete fresh native profiles and retained
+original routine receipts on all 502 missing iterations in the requested
+window. Raw independent replacement leaders are module routing (83 closures),
+SingleLarge (62), shadow (24), iris (23), active-slot work (19), song upload
+(13), room objects (10), velocity (10), and slot dispatch (9). These differences
+overlap through aliases, JML tails, existing instruction models/scalars,
+continuations and masked-upload ownership; they are not additive prices.
+`alias-audit.json` and `admission-notes.json` retain those exclusions.
+
+Eight complete self bodies/entries and the existing local-dispatch entry add
+**43 blocks / 330 ROM instructions** from `scripts/rom_block_costs.py`.
+All **2,452 existing generated rows remain byte-identical**. Every new marker
+is lagless-only and has source-address comments. The selected self bodies had
+**zero legacy `charge(N)` scalar clocks**; none retains a self scalar. Existing
+child prices and default/ROM-timing accounting remain unchanged.
+
+| Owner | Source entry | New clocks on requested-window cohort | Independent inverse closures |
+| --- | --- | ---: | ---: |
+| Buzz Blob drawing | `$06:D953` | 349,930 | 2 |
+| Hard Hat Beetle drawing | `$06:A4F2` | 64,356 | 1 |
+| Witch drawing | `$05:E55D` | 8,060 | 2 |
+| Walking Zora drawing | `$05:9F08` | 98,886 | 3 |
+| Mini Moldorm preparation | `$1D:F277` | 129,580 | 3 |
+| WarpPad caller | `$02:967A` | 11,810 | 6 |
+| WarpPad local-dispatch entry | `$00:8781` | 1,144 | 0 |
+| Guard probe prefix | `$05:C5F2` | 29,378 | 2 |
+| Probe spawn body | `$05:C612` | 43,290 | 3 |
+
+The Buzz Blob/Beetle shared-shadow tails exclude the already owned `$06:DC66`
+body. Guard fallthrough normalizes `$05:C612` into its own body; allocator and
+return work execute once. Mini Moldorm's partial preparation resumes bypass the
+new complete-entry markers. WarpPad prices only caller instructions and the
+local-dispatch stack tail; selected state/attribute bodies remain separate.
+Its resumed attribute path enters the suffix without repeating the prefix.
+
+The initial raw source-scope prediction is retained with the rejected trial.
+Normalizing existing shadow work and deriving WarpPad's caller branch from original post-NMI
+operands gives **19 joint fixed-inverse recoveries**. Independent rows overlap.
+Measured requested-window recovery is **19 holds**, matching the combined
+prediction on every frozen cohort iteration.
+
+### Candidate not admitted
+
+The complete Mini Moldorm drawing candidate `$1D:F822` passed its standalone
+ROM fixture but produced **one excess hold**, iteration **931,965**, module
+`$0F/$01`, with zero false-positive iterations. The summary's state/count gate
+passed, but this fails the separate required zero-excess admission check.
+A nonzero-start diagnostic identifies only **122 new drawing clocks** on that
+clipped return before the existing iris raster wait; that diagnostic is not an
+independent census gate. The entire drawing candidate, all its generated rows
+and its fixture are withdrawn. Its separate preparation body remains admitted.
+`rejected-mini-moldorm-draw/` retains the full failed-admission census, binary,
+marker profile, withdrawn drawing patch and explanation. The provisional live
+run was stopped and is not an acceptance receipt.
+The rejected candidate also produced six extra window holds beyond its frozen
+inverse by changing the existing iris wait; those exceptions remain in its
+`raster-barrier-effects.json`. No price was tapered, no scene/caller excluded,
+and no threshold or classifier changed to retain those gains.
+
+Across all **623 frozen missing-prefix iterations**, normalized source work,
+new markers and signed main-counter changes agree exactly: **758,374 clocks**,
+with zero work/source mismatches. There are **zero prediction exceptions**, no
+lost prefix holds and no newly missing prefix iterations.
+`frame-flips.json` retains the complete matrix. No classifier, SPC/APU behavior,
+pacing rule, scene threshold, multiplier or scene table changed. These are
+instruction-work and logical-scheduling receipts, not physical CPU/NMI or A/V
+proof. `remaining-{first,second,middle}-owner-ranking.json` retains the residual
+window worklists; a refreshed whole-route owner ranking beyond this window
+was not run.
+
+### Final ROM and continuous live checks
+
+The final full ROM lane uses read-only corrected **full-v2**, `--report 0
+--seed-every 2000`. Its unchanged gate **PASSes all 1,473,123 iterations**,
+unexplained zero. Every runtime hold equals P2; excess and FP are both zero.
+
+| Scope | Before missing / excess / FP | After |
+| --- | ---: | ---: |
+| ROM full | 3,041 / 0 / 0, supplied main | **3,007 / 0 / 0** |
+| ROM 0..94,852 | 90 / 0 / 0, fresh main | **90 / 0 / 0** |
+| ROM 94,853..142,086 | 39 / 0 / 0, fresh main | **39 / 0 / 0** |
+| ROM 142,087..461,988 | 511 / 0 / 0, fresh main | **492 / 0 / 0** |
+| ROM 461,989..462,625 | 0 / 0 / 0, fresh main | **0 / 0 / 0** |
+
+Total missing falls by **34 holds** relative to the supplied full-main total:
+19 in the requested window and 15 elsewhere. Only the prefix has a fresh
+before/after per-row control; no fresh whole-route main control is claimed.
+
+The final cold continuous live run uses `--logical-replay full-v2 ...
+--report 0 --live-apu-reads --frames 462628`, with **no `--seed-every`**.
+It completes **462,628 iterations with zero actual reseeds**. Its first
+classified state difference is **142,087**, `song-end-poll`, room `$0033`:
+**142,087 clean prefix iterations**, last clean index **142,086**. This matches
+the supplied main frontier. Native polls zero while the source reads `$13`.
+The unchanged strict gate **FAILS with 70 song-state comparisons**. Ordinary
+WRAM, RNG/APU consumption and command comparisons remain clean; one command
+comparison is within the existing song classification. Polygon state and
+RNG differences are zero. This is a completed bounded run, not full-route
+continuous live or ending acceptance. `live-classification-summary.json` and
+`live-selected-timing.json` retain the completed boundary evidence.
+
+### Absolute SPC command clocks
+
+The first two source `$13` commands are iterations **94,216 / 141,450**;
+native producers are **94,215 / 141,449**. Original absolute port-delivery
+receipts and their reconstruction hashes are retained in
+`source-command-receipts.json`. The later source `$13` command is iteration
+**461,989**, native producer **461,988**, source host **500,220**. No retained
+source CPU port receipt covers that later command: its conservative callback
+bound is **8,533,702,752..8,533,719,872 SPC cycles**, independently supported by
+source PCM sample counts and the retained DSP boundary. That bound is not an
+exact bus timestamp; `source-command-clock-bound.json` retains its derivation.
+No Snes9x execution was performed.
+
+| Source `$13` command | Source absolute SPC cycles | Main native | Candidate native | Main deficit | Candidate deficit |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| First pendant, 94,216 | 1,758,669,007 | 1,755,634,761 | 1,755,634,761 | 3,034,246 | 3,034,246 |
+| Second pendant, 141,450 | 2,629,764,771 | 2,626,031,051 | 2,626,031,051 | 3,733,720 | 3,733,720 |
+| Later command, 461,989 | 8,533,702,752..8,533,719,872 | 8,521,046,797 | 8,521,387,977 | 12,655,955..12,673,075 | 12,314,775..12,331,895 |
+
+The two pendant clocks are unchanged. At the later command, native host
+**499,478 → 499,498**, observed elapsed SPC time increases by **341,180 cycles**.
+That is a live post-divergence observation, not a claim that the 19 ROM-window
+recoveries alone explain every later callback.
+
+Fresh before/after native clocks are observational `spc_port_write` records
+from cold unseeded live replays. `command-clocks.json` binds their native host
+and producer iteration. The third-command observations follow the first live
+state divergence and do not extend the clean prefix. Remaining clock deficits
+or poll agreement do not establish identical SPC driver/timer phase or PCM.
+
+### Verification and stopping boundary
+
+All **eight new `assert_rom_marker_work` fixtures / 330 unmodified-ROM cases
+per feature configuration** pass: graphics, clipping, shadow selection,
+indexed page crossings, preparation loops, probe gates,
+allocator failure/success and WarpPad phases. Filtered touched-area tests pass
+**139 drawing, 39 preparation, nine guard and one existing door fixture**;
+the new transition fixture is included in the eight ROM fixtures. The **nine
+Python generator/worklist tests**, exact table regeneration and
+`git diff --check` pass. Both ordinary production builds are warning-free;
+the default/reduced lib-test builds retain their **24 / one** existing warnings.
+Full library suites, GPU tests and seeded live censuses were not run.
+
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio. All **1,512 supplied ledger/cache input files** retain size
+and nanosecond mtime, with none added. Frozen source/binary hashes, commands,
+source/marker proof matrices and the uncommitted patch bind this stop.
+Retained evidence is approximately **933.9 MB**, below **3 GB**.
+The supplied checkout contained these in-flight Prefix 5 edits and receipts;
+the interrupted final ROM census had no live PID or exit/summary after segment
+698,000. Its outputs are retained in `interrupted-rom/`; only that incomplete
+census was restarted before the failed-admission trial above. The revised
+candidate received fresh final checks; the final completed gate supersedes
+both trials.
+Classified live rows are compressed directly through a FIFO.
+No GPU run, `--video`, cached-av, Snes9x execution, oracle-cache/shared-ledger
+write, cargo fmt, commit, push or one-off repository script was used.
+The remaining window deficit and continuous live ending acceptance remain
+unfinished.

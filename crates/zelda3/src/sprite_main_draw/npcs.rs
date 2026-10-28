@@ -1337,10 +1337,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Witch_Draw(int k) {  // 85e55d
     pub(super) fn witch_draw(&mut self, k: usize) {
+        // $05:E55D..E62A; preparation, OAM allocation/correction are children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e55d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05e55d);
         let Some((_, _, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x05e560);
         self.oam_allocate_defer_to_player(k);
+        b.block(0x05e564);
         let oam = self.game_state.oam.current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let scratch = &self.game_state.sprites.draw_hitbox_work;
@@ -1359,6 +1365,8 @@ impl ZeldaState {
             );
         }
         for (i, &(dx, dy, chr, fl)) in WITCH_DRAW_DATA_B.iter().enumerate() {
+            b.block(0x05e5b7);
+            if i != 2 { b.taken(0x05e5dd); }
             self.set_oam_plain_at(
                 oam + (i + 2) * 4,
                 x.wrapping_add(dx as u8),
@@ -1368,7 +1376,11 @@ impl ZeldaState {
                 2,
             );
         }
+        b.block(0x05e5df);
         let i = usize::from((g as u16).wrapping_sub(6) < 6);
+        if i != 0 { b.taken(0x05e5e8); b.block(0x05e5ef); }
+        else { b.block(0x05e5ea); }
+        b.block(0x05e5f2);
         let (dx, dy, chr, _fl) = WITCH_DRAW_DATA_C[i];
         self.set_oam_plain_at(
             oam + 5 * 4,
@@ -1379,6 +1391,7 @@ impl ZeldaState {
             2,
         );
         self.sprite_correct_oam_entries(k, 5, 0xff);
+        b.block(0x05e62a);
     }
 
     // -----------------------------------------------------------------------

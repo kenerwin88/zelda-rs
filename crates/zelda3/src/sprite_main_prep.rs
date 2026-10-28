@@ -760,6 +760,16 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_mini_moldorm_bounce(&mut self, k: usize) {
+        // $1D:F277..F2A4: complete entry only. CPU-boundary store-range
+        // resumes keep their independent instruction ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df277));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df277);
+        for row in 0..32 {
+            b.block(0x1df282);
+            if row != 31 { b.taken(0x1df2a1); }
+        }
+        b.block(0x1df2a3);
         self.sprite_prep_mini_moldorm_bounce_prefix(k, 128);
     }
 

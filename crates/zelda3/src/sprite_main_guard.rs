@@ -1047,10 +1047,17 @@ impl ZeldaState {
     //   Sprite_SpawnProbeAlways(k, r15);
     // }
     pub(super) fn sprite_guard_send_out_probe(&mut self, k: usize) {
+        // $05:C5F2..C611 falls through to the shared C612 spawn body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c5f2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c5f2);
         let lo = (k as u8).wrapping_add(self.game_state.frame.frame_counter) & 3;
         if lo != 0 || self.sprite_slot_view(k).pause() != 0 {
+            b.taken(0x05c5fd);
+            b.block(0x05c66d);
             return;
         }
+        b.block(0x05c5ff);
         let a = self.sprite_slot_view(k).anim_clock();
         self.sprite_slot_view_mut(k).increment_anim_clock();
         let dir = self.sprite_slot_view(k).direction() as usize & 3;

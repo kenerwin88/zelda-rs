@@ -492,19 +492,37 @@ impl ZeldaState {
 
     /// ROM: `Module07_15_WarpPad`
     pub(in crate::zelda_rtl) fn module07_15_warp_pad(&mut self) {
+        // $02:967A..968D: caller only; the local jump table is data.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02967a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02967a);
         if self.game_state.frame.subsubmodule >= 3 {
+            b.block(0x029680);
             self.graphics_incremental_vram_upload();
+            b.block(0x029684);
             if self.suspend_dungeon_selectable_peg_attribute_flip(
                 DungeonPegAttributeFlipCaller::WarpPad,
             ) {
                 return;
             }
             self.dungeon_load_attribute_selectable();
-        }
+        } else { b.taken(0x02967e); }
         self.complete_module07_15_warp_pad_after_attribute_loader();
     }
 
     pub(in crate::zelda_rtl) fn complete_module07_15_warp_pad_after_attribute_loader(&mut self) {
+        // Resumed attribute work enters the suffix without repeating the prefix.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02967a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x029688);
+        {
+            let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        // JumpTableLocal pulls its JSL frame at PLY. These instructions retire
+        // in the caller, before the selected state body, exactly once.
+        b.block(0x008784);
+        b.block(0x008799);
         match self.game_state.frame.subsubmodule {
             0 => self.reset_transition_props_and_advance_reset_interface(),
             1 => self.module07_15_01_apply_mosaic_and_filter(),
@@ -2340,5 +2358,37 @@ mod prefix3_tests {
             }
         }
         eprintln!("prefix3 door movement: {cases} ROM cases");
+    }
+}
+
+#[cfg(test)]
+mod prefix5_tests {
+    use super::*;
+
+    #[test]
+    fn prefix5_warp_pad_caller_matches_rom() {
+        use snes::{CartType, Snes};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for phase in [1u8, 13, 14] {
+            for palette in [0u8, 22] {
+                let mut n = ZeldaState::new();
+                n.set_lag_free(true);
+                let mut image = n.wram_image().into_owned();
+                image[0x10] = 7; image[0x11] = 0x15;
+                image[0xb0] = phase; image[0xc007] = palette;
+                n.import_wram_image(&image); n.sync_native_game_state_from_ram();
+                let mut s = Snes::new();
+                s.cart.load(CartType::LoRom, &rom, 0x2000);
+                s.ram.copy_from_slice(&n.wram_image());
+                s.cpu.e = false; s.cpu.unpack_flags(0x30);
+                s.cpu.k = 2; s.cpu.db = 2; s.cpu.pc = 0x967a; s.cpu.sp = 0x1fd;
+                s.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+                crate::cycle_ledger::assert_rom_marker_work(0x02967a, s,
+                    |s| (s.cpu.k == 2 && (0x967a..0x968e).contains(&s.cpu.pc))
+                        || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)),
+                    || n.module07_15_warp_pad());
+            }
+        }
     }
 }

@@ -205,11 +205,19 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_SpawnProbeAlways(int k, uint8 r15) {  // 85c612
     pub(in crate::zelda_rtl) fn sprite_spawn_probe_always(&mut self, k: usize, r15: u8) {
+        // $05:C612..C66D; allocator work remains in its existing child scope.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c612));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c612);
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically_ex(k, 0x41, &mut info, 10);
+        b.block(0x05c61a);
         if j < 0 {
+            b.taken(0x05c61a);
+            b.block(0x05c66d);
             return;
         }
+        b.block(0x05c61c);
         let j = j as usize;
         let t = info.r0_x.wrapping_add(8);
         let value = t as u8;
@@ -239,6 +247,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j).set_flags3(value);
         let value = 2;
         self.sprite_slot_view_mut(j).set_deflection_bits(value);
+        b.block(0x05c66d);
     }
 
     // -----------------------------------------------------------------------

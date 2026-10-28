@@ -378,9 +378,14 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BuzzBlob_Draw(int k) {  // 86d953
     pub(super) fn buzz_blob_draw(&mut self, k: usize) {
+        // $06:D953..D9BF; the DC66 shadow body remains separately owned.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d953));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d953);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        b.block(0x06d956);
         let mut info = PrepOamCoordsRet {
             x: info_x,
             y: info_y,
@@ -390,7 +395,16 @@ impl ZeldaState {
         let mut oam = self.game_state.oam.current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
         for i in (0..3).rev() {
+            b.block(0x06d962);
+            let y = info_y.wrapping_add(BUZZ_BLOB_DRAW_Y_OFFSETS[i] as u16);
+            if y.wrapping_add(16) < 256 { b.taken(0x06d987); }
+            else { b.block(0x06d989); }
+            b.block(0x06d98d);
             let ch = BUZZ_BLOB_DRAW_CHARS[g * 3 + i];
+            if ch != 0 { b.taken(0x06d99a); }
+            else { b.block(0x06d99c); }
+            b.block(0x06d9a2);
+            if i != 0 { b.taken(0x06d9ba); }
             self.set_oam_helper0_at(
                 oam,
                 info_x.wrapping_add(BUZZ_BLOB_DRAW_X_OFFSETS[i]),
@@ -404,6 +418,8 @@ impl ZeldaState {
             }
             oam += 4;
         }
+        b.block(0x06d9bc);
+        b.block(0x06dc64); // JMP's LDA #10 prefix; DC66 is already priced.
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 

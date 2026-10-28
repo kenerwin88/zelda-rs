@@ -1058,16 +1058,28 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void WalkingZora_Draw(int k) {  // 859f08
     pub(super) fn walking_zora_draw(&mut self, k: usize) {
+        // $05:9F08..9FAB; ripple, coordinate and shadow callees are separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059f08));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059f08);
         self.walking_zora_draw_water_ripples(k);
+        b.block(0x059f0b);
         let Some((x, mut y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x059f0e);
         let oam = self.game_state.oam.current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics());
+        if g >= 4 { b.taken(0x059f17); }
+        else { b.block(0x059f19); }
         if g == 0 || g == 2 {
             y = y.wrapping_sub(1);
         }
         let i = usize::from(self.sprite_slot_view(k).head_direction());
+        b.block(0x059f25);
+        if y.wrapping_sub(6).wrapping_add(16) < 256 { b.taken(0x059f45); }
+        else { b.block(0x059f47); }
+        b.block(0x059f4c);
         self.set_oam_helper0_at(
             oam,
             x,
@@ -1076,6 +1088,9 @@ impl ZeldaState {
             flags | WALKING_ZORA_DRAW_FLAGS[i],
             2,
         );
+        if y.wrapping_add(2).wrapping_add(16) < 256 { b.taken(0x059f81); }
+        else { b.block(0x059f83); }
+        b.block(0x059f88);
         self.set_oam_helper0_at(
             oam + 4,
             x,
@@ -1085,10 +1100,12 @@ impl ZeldaState {
             2,
         );
         if self.sprite_slot_view(k).anim_clock() == 0 {
+            b.block(0x059fa7);
             let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
             // ROM $05:9FA7
             self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
-        }
+        } else { b.taken(0x059fa5); }
+        b.block(0x059fab);
     }
 
     // -----------------------------------------------------------------------

@@ -3032,3 +3032,147 @@ fn prefix3_fairy_touchable_matches_rom() {
     }
     eprintln!("prefix3 fairy: {cases} ROM cases");
 }
+
+#[test]
+fn prefix5_buzz_blob_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..6 {
+            for y in [0u16, 0x40, 0xf8, 0x100, 0x200] {
+                let mut n = prefix3_moldorm_state(k, y);
+                n.write_wram_byte(0xe20 + k, 0x0d);
+                n.write_wram_byte(0xdc0 + k, gfx);
+                n.sync_native_game_state_from_ram();
+                let Some(s) = marker29_machine(&n, 0x06d953, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x06d953, s,
+                    |s| s.cpu.k == 6 && ((0xd953..0xd9c0).contains(&s.cpu.pc)
+                        || s.cpu.pc == 0xdc64), || n.buzz_blob_draw(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("prefix5 Buzz Blob: {cases} ROM cases");
+}
+
+#[test]
+fn prefix5_hard_hat_beetle_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..2 {
+            for shadow in [0u8, 0x10] {
+                for y in [0u16, 0x40, 0xf8, 0x100, 0x200] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    n.write_wram_byte(0xe20 + k, 0x13);
+                    n.write_wram_byte(0xdc0 + k, gfx);
+                    n.write_wram_byte(0xe60 + k, shadow);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, 0x06a4f2, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(0x06a4f2, s,
+                        |s| s.cpu.k == 6 && ((0xa4f2..0xa50c).contains(&s.cpu.pc)
+                            || (0xdc4c..0xdc54).contains(&s.cpu.pc) || s.cpu.pc == 0xdc64),
+                        || n.hard_hat_beetle_draw(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix5 Hard Hat Beetle: {cases} ROM cases");
+}
+
+#[test]
+fn prefix5_walking_zora_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..8 {
+            for y in [0u16, 0x40, 0xf8, 0x100, 0x200] {
+                for ripple in [0u8, 1] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    n.write_wram_byte(0xe20 + k, 0x8f);
+                    n.write_wram_byte(0xdc0 + k, gfx);
+                    n.write_wram_byte(0xeb0 + k, gfx & 3);
+                    n.write_wram_byte(0xec0 + k, ripple);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, 0x059f08, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(0x059f08, s,
+                        |s| s.cpu.k == 5 && (0x9f08..0x9fac).contains(&s.cpu.pc),
+                        || n.walking_zora_draw(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix5 Walking Zora: {cases} ROM cases");
+}
+
+#[test]
+fn prefix5_witch_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..8 {
+            for y in [0x40u16, 0x200] {
+                let mut n = prefix3_moldorm_state(k, y);
+                n.write_wram_byte(0xe20 + k, 0xe9);
+                n.write_wram_byte(0xdc0 + k, gfx);
+                n.sync_native_game_state_from_ram();
+                let Some(s) = marker29_machine(&n, 0x05e55d, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x05e55d, s,
+                    |s| s.cpu.k == 5 && (0xe55d..0xe62b).contains(&s.cpu.pc),
+                    || n.witch_draw(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("prefix5 Witch: {cases} ROM cases");
+}
+
+#[test]
+fn prefix5_mini_moldorm_preparation_matches_rom() {
+    for k in 0..4 {
+        let mut n = prefix3_moldorm_state(k, 0x1234);
+        n.sprite_slot_view_mut(k).set_x(0xabcd);
+        let Some(s) = marker29_machine(&n, 0x1df277, k) else { return };
+        crate::cycle_ledger::assert_rom_marker_work(0x1df277, s,
+            |s| s.cpu.k == 0x1d && (0xf277..0xf2a5).contains(&s.cpu.pc),
+            || n.sprite_prep_mini_moldorm_bounce(k));
+    }
+}
+
+#[test]
+fn prefix5_guard_probe_prefix_matches_rom() {
+    for k in [0usize, 15] {
+        for frame in 0..4u8 {
+            for pause in [0u8, 1] {
+                let mut n = prefix3_moldorm_state(k, 0x40);
+                n.sprite_slot_view_mut(k).set_sprite_type(0x41);
+                n.sprite_slot_view_mut(k).set_direction(frame);
+                n.sprite_slot_view_mut(k).set_anim_clock(31);
+                n.sprite_slot_view_mut(k).set_pause(pause);
+                n.set_frame_counter(frame);
+                let blocked = (k as u8).wrapping_add(frame) & 3 != 0 || pause != 0;
+                let Some(s) = marker29_machine(&n, 0x05c5f2, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x05c5f2, s,
+                    |s| s.cpu.k == 5 && ((0xc5f2..0xc612).contains(&s.cpu.pc)
+                        || blocked && s.cpu.pc == 0xc66d),
+                    || n.sprite_guard_send_out_probe(k));
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix5_probe_spawn_body_matches_rom() {
+    for k in [0usize, 15] {
+        for direction in [0u8, 31, 63] {
+            for free in [false, true] {
+                let mut n = prefix3_moldorm_state(k, 0x40);
+                for slot in 0..16 { n.sprite_slot_view_mut(slot).set_state(9); }
+                if free { n.sprite_slot_view_mut(10).set_state(0); }
+                n.write_wram_byte(0x0f, direction);
+                let Some(s) = marker29_machine(&n, 0x05c612, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x05c612, s,
+                    |s| s.cpu.k == 5 && (0xc612..0xc66e).contains(&s.cpu.pc),
+                    || n.sprite_spawn_probe_always(k, direction));
+            }
+        }
+    }
+}
