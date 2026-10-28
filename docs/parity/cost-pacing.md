@@ -15214,3 +15214,118 @@ bind this stop. Retained evidence is below **3 GB**. No GPU run, `--video`,
 cached-av, Snes9x execution, protected-cache/shared-ledger write, cargo fmt,
 commit, push or one-off repository script was used. Remaining pricing and
 continuous live ending acceptance remain unfinished.
+
+
+## Route pricing 9
+
+**Verified partial CPU-only stop on `codex/route9`, base `b29cb210`.**
+Evidence: `target/route9/`. The single final unsharded ROM census uses
+read-only **full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate
+**PASSes all 1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**,
+and every runtime hold equals P2.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,763 | **2,748** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **38** |
+| 142,087..461,988 | 454 | **453** |
+| 461,989..1,473,122 | 2,183 | **2,170** |
+
+**Continuous live first divergence regresses 462,627 → 142,087.**
+
+**15 holds restored, 0 lost**; no new missing iteration or changed
+source context. `baseline-identity.json` binds the retained Route 8 predictor,
+profiles and source/binary hashes to this exact base. The whole-route worklist
+is recomputed on all **2,730 baseline missing iterations**, with unchanged exact
+multi-hold inverses checked before reuse. No duplicate main census or seeded
+live census was run. Raw parent/alias gaps are ownership worklists, not
+additive prices; ties prefer earlier route iterations.
+
+Seven complete self bodies/entries add **40 blocks / 122 instructions**
+from `scripts/rom_block_costs.py`. All **3,124 existing generated rows remain
+byte-identical**. Markers are lagless-only and have source-address comments.
+The selected self bodies contained **zero legacy `charge(N)` scalars** and
+retain none. Existing child scalars and default/ROM-timing accounting remain
+unchanged.
+
+| Self family | Entry | New clocks on frozen misses | Independent executed-marker flips |
+| --- | --- | ---: | ---: |
+| Guard patrol prefix / resumed suffix | `$05c403` | 197,940 | 5 |
+| Guard tick / graphics fallthrough | `$05c454` | 186,496 | 2 |
+| Blind fireball caller | `$1da49d` | 24,272 | 2 |
+| Talking Tree idle with bomb | `$1df96e` | 38,212 | 1 |
+| Vitreous minion activation | `$1de5da` | 9,538 | 1 |
+| Talking Tree bomb delay | `$1df99c` | 2,296 | 0 |
+| Talking Tree bomb spit | `$1df9b4` | 0 | 0 |
+
+Guard patrol's actual state-one entry is extracted with identical operations.
+Its `$05:C403..C411` prefix retires before the existing prep handoff; complete
+and resumed entries execute the disjoint `$C412..C453` suffix exactly once.
+The alternate selector JMP retains the shooting child separately. The complete
+`$C454..C46F` tick/graphics fallthrough is a separate child; raw graphics-only
+recomputation and continuation entries receive no repeated tick price.
+Complete/split and alternate-selector fixtures cover both routes.
+
+Blind's self caller excludes spawning, sound and the source Fireball_Configure
+child, whose native writes remain inline and unpriced. Vitreous prices both
+successful activation and occupied-slot rollback, excluding RNG. Talking Tree's
+three actual state-table targets are extracted with identical operations;
+damage, halt-dash, projection, sound and bomb-spawn children remain separate.
+Its bomb-spit graphics read uses the actual slot, including source instruction
+bytes beyond the nominal table. The existing caller is already priced; drawing
+and state three retain their unresolved behavior boundaries and receive no tax.
+`pricing-audit.json` checks cartridge call sites and the real tree state table.
+
+Module09 and the separately owned dungeon/graphics conversion files are
+untouched. The leading collision/velocity, drawing, routing and slot-dispatch
+aliases retain existing scalar, instruction/model or continuation ownership.
+Route 3–8 owners are skipped, including all three auditor-reviewed candidates
+already priced by Route 8. Prior dynamic-MVN, behavior-disagreement and
+Cucco/Swamola/Trinexx handoff exclusions remain unchanged.
+`admission-notes.json` retains these limits; remaining owners are not exhausted.
+
+**458,754 new marker clocks = 458,754 signed main-counter clocks**
+on every frozen missing row, with **0 work mismatches**.
+Original instruction work grouped into generated blocks agrees on all
+**1,965 covered rows**, with **0 source mismatches**.
+The unchanged full-cohort inverse predicts **15** recoveries;
+observed cohort recovery is **15**, with
+**0 prediction exceptions**.
+The initial PC-only join included unpriced Hog Spear calls at `$05:CC38`
+into C454. Native Hog Spear uses inline increments and separate raw graphics/
+partial-continuation entries, which receive no new price. The source comparison
+now excludes that entire child using the actual CC38 call counts from original
+instruction receipts, without a runtime change or iteration-based admission.
+`source-call-partition.json` records **41 unpriced Hog Spear calls / 15,416 clocks**;
+`source-proof-unpartitioned.json` retains the original 39-row disagreement.
+Independent scores overlap. `source-predictions.json`, compressed original
+instruction work and `frame-flips.json.gz` retain the matrices. These are
+instruction-work/logical-scheduling receipts, not physical CPU/NMI or exact
+A/V proof. No price is fitted to lag counts; no classifier, pacing rule,
+scene threshold/multiplier/table or SPC/APU behavior changes.
+
+The single cold continuous live replay uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, and zero post-initial
+reseeds. It completes **500,000 tested iterations**. Its first classified state
+difference is **142,087**, compared with base **462,627**;
+last clean index **142,086**. At the first song poll, native reads zero while the original reads `$13`. No song-specific delay, price taper, forced answer or classifier change is installed. The unchanged strict gate reports
+`census gate: FAIL (unexplained=37467, complete=True)`. This bounded first-divergence receipt is not full-route
+live or ending acceptance. Classified rows are compressed directly through
+a FIFO. Observations after divergence do not extend the clean prefix.
+
+All **six new `assert_rom_marker_work` fixtures / 446 ROM cases per feature
+configuration** pass. Touched-area checks pass **186 drawing, 9 Guard,
+6 Blind and 14 small-boss tests**. Nine Python generator/worklist tests,
+exact table regeneration and `git diff --check` pass. Both production builds
+are warning-free; pre-existing lib-test warnings remain separate.
+Full library suites, GPU tests and seeded live censuses were not run.
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio.
+
+All **1,512 protected ledger/cache input files** retain their file set, sizes
+and nanosecond mtimes. Frozen production source/binary hashes, commands,
+gates and matrices bind this stop. Retained evidence is below **3 GB**.
+No GPU run, `--video`, cached-av, Snes9x execution, protected-cache/shared-ledger
+write, cargo fmt, commit, push or one-off repository script was used.
+Remaining pricing and continuous live ending acceptance remain unfinished.

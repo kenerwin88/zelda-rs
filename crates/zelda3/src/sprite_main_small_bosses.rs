@@ -1853,17 +1853,26 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn vitreous_set_minions_forth(&mut self, k: usize) {
+        // $1D:E5DA..E601: full activation self body, excluding RNG.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1de5da));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1de5da);
         self.sprite_slot_view_mut(k).increment_subtype2();
         if (self.sprite_slot_view(k).subtype2() & 63) == 0 {
+            b.block(0x1de5e4);
             let rand = self.get_random_number();
+            b.block(0x1de5e8);
             let j = VITREOUS_MINION_ACTIVATION_SLOTS[(rand & 15) as usize] as usize;
             if self.sprite_slot_view(j).ai_state() == 0 {
+                b.block(0x1de5f4);
                 self.sprite_slot_view_mut(j).set_ai_state(1);
                 self.set_sound_effect_1(0x15);
+                b.block(0x1de5fd);
             } else {
+                b.taken(0x1de5f2); b.block(0x1de5fe);
                 self.sprite_slot_view_mut(k).decrement_subtype2();
             }
-        }
+        } else { b.taken(0x1de5e2); b.block(0x1de5fd); }
     }
 
     // void Vitreous_Draw(int k) {  // 9de716

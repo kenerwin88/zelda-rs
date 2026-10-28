@@ -861,8 +861,7 @@ impl ZeldaState {
         self.guard_parry_sword_attacks(k);
         assert!(self.guard_main_after_parry_until_ai(k));
         assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
-        self.sprite_guard_send_out_probe(k);
-        assert!((self.sprite_slot_view(k).subtype() & 7) < 5);
+        assert!(self.guard_patrol_prefix(k));
     }
 
     fn guard_main_ai(&mut self, k: usize) {
@@ -892,14 +891,7 @@ impl ZeldaState {
                 }
                 self.sprite_slot_view_mut(k).set_delay_aux1(12);
             }
-            1 => {
-                self.sprite_guard_send_out_probe(k);
-                if (self.sprite_slot_view(k).subtype() & 7) >= 5 {
-                    self.guard_shoot_probe_and_stuff(k);
-                    return;
-                }
-                self.guard_patrol_after_delay_load(k);
-            }
+            1 => self.guard_on_patrol(k),
             2 => {
                 self.sprite_zero_velocity_xy(k);
                 self.sprite_guard_send_out_probe(k);
@@ -941,22 +933,59 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn guard_on_patrol(&mut self, k: usize) {
+        if self.guard_patrol_prefix(k) {
+            self.guard_patrol_after_delay_load(k);
+        } else {
+            self.guard_shoot_probe_and_stuff(k);
+        }
+    }
+
+    pub(super) fn guard_patrol_prefix(&mut self, k: usize) -> bool {
+        // $05:C403..C411: state-one prefix, ending before the delay load.
+        // Both the complete entry and the existing prep handoff retire it once.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c403));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c403);
+        self.sprite_guard_send_out_probe(k);
+        b.block(0x05c406);
+        if (self.sprite_slot_view(k).subtype() & 7) < 5 {
+            b.taken(0x05c40d);
+            true
+        } else {
+            b.block(0x05c40f);
+            false
+        }
+    }
+
     pub(super) fn guard_patrol_after_delay_load(&mut self, k: usize) {
+        // $05:C412..C453: disjoint resumed suffix; C454 is a separate child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c403));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c412);
         assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x05c417);
             self.sprite_zero_velocity_xy(k);
+            b.block(0x05c41a);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_ai_state(2);
             sprite.set_delay_main(160);
             return;
         }
+        b.taken(0x05c415);
+        b.block(0x05c425);
         if (self.sprite_slot_view(k).subtype2() & 1) == 0 {
+            b.block(0x05c42c);
             self.sprite_slot_view_mut(k).increment_delay_main();
-        }
+        } else { b.taken(0x05c42a); }
+        b.block(0x05c42f);
         if (self.sprite_slot_view(k).wall_collision() & 0xf) != 0 {
+            b.block(0x05c436);
             self.sprite_slot_view_mut(k).xor_direction(1);
             self.guard_set_glance_to12(k);
-        }
+        } else { b.taken(0x05c434); }
+        b.block(0x05c441);
         let dir = self.sprite_slot_view(k).direction() as usize & 3;
         let mut sprite = self.sprite_slot_view_mut(k);
         sprite.set_x_velocity(SOLDIER_X_VELOCITY_BY_DIRECTION[dir] as u8);
@@ -1030,6 +1059,11 @@ impl ZeldaState {
     //   sprite_graphics[k] = kSoldier_Gfx2[t];
     // }
     pub(super) fn guard_tick_and_update_body(&mut self, k: usize) {
+        // $05:C454..C46F: complete tick/graphics fallthrough. Raw graphics
+        // recomputation entries do not retire the increment or this body again.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c454));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c454);
         self.sprite_slot_view_mut(k).increment_subtype2();
         self.guard_update_body_graphics(k);
     }

@@ -4473,3 +4473,150 @@ fn route8_blind_laser_inline_trail_allocation_matches_rom() {
     }
     eprintln!("route8 Blind laser allocation: {cases} ROM cases");
 }
+
+#[test]
+fn route9_guard_patrol_complete_and_split_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for direction in 0..4 {
+            for (delay, subtype2, wall) in [(0u8, 0u8, 0u8), (1, 0, 0),
+                (12, 1, 0), (255, 0, 1), (5, 255, 15)] {
+                for split in [false, true] {
+                    let mut n = prefix3_moldorm_state(k, 0x40);
+                    for (a,v) in [(0xe20, 0x41), (0xd80, 1), (0xde0, direction),
+                        (0xdf0, delay), (0xe80, subtype2), (0xe70, wall), (0xe30, 0)] {
+                        n.write_wram_byte(a + k,v);
+                    }
+                    n.write_wram_byte(0x1a, 1); // Probe branch returns without spawning.
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x05c403,k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x05c403,s,
+                        |s| s.cpu.k == 5 && (0xc403..0xc454).contains(&s.cpu.pc),
+                        || if split {
+                            assert!(n.guard_patrol_prefix(k));
+                            n.guard_patrol_after_delay_load(k);
+                        } else { n.guard_on_patrol(k); });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route9 guard patrol: {cases} ROM cases");
+}
+
+#[test]
+fn route9_guard_tick_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize,15] {
+        for direction in 0..4 {
+            for subtype in [0u8,7,8,15,16,31,127,255] {
+                let mut n = prefix3_moldorm_state(k,0x40);
+                n.write_wram_byte(0xde0+k,direction);
+                n.write_wram_byte(0xe80+k,subtype);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n,0x05c454,k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x05c454,s,
+                    |s| s.cpu.k == 5 && (0xc454..0xc470).contains(&s.cpu.pc),
+                    || n.guard_tick_and_update_body(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route9 guard tick: {cases} ROM cases");
+}
+
+#[test]
+fn route9_blind_spit_caller_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize,15] {
+        for direction in 0..16 {
+            for (subtype, full) in [(1u8,false), (0,false), (0,true)] {
+                let mut n = prefix3_moldorm_state(k,0x40);
+                for j in 0..16 { n.write_wram_byte(0xdd0+j, if full {9} else {0}); }
+                n.write_wram_byte(0xe80+k,subtype);
+                n.write_wram_byte(0xeb0+k,direction);
+                n.write_wram_byte(0xe20+k,0xce);
+                n.sync_native_game_state_from_ram();
+                let mut s = marker29_machine(&n,0x1da49d,k).expect("ROM fixture");
+                s.cpu.a = 15;
+                crate::cycle_ledger::assert_rom_marker_work(0x1da49d,s,
+                    |s| s.cpu.k == 0x1d && (0xa49d..0xa4c6).contains(&s.cpu.pc),
+                    || { n.blind_spit_fireball(k,15); });
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route9 Blind spit: {cases} ROM cases");
+}
+
+#[test]
+fn route9_vitreous_activation_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize,15] {
+        for subtype in [0u8,62,63,127,255] {
+            for busy in [false,true] {
+                let mut n = prefix3_moldorm_state(k,0x40);
+                for j in 5..14 { n.write_wram_byte(0xd80+j,u8::from(busy)); }
+                n.write_wram_byte(0xe80+k,subtype);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n,0x1de5da,k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x1de5da,s,
+                    |s| s.cpu.k == 0x1d && (0xe5da..0xe602).contains(&s.cpu.pc),
+                    || n.vitreous_set_minions_forth(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route9 Vitreous activation: {cases} ROM cases");
+}
+
+#[test]
+fn route9_talking_tree_bomb_states_match_rom() {
+    let mut cases = 0;
+    for k in [0usize,6,7,14,15] {
+        for (entry,end) in [(0x1df96eu32,0xf99c), (0x1df99c,0xf9b0), (0x1df9b4,0xf9d2)] {
+            for delay in [0u8,1,7,8,48,255] {
+                for contact in [false,true] {
+                    let mut n = prefix3_moldorm_state(k,0x40);
+                    n.write_wram_byte(0xe20+k,0x25);
+                    n.write_wram_byte(0xdf0+k,delay);
+                    n.write_wram_byte(0xf60+k,0);
+                    n.write_wram_word(0x22,if contact {0x40} else {0x100});
+                    n.write_wram_word(0x20,if contact {0x40} else {0x100});
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n,entry,k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(entry,s,
+                        |s| s.cpu.k == 0x1d && (entry as u16..end).contains(&s.cpu.pc),
+                        || match entry {
+                            0x1df96e => n.talking_tree_idle_with_bomb(k),
+                            0x1df99c => n.talking_tree_delay_bomb(k),
+                            _ => n.talking_tree_spit_bomb(k),
+                        });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route9 tree bomb states: {cases} ROM cases");
+}
+
+#[test]
+fn route9_guard_shoot_selector_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize,15] {
+        for subtype in 5..8 {
+            let mut n = prefix3_moldorm_state(k,0x40);
+            n.write_wram_byte(0xd80+k,1);
+            n.write_wram_byte(0xe30+k,subtype);
+            n.write_wram_byte(0xe20+k,0x41);
+            n.write_wram_byte(0x1a,1);
+            n.sync_native_game_state_from_ram();
+            let s = marker29_machine(&n,0x05c403,k).expect("ROM fixture");
+            crate::cycle_ledger::assert_rom_marker_work(0x05c403,s,
+                |s| s.cpu.k == 5 && (0xc403..0xc454).contains(&s.cpu.pc),
+                || n.guard_on_patrol(k));
+            cases += 1;
+        }
+    }
+    eprintln!("route9 guard shoot selector: {cases} ROM cases");
+}

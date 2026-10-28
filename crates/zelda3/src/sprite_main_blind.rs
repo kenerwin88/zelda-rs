@@ -595,23 +595,34 @@ impl ZeldaState {
     //   return j;
     // }
     pub(super) fn blind_spit_fireball(&mut self, k: usize, a: u8) -> i32 {
+        // $1D:A49D..A4C5: complete caller only; spawn, sound and the
+        // inline native Fireball_Configure child keep separate ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1da49d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1da49d);
         if (self.sprite_slot_view(k).subtype2() & a) != 0 {
+            b.taken(0x1da4a2); b.block(0x1da4c5);
             return -1;
         }
+        b.block(0x1da4a4);
         let j = self.sprite_spawn_fireball(k);
+        b.block(0x1da4a8);
         match j {
             j if j >= 0 => {
+                b.block(0x1da4aa);
                 let j = j as usize;
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x19);
+                b.block(0x1da4b0);
                 let i = self.sprite_slot_view(k).head_direction() as usize;
                 let mut fireball = self.sprite_slot_view_mut(j);
                 fireball.set_x_velocity(BLIND_FIREBALL_X_VELOCITIES_BY_HEAD_DIR[i] as u8);
                 fireball.set_y_velocity(BLIND_FIREBALL_Y_VELOCITIES_BY_HEAD_DIR[i] as u8);
                 fireball.or_deflection_bits(8);
                 fireball.set_bump_damage(4);
+                b.block(0x1da4c4); b.block(0x1da4c5);
                 j as i32
             }
-            _ => -1,
+            _ => { b.taken(0x1da4a8); b.block(0x1da4c5); -1 },
         }
     }
 

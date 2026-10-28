@@ -2049,45 +2049,9 @@ impl ZeldaState {
         let value = 0;
         self.sprite_slot_view_mut(k).set_flags4(value);
         match self.sprite_slot_view(k).ai_state() {
-            0 => {
-                let value = 0;
-                self.sprite_slot_view_mut(k).set_graphics(value);
-                // ROM $1D:F971
-                if self.sprite_check_damage_same_layer_long_marked(k) {
-                    self.link_cancel_dash();
-                    let pt = self.sprite_project_speed_towards_link(k, 48);
-                    self.follower_link_state_mut().set_incapacitated_timer(16);
-                    self.follower_link_state_mut()
-                        .set_actual_velocity_xy(pt.x, pt.y);
-                    self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
-                    self.sprite_slot_view_mut(k).add_ai_state(1);
-                    let value = 48;
-                    self.sprite_slot_view_mut(k).set_delay_main(value);
-                }
-            }
-            1 => {
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_view_mut(k).add_ai_state(1);
-                    let value = 8;
-                    self.sprite_slot_view_mut(k).set_delay_main(value);
-                }
-                let value = (self.sprite_slot_view(k).delay_main() >> 1) & 3;
-                self.sprite_slot_view_mut(k).set_graphics(value);
-            }
-            2 => {
-                // The ROM indexes kTalkingTree_Gfx2 with the sprite slot, not
-                // the shifted delay it just computed (see
-                // TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT).
-                let _ = TALKING_TREE_MOUTH_SECONDARY_GRAPHICS;
-                let value = TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT[k];
-                self.sprite_slot_view_mut(k).set_graphics(value);
-                if self.sprite_slot_view(k).delay_main() == 7 {
-                    self.talking_tree_spawn_bomb(k);
-                }
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_view_mut(k).add_ai_state(1);
-                }
-            }
+            0 => self.talking_tree_idle_with_bomb(k),
+            1 => self.talking_tree_delay_bomb(k),
+            2 => self.talking_tree_spit_bomb(k),
             3 => {
                 let value = 7;
                 self.sprite_slot_view_mut(k).set_flags4(value);
@@ -2126,6 +2090,73 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    pub(super) fn talking_tree_idle_with_bomb(&mut self, k: usize) {
+        // $1D:F96E..F99B: complete state self, children excluded.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df96e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df96e);
+        let value = 0;
+        self.sprite_slot_view_mut(k).set_graphics(value);
+        // ROM $1D:F971
+        let contact = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x1df975);
+        if contact {
+            b.block(0x1df977);
+            self.link_cancel_dash();
+            b.block(0x1df97b);
+            let pt = self.sprite_project_speed_towards_link(k, 48);
+            b.block(0x1df985);
+            self.follower_link_state_mut().set_incapacitated_timer(16);
+            self.follower_link_state_mut()
+                .set_actual_velocity_xy(pt.x, pt.y);
+            self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
+            b.block(0x1df993);
+            self.sprite_slot_view_mut(k).add_ai_state(1);
+            let value = 48;
+            self.sprite_slot_view_mut(k).set_delay_main(value);
+        } else { b.taken(0x1df975); }
+        b.block(0x1df99b);
+    }
+
+    pub(super) fn talking_tree_delay_bomb(&mut self, k: usize) {
+        // $1D:F99C..F9AF: complete state self, children excluded.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df99c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df99c);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x1df9a1);
+            self.sprite_slot_view_mut(k).add_ai_state(1);
+            let value = 8;
+            self.sprite_slot_view_mut(k).set_delay_main(value);
+        } else { b.taken(0x1df99f); }
+        b.block(0x1df9a9);
+        let value = (self.sprite_slot_view(k).delay_main() >> 1) & 3;
+        self.sprite_slot_view_mut(k).set_graphics(value);
+    }
+
+    pub(super) fn talking_tree_spit_bomb(&mut self, k: usize) {
+        // $1D:F9B4..F9D1: complete state self, children excluded.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df9b4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df9b4);
+        // The ROM indexes kTalkingTree_Gfx2 with the sprite slot, not
+        // the shifted delay it just computed (see
+        // TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT).
+        let _ = TALKING_TREE_MOUTH_SECONDARY_GRAPHICS;
+        let value = TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT[k];
+        self.sprite_slot_view_mut(k).set_graphics(value);
+        if self.sprite_slot_view(k).delay_main() == 7 {
+            b.block(0x1df9c6);
+            self.talking_tree_spawn_bomb(k);
+        } else { b.taken(0x1df9c4); }
+        b.block(0x1df9c9);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x1df9ce);
+            self.sprite_slot_view_mut(k).add_ai_state(1);
+        } else { b.taken(0x1df9cc); }
+        b.block(0x1df9d1);
     }
 
     // -----------------------------------------------------------------------
