@@ -3443,6 +3443,7 @@ dependencies = [
  "zelda3-debug-env",
  "zelda3-dialogue",
  "zelda3-palette",
+ "zstd",
 ]
 
 [[package]]

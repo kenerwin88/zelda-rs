@@ -27,6 +27,7 @@ pub fn blocks(lagless: bool) -> BlockMarkers { BlockMarkers(lagless) }
 impl BlockMarkers {
     /// Static instruction work at this ROM block's documented entry M/X.
     #[inline]
+    #[cfg_attr(feature = "rom-shadow-audit", track_caller)]
     pub fn block(&self, address: u32) {
         if !self.0 || is_muted() { return; }
         let index = rom_block_costs::BLOCKS.binary_search_by_key(&address, |b| b.0)
@@ -35,6 +36,7 @@ impl BlockMarkers {
     }
 
     /// Native branch outcome adds the 65816's internal taken cycle.
+    #[cfg_attr(feature = "rom-shadow-audit", track_caller)]
     pub fn taken(&self, pc: u32) {
         if !self.0 || is_muted() { return; }
         #[cfg(any(debug_assertions, test))] assert!(rom_block_costs::BLOCKS.iter().any(|b| b.5 == pc && pc != 0),
@@ -43,6 +45,7 @@ impl BlockMarkers {
     }
 
     /// The executing native index, not a scene estimate, determines crossing.
+    #[cfg_attr(feature = "rom-shadow-audit", track_caller)]
     pub fn crossing(&self, pc: u32) {
         if !self.0 || is_muted() { return; }
         #[cfg(any(debug_assertions, test))] assert!(rom_block_costs::BLOCKS.iter().any(|b| b.6.contains(&pc)),
@@ -50,7 +53,13 @@ impl BlockMarkers {
         self.retire(pc, 2, 6);
     }
 
+    #[cfg_attr(feature = "rom-shadow-audit", track_caller)]
     fn retire(&self, address: u32, kind: u8, clocks: u64) {
+        #[cfg(feature = "rom-shadow-audit")]
+        crate::rom_shadow_audit::marker(address, kind,
+            if kind == 0 { rom_block_costs::BLOCKS.binary_search_by_key(&address, |b|b.0).ok()
+                .map(|i|(rom_block_costs::BLOCKS[i].2,rom_block_costs::BLOCKS[i].3)) } else { None },
+            std::panic::Location::caller());
         charge(clocks);
         PROFILE.with(|profile| {
             if let Some(p) = profile.borrow_mut().as_mut().filter(|p| p.active) {
@@ -224,6 +233,7 @@ pub fn master() -> u64 {
 
 /// Charge master cycles to the routine being executed.
 #[inline]
+#[cfg_attr(feature = "rom-shadow-audit", track_caller)]
 pub fn charge(master: u64) {
     if MUTED.with(Cell::get) == 0 {
         MASTER.with(|total| total.set(total.get() + master));
@@ -302,6 +312,7 @@ pub struct RoutineScope {
 }
 
 /// Enter an annotated routine at its ROM address.
+#[cfg_attr(feature = "rom-shadow-audit", track_caller)]
 pub fn routine(address: u32) -> RoutineScope {
     enter_routine(address, true)
 }
@@ -331,9 +342,12 @@ pub(crate) fn tail_routine(body: u32, frame: u32) -> Option<RoutineScope> {
     if profiling() { profile_routine(frame, false) } else { Some(routine(body)) }
 }
 
+#[cfg_attr(feature = "rom-shadow-audit", track_caller)]
 fn enter_routine(address: u32, entered: bool) -> RoutineScope {
     let muted = MUTED.with(Cell::get) > 0;
     if !muted {
+        #[cfg(feature = "rom-shadow-audit")]
+        crate::rom_shadow_audit::scope_enter(address);
         LEDGER.with(|ledger| {
             let mut ledger = ledger.borrow_mut();
             ledger.nested.push(0);
@@ -364,6 +378,8 @@ impl Drop for RoutineScope {
         if self.muted {
             return;
         }
+        #[cfg(feature = "rom-shadow-audit")]
+        crate::rom_shadow_audit::scope_exit(self.address);
         let inclusive = master() - self.started;
         LEDGER.with(|ledger| {
             let mut ledger = ledger.borrow_mut();
@@ -417,6 +433,7 @@ impl Drop for AnnotationProbe {
 }
 
 /// Charge a routine whose cost does not depend on its inputs.
+#[cfg_attr(feature = "rom-shadow-audit", track_caller)]
 pub fn charge_routine(address: u32, master: u64) {
     let _scope = routine(address);
     charge(master);
@@ -424,6 +441,7 @@ pub fn charge_routine(address: u32, master: u64) {
 
 /// Instruction continuations can retire inside their ordinary call scope.
 /// Reuse that frame rather than reporting a recursive call per instruction.
+#[cfg_attr(feature = "rom-shadow-audit", track_caller)]
 pub(crate) fn charge_in_routine(address: u32, master: u64) {
     let current = LEDGER.with(|ledger| ledger.borrow().addresses.last().copied());
     if current == Some(address) {

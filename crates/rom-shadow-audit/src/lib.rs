@@ -3,6 +3,10 @@ use std::{collections::BTreeMap, io::{BufRead, Read}, path::{Path, PathBuf}};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+#[cfg(feature = "rom-shadow-audit")]
+pub mod ordered;
+#[cfg(feature = "rom-shadow-audit")]
+pub mod accounting;
 pub const CUTS: &str = "main:before-008038/after-00805d;label:008034;native:profile_main_begin/end";
 pub const DOMAINS: &[&str] = &["main_instruction", "opening_nmi", "lag_nmi", "irq", "polygon", "dma", "hdma", "refresh", "idle", "poll_wait", "native_domain_unknown", "active_wall"];
 

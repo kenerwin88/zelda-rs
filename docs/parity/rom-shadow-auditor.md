@@ -580,3 +580,192 @@ compressed retention. The workspace remains below **3 GB**. No GPU run,
 full library suite, cargo fmt, commit or push was performed. The source CPU
 and independent receipts share emulator code; this is CPU audit evidence,
 not independent hardware or live exact A/V acceptance.
+
+## M2 (ordinary entries) result
+
+**Pricing verdict: STOP. M2 is a partial implementation checkpoint, not an
+accepted ordered source/native join.** The full native census and a longer
+verified source prefix are complete. Ordered observation, instruction
+partitions, bounded counter reconciliation and the pairing kernel are
+implemented. The live source-call/block-to-native-site bridge is still
+unfinished; the kernel has not been applied to a proved live mapping. No price
+is admitted or applied. This result does not establish that ordinary M2 is
+infeasible.
+
+Work is on `codex/shadow-m2`, based on `8e34ebe98462f218ba4fca619dfb20c081ff67e5`
+(main plus Route pricing 5 and M0/M1). No other worktree was modified. No
+pricing, pacing, classifier, P2, marker semantics, generated block table,
+seeding decision or ordinary product behavior changed. New observation and
+accounting remain behind the non-default `rom-shadow-audit` feature; serde_json
+and zstd runtime dependencies are optional under that feature.
+
+### Entry-kind census
+
+The fresh ROM-lane native replay uses full-v2, `--seed-every 2000`, original
+recorded APU answers and `--pacing-predictor`, without video. It completes all
+**1,473,123 ordered iterations**, reporting no WRAM divergence. There are
+**2,787 missing-hold iterations / 2,820 missing holds**. A hold deficit is
+`max(lag_nmis - native_held, 0)`; excess holds do not cancel deficits.
+
+One reset-driven, serial source owner executes **60,000 original hosts /
+755,156,459 opcodes** and verifies **53,706 iterations (0..53,705)** against
+full-v2 images and ordered input/RNG/APU/interrupt receipts. Coverage remains
+false; **53,706..1,473,122 (1,419,417 iterations) and source EOF are unverified**.
+The source coverage timer records 1,600.110 seconds, including observation and
+final identity verification, on the loaded machine. It is not an isolated
+throughput measurement or a full-route runtime claim. The existing 2.8-billion
+byte source guard checks every 1,000 hosts. No source sharding or new seeding
+policy was used.
+
+Entry classification observes release into `$00:8038`, after any `$00:8034`
+LDA / `$00:8036` BEQ wait-loop instructions. An RTI returning into that wait
+loop is not itself classified as a resumed main entry. Only M1's `07/00` and
+`09/00` import-map entries are eligible; no further module/substage is admitted.
+Predictor module fields describe the closing image and are not used as entry
+classification proxies.
+
+| Source entry kind | Iterations | Missing iterations | Missing holds |
+| --- | ---: | ---: | ---: |
+| Ordinary admitted `07/00`, `$00:8038` | 22,608 | 0 | 0 |
+| Ordinary admitted `09/00`, `$00:8038` | 14,494 | 29 | 29 |
+| Ordinary unadmitted, module/substage retained | 16,013 | 26 | 34 |
+| Resumed entry, `unmapped_resume_handoff` | 591 | 1 | 1 |
+| Unexecuted source suffix, entry kind unknown | 1,419,417 | 2,731 | 2,756 |
+| **Total** | **1,473,123** | **2,787** | **2,820** |
+
+Unadmitted ordinary entries with missing holds in the verified prefix are:
+
+| Module/substage | Entry iterations | Missing iterations | Missing holds |
+| --- | ---: | ---: | ---: |
+| `00/00` | 1 | 1 | 1 |
+| `00/01` | 25 | 7 | 7 |
+| `00/07` | 70 | 5 | 5 |
+| `01/00` | 1 | 1 | 9 |
+| `06/00` | 8 | 2 | 2 |
+| `07/02` | 1,726 | 4 | 4 |
+| `07/0E` | 2,080 | 1 | 1 |
+| `08/00` | 10 | 2 | 2 |
+| `09/20` | 3 | 1 | 1 |
+| `0E/03` | 460 | 2 | 2 |
+
+The complete module/substage table, including zero-deficit states, is in
+`target/shadow-m2/census-full/entry-kind-table.json`; individual missing IDs are
+in its companion `missing-entry-kinds.jsonl.zst`. No entry-kind distribution
+is inferred for the unexecuted suffix.
+
+Entry eligibility is distinct from an intermediate retirement proof. M1's
+iteration 1,916 enters ordinary **unadmitted** `07/0F` at host 2,293 and later
+reaches the retained unmapped resumed handoff at host 2,294. Both observations
+are retained. All **29 admitted missing-hold cases also encounter an internal
+interrupt**. Their resumed phases remain explicit `unmapped_resume_handoff`
+residuals; no fresh image is imported there.
+
+### Ordered observation and conservation
+
+The gated native sink records ordered scope entries/exits (including uncharged
+scopes), dynamic native scope IDs/path, marker PC/kind, generated entry M/X
+contract, actual caller `file:line:column`, and every unmuted charge, including
+owner zero. Taken/page extras retain their kinds and unknown width where no
+width witness exists. Scope IDs are explicitly **native scopes, not proved ROM
+call IDs**. Scalars remain `scalar_unmapped`; VWF is reconciled separately
+through the existing predictor counter. No scope, marker or charge is added
+by the observer. Muted preview work remains absent.
+
+`ZELDA3_SHADOW_AUDIT_EVENTS` selects a fresh output; a `.zst` suffix streams
+compression directly. `ZELDA3_SHADOW_AUDIT_RANGE=LO-HI` is required, with an
+optional `ZELDA3_SHADOW_AUDIT_ITERATIONS` comma-separated selection. The same
+selection can bound native entry-image capture. All switches use
+`crate::debug_env`. Thirty-one native entry-image pairs are retained: the two
+M1 controls and the 29 missing cases. Capturing them is not a per-case imported
+ROM-fork or source/native path proof; no new such proof is claimed.
+
+The source stream retains **341,299 individual opcode partitions** for the 29
+missing ordinary entries, with raw PC/opcode, actual M/X, DP/DB, stack positions
+and interrupt cuts. Four bounded accounting windows reproduce their source
+main counters and native charge counters, including the separate VWF bridge.
+Every source opcode and native charge remains on its unmatched side:
+
+```text
+S = 8,946,084 = P (0) + U (8,946,084)
+N = 8,520,516 = Q (0) + O (8,520,516)
+S - N = 425,568 = U - O + E (0; no admitted pairs)
+```
+
+These equations hold per iteration, not just in aggregate. Every iteration's
+alignment and exact-coverage flags remain false. Unpaired block errors remain
+`null`; aggregate E=0 is the empty paired sum, not equal pricing. The **6,916
+source instructions after the first interrupt** are separately marked
+`unmapped_resume_handoff`, with source interruption/resume PCs and unmeasured
+native continuation clocks. Earlier instructions still require a call/site
+mapping; they are not silently admitted.
+
+The pairing kernel requires proved call/occurrence, PC/kind, M/X, expected
+native site and domain keys in occurrence order. Tests retain exact signed
+PC/site rows for missing, duplicate, wrong-cost and wrong-site events, reject
+width/call/domain aliases and reordered paths, and reject cancelling positive
+and negative paired errors. Independent-counter tests reject a deleted source
+instruction and a wrong observer total. This kernel is **not yet wired to a
+validated live source-call/block expansion**. Priced-child aliases, local
+dispatch/double returns, branch/page expansion and scalar instruction ownership
+still need that bridge before a live price can be emitted.
+
+### Worklist and pricing decision
+
+`target/shadow-m2/worklist.json` contains **zero validated positive gaps, zero
+validated negative repairs, zero admitted clocks and zero missing holds
+covered by an admitted price**. Therefore both requested validated rankings
+(by clocks and by missing holds covered) are empty. All native unmatched work
+is retained; positive iteration differences do not establish that individual
+blocks are free of overcharge.
+
+For investigation only, the largest **unpaired iteration-total differences**
+are iteration 35,306 (+20,996 clocks), 35,294 / 35,300 / 35,304 (+20,008 each),
+and 50,775 (+18,906). Each corresponds to one missing hold. These are not
+exclusive PC/site gaps and must not be copied into a price. No negative
+iteration-total differences occur in these 29 rows; negative per-block errors
+remain unknown until pairing is proved.
+
+**STOP for pricing batches.** Continue ordinary M2 by implementing and proving
+the source call/block-to-native-site bridge, preserving scalar ownership and
+the named resume residuals, then applying the ordered kernel to those proved
+keys. No runtime or pricing change is authorized by this worklist.
+
+### Verification, retained evidence and limits
+
+- All **16 auditor-package tests** and **three filtered Zelda observer tests**
+  pass. No full library suite or GPU test ran.
+- Default, `--no-default-features`, and feature-enabled ordinary builds, plus
+  enabled/disabled auditor builds, are warning-free. Baseline lib-test
+  dead-code warnings are separate from ordinary build results.
+- On a **35,311-iteration replay**, with routine profiling on
+  **35,290..35,310** around the first four admitted missing cases, default,
+  feature-off and feature-on predictor/routine/block/object/sprite CSVs and
+  stdout are byte-identical. All **53,706** ordinary-capture predictor rows
+  also match the canonical default census prefix byte for byte; every native
+  observed charge sum plus separate VWF matches its predictor total.
+- The final default **200,000-frame schema-3 state ledger** matches every
+  record and EOF against the retained reference. This is a CPU-only state
+  check, not exact A/V acceptance. `git diff --check` passes.
+- Source evidence is frozen under `source-prefix/`: the original manifest is
+  unchanged; `manifest-frozen.json` and `manifest-relocation.json` bind
+  byte-identical retained copies of the exact source-run executable and four
+  audit source files before subsequent accounting-only edits. The frozen
+  manifest verifies successfully.
+- `ordinary-accounting-final/` retains per-iteration equations, separate
+  source/native rows and interrupt residuals. `ordinary-events.jsonl.zst`,
+  `ordinary-native-entries/`, `final-native-processes.json`,
+  `final-observer-noninterference.json`, `worklist.json` and build/test logs
+  supply the remaining evidence. Accounting windows cap retained source
+  partitions at 200,000; they stream compressed inputs and outputs.
+
+The disk limit was **missed transiently**: an observed raw-event snapshot was
+**3,032,240,128 bytes**, above the requested 3,000,000,000 bytes. This is not a
+proved absolute peak. Completed raw files were compressed/pruned, and the
+final observer now supports direct compressed streaming. The miss and
+lossless retention identities are recorded in `compressed-retention.json`;
+final retained size is recorded in `verification.json` below the limit.
+
+No GPU run, `--video`, cached-av, external Snes9x process, protected-cache or
+shared-ledger write, cargo fmt, commit or push was performed. Source execution
+and receipt checks share emulator code. Full source classification, live
+ordered pairing and pricing admission remain incomplete.

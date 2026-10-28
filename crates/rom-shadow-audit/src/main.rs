@@ -29,6 +29,7 @@ fn freeze(rom: &Path,sram: &Path,input: &Path,ledger: &Path) -> Result<Manifest>
     for (name,path) in [("rom",rom),("sram",sram),("input",input),("binary", std::env::current_exe()?.as_path()),
         ("block_table",Path::new("crates/zelda3/src/rom_block_costs.rs")), ("block_entries",Path::new("scripts/rom_block_entries.json")),
         ("import_map_and_contract",Path::new("crates/rom-shadow-audit/src/lib.rs")),("auditor_source",Path::new("crates/rom-shadow-audit/src/main.rs")),
+        ("ordered_pairing",Path::new("crates/rom-shadow-audit/src/ordered.rs")),("stream_accounting",Path::new("crates/rom-shadow-audit/src/accounting.rs")),
         ("source_executor",Path::new("crates/snes/src/cpu_synchronous_executor/source_cpu.rs"))] {
         identities.insert(name.into(),Identity::bind(path)?);
     }
@@ -57,6 +58,11 @@ struct Iteration {
     rng:Vec<(u8,bool)>,apu_reads:Vec<(u8,u8)>,apu_writes:Vec<(u8,u8)>,
 }
 fn pc(cpu:&Cpu)->u32 { let c=&cpu.machine().snes().cpu; (u32::from(c.k)<<16)|u32::from(c.pc) }
+fn entry_kind(module:u8,sub:u8,next_pc:u32)-> &'static str {
+    if next_pc!=0x008038 {"resumed"}
+    else if ordinary_regions(module,sub,next_pc).is_ok() {"ordinary_admitted"}
+    else {"ordinary_unadmitted"}
+}
 fn checkpoint_hash(cpu:&Cpu)->Result<String> { Ok(hash(&bincode::serialize(&cpu.capture_quiescent_checkpoint()?)?)) }
 fn entry(cpu:&Cpu)->Result<Value> {
     let s=cpu.machine().snes(); let c=&s.cpu;
@@ -155,14 +161,29 @@ fn tree_bytes(root:&Path)->Result<u64> {
 }
 
 fn source(args:&[String])->Result<()> {
-    if !(6..=8).contains(&args.len()) { return Err("source ROM SRAM INPUT FULL_V2 HOSTS FRESH_OUT [NATIVE_ENTRIES [WITNESS_HOSTS]]".into()); }
+    if !(6..=9).contains(&args.len()) { return Err("source ROM SRAM INPUT FULL_V2 HOSTS FRESH_OUT [NATIVE_ENTRIES|- [WITNESS_HOSTS|- [PREDICTOR]]]".into()); }
     let (rom,sram,input,ledger)=(Path::new(&args[0]),Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]));
     let hosts:usize=args[4].parse()?; if hosts==0 { return Err("zero hosts".into()); }
-    let native_dir=args.get(6).map(PathBuf::from);
-    let witness_hosts:Vec<usize>=args.get(7).map(|s|s.split(',').map(str::parse).collect()).transpose()?.unwrap_or_default();
+    let native_dir=args.get(6).filter(|s|s.as_str()!="-").map(PathBuf::from);
+    let witness_hosts:Vec<usize>=args.get(7).filter(|s|s.as_str()!="-").map(|s|s.split(',').map(str::parse).collect()).transpose()?.unwrap_or_default();
     if witness_hosts.len()>8 {return Err("at most eight witness hosts".into());}
     let out=PathBuf::from(&args[5]); fs::create_dir(&out)?;
     let mut manifest=freeze(rom,sram,input,ledger)?;
+    let mut selected=std::collections::BTreeSet::new();
+    if let Some(predictor)=args.get(8) {
+        manifest.identities.insert("missing_predictor".into(),Identity::bind(Path::new(predictor))?);
+        let mut lines=BufReader::new(File::open(predictor)?).lines();
+        let h=lines.next().ok_or("missing predictor header")??;
+        let h:Vec<_>=h.split(',').collect();
+        let index=h.iter().position(|s|*s=="iteration").ok_or("predictor index")?;
+        let lag=h.iter().position(|s|*s=="lag_nmis").ok_or("predictor lag")?;
+        let held=h.iter().position(|s|*s=="native_held").ok_or("predictor held")?;
+        for line in lines {
+            let line=line?;let c:Vec<_>=line.split(',').collect();
+            if c.len()!=h.len(){return Err("predictor row".into());}
+            if c[lag].parse::<u64>()?>c[held].parse::<u64>()? {selected.insert(c[index].parse::<u64>()?);}
+        }
+    }
     if let Some(dir)=&native_dir {
         bind_tree(dir,"native_entries",&mut manifest.identities)?;
         let provenance:Value=serde_json::from_reader(File::open(dir.join("provenance.json"))?)?;
@@ -180,6 +201,9 @@ fn source(args:&[String])->Result<()> {
     let mut witness=zstd::Encoder::new(File::create(out.join("witness-trace.jsonl.zst"))?,3)?;
     let mut witness_rows=0;
     let mut blocks=zstd::Encoder::new(File::create(out.join("blocks.jsonl.zst"))?,3)?;
+    let mut census=zstd::Encoder::new(File::create(out.join("entry-kinds.jsonl.zst"))?,3)?;
+    let mut census_counts:BTreeMap<String,u64>=BTreeMap::new();
+    let mut partitions=zstd::Encoder::new(File::create(out.join("source-instructions.jsonl.zst"))?,3)?;
     let mut buttons=vec![0u16;hosts]; let mut assigned=vec![false;hosts];
     for line in fs::read_to_string(input)?.lines().filter(|l|!l.is_empty()&&!l.starts_with('#')) {
         let (range,value)=line.split_once(' ').ok_or("invalid input")?;
@@ -196,6 +220,9 @@ fn source(args:&[String])->Result<()> {
     let mut next=0;let mut depth=0u32;let mut lag_handler=false;let mut checked=0u64;
     let mut failure=None;let mut benchmarks:BTreeMap<String,Bench>=BTreeMap::new();
     let mut main_active=false;let mut main_depth=0u32;let mut previous_sp=cpu.machine().snes().cpu.sp;
+    let mut previous_registers=cpu.machine().snes().cpu.clone();
+    let mut ordinary=false;
+    let mut pending_ordinary:Option<(u64,usize,u32)>=None;
     let mut master=0u64;let mut count=0u64;let mut path=Sha256::new();
     let mut native_trials=0;let mut native_equal=0;let mut resume_cut:Option<Value>=None;
     let mut entry_seen=[false;256];let mut resumed_seen=false;let mut trial_count=0;
@@ -214,6 +241,16 @@ fn source(args:&[String])->Result<()> {
                     "line":exec.raster_position().scanline(),"irq":step.accepted_interrupt.is_some()}))?;
             }
             let snes=exec.machine().snes(); let module=snes.ram[0x10];polygon|=snes.ram[0x12a]!=0;
+            if step.origin_pc==0x008038 && main_depth==0 {
+                if let Some((index,entry_host,return_pc))=pending_ordinary.take() {
+                    let kind=entry_kind(module,snes.ram[0x11],step.origin_pc);
+                    ordinary=kind=="ordinary_admitted";
+                    *census_counts.entry(format!("{kind}/{module:02x}/{:02x}",snes.ram[0x11])).or_default()+=1;
+                    writeln!(census,"{}",json!({"iteration":index,"host":entry_host,"pc":step.origin_pc,
+                        "handler_return_pc":return_pc,"entry_host":host,"module":module,"submodule":snes.ram[0x11],"kind":kind,
+                        "status":"entry_kind_only_not_per_iteration_alignment"}))?;
+                }
+            }
             apu_upload|=(0x008888..0x008913).contains(&(step.origin_pc&0x7fffff));
             long_load|=module==6;
             // Capture BEFORE the next opcode, never reconstruct registers from WRAM.
@@ -235,6 +272,17 @@ fn source(args:&[String])->Result<()> {
                 let end=match step.accepted_interrupt {Some(Interrupt::Nmi{started_at,..}|Interrupt::Irq{started_at,..})=>started_at,None=>step.ended_at};
                 let clocks:u64=step.transactions.iter().filter(|t|t.started_at<end).map(|t|u64::from(t.duration_master_cycles)).sum();
                 master+=clocks;count+=1; path.update(step.origin_pc.to_le_bytes());path.update([step.opcode]);
+                if ordinary && current.as_ref().is_some_and(|r|selected.contains(&r.index)) {
+                    // One opcode is the smallest exclusive partition. Calls own
+                    // their opcode only; callee work has separate rows. Dynamic
+                    // call/return mapping to native scopes remains unproved.
+                    writeln!(partitions,"{}",json!({"iteration":current.as_ref().unwrap().index,
+                        "ordinal":count-1,"pc":step.origin_pc,"opcode":step.opcode,"master":clocks,
+                        "m8":previous_registers.mf,"x8":previous_registers.xf,
+                        "dp":previous_registers.dp,"db":previous_registers.db,"sp":previous_sp,
+                        "next_pc":pc(exec),"next_sp":snes.cpu.sp,"interrupt_after":step.accepted_interrupt.is_some(),
+                        "status":"source_partition_only"}))?;
+                }
             }
             if step.origin_pc==0x00805d && main_active {
                 writeln!(summaries,"{}",json!({"iteration":current.as_ref().map(|r|r.index),"host":host,"source_master":master,"source_instructions":count,
@@ -244,6 +292,7 @@ fn source(args:&[String])->Result<()> {
             if step.opcode==0x40 {main_depth=main_depth.saturating_sub(1);}
             if step.accepted_interrupt.is_some() {main_depth+=1;}
             previous_sp=snes.cpu.sp;
+            previous_registers=snes.cpu.clone();
             let nmi=matches!(step.accepted_interrupt,Some(Interrupt::Nmi{..}));
             let stale=nmi&&opening.is_some();
             let returned=if step.opcode==0x40 {depth=depth.saturating_sub(1);depth==0} else {false};
@@ -259,7 +308,21 @@ fn source(args:&[String])->Result<()> {
                         if let Some(w)=row_check(&finished,&expected) {failure=Some(w);return Err("source alignment stop".into());}
                         checked+=1;
                     }
-                    current=opening.take(); if step.accepted_interrupt.is_none() {return Ok(());}
+                    current=opening.take();
+                    let row=current.as_ref().unwrap();
+                    let next_pc=pc(exec);
+                    ordinary=false;
+                    if matches!(next_pc,0x008034|0x008036|0x008038) && step.accepted_interrupt.is_none() {
+                        // Handler return is not main entry: observe release from
+                        // LDA $12 / BEQ $8034 to CLI $8038 before admitting it.
+                        pending_ordinary=Some((row.index,host,next_pc));
+                    } else {
+                        pending_ordinary=None;
+                        *census_counts.entry(format!("resumed/{module:02x}/{:02x}",snes.ram[0x11])).or_default()+=1;
+                        writeln!(census,"{}",json!({"iteration":row.index,"host":host,"pc":next_pc,
+                            "module":module,"submodule":snes.ram[0x11],"kind":"resumed","status":"unmapped_resume_handoff"}))?;
+                    }
+                    if step.accepted_interrupt.is_none() {return Ok(());}
                 } else if main_active && !resumed_seen && depth==0 && matches!(module,7|9) {
                     resumed_seen=true;
                     let index=current.as_ref().map(|r|r.index);
@@ -319,7 +382,9 @@ fn source(args:&[String])->Result<()> {
         writeln!(residuals,"{}",serde_json::to_string(&r)?)?;
     }
     writeln!(blocks,"{}",json!({"status":"unpaired","reason":reason,"source_master":null,"native_master":null}))?;
-    residuals.finish()?;summaries.finish()?;entries.finish()?;blocks.finish()?;witness.finish()?;
+    residuals.finish()?;summaries.finish()?;entries.finish()?;blocks.finish()?;witness.finish()?;census.finish()?;partitions.finish()?;
+    write_json(&out.join("entry-census.json"),&json!({"counts":census_counts,"checked_source_rows":checked,
+        "note":"last entry may be unclosed; cross only indices below checked_source_rows","verified_eof":false}))?;
     manifest.verify()?;
     write_json(&out.join("coverage.json"),&json!({"pass":false,"m2_verdict":"STOP","reason":reason,"checked_source_rows":checked,"source_hosts":completed_hosts,
         "source_opcodes":total_instructions,"verified_eof":false,"all_route_iterations":1473123,"checkpoint_trials":trial_count,
@@ -364,10 +429,65 @@ fn receipts(args:&[String])->Result<()> {
     residuals.finish()?;source_identity.verify()?;native_identity.verify()?;
     Ok(())
 }
+
+/// Cross only verified source rows. Predictor module fields describe the closing
+/// image and must never be substituted for source entry module/substage.
+fn census(args:&[String])->Result<()> {
+    if args.len()!=3 {return Err("census SOURCE_OUT PREDICTOR FRESH_OUT".into());}
+    let source=Path::new(&args[0]);let predictor=Path::new(&args[1]);let out=Path::new(&args[2]);
+    let coverage:Value=serde_json::from_reader(File::open(source.join("coverage.json"))?)?;
+    let checked=coverage["checked_source_rows"].as_u64().ok_or("source coverage absent")?;
+    let bound=[Identity::bind(&source.join("entry-kinds.jsonl.zst"))?,Identity::bind(predictor)?,
+        Identity::bind(&source.join("coverage.json"))?];
+    let mut kinds=BTreeMap::new();
+    for line in BufReader::new(zstd::Decoder::new(File::open(source.join("entry-kinds.jsonl.zst"))?)?).lines() {
+        let row:Value=serde_json::from_str(&line?)?;let i=row["iteration"].as_u64().ok_or("entry index")?;
+        if i>=checked {continue;}
+        if kinds.insert(i,row).is_some(){return Err("duplicate source entry".into());}
+    }
+    if kinds.len() as u64!=checked || (0..checked).any(|i|!kinds.contains_key(&i)) {return Err("absent source entry".into());}
+    let mut lines=BufReader::new(File::open(predictor)?).lines();
+    let header=lines.next().ok_or("absent predictor header")??;
+    let header:Vec<_>=header.split(',').collect();
+    let col=|name:&str|->Result<usize>{header.iter().position(|s|*s==name).ok_or_else(||format!("absent predictor column {name}").into())};
+    let (index,lag,held)=(col("iteration")?,col("lag_nmis")?,col("native_held")?);
+    fs::create_dir(out)?;
+    let mut missing=zstd::Encoder::new(File::create(out.join("missing-entry-kinds.jsonl.zst"))?,3)?;
+    let mut table:BTreeMap<String,[u64;3]>=BTreeMap::new();
+    let mut total=0u64;let mut missing_iterations=0u64;let mut missing_holds=0u64;
+    for line in lines {
+        let line=line?;let cells:Vec<_>=line.split(',').collect();
+        if cells.len()!=header.len(){return Err("malformed predictor row".into());}
+        let i:u64=cells[index].parse()?;if i!=total{return Err("predictor absent/duplicate/out of order".into());} total+=1;
+        let lag:u64=cells[lag].parse()?;let held:u64=cells[held].parse()?;
+        let deficit=lag.saturating_sub(held);
+        let entry=kinds.get(&i);
+        let key=entry.map(|r|format!("{}/{:02x}/{:02x}",r["kind"].as_str().unwrap(),r["module"].as_u64().unwrap(),r["submodule"].as_u64().unwrap()))
+            .unwrap_or_else(||"unexecuted_source_suffix".into());
+        let row=table.entry(key.clone()).or_default();row[0]+=1;row[1]+=u64::from(deficit>0);row[2]+=deficit;
+        if deficit>0 {
+            missing_iterations+=1;missing_holds+=deficit;
+            writeln!(missing,"{}",json!({"iteration":i,"missing_holds":deficit,"entry_kind":key,"source_entry":entry}))?;
+        }
+    }
+    missing.finish()?;
+    if total<checked {return Err("predictor shorter than verified source prefix".into());}
+    for id in &bound {id.verify()?;}
+    write_json(&out.join("entry-kind-table.json"),&json!({"identities":bound,"source_checked":checked,
+        "predictor_iterations":total,"full_predictor":total==1473123,"full_source":checked==1473123 && coverage["verified_eof"]==true,
+        "columns":["iterations","missing_iterations","missing_holds"],"table":table,
+        "missing_iterations":missing_iterations,"missing_holds":missing_holds}))?;
+    write_json(&out.join("worklist.json"),&json!({"validated_positive_gaps":[],"negative_price_repairs":[],
+        "admission":"STOP","reason":"entry census is not ordered call/site ownership proof; no prices admitted",
+        "top_gaps_by_clocks":[],"top_gaps_by_missing_holds_covered":[]}))?;
+    Ok(())
+}
 fn main()->Result<()> {
     let args:Vec<_>=std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("source")=>source(&args[1..]),Some("receipts")=>receipts(&args[1..]),
+        Some("source")=>source(&args[1..]),Some("receipts")=>receipts(&args[1..]),Some("census")=>census(&args[1..]),
+        Some("account") if args.len()==5=>accounting::reconcile(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4])),
+        Some("account") if args.len()==7=>accounting::reconcile_window(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4]),args[5].parse()?,args[6].parse()?),
         Some("verify") if args.len()==2=>serde_json::from_reader::<_,Manifest>(File::open(&args[1])?)?.verify(),
         _=>Err("rom-shadow-audit: source | receipts | verify (explicit CPU-only commands required)".into())
     }
@@ -376,6 +496,14 @@ fn main()->Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn census_does_not_admit_other_substages_or_resumes() {
+        assert_eq!(entry_kind(7,0,0x8038),"ordinary_admitted");
+        assert_eq!(entry_kind(9,0,0x8038),"ordinary_admitted");
+        assert_eq!(entry_kind(7,15,0x8038),"ordinary_unadmitted");
+        assert_eq!(entry_kind(6,0,0x8038),"ordinary_unadmitted");
+        assert_eq!(entry_kind(7,0,0xda95b),"resumed");
+        assert_eq!(entry_kind(9,0,0x2a4b5),"resumed");
+    }
     #[test] fn rejects_event_sequence_and_host_misalignment() {
         let a=Iteration{index:3,open_host:12,apu_reads:vec![(0,2),(0,3)],..Default::default()};
         let mut b=Iteration{index:3,open_host:12,apu_reads:vec![(0,2),(0,3)],..Default::default()};
