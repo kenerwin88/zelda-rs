@@ -7966,17 +7966,52 @@ impl ZeldaState {
 
     /// ROM: `Overworld_DwDeathMountainPaletteAnimation`
     pub(super) fn overworld_dw_death_mountain_palette_animation(&mut self) {
+        // $0E:F582..F651, with the shared early RTL at $F581.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ef582));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ef582);
         if self.special_entrance_trigger() != 0 {
+            b.taken(0x0ef585); b.block(0x0ef581);
             return;
         }
         let sc = self.game_state.world.location.overworld_screen_index();
+        b.block(0x0ef587);
+        if sc == 0x43 { b.taken(0x0ef58b); }
+        else {
+            b.block(0x0ef58d);
+            if sc == 0x45 { b.taken(0x0ef58f); }
+            else { b.block(0x0ef591); if sc != 0x47 { b.taken(0x0ef593); } }
+        }
         if !matches!(sc, 0x43 | 0x45 | 0x47) {
+            b.block(0x0ef581);
             return;
         }
 
         let fc = self.game_state.frame.frame_counter;
+        b.block(0x0ef595);
+        if fc == 3 { b.taken(0x0ef59c); }
+        else {
+            b.block(0x0ef59e);
+            if fc == 5 { b.taken(0x0ef5a0); }
+            else {
+                b.block(0x0ef5a2);
+                if fc == 36 { b.taken(0x0ef5a4); }
+                else {
+                    b.block(0x0ef5a6);
+                    if fc == 44 { b.taken(0x0ef5a8); }
+                    else {
+                        b.block(0x0ef5aa);
+                        if fc == 88 { b.taken(0x0ef5ac); }
+                        else { b.block(0x0ef5ae); if fc != 90 { b.taken(0x0ef5b0); } }
+                    }
+                }
+            }
+        }
         if matches!(fc, 5 | 44 | 90) {
+            b.block(0x0ef5b2);
             for i in 1..8 {
+                b.block(0x0ef5b6);
+                if i != 7 { b.taken(0x0ef5e2); }
                 for base in [0x30, 0x38, 0x48, 0x70, 0x78] {
                     self.copy_color(
                         (zelda3_palette::Bank::Aux, base + i),
@@ -7984,11 +8019,18 @@ impl ZeldaState {
                     );
                 }
             }
+            b.block(0x0ef5e4);
         } else if matches!(fc, 3 | 36 | 88) {
             if fc == 36 {
+                b.block(0x0ef5e6);
                 self.set_sound_effect_1(54);
             }
+            b.block(0x0ef5eb);
             for i in 1..8 {
+                b.block(0x0ef5f1);
+                // The indexed effective address crosses the page for Y=8..12.
+                if i >= 5 { b.crossing(0x0ef5f8); }
+                if i != 7 { b.taken(0x0ef61a); }
                 self.set_main_color_asset(0x30 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1]);
                 self.set_main_color_asset(0x38 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 7]);
                 self.set_main_color_asset(
@@ -8006,17 +8048,27 @@ impl ZeldaState {
             }
         }
 
+        b.block(0x0ef61c);
         self.increment_cgram_update_flag();
         let mut yy = 32usize;
         if sc == 0x43 || sc == 0x45 {
+            if sc == 0x43 { b.taken(0x0ef626); }
+            else { b.block(0x0ef628); }
+            b.block(0x0ef62c);
             if self.game_state.world.overworld.event_info.event_info(0x43) & 0x20 != 0 {
+                b.taken(0x0ef632); b.block(0x0ef64c);
                 return;
             }
+            b.block(0x0ef634);
             yy = ((self.game_state.frame.frame_counter & 0x0c) as usize) * 2;
-        }
+        } else { b.block(0x0ef628); b.taken(0x0ef62a); }
         for i in 0..8 {
+            b.block(0x0ef63b);
+            b.block(0x0ef63d);
+            if i != 7 { b.taken(0x0ef64a); }
             self.set_main_color_asset(0x68 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE2[yy + i]);
         }
+        b.block(0x0ef64c);
     }
 
     /// ROM: `Module09_FadeBackInFromMosaic`
@@ -9118,3 +9170,38 @@ impl ZeldaState {
 #[cfg(test)]
 #[path = "overworld_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod prefix4_tests {
+    use super::*;
+
+    #[test]
+    fn prefix4_palette_animation_matches_rom() {
+        use snes::{CartType, Snes};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../zelda3_assets.dat")).unwrap();
+        let mut base = ZeldaState::new(); base.set_assets(&assets).unwrap();
+        base.set_lag_free(true);
+        for screen in [0u8, 0x43, 0x45, 0x47] {
+            for frame in [0u8, 3, 5, 12, 36, 44, 88, 90] {
+                for (trigger, event) in [(0u8, 0u8), (1, 0), (0, 0x20)] {
+                    let mut n = base.clone();
+                    let mut image = n.wram_image().into_owned();
+                    image[0x8a] = screen; image[0x1a] = frame;
+                    image[0x4c6] = trigger; image[0xf2c3] = event;
+                    n.import_wram_image(&image); n.sync_native_game_state_from_ram();
+                    let mut s = Snes::new(); s.cart.load(CartType::LoRom, &rom, 0x2000);
+                    s.ram.copy_from_slice(&n.wram_image());
+                    s.cpu.e = false; s.cpu.unpack_flags(0x30);
+                    s.cpu.k = 14; s.cpu.db = 0; s.cpu.pc = 0xf582; s.cpu.sp = 0x1fc;
+                    s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+                    crate::cycle_ledger::assert_rom_marker_work(0x0ef582, s,
+                        |s| s.cpu.k == 14 && (0xf581..0xf652).contains(&s.cpu.pc),
+                        || n.overworld_dw_death_mountain_palette_animation());
+                }
+            }
+        }
+    }
+}

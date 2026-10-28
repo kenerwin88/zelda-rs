@@ -1340,13 +1340,21 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn scatter_debris_draw(&mut self, k: usize, pt: Point16U) {
+        // $09:F198..F1F7: the three inline OAM entries; no child call.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09f198));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09f198);
         if self.garnish_slot_view(k).countdown() == 16 {
+            b.block(0x09f1a0);
             let value = 0;
             self.garnish_slot_view_mut(k).set_garnish_type(value);
-        }
+        } else { b.taken(0x09f19e); }
+        b.block(0x09f1a6);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let base = usize::from(((self.garnish_slot_view(k).countdown() & 0x0f) >> 2) * 3);
         for i in (0..=2usize).rev() {
+            b.block(0x09f1b6);
+            if i != 0 { b.taken(0x09f1f4); }
             let j = base + i;
             self.set_oam_helper1_at(
                 oam,
@@ -1358,6 +1366,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x09f1f6);
     }
 
     // void Garnish16_ThrownItemDebris(int k) {  // 89f0cb

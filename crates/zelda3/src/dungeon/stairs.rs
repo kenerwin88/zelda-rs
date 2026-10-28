@@ -1488,25 +1488,36 @@ impl ZeldaState {
 
     /// ROM: `Module07_11_StraightInterroomStairs`
     pub(in crate::zelda_rtl) fn module07_11_straight_interroom_stairs(&mut self) {
+        // $02:9357..9394: caller only, including the dispatch JSL, not its table.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x029357));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x029357);
         if self.game_state.frame.subsubmodule >= 3 {
+            b.block(0x02935d);
             if self.suspend_dungeon_selectable_peg_attribute_flip(
                 DungeonPegAttributeFlipCaller::StraightInterroomStairs,
             ) {
                 return;
             }
             self.dungeon_load_attribute_selectable();
-        }
+        } else { b.taken(0x02935b); }
         self.complete_module07_11_straight_interroom_stairs_after_attribute_loader();
     }
 
     pub(in crate::zelda_rtl) fn complete_module07_11_straight_interroom_stairs_after_attribute_loader(&mut self) {
+        // A resumed attribute child enters here: never repeat $9357..9360.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x029357));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x029361);
         let fadeout_cpu_advance = (self.rom_startup_timing()
             && !matches!(self.original_timing_owner, crate::zelda_rtl::OriginalTimingOwnerState::Live)
             && self.game_state.frame.subsubmodule == 1)
             .then(|| self.take_dungeon_landing_cpu_advance()).flatten();
         if self.game_state.frame.subsubmodule >= 13 {
+            b.block(0x029367);
             self.graphics_incremental_vram_upload();
-        }
+        } else { b.taken(0x029365); }
+        b.block(0x02936b);
         if self
             .game_state
             .dungeon
@@ -1514,6 +1525,7 @@ impl ZeldaState {
             .staircase_move_counter()
             != 0
         {
+            b.block(0x029370);
             if self
                 .game_state
                 .dungeon
@@ -1521,19 +1533,34 @@ impl ZeldaState {
                 .staircase_move_counter()
                 == 16
             {
+                b.block(0x029377);
                 self.follower_link_state_mut().set_speed_modifier(2);
-            }
+            } else { b.taken(0x029375); }
+            b.block(0x02937b);
             self.dungeon_stair_movement_mut()
                 .decrement_staircase_move_counter();
             let direction = if self.game_state.frame.submodule == 18 {
+                b.taken(0x029381);
                 8
             } else {
+                b.block(0x029383);
                 4
             };
+            b.block(0x029385);
             self.follower_link_state_mut().set_direction(direction);
             self.link_handle_velocity();
-        }
+        } else { b.taken(0x02936e); }
+        b.block(0x02938b);
         self.link_handle_moving_animation_full_long_entry();
+        b.block(0x02938f);
+        // JumpTableLocal pulls its JSL frame after STY/PLY. The remaining
+        // instructions retire in this caller, before its real JML target.
+        {
+            let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        b.block(0x008784);
+        b.block(0x008799);
         match self.game_state.frame.subsubmodule {
             0 => self.module07_11_00_prep_and_reset(),
             1 => self.module07_11_01_fade_out(),
@@ -1584,6 +1611,9 @@ impl ZeldaState {
 
     /// ROM: `Module07_11_01_FadeOut`
     pub(super) fn module07_11_01_fade_out(&mut self) {
+        // $02:93ED..9402 is the local-dispatch tail, still in $9357's frame.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0293ed);
         if self
             .game_state
             .dungeon
@@ -1591,18 +1621,22 @@ impl ZeldaState {
             .staircase_move_counter()
             < 9
         {
+            b.block(0x0293f4);
             // Capture the complete input palette before the atomic translation
             // advances it. On hardware the filter can span vblank: NMI uploads
             // this generation, then the 65816 resumes and finishes the next.
             self.retain_palette_filter_input_cgram_on_next_display_capture();
             self.apply_palette_filter_bounce();
+            b.block(0x0293f8);
             self.stage_straight_interroom_fadeout_obj_source();
             let palette_countdown = self.game_state.display.palette_filter.countdown();
             self.suspend_straight_interroom_fadeout_suffix_if_crosses_nmi(palette_countdown);
             if palette_countdown == 23 {
+                b.block(0x029400);
                 self.increment_subsubmodule();
-            }
-        }
+            } else { b.taken(0x0293fe); }
+        } else { b.taken(0x0293f2); }
+        b.block(0x029402);
     }
 
     /// ROM: `Module07_11_02_LoadAndPrepRoom`
@@ -1990,6 +2024,40 @@ impl ZeldaState {
             == self.game_state.player.tile_detection.x_low()
         {
             self.follower_link_state_mut().set_y_button_action_step(2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod prefix4_tests {
+    use super::*;
+
+    #[test]
+    fn prefix4_stair_caller_matches_rom() {
+        use snes::{CartType, Snes};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for submodule in [0x11u8, 0x12] {
+            for (phase, counter, palette) in [(1u8, 0u8, 0u8), (1, 4, 22), (1, 17, 22),
+                (17, 0, 0), (17, 1, 0), (17, 16, 0), (17, 17, 0)] {
+                let mut n = ZeldaState::new();
+                n.set_lag_free(true);
+                let mut image = n.wram_image().into_owned();
+                image[0x10] = 7; image[0x11] = submodule;
+                image[0xb0] = phase; image[0x464] = counter; image[0xc007] = palette;
+                n.import_wram_image(&image); n.sync_native_game_state_from_ram();
+                let mut s = Snes::new();
+                s.cart.load(CartType::LoRom, &rom, 0x2000);
+                s.ram.copy_from_slice(&n.wram_image());
+                s.cpu.e = false; s.cpu.unpack_flags(0x30);
+                s.cpu.k = 2; s.cpu.db = 2; s.cpu.pc = 0x9357; s.cpu.sp = 0x1fd;
+                s.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+                crate::cycle_ledger::assert_rom_marker_work(0x029357, s,
+                    |s| (s.cpu.k == 2 && ((0x9357..0x9395).contains(&s.cpu.pc)
+                            || (phase == 1 && (0x93ed..0x9403).contains(&s.cpu.pc))))
+                        || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)),
+                    || n.module07_11_straight_interroom_stairs());
+            }
         }
     }
 }

@@ -3397,3 +3397,29 @@ fn marker38_bank6_damage_both_matches_rom() { marker38_damage_both(0x06d88b); }
 fn marker38_bank1d_damage_both_matches_rom() { marker38_damage_both(0x1dc211); }
 #[test]
 fn marker38_bank1e_damage_both_matches_rom() { marker38_damage_both(0x1ec267); }
+
+#[test]
+fn prefix4_debris_matches_rom() {
+    use snes::{CartType, Snes};
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    for k in [0usize, 29] {
+        for countdown in 0..=31u8 {
+            let mut n = ZeldaState::new(); n.set_lag_free(true);
+            let mut image = n.wram_image().into_owned();
+            image[0x1f90e + k] = countdown;
+            image[0x90..0x92].copy_from_slice(&0x800u16.to_le_bytes());
+            image[0x92..0x94].copy_from_slice(&0xa20u16.to_le_bytes());
+            n.import_wram_image(&image); n.sync_native_game_state_from_ram();
+            let mut s = Snes::new(); s.cart.load(CartType::LoRom, &rom, 0x2000);
+            s.ram.copy_from_slice(&n.wram_image());
+            s.cpu.e = false; s.cpu.unpack_flags(0x30);
+            s.cpu.k = 9; s.cpu.db = 9; s.cpu.pc = 0xf198;
+            s.cpu.x = k as u16; s.cpu.sp = 0x1fd;
+            s.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+            crate::cycle_ledger::assert_rom_marker_work(0x09f198, s,
+                |s| s.cpu.k == 9 && (0xf198..0xf1f8).contains(&s.cpu.pc),
+                || n.scatter_debris_draw(k, Point16U { x: 0, y: 0 }));
+        }
+    }
+}
