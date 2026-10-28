@@ -128,6 +128,8 @@ pub fn profile_iteration(enabled: bool) {
 }
 
 pub(crate) fn profile_main_begin() {
+    #[cfg(feature = "rom-shadow-audit")]
+    crate::rom_shadow_audit::main_begin(master());
     PROFILE.with(|profile| {
         if let Some(profile) = profile.borrow_mut().as_mut() {
             profile.active = true;
@@ -141,6 +143,8 @@ pub(crate) fn profile_main_begin() {
 }
 
 pub(crate) fn profile_main_end() {
+    #[cfg(feature = "rom-shadow-audit")]
+    crate::rom_shadow_audit::main_end(master());
     PROFILE.with(|profile| {
         if let Some(profile) = profile.borrow_mut().as_mut() { profile.active = false; }
     });
@@ -223,6 +227,8 @@ pub fn master() -> u64 {
 pub fn charge(master: u64) {
     if MUTED.with(Cell::get) == 0 {
         MASTER.with(|total| total.set(total.get() + master));
+        #[cfg(feature = "rom-shadow-audit")]
+        crate::rom_shadow_audit::charge(master);
         PROFILE.with(|profile| {
             if let Some(profile) = profile.borrow_mut().as_mut().filter(|p| p.active) {
                 LEDGER.with(|ledger| {

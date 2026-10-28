@@ -14,6 +14,7 @@ members = [
     "crates/zelda3-map",
     "crates/renderer",
     "crates/parity",
+    "crates/rom-shadow-audit",
     "zelda3-bin",
 ]
 

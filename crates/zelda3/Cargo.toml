@@ -17,6 +17,7 @@ default = ["parity-debug", "rom-timing"]
 parity-debug = ["zelda3-debug-env/parity-debug", "snes/parity-debug"]
 # Offline editor snapshots only; absent from ordinary game builds.
 map-preview = []
+rom-shadow-audit = ["parity-debug"]
 
 [dependencies]
 zelda3-debug-env = { path = "../zelda3-debug-env" }

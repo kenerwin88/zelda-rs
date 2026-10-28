@@ -11,6 +11,8 @@
 pub mod chr_source;
 pub mod config;
 pub mod cycle_ledger;
+#[cfg(feature = "rom-shadow-audit")]
+pub mod rom_shadow_audit;
 pub(crate) mod cycle_models;
 pub mod debug_env;
 pub mod dungeon_reset_progress;

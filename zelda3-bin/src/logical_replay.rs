@@ -1631,6 +1631,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         let mut timing_lost_pushes = 0u64;
         let last_apu_push_before = last_apu_push;
         let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(feature = "rom-shadow-audit")]
+            zelda3::rom_shadow_audit::iteration(iteration.map(|row| row.index));
             let profiling = routine_profile.is_some() && iteration.is_some_and(|iteration|
                 routine_profile_iterations.is_empty() || routine_profile_iterations.iter()
                     .any(|&(lo, hi)| (lo..=hi).contains(&iteration.index)));

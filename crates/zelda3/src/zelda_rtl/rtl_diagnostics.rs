@@ -351,6 +351,8 @@ impl ZeldaState {
         if self.lag_free {
             self.lag_free_frame_master_start = crate::cycle_ledger::master();
             crate::cycle_ledger::profile_main_begin();
+            #[cfg(feature = "rom-shadow-audit")]
+            crate::rom_shadow_audit::entry(&self.wram_image(), &self.sram);
             self.lag_free_vwf_master = 0;
             self.lag_free_go_master = None;
             self.lag_free_lag_phases_run = false;

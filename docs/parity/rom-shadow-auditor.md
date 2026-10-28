@@ -1,6 +1,7 @@
 # Development ROM shadow cost auditor
 
-Design at `1f93f138` (`codex/shadowplan`). This batch adds documentation only.
+Design at `1f93f138` (`codex/shadowplan`). The implementation and verified
+M0/M1 stopping point at main `24b4fd3a` are recorded in [M1 result](#m1-result).
 The decision is to keep shipped lagless timing in committed Rust prices derived
 from ROM blocks. A separate development auditor may execute a locally supplied
 ROM; it must never supply prices, holds or gameplay state to the game.
@@ -240,8 +241,9 @@ enumerated residual report is useful completion of an audit, not a timing pass.
 
 ## Output and pricing workflow
 
-Proposed interface: a separate `rom-shadow-audit` development binary; no such
-command is implemented here. Accept explicit read-only ROM, full-v2 and input/
+Interface contract: a separate `rom-shadow-audit` development binary. The
+M0/M1 subset is implemented below; ordered block pairing remains M2. Accept
+explicit read-only ROM, full-v2 and input/
 initial-SRAM paths and one fresh output root. Manifest binds commit/dirty diff,
 binary/features, ROM SHA-256, ledger/input/SRAM identities, mapping/table hashes,
 seed policy and actual reseeds, source checkpoint schema, iteration cuts,
@@ -289,15 +291,17 @@ it is a baseline reference, not a current isolated benchmark. Source execution
 must cover original host calls, including lag, idle, intro and uploads, even
 when only missing gameplay rows are retained.
 
-For budgeting, assume 5,000–15,000 executed source opcodes per logical
-iteration including amortized non-main work: **7.4–22.1 billion opcodes**.
-At an assumed 0.5–2 million instrumented opcodes/s, source time alone is
-**1.0–12.3 hours**. Allow **2–16 hours** for one serial full auditor pass
-including native replay/compression. These assumptions are unmeasured and may
-be optimistic for idle/upload loops. M1 must measure reset, ordinary gameplay,
-long load, polygon and APU-upload windows, report instructions/s and source
-hosts/s, and replace this range before scheduling a census. Runtime formula:
-`T ≈ T_native + source_opcodes / measured_rate + output_time`.
+M1 measured **204,058,248 source opcodes over 16,000 original hosts**.
+The final instrumented prefix averaged **1.395 million instructions/s**;
+the measured native prefix took **13.965 s for 14,000 iterations**.
+Extrapolating the observed 13,959 source opcodes per completed iteration to
+1,473,123 iterations gives 20.564 billion opcodes: **4.095 source hours +
+0.408 native hours**, or approximately **4.5 hours serial**, before any
+route-dependent change in work mix or future M2 detail output. This replaces
+the unmeasured runtime guess. It is a prefix-based estimate on a loaded
+machine, not a full-route bound or permission to start a census. The five
+measured windows, output overhead and limits are in [M1 result](#m1-result).
+Runtime formula remains `T ≈ T_native + source_opcodes / measured_rate + output_time`.
 
 Keep one source owner and one native game; optionally one bounded diagnostic
 fork. Budget **under 512 MiB additional audit memory**, with a separately
@@ -389,3 +393,190 @@ about **1.0 GiB**, below 3 GB. No feasibility execution, game/GPU run, tests,
 protected-cache/shared-ledger write, runtime/pricing edit, cargo fmt, commit
 or push was performed. This is a verified design stop; M1 execution feasibility
 and all implementation remain future work.
+
+
+## M1 result
+
+**M2 verdict: STOP.** M0 is implemented; M1 establishes two ordinary diagnostic
+handoffs and a precise unmapped resumed handoff. It does not establish a
+route-wide native/source join. No pricing, pacing, classifiers, P2, markers,
+block tables, seeding policy or product behavior changed. HEAD remains
+`24b4fd3acce814dcd846c692c639d2a08ca9fac5`, branch `codex/shadow-m1`;
+there is no commit or push.
+
+### Implementation and isolation
+
+`crates/rom-shadow-audit` contains the separate CPU-only development binary,
+with empty default features and `required-features = ["rom-shadow-audit"]`.
+Its explicit loader owns the audit ROM reads. The Zelda library and game
+binary expose a separate, non-default feature of that name. All native hooks
+are under that gate; `parity-debug` alone does not enable them. Default and
+reduced product builds therefore have no new ROM access or observer API.
+The default binary contains none of the new audit-switch strings.
+
+The native hook observes charge totals at the existing main cuts, including
+owner-zero work; separate VWF remains separate. It adds no marker, scope,
+charge or scheduling decision. `ZELDA3_SHADOW_AUDIT_COUNTERS` selects a fresh
+JSONL output, and `ZELDA3_SHADOW_AUDIT_ENTRIES` selects an existing fresh
+snapshot directory. Both switches use `crate::debug_env`. Logical replay
+supplies the actual iteration identity without altering its seed decisions.
+Entry images are captured at native main begin after the opening handler.
+
+M0 binds the ROM, SRAM, input, every full-v2 file, executable, source executor,
+import-map/contract and static table identities. The manifest records commit,
+dirty-source hash, enabled features, checkpoint schema 9, main cuts, master
+clock units, domains and seed policy. Native evidence binds its executable,
+predictor, stdout and actual seeded segment records. Verification rejects a
+changed bound input. Retained source/native exclusive CSVs are checked on
+**all 14,000 iterations 0..13,999**, including owner zero and VWF. Absent
+iterations, absent totals, duplicate/mirrored routine rows and unequal
+exclusive sums are rejected. Signed routine differences remain ownership
+residuals, including negative differences; they are not paired prices.
+Unknown domain clocks remain `null`. Tests explicitly reject net cancellation
+as an exact pass.
+
+### Retained source and ordinary forks
+
+One reset-driven source owner executes the original host inputs, with frame
+capture disabled and PCM drained every host. The final run executes
+**16,000 original hosts / 204,058,248 opcodes**. It verifies **14,618 ordered
+full-v2 rows**, exact pre/post-NMI WRAM images, opening/closing hosts, input,
+joypad, RNG draws/carry, APU read/write sequences, lag NMIs and IRQ counts.
+The unexecuted/unclosed interval **14,618..1,473,122** is explicit; EOF is
+unverified and coverage remains false.
+
+The unchanged `logical_frame_ledger` example supplies independent source
+receipts: **14,001 main instruction totals and 14,001 structural instruction
+totals match exactly**. Independent chronological traces also match every
+PC, start/end timestamp, raster line and interrupt flag on host 3,740
+(**12,759 instructions**) and host 4,938 (**12,818 instructions**). These host
+traces include non-main work; the main counts below exclude it.
+
+| Ordinary entry | Iteration / source host | Main instructions | Source master clocks | Native-seeded fork |
+| --- | ---: | ---: | ---: | --- |
+| Dungeon `07/00`, `$00:8038` | 3,262 / 3,740 | 3,035 | 81,252 | Same return, path, transactions, accesses, output and hardware checkpoint |
+| Module09 `09/00`, `$00:8038` | 4,326 / 4,938 | 4,394 | 115,840 | Same return, path, transactions, accesses, output and hardware checkpoint |
+
+Each witness retains all program registers/status/pending flags, the full
+stack page, timestamp, raster, DMA state and a hash of the complete retained
+hardware/APU checkpoint. Raw checkpoint serialization stays in memory because
+schema 9 contains the ROM. Exact restore/re-execute checks compare every
+receipt field for 256 instructions and the final complete checkpoint hash.
+They pass at both ordinary entries and at the resumed boundary below.
+
+`ORDINARY_PRIVATE_V1` is a fixed ordinary-entry import map derived from the
+existing replay representation boundaries. It preserves direct page/stack,
+source-private decoder and relocated representations; the outdoor upload
+range is excluded only for Module09, leaving dungeon door state imported.
+Its exhaustive byte-ownership test rejects overlap or uncovered bytes. WRAM
+ranges and SRAM are copied only into the private source fork; retained source
+registers and all hardware owners remain intact. Every raw entry difference
+and copied range is retained. **Both samples have zero differing bytes in the
+imported ranges**: these are useful aligned controls, not evidence that an
+arbitrary changed native state will follow the same ROM path.
+
+Only one diagnostic CPU exists at a time. A bounded reference witness is
+collected and its diagnostic owner dropped before creating the imported fork;
+the continuous source is never modified. Both fork paths/counts independently
+match the subsequently observed continuous source summaries. The map is
+admitted only at ordinary `07/00` or `09/00` `$00:8038`; it deliberately
+rejects resumed PCs and other substages.
+
+### Precise resumed stop
+
+At **iteration 1,916, source host 2,294, module `07/0F`, PC `$0D:A95B`**, the
+source resumes after an interrupt handler. Its retained registers, live stack,
+hardware state and exact 256-instruction restore/re-execute are captured.
+The native replay's iteration-entry image and endpoint cannot establish the
+CPU registers, live locals or retired-opcode cursor at this intermediate
+boundary. The result is **`native_resume_unmapped` / `unmapped_resume_handoff`**,
+with unmeasured clocks, not an aligned zero-cost row. No fresh-entry image is
+transplanted there, no alignment is forced, and no resumed fork is admitted.
+
+This is the required M1 feasibility stop. The ordinary controls do not supply
+that missing continuation proof. A later dev adapter must expose and validate
+this intermediate native stage before M2 ordered pairing proceeds. The
+Module09 publication-versus-retirement ambiguity described above remains
+unresolved; these two ordinary controls do not waive it. No validated price
+gaps or negative-price repairs are emitted into the worklist.
+
+### Measured throughput and budget
+
+These are instrumented CPU-only measurements from the final retained run on
+the loaded machine. Classification observes actual source PCs/state: reset
+hosts 0..80; polygon-thread activity; APU upload PCs `$00:8888..8912`; Module06
+load hosts 11,477..11,537; ordinary `07/00` or `09/00` otherwise. Polygon and
+ordinary groups contain multiple windows. Upload hosts are 11,538..11,560.
+
+| Window | Source hosts | Executed opcodes | Instructions/s | Source hosts/s |
+| --- | ---: | ---: | ---: | ---: |
+| Reset | 81 | 1,160,504 | 800,176 | 55.85 |
+| Ordinary gameplay | 9,132 | 115,862,792 | 1,452,062 | 114.45 |
+| Long load | 61 | 684,299 | 1,168,113 | 104.13 |
+| Polygon | 742 | 9,068,667 | 973,757 | 79.67 |
+| APU upload | 23 | 325,464 | 1,568,288 | 110.83 |
+
+The remaining 5,961 hosts execute 76,956,522 opcodes and remain in `other`;
+they are included in the overall rate and runtime projection. Source execution
+and observation total **146.279 s**; initial identity freezing, final
+rechecking and output add **20.243 s**, for **166.522 s** process wall time. The **4.5-hour** serial projection above uses this entire prefix,
+including reset, idle and upload work, plus the measured native replay rate.
+Later route work mix, contention and M2 output cost remain unmeasured; this
+estimate is not a claimed full-census wall time. No census is scheduled while
+M2 is stopped.
+
+Whole-process peak RSS and exact commands are retained in
+`target/shadow-m1/source-admitted-process.json` and `native-final-runs.json`.
+The final source peak is below 100 MiB; native peak is **368,836,608 bytes**,
+well below 2 GiB. These are whole-process measurements, not an isolated proof
+of incremental allocator overhead. Witnesses are bounded (64-step failure
+prelude, at most eight selected hosts / 200,000 trace rows, 100,000 fork-step
+cap). Outputs stream per iteration. A source run checks workspace bytes every 1,000 hosts and emits
+`incomplete_disk_budget` at its 2.8-billion-byte guard, reserving room below
+the 3 GB limit. No route-wide instruction map or ROM-bearing checkpoint is persisted.
+
+### Verification and retained evidence
+
+The final ordinary product builds are warning-free in default,
+`--no-default-features`, and `--features rom-shadow-audit` configurations.
+The auditor builds warning-free both enabled and disabled. **Ten new-package
+tests** and the **single filtered Zelda observer test** pass. Baseline Zelda
+lib-test dead-code warnings are separate from ordinary build results. No full
+library suite or GPU test ran. Both fresh baseline and final default
+**200,000-frame ledgers match every record and EOF** against the retained
+schema-3 reference.
+
+On iterations 0..13,999, the original feature-off product, final feature build
+with observers off, and final feature build with observers on produce
+**byte-identical predictor CSVs, routine CSVs and stdout**. All 14,000 observed
+charge sums equal the independent main-counter deltas; adding separate VWF
+reproduces every predictor main total. Source totals and the two chronological
+traces also match the independent observer/control path described above.
+`git diff --check` passes.
+
+Final evidence is under **`target/shadow-m1/`**, particularly:
+
+- `verification.json`, `observer-noninterference.json`, build/test/default logs;
+- `source-admitted/{manifest,coverage,benchmarks,worklist}.json` and compressed
+  iteration, entry, residual and bounded source-path witnesses;
+- `m0-verified/` for the strict retained exclusive-counter reproduction;
+- compressed independent profiles/traces and compressed native entry images,
+  predictors and actual seeded-segment stdout, with identity/pruning receipts.
+
+The `source` command's zero exit means a completed diagnostic report, not an
+alignment pass; inspect `coverage.json` and its explicit **STOP / false**.
+The `verify MANIFEST` command checks bound files; `receipts SOURCE_CSV
+NATIVE_CSV LO HI FRESH_OUT` independently reproduces retained counters and
+rejects missing/duplicate rows. CSV inputs may be zstd-compressed.
+Build the separate binary with `cargo build --offline --profile parity -p
+rom-shadow-audit --features rom-shadow-audit`; its source interface is
+`source ROM SRAM INPUT FULL_V2 HOSTS FRESH_OUT [NATIVE_ENTRIES [WITNESS_HOSTS]]`.
+Native entry inputs are compressed WRAM/SRAM images plus bound provenance,
+not standalone source checkpoints.
+
+Superseded runs and raw RAM/profile/trace artifacts are deleted after bounded
+compressed retention. The workspace remains below **3 GB**. No GPU run,
+`--video`, cached-av, external Snes9x process, oracle-cache/shared-ledger write,
+full library suite, cargo fmt, commit or push was performed. The source CPU
+and independent receipts share emulator code; this is CPU audit evidence,
+not independent hardware or live exact A/V acceptance.

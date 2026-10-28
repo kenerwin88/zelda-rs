@@ -13,6 +13,7 @@ path = "src/main.rs"
 [features]
 # Exact cartridge scheduling and external timing-oracle tooling.
 rom-timing = ["zelda3/rom-timing", "snes/rom-timing", "parity/rom-timing"]
+rom-shadow-audit = ["zelda3/rom-shadow-audit"]
 default = ["parity-debug", "rom-timing"]
 # Forwarded through all runtime crates; packaging disables these diagnostics.
 parity-debug = ["zelda3/parity-debug", "snes/parity-debug", "renderer/parity-debug", "platform/parity-debug"]
