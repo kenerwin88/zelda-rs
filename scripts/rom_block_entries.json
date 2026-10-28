@@ -445,5 +445,13 @@
   {"entry": "09b591", "end": "09b5b9"},
   {"entry": "09b5d6", "end": "09b5de"},
   {"entry":"06b8d0","end":"06b94c"},
-  {"entry":"05975a","end":"0597b5"}
+  {"entry":"05975a","end":"0597b5"},
+  {"entry": "1eb002", "end": "1eb04d", "terminal_dispatch": true},
+  {"entry": "1eb055", "end": "1eb09f"},
+  {"entry": "1eb0af", "end": "1eb0d4"},
+  {"entry": "1eb0d6", "end": "1eb142"},
+  {"entry": "1eb144", "end": "1eb1c1"},
+  {"entry": "1ed1d1", "end": "1ed239"},
+  {"entry": "1ed239", "end": "1ed28d"},
+  {"entry":"1ea55e","end":"1ea5b0"}
 ]

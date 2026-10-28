@@ -1397,15 +1397,32 @@ impl ZeldaState {
     }
 
     pub(super) fn firesnake_spawn_fireball(&mut self, j: usize) {
+        // $1E:D239..D28C: allocation scan is inline source work; garnish_alloc is unpriced.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ed239));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ed239);
         if ((j as u8) ^ self.game_state.frame.frame_counter) & 7 != 0 {
+            b.taken(0x1ed23e); b.block(0x1ed28c);
             return;
         }
 
+        b.block(0x1ed240);
+        if self.lag_free {
+            for slot in (0..30).rev() {
+                b.block(0x1ed244);
+                if self.garnish_slot_view(slot).is_empty() { b.taken(0x1ed248); break; }
+                b.block(0x1ed24a);
+                if slot != 0 { b.taken(0x1ed24b); }
+            }
+        }
         let k = self.garnish_alloc();
         if k < 0 {
+            b.block(0x1ed24d);
             return;
         }
 
+        b.block(0x1ed24f);
+        b.block(0x1ed28c);
         let k = k as usize;
         let value = 1;
         self.garnish_slot_view_mut(k).set_garnish_type(value);

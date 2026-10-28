@@ -1260,42 +1260,67 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_80_Firesnake(int k) {  // 9ed1d1
     pub(super) fn sprite_80_firesnake(&mut self, k: usize) {
+        // $1E:D1D1..D238: complete caller and Winder tail, excluding children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ed1d1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ed1d1);
         // ROM $1E:D1D1 JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x1ed1d5);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1ed1d8);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1EFE9B) {
             return;
         }
+        b.block(0x1ed1db);
         let value = (self.sprite_slot_view(k).oam_flags() & 0x3f)
             | SPRITE_80_FIRESNAKE_OAM_FLAGS
                 [usize::from((self.game_state.frame.frame_counter >> 2) & 3)];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         if self.sprite_slot_view(k).a() != 0 {
+            b.block(0x1ed1f2);
             let value = self.sprite_slot_view(k).delay_main();
             self.sprite_slot_view_mut(k).set_ignore_projectile(value);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                b.block(0x1ed1fa);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
             }
+            else { b.taken(0x1ed1f8); }
+            b.block(0x1ed1fd);
             return;
         }
+        b.taken(0x1ed1f0); b.block(0x1ed206);
         // $1E:D206 JSR $1E:C267: both complete damage calls.
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
+        b.block(0x1ed209);
         self.firesnake_spawn_fireball(k);
+        b.block(0x1ed20c);
         if self.sprite_slot_view(k).wall_collision() == 0 {
+            b.block(0x1ed211);
             // ROM $1E:D211
             self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
         }
+        else { b.taken(0x1ed20f); }
+        b.block(0x1ed214);
         // ROM $1E:D214 -> $1E:8B2E -> $06:E496
-        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E) != 0 {
+        let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E);
+        b.block(0x1ed217);
+        if collision != 0 {
+            b.block(0x1ed219);
+            let random = self.get_random_number();
+            b.block(0x1ed21d);
             let j = usize::from(
-                self.sprite_slot_view(k).direction() * 2 + (self.get_random_number() & 1),
+                self.sprite_slot_view(k).direction() * 2 + (random & 1),
             );
             let value = ZAZAK_DIR2[j];
             self.sprite_slot_view_mut(k).set_direction(value);
         }
+        else { b.taken(0x1ed217); }
+        b.block(0x1ed229);
+        if (0xfe + u16::from(self.sprite_slot_view(k).direction())) > 0xff { b.crossing(0x1ed22c); }
         let j = usize::from(self.sprite_slot_view(k).direction() & 3);
         let value = SPRITE_80_FIRESNAKE_LOCAL_X_VELOCITIES[j] as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);

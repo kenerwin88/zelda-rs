@@ -14996,3 +14996,112 @@ approximately **458.1 MB**, below **3 GB**. No GPU run, `--video`,
 cached-av, Snes9x execution, protected-cache/shared-ledger write, cargo fmt,
 commit, push or one-off repository script was used. Remaining route pricing
 and continuous live ending acceptance remain unfinished.
+
+
+## Route pricing 7
+
+**Verified partial CPU-only stop on `codex/route7`, base `f4ddea8d`.**
+Evidence: `target/route7/`. The single final unsharded ROM census uses
+read-only **full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate
+**PASSes all 1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**,
+and every runtime hold equals P2.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,801 | **2,773** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 454 | **454** |
+| 461,989..1,473,122 | 2,221 | **2,193** |
+
+Missing holds fall **2,801 → 2,773**:
+**28 restored**, **0 lost**, with no new missing iteration or changed
+source context. `baseline-identity.json` verifies retained Route 6 source and
+binary hashes against this exact base. The whole-route owner worklist is
+recomputed on all **2,768 baseline missing iterations**, with unchanged exact
+multi-hold inverses checked before reuse. Raw parent/alias differences remain
+ownership worklists, not additive prices. Ties prefer the earlier route iteration.
+No duplicate main census or seeded live census was run.
+
+Eight complete self bodies/entries add **88 blocks /
+289 instructions** from `scripts/rom_block_costs.py`.
+All **2,977 existing generated rows remain byte-identical**.
+Markers are lagless-only and cite source addresses. The priced self bodies
+contained **zero legacy `charge(N)` scalars** and retain none. Existing child
+prices and default/ROM-timing accounting remain unchanged.
+
+| Self family | Entry | New clocks on frozen misses | Independent executed-marker flips |
+| --- | --- | ---: | ---: |
+| Blob caller / four state tails / local dispatch | `$1eb002` | 433,756 | 17 |
+| Firesnake caller / default tail | `$1ed1d1` | 217,444 | 5 |
+| Firesnake inline trail allocation | `$1ed239` | 45,484 | 2 |
+| Laser Eye reconnaissance state | `$1ea55e` | 44,140 | 2 |
+
+Independent scores overlap. The retained original instruction subset covers
+**1,992** baseline missing iterations and separately predicts
+**18 joint recoveries**. Its independent predictions are Blob **7**,
+Firesnake **5**, trail allocation **2**, and Laser Eye **2**. Complete standalone
+ROM fixtures establish all selected bodies beyond that subset.
+
+Blob prices its complete caller and four actual state-table targets, including
+initial collision/deletion, priority, inactive/recoil returns, hidden contact,
+popping, falling/landing and active movement paths. JumpTableLocal's STY/PLY
+head retires **52 clocks** in its child; its pulled-frame tail retires **362**
+in the caller exactly once. Zol drawing, collision, movement, damage, recoil,
+projection, RNG and sound children remain separate. The falling fixture uses
+the source state's valid two-entry graphics-table delay range.
+
+Firesnake prices its complete caller, dying return and default/Winder tail.
+The `$D1FE,Y` table read includes the actual page crossing for directions 2/3.
+Its separate spawn helper owns the inline 30-slot scan, successful allocation
+and no-free-slot return; `garnish_alloc` has no price to duplicate. Laser Eye's
+existing state-zero arm becomes its actual `$1E:A55E` body with identical
+operations, leaving caller/drawing checkpoints untouched. Source calls and
+actual Blob/Laser Eye dispatch bindings are checked in `pricing-audit.json`.
+
+Higher collision/property/projection/velocity, drawing and dispatcher rows
+retain existing scalar/instruction/continuation ownership. Previously rejected
+behavior disagreements, Push Switch's dynamic MVN and unresolved Swamola,
+Cucco and Trinexx handoffs receive no price. **Module09 is untouched**;
+Route 2's all-entry retirement partition remains unestablished.
+`admission-notes.json` retains exclusions; remaining owners are not exhausted.
+
+**740,824 new marker clocks = 740,824 signed main-counter clocks**
+on every frozen missing row, with **0 work mismatches**.
+Original instruction work grouped into generated blocks, including only Blob's
+actual local-dispatch work, agrees on all **1,992 covered rows**,
+with **0 source mismatches**. The unchanged full-cohort inverse predicts
+**28** recoveries; observed cohort recovery is **28**,
+with **0 prediction exceptions**.
+`work-proof.json`, compressed source instruction work and `frame-flips.json.gz`
+retain the matrices. These are instruction-work/logical-scheduling receipts,
+not physical CPU/NMI or exact A/V proof. No price is fitted to lag counts;
+no classifier, pacing rule, scene threshold/multiplier/table or SPC/APU behavior changes.
+
+The single cold continuous live replay uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, and zero post-initial
+reseeds. It completes **500,000 tested iterations**. Its first classified state
+comparison is **462,627**, **`song-end-poll`**, compared with base **462,627**;
+last clean index **462,626**. The unchanged strict gate reports
+`census gate: FAIL (unexplained=37433, complete=True)`.
+This is a completed bounded first-divergence receipt, not full-route live or
+ending acceptance. Classified rows are compressed directly through a FIFO;
+`live-classification-summary.json` retains first rows and counts. Observations
+after divergence do not extend the clean prefix.
+
+All **four new `assert_rom_marker_work` fixtures / 536 ROM cases per feature
+configuration** pass. Touched-area checks pass **175 drawing, 7 Mothula and
+39 preparation tests**. **Nine Python generator/worklist tests**, exact
+regeneration and `git diff --check` pass. Both production builds are
+warning-free; existing default/reduced lib-test warnings remain separate.
+Full library suites, GPU tests and seeded live censuses were not run.
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio.
+
+All **1,512 protected ledger/cache input files** retain their file set, sizes
+and nanosecond mtimes. Frozen source/binary hashes, commands, complete gates,
+proof matrices and final patch bind this stop. Retained evidence is approximately
+**456.8 MB**, below **3 GB**. No GPU run, `--video`, cached-av,
+Snes9x execution, protected-cache/shared-ledger write, cargo fmt, commit, push
+or one-off repository script was used. Remaining pricing and continuous live
+ending acceptance remain unfinished.
