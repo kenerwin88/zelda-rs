@@ -3983,21 +3983,41 @@ impl ZeldaState {
 
     // void Sprite_LaserBeam(int k) {  // 9ea462
     pub(super) fn sprite_laser_beam(&mut self, k: usize) {
+        // $1E:A462..A487: complete self caller, excluding all children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ea462));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ea462);
         // ROM $1E:A462
         self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Rom06DBF8);
+        b.block(0x1ea466);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1ea469);
         self.laser_beam_build_up_garnish(k);
+        b.block(0x1ea46c);
         // ROM $1E:A46C
         self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
+        b.block(0x1ea46f);
         // ROM $1E:A46F
         self.sprite_check_damage_same_layer_long_marked(k);
-        // ROM $1E:A478 -> $1E:8B2E -> $06:E496
-        if self.sprite_slot_view(k).delay_main() == 0 && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E) != 0 {
-            self.sprite_slot_view_mut(k).set_state(0);
-            self.sprite_sfx_queue_sfx3_with_pan(k, 0x26);
+        b.block(0x1ea473);
+        if self.sprite_slot_view(k).delay_main() != 0 {
+            b.taken(0x1ea476);
+        } else {
+            b.block(0x1ea478);
+            let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E);
+            b.block(0x1ea47b);
+            if collision != 0 {
+                b.block(0x1ea47d);
+                self.sprite_slot_view_mut(k).set_state(0);
+                self.sprite_sfx_queue_sfx3_with_pan(k, 0x26);
+                b.block(0x1ea486);
+                return;
+            }
+            b.taken(0x1ea47b);
         }
+        b.block(0x1ea487);
     }
 
     pub(super) fn laser_eye_reconnaissance(&mut self, k: usize) {

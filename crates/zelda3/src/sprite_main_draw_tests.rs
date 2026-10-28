@@ -4337,3 +4337,139 @@ fn route7_laser_eye_reconnaissance_matches_rom() {
     }
     eprintln!("route7 Laser eye state: {cases} ROM cases");
 }
+
+#[test]
+fn route8_sweeping_lady_self_bodies_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..2 {
+            for y in [0x40u16, 0xf8, 0x200] {
+                for inactive in [false, true] {
+                    for entry in [0x0dc4adu32, 0x0dc4eb] {
+                        let mut n = marker29_state();
+                        n.sprite_set_x(k, 0x40); n.sprite_set_y(k, y);
+                        for (a, v) in [(0xdd0 + k, 9), (0xe20 + k, 0x2a),
+                            (0xdc0 + k, gfx), (0x11, u8::from(inactive)), (0x1a, 0x10)] {
+                            n.write_wram_byte(a, v);
+                        }
+                        n.sync_native_game_state_from_ram();
+                        let s = marker29_machine(&n, entry, k).expect("ROM fixture");
+                        crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                            |s| s.cpu.k == 0xd && if entry == 0x0dc4ad {
+                                (0xc4ad..0xc4cb).contains(&s.cpu.pc)
+                            } else { (0xc4eb..0xc50b).contains(&s.cpu.pc) },
+                            || if entry == 0x0dc4ad { n.sprite_sweeping_lady(k); }
+                                else { n.sweeping_lady_draw(k); });
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("route8 sweeping lady: {cases} ROM cases");
+}
+
+#[test]
+fn route8_bunny_beam_selector_and_dormant_state_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for ai in [0, 1] {
+            for inactive in [0, 1] {
+                for tile in [0u8, 1, 0x10, 0x80] {
+                    let mut n = prefix3_moldorm_state(k, 0x40);
+                    for (a, v) in [(0xe20 + k, 0xd1), (0xd80 + k, ai),
+                        (0x11, inactive), (0xdf0 + k, 1)] { n.write_wram_byte(a, v); }
+                    for a in 0x12000..0x14000 { n.write_wram_byte(a, tile); }
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x1d85e0, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x1d85e0, s,
+                        |s| s.cpu.k == 0x1d && (0x85e0..0x85fa).contains(&s.cpu.pc),
+                        || n.sprite_bunny_beam(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route8 Bunny Beam: {cases} ROM cases");
+}
+
+#[test]
+fn route8_laser_beam_caller_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for inactive in [0, 1] {
+            for delay in [0, 1] {
+                for tile in [0u8, 1, 0x10, 0x80] {
+                    let mut n = prefix3_moldorm_state(k, 0x40);
+                    for (a, v) in [(0xe20 + k, 0x95), (0x11, inactive),
+                        (0xdf0 + k, delay), (0xd50 + k, 0), (0xd40 + k, 0)] {
+                        n.write_wram_byte(a, v);
+                    }
+                    for a in 0x12000..0x14000 { n.write_wram_byte(a, tile); }
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x1ea462, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x1ea462, s,
+                        |s| s.cpu.k == 0x1e && (0xa462..0xa488).contains(&s.cpu.pc),
+                        || n.sprite_laser_beam(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route8 Laser Beam: {cases} ROM cases");
+}
+
+#[test]
+fn route8_thief_stealing_state_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for frame in [0, 1, 3] {
+            for delay in [0, 1] {
+                for wall in [0, 1] {
+                    for booty in [false, true] {
+                        let mut n = prefix3_moldorm_state(k, 0x40);
+                        for (a, v) in [(0xe20 + k, 0xc4), (0xd80 + k, 3),
+                            (0xdf0 + k, delay), (0xe70 + k, wall), (0x1a, frame),
+                            (0xeb0 + k, 2), (0xde0 + k, 2)] { n.write_wram_byte(a, v); }
+                        if booty {
+                            for (a, v) in [(0xdd0, 9), (0xe20, 0xd9), (0xf10, 1),
+                                (0xd10, 0x80), (0xd00, 0x80)] { n.write_wram_byte(a + 7, v); }
+                        }
+                        n.sync_native_game_state_from_ram();
+                        let s = marker29_machine(&n, 0x1dc9df, k).expect("ROM fixture");
+                        crate::cycle_ledger::assert_rom_marker_work(0x1dc9df, s,
+                            |s| s.cpu.k == 0x1d && (0xc9df..0xca24).contains(&s.cpu.pc),
+                            || n.thief_stealing(k));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("route8 Thief stealing: {cases} ROM cases");
+}
+
+#[test]
+fn route8_blind_laser_inline_trail_allocation_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for free in [None, Some(0usize), Some(15), Some(29)] {
+            for cursor in [0u8, 1, 29] {
+                for y in [0x40u16, 0x1f8] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    for slot in 0..30 { n.write_wram_byte(0x1f800 + slot, 1); }
+                    if let Some(slot) = free { n.write_wram_byte(0x1f800 + slot, 0); }
+                    n.write_wram_byte(0xff8, cursor);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x1da0b1, k).expect("ROM fixture");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x1da0b1, s,
+                        |s| s.cpu.k == 0x1d && (0xa0b1..0xa110).contains(&s.cpu.pc),
+                        || n.blind_laser_spawn_trail_garnish(k));
+                    assert_eq!(&n.wram_image()[0x1f800..0x1fa00], &source.snes().ram[0x1f800..0x1fa00]);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route8 Blind laser allocation: {cases} ROM cases");
+}

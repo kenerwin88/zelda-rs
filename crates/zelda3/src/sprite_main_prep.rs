@@ -1156,7 +1156,8 @@ impl ZeldaState {
         self.game_state.sprites.workspace.prep_shared_counter() as i32
     }
 
-    // The allocation prefix is instruction-identical in $1D:E475 and $1E:A488.
+    // The allocation prefix is instruction-identical at $1D:E475, $1E:A488
+    // and $1D:A0B8.
     // `entry` identifies ROM instructions, never a scene or a fitted price.
     fn garnish_alloc_overwrite_old_marked(&mut self, entry: u32) -> usize {
         let b = crate::cycle_ledger::blocks(self.lag_free);
@@ -3289,7 +3290,13 @@ impl ZeldaState {
     }
 
     pub(super) fn blind_laser_spawn_trail_garnish(&mut self, j: usize) {
-        let k = self.garnish_alloc_overwrite_old() as usize;
+        // $1D:A0B1..A10F: complete inline allocation/publication body.
+        // The source AND #$00 never takes its early-return branch.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1da0b1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1da0b1);
+        let k = self.garnish_alloc_overwrite_old_marked(0x1da0b8);
+        b.block(0x1da0d2);
         let value = 15;
         self.garnish_slot_view_mut(k).set_garnish_type(value);
         self.garnish_state_mut().set_active_type(15);
@@ -3304,6 +3311,7 @@ impl ZeldaState {
         self.garnish_set_y(k, self.sprite_get_y(j).wrapping_add(16));
         let value = 10;
         self.garnish_slot_view_mut(k).set_countdown(value);
+        b.block(0x1da10f);
     }
 
     pub(super) fn running_boy_spawn_dust_garnish(&mut self, k: usize) {

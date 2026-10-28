@@ -1563,24 +1563,38 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SweepingLady_Draw(int k) {  // 8dc4eb
     pub(super) fn sweeping_lady_draw(&mut self, k: usize) {
+        // $0D:C4EB..C50A: two-child drawing caller, excluding both bodies.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dc4eb));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dc4eb);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &SWEEPING_LADY_DRAW_FRAMES[base..base + 2],
         );
+        b.block(0x0dc506);
         // ROM $0D:C506
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x0dc50a);
     }
 
     // -----------------------------------------------------------------------
     // void Sprite_SweepingLady(int k) {  // 8dc4ad
     pub(super) fn sprite_sweeping_lady(&mut self, k: usize) {
+        // $0D:C4AD..C4CA: complete self caller; inactive child can double return.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dc4ad));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dc4ad);
         self.sweeping_lady_draw(k);
+        b.block(0x0dc4b0);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x0dc4b3);
         self.sprite_show_solicited_message(k, 0x00a5);
+        b.block(0x0dc4bb);
         self.sprite_behave_as_barrier(k);
+        b.block(0x0dc4bf);
         let value = self.game_state.frame.frame_counter >> 4 & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
     }

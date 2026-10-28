@@ -679,19 +679,33 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BunnyBeam(int k) {  // 9d85e0
     pub(super) fn sprite_bunny_beam(&mut self, k: usize) {
+        // $1D:85E0..85F9: selector and complete dormant state; active body
+        // and its resumed drawing return already own $8600 onward.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d85e0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1d85e0);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.block(0x1d85e5);
             self.sprite_prep_oam_coord(k);
+            b.block(0x1d85e9);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
             // ROM $1D:85EC -> $1D:8094, $1D:8657 -> $1D:8094 -> $06:E496
-            if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) == 0 {
+            b.block(0x1d85ec);
+            let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            b.block(0x1d85ef);
+            if collision == 0 {
+                b.block(0x1d85f1);
                 self.sprite_slot_view_mut(k).add_ai_state(1);
                 let value = 128;
                 self.sprite_slot_view_mut(k).set_delay_main(value);
-            }
+            } else { b.taken(0x1d85ef); }
+            b.block(0x1d85f9);
             return;
         }
+        b.taken(0x1d85e3);
+        drop(_scope);
 
         // $1D:85E3 BNE $8600: complete active-entry self work through $8669; the draw,
         // inactive, damage, movement and collision children stay separate.

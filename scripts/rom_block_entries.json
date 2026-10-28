@@ -461,5 +461,12 @@
   {"entry": "00d5ce", "end": "00d619", "m8": false, "x8": false},
   {"entry": "00dfb8", "end": "00e031", "m8": false, "x8": false},
   {"entry": "09c47b", "end": "09c482", "x8": false},
-  {"entry": "0197f0", "end": "019813", "m8": false, "x8": false}
+  {"entry": "0197f0", "end": "019813", "m8": false, "x8": false},
+  {"entry":"05e1a7","end":"05e1f0"},
+  {"entry":"0dc4ad","end":"0dc4cb"},
+  {"entry":"0dc4eb","end":"0dc50b"},
+  {"entry":"1d85e0","end":"1d85fa"},
+  {"entry":"1ea462","end":"1ea488"},
+  {"entry":"1dc9df","end":"1dca24"},
+  {"entry":"1da0b1","end":"1da110"}
 ]

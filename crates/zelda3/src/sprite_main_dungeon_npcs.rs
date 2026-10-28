@@ -2100,36 +2100,60 @@ impl ZeldaState {
                 }
                 self.thief_common(k);
             }
-            3 => {
-                self.thief_check_collision_with_link(k);
-                let j = self.thief_scan_for_booty(k);
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_view_mut(k).increment_subtype2();
-                    let i = 4 + self
-                        .sprite_slot_view(k)
-                        .direction()
-                        .wrapping_add(self.sprite_slot_view(k).subtype2() & 4);
-                    self.sprite_slot_view_mut(k)
-                        .set_graphics(THIEF_GFX[usize::from(i)]);
-                    if self.sprite_slot_view(k).wall_collision() == 0 {
-                        self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
-                    }
-                    self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
-                    let direction = self.sprite_slot_view(k).head_direction();
-                    self.sprite_slot_view_mut(k).set_direction(direction);
-                }
-                if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0 {
-                    let j = usize::from(j);
-                    let target_x = self.sprite_get_x(j);
-                    let target_y = self.sprite_get_y(j);
-                    let head_direction =
-                        self.sprite_direction_to_face_location(k, target_x, target_y);
-                    self.sprite_slot_view_mut(k)
-                        .set_head_direction(head_direction);
-                }
-            }
+            3 => self.thief_stealing(k),
             _ => {}
         }
+    }
+
+    pub(super) fn thief_stealing(&mut self, k: usize) {
+        // $1D:C9DF..CA23: complete state-three self; animation, scan,
+        // collision, movement and direction children stay separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dc9df));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dc9df);
+        self.thief_check_collision_with_link(k);
+        b.block(0x1dc9e2);
+        let j = self.thief_scan_for_booty(k);
+        b.block(0x1dc9e5);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x1dc9eb);
+            self.sprite_slot_view_mut(k).increment_subtype2();
+            let i = 4 + self
+                .sprite_slot_view(k)
+                .direction()
+                .wrapping_add(self.sprite_slot_view(k).subtype2() & 4);
+            self.sprite_slot_view_mut(k)
+                .set_graphics(THIEF_GFX[usize::from(i)]);
+            b.block(0x1dc9ee);
+            if self.sprite_slot_view(k).wall_collision() == 0 {
+                b.block(0x1dc9f3);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
+            }
+            else { b.taken(0x1dc9f1); }
+            b.block(0x1dc9f6);
+            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+            b.block(0x1dc9f9);
+            let direction = self.sprite_slot_view(k).head_direction();
+            self.sprite_slot_view_mut(k).set_direction(direction);
+        }
+        else { b.taken(0x1dc9e9); }
+        b.block(0x1dc9ff);
+        if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0 {
+            b.block(0x1dca07);
+            let j = usize::from(j);
+            // No booty returns Y=$FF; the caller still reads that raw index.
+            for (pc, low) in [(0x1dca07, 0x10), (0x1dca0c, 0x30), (0x1dca16, 0x20)] {
+                if j + low > 0xff { b.crossing(pc); }
+            }
+            let target_x = self.sprite_get_x(j);
+            let target_y = self.sprite_get_y(j);
+            let head_direction =
+                self.sprite_direction_to_face_location(k, target_x, target_y);
+            b.block(0x1dca1f);
+            self.sprite_slot_view_mut(k)
+                .set_head_direction(head_direction);
+        } else { b.taken(0x1dca05); }
+        b.block(0x1dca23);
     }
 
     fn thief_common(&mut self, k: usize) {

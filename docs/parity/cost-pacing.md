@@ -15105,3 +15105,112 @@ proof matrices and final patch bind this stop. Retained evidence is approximatel
 Snes9x execution, protected-cache/shared-ledger write, cargo fmt, commit, push
 or one-off repository script was used. Remaining pricing and continuous live
 ending acceptance remain unfinished.
+
+
+## Route pricing 8
+
+**Verified partial CPU-only stop on `codex/route8`, base `ef8c80c7`.**
+Evidence: `target/route8/`. The single final unsharded ROM census uses
+read-only **full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate
+**PASSes all 1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**,
+and every runtime hold equals P2.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,773 | **2,763** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 454 | **454** |
+| 461,989..1,473,122 | 2,193 | **2,183** |
+
+Missing holds fall **2,773 → 2,763**;
+**10 restored**, **0 lost**, with no new missing iteration or changed
+source context. `baseline-identity.json` binds the retained Route 7 predictor,
+profiles, source and binary hashes to this exact base. No duplicate main census
+or seeded live census was run. The whole-route raw owner ranking is recomputed
+on all **2,740 baseline missing iterations**, checking the unchanged exact multi-hold
+inverses before reuse. Raw parent/alias differences remain ownership worklists,
+not additive prices. Ties prefer earlier route iterations.
+
+Seven complete self bodies/entries add **59 blocks /
+153 instructions** from `scripts/rom_block_costs.py`.
+All **3,065 existing generated rows remain byte-identical**.
+Markers are lagless-only and cite source addresses. These selected self bodies
+had **zero legacy `charge(N)` scalars**, and retain none. Existing child prices
+and default/ROM-timing accounting remain unchanged.
+
+| Self family | Entry | New clocks on frozen misses | Independent executed-marker flips |
+| --- | --- | ---: | ---: |
+| Bunny Beam selector / dormant state | `$1d85e0` | 70,470 | 3 |
+| Blind laser inline trail allocation | `$1da0b1` | 27,132 | 2 |
+| Thief stealing state | `$1dc9df` | 20,894 | 2 |
+| Laser Beam caller | `$1ea462` | 17,940 | 2 |
+| Solicited message self checks | `$05e1a7` | 14,518 | 0 |
+| Sweeping Lady handler | `$0dc4ad` | 8,480 | 0 |
+| Sweeping Lady drawing caller | `$0dc4eb` | 8,280 | 0 |
+
+Independent scores overlap. The retained original instruction subset covers
+**1,974 baseline missing iterations**; `source-predictions.json`
+records its independent scores. Complete standalone ROM fixtures establish
+all admitted entries beyond that subset. Absence of a generated marker alone
+is not evidence of unpriced work. Higher routing, drawing, collision, velocity
+and slot-dispatch aliases retain their existing scalar/model/child ownership.
+**Module09 is untouched**: Route pricing 2's all-entry retirement partition
+remains unestablished. The separately owned dungeon/graphics conversion files
+are untouched. Prior behavior disagreements, dynamic MVN and unresolved
+Swamola/Cucco/Trinexx handoffs remain excluded. Remaining owners are not exhausted.
+
+Bunny Beam prices the complete dormant state and its actual active selector,
+leaving the existing active/drawing-return continuation and its attribution
+unchanged. Blind laser's complete allocation helper reuses the instruction-identical
+30-slot scan/overwrite prefix at its actual `$1D:A0B8` entry; its source
+`AND #$00` branch is never taken. The raw allocator has no price to duplicate.
+Thief's actual state-three table target is extracted with identical operations,
+excluding scan, animation, movement, collision and direction children. Laser Beam
+prices its caller around existing drawing, inactive, allocation, movement,
+damage and collision work. The three auditor-reviewed candidates price only
+solicited-message checks and Sweeping Lady's two callers, excluding every child.
+Inactive double returns omit the unexecuted suffix. `pricing-audit.json` checks
+the real source calls and Thief table binding.
+
+**167,714 new marker clocks = 167,714 signed main-counter clocks**
+on every frozen missing row, with **0 work mismatches**.
+Original instruction work grouped into the new generated blocks agrees on
+all **1,974 covered rows**, with **0 source mismatches**.
+The unchanged full-cohort inverse predicts **9** recoveries;
+observed cohort recovery is **10**, with
+**1 prediction exception**.
+The one fixed-inverse exception is **1,297,844**: Laser Beam's **108** new
+caller clocks change the existing iris raster wait **0 → 270,026** clocks,
+restoring one hold. `prediction-exception-rows.json` retains the row; no price,
+threshold or caller admission is adjusted for this barrier effect.
+`work-proof.json`, compressed source instruction work and `frame-flips.json.gz`
+retain the matrices. These are instruction-work/logical-scheduling receipts,
+not physical CPU/NMI or exact A/V proof. No price is fitted to lag counts;
+no classifier, pacing rule, scene threshold/multiplier/table or SPC/APU behavior changes.
+
+The single cold continuous live replay uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, and zero post-initial
+reseeds. It completes **500,000 tested iterations**. Its first classified state
+difference is **462,627**, **`song-end-poll`**, compared with base **462,627**;
+last clean index **462,626**. The unchanged strict gate reports
+`census gate: FAIL (unexplained=37433, complete=True)`. This bounded first-divergence receipt is not full-route
+live or ending acceptance. `live-classification-summary.json` retains first
+rows and counts; complete rows are compressed directly through a FIFO.
+Observations after divergence do not extend the clean prefix.
+
+All **six new `assert_rom_marker_work` fixtures / 496 ROM cases per feature
+configuration** pass.
+Touched-area checks pass **180 drawing, 119 sprite-helper, 7 Mothula,
+39 preparation and 15 dungeon-NPC tests**. Nine Python generator/worklist tests, exact table regeneration
+and `git diff --check` pass. Both production builds are warning-free; pre-existing
+lib-test warnings remain separate. Full library suites, GPU tests and seeded
+live censuses were not run. The **default 200k ledger matches every record and EOF**,
+including state, display, SRAM and audio.
+
+All **1,512 protected ledger/cache input files** retain their file set, sizes
+and nanosecond mtimes. Frozen source/binary hashes, commands, gates and matrices
+bind this stop. Retained evidence is below **3 GB**. No GPU run, `--video`,
+cached-av, Snes9x execution, protected-cache/shared-ledger write, cargo fmt,
+commit, push or one-off repository script was used. Remaining pricing and
+continuous live ending acceptance remain unfinished.

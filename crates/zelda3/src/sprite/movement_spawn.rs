@@ -1433,28 +1433,62 @@ impl ZeldaState {
     // typically gates on the 0x100 bit) or `dir ^ 0x103` once dialogue is
     // actually triggered. Mirrors the C `int` return.
     pub(in crate::zelda_rtl) fn sprite_show_solicited_message(&mut self, k: usize, msg: u16) -> u16 {
+        // $05:E1A7..E1EF: self instructions only; damage, busy, direction
+        // and unconditional-message children retain their separate ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e1a7));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05e1a7);
         self.dialogue_message_index_mut().set_value(msg);
-        // ROM $05:E1AD
-        if !self.sprite_check_damage_same_layer_long_marked(k)
-            || self.sprite_check_if_link_is_busy()
-            || (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0
-            || self.sprite_slot_view(k).delay_aux4() != 0
-            || self
-                .game_state
-                .player
-                .follower_link
-                .is_in_auxiliary_state(2)
-        {
+        let contact = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x05e1b1);
+        let rejected = if !contact {
+            b.taken(0x05e1b1);
+            true
+        } else {
+            b.block(0x05e1b3);
+            let busy = self.sprite_check_if_link_is_busy();
+            b.block(0x05e1b7);
+            if busy {
+                b.taken(0x05e1b7);
+                true
+            } else {
+                b.block(0x05e1b9);
+                if (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0 {
+                    b.taken(0x05e1bb);
+                    true
+                } else {
+                    b.block(0x05e1bd);
+                    if self.sprite_slot_view(k).delay_aux4() != 0 {
+                        b.taken(0x05e1c0);
+                        true
+                    } else {
+                        b.block(0x05e1c2);
+                        if self.game_state.player.follower_link.is_in_auxiliary_state(2) {
+                            b.taken(0x05e1c6);
+                            true
+                        } else { false }
+                    }
+                }
+            }
+        };
+        if rejected {
+            b.block(0x05e1eb);
             return u16::from(self.sprite_slot_view(k).direction());
         }
+        b.block(0x05e1c8);
         let dir = self.sprite_direction_to_face_link(k);
+        b.block(0x05e1cb);
         if self.game_state.player.follower_link.facing()
             != SPRITE_SHOW_SOLICITED_MESSAGE_MESSAGE_FACING_BY_DIRECTION[(dir & 3) as usize]
         {
+            b.taken(0x05e1d4);
+            b.block(0x05e1eb);
             return u16::from(self.sprite_slot_view(k).direction());
         }
+        b.block(0x05e1d6);
         let msg_index = self.game_state.messaging.dialogue_message_index.value();
         self.sprite_show_message_unconditional(msg_index);
+        b.block(0x05e1e1);
         let value = 64;
         self.sprite_slot_view_mut(k).set_delay_aux4(value);
         u16::from(dir) ^ 0x103

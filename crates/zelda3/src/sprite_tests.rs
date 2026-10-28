@@ -3423,3 +3423,34 @@ fn prefix4_debris_matches_rom() {
         }
     }
 }
+
+#[test]
+fn route8_solicited_message_self_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for (x, y) in [(0x40u16, 0x40u16), (0x40, 0x50), (0x50, 0x40), (0x40, 0x30), (0x30, 0x40), (0x200, 0x200)] {
+            for gate in 0..6 {
+                for facing in [0, 2, 4, 6] {
+                    let mut n = marker31_state();
+                    n.sprite_set_x(k, x); n.sprite_set_y(k, y);
+                    for (a, v) in [(0xdd0 + k, 9), (0xde0 + k, 2),
+                        (0xf10 + k, if gate == 3 { 1 } else { 0 }),
+                        (0xf6, if gate == 2 { 0 } else { 0x80 }),
+                        (0x4d, if gate == 4 { 2 } else { 0 }),
+                        (0x2f, facing), (0x2e4, if gate == 1 { 1 } else { 0 }),
+                        (0xee0 + k, if gate == 0 { 1 } else { 0 })] {
+                        n.write_wram_byte(a, v);
+                    }
+                    n.sync_native_game_state_from_ram();
+                    let mut s = marker31_machine(&n, 0x05e1a7, k).expect("ROM fixture");
+                    s.cpu.a = 0xa5; s.cpu.y = 0;
+                    crate::cycle_ledger::assert_rom_marker_work(0x05e1a7, s,
+                        |s| s.cpu.k == 5 && (0xe1a7..0xe1f0).contains(&s.cpu.pc),
+                        || { n.sprite_show_solicited_message(k, 0xa5); });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route8 solicited message: {cases} ROM cases");
+}
