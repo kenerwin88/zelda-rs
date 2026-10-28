@@ -769,3 +769,124 @@ No GPU run, `--video`, cached-av, external Snes9x process, protected-cache or
 shared-ledger write, cargo fmt, commit or push was performed. Source execution
 and receipt checks share emulator code. Full source classification, live
 ordered pairing and pricing admission remain incomplete.
+
+## M2b result
+
+**Pricing verdict: STOP. Continuous call reconstruction and a live ordered
+marker subset are verified; complete instruction-to-site ownership and scalar
+exclusion remain incomplete.** Work is on `codex/shadow-m2` at `b7cfeb65` plus
+uncommitted auditor changes. The pricing worktree was not touched. No runtime
+or pricing change, commit or push was made.
+
+### Continuous lane and bridge rules
+
+An internal NMI does not invalidate the retained continuous machine's main
+work. Capture now includes every ordinary entry at `$00:8038`, independently
+of the native-seeded fork import map. Entry classifications and the fork map
+are unchanged. `unmapped_resume_handoff` remains a fork limitation; continuous
+accounting records an interrupt cut and continues the same logical call.
+Handler instructions and interrupt-entry transactions remain excluded from
+main instruction work. No native state is imported at a resume.
+
+The feature-gated `bridge ROM SOURCE_OUT PREDICTOR EVENTS FRESH_OUT` command
+reconstructs JSR/JSL frames from actual targets and return PC/SP, checks RTS/RTL
+pull widths, and retains JMP/JML tails under the inherited return frame.
+Named tests cover local RTS dispatch, pulled-frame double returns, priced-child
+interior partitions, native root fragments, and native paths projected onto
+source ancestors. Shared-tail occurrence order follows executed alias entries,
+not frame creation order. Repeated scope/block cardinalities must agree before
+pairing; width, site and taken/page extras must also agree. Uncharged scopes
+are retained.
+
+The unchanged generated blocks expand into ROM opcode PCs, following REP/SEP
+and checking actual M/X and DP. Each admitted source opcode is owned once.
+Taken extras use the retired next PC across interrupt acceptance; absolute
+indexed page extras use captured X/Y. Indexed-indirect pages without a pointer
+witness, incompatible widths, unresolved aliases and reordered paths remain
+unmatched. Native extra sites accompany the base marker site. Scalars and VWF
+remain unmatched: numeric agreement is not an instruction-set exclusion proof.
+
+### Verified prefix and ordered accounting
+
+A fresh reset-driven pass executes **60,000 hosts / 755,156,459 opcodes** and
+again verifies **53,706 iterations (0..53,705)**. Its decompressed summaries
+and entry classifications are byte-identical to M2's retained prefix. The new
+capture contains **4,285,899 main opcodes** for all **55 ordinary missing
+iterations / 63 missing holds**. All 55 call-frame reconstructions succeed,
+including **324 internal interrupt cuts**. No further prefix was attempted;
+1,419,417 remaining iterations and source EOF are still unverified.
+
+Native replay completes 53,706 iterations with **no WRAM divergence**. Its
+predictor is byte-identical to the canonical default census prefix. Selected
+observation retains **9,058,244 events**: 3,515,886 entries, the same number of
+exits, 2,026,362 charges, and 55 begin/end pairs. An initial whole-window reader
+stopped at its event guard without admitting prices. The final reader streams
+compact records one iteration at a time, validating scope nesting and charge
+paths, including zero charges. The direct final join exits zero in **74.839 s**,
+with **418,562,048 bytes peak RSS** measured by macOS `getrusage`.
+
+The kernel admits **24,535 equal block occurrences / 3,197,516 clocks**.
+Independent counters reconcile in every iteration:
+
+| Ordinary entry group | Iterations / missing holds | S | N | P = Q | U | O | S - N |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Admitted `09/00` | 29 / 29 | 8,946,084 | 8,520,516 | 995,682 | 7,950,402 | 7,524,834 | 425,568 |
+| Unadmitted ordinary | 26 / 34 | 116,947,094 | 93,625,966 | 2,201,834 | 114,745,260 | 91,424,132 | 23,321,128 |
+| **Total** | **55 / 63** | **125,893,178** | **102,146,482** | **3,197,516** | **122,695,662** | **98,948,966** | **23,746,696** |
+
+**E is zero in each iteration**, and every admitted pair has equal clocks.
+Thus **none of S-N in any of the 55 iterations is explained by an admitted
+pricing correction**: the entire remaining signed difference is U-O. This is
+partial ownership coverage, not an exact iteration pass. Individual equations
+are in `target/shadow-m2/m2b-join-final/iterations.jsonl.zst` and its coverage
+report.
+
+There are **184 unmatched kernel rows**: 92 `ordered_path_mismatch` rows plus
+46 source-only and 46 native-only rows. These include the `$06:EAA4` direction
+predicate family: native below/right helper and intervening parent-marker
+order differs from source order, notably `$06:EAE8` and `$06:EAA7` in
+`sprite/movement_spawn.rs`. No semantic commutation rule is proved, so these
+rows are not sorted into apparent agreement. Remaining source/native work is
+explicitly unmatched, predominantly scalars and unresolved call/block mappings.
+
+### Worklist and pricing gate
+
+`target/shadow-m2/m2b-join-final/worklist.json` has **zero validated positive
+gaps, zero validated overcharge repairs, zero exclusive gap clocks and zero
+missing holds covered**. Both validated rankings, by clocks and by holds
+covered, are empty. Unmatched native work may still contain overcharges.
+Residuals retain ROM PC/end, call path, actual widths, native site candidates,
+clocks and affected missing holds, with scalar exclusion explicitly false.
+They are investigation rows, not pricing instructions.
+
+**STOP for pricing batches consuming this worklist.** Prove scalar instruction
+ownership and resolve the concrete site/ordering residuals with fixtures before
+admitting exclusive gaps. The continuous lane's internal-interrupt objection is
+resolved; it is not the remaining reason to stop.
+
+### Rate, verification and retained evidence
+
+The source pass takes **799.603 s** including final identity verification:
+**75.04 source hosts/s / 944,414 opcodes/s**. Instrumented execution alone is
+787.424 s, or 76.20 hosts/s / 959,022 opcodes/s. Concurrent compilation and CPU
+checks affected machine load; these are measured prefix rates, not a full-route
+projection.
+
+All **26 auditor-package unit tests**, disabled-feature package tests, and
+**three filtered native observer tests** pass. Default, no-default-feature and
+feature-enabled product builds, and enabled/disabled auditor builds, are
+warning-free. Existing lib-test dead-code warnings are separate from ordinary
+builds; no full library suite or GPU test ran. The fresh default **200,000-frame
+state ledger matches every record and EOF**. On a fresh 35,311-iteration feature
+replay, observer off/on predictor, routine, block, object and sprite CSVs and
+stdout are byte-identical. `git diff --check` passes.
+
+Evidence is under `target/shadow-m2/m2b-*`: frozen source manifest/code,
+source reproduction/rate report, native selection/events/process receipts,
+final join call/block/residual streams and coverage/worklist, build/test logs,
+observer comparison and verification receipt. Superseded Cargo outputs were
+pruned first; disk samples and final pruning keep the workspace below
+3,000,000,000 bytes. No GPU, video, cached-av, external Snes9x, protected-cache
+or shared-ledger write, pricing/pacing/classifier/P2/marker/table/seeding change,
+cargo fmt, commit or push was performed. This remains CPU audit evidence, not
+independent hardware or exact A/V acceptance.

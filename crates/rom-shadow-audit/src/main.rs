@@ -30,6 +30,7 @@ fn freeze(rom: &Path,sram: &Path,input: &Path,ledger: &Path) -> Result<Manifest>
         ("block_table",Path::new("crates/zelda3/src/rom_block_costs.rs")), ("block_entries",Path::new("scripts/rom_block_entries.json")),
         ("import_map_and_contract",Path::new("crates/rom-shadow-audit/src/lib.rs")),("auditor_source",Path::new("crates/rom-shadow-audit/src/main.rs")),
         ("ordered_pairing",Path::new("crates/rom-shadow-audit/src/ordered.rs")),("stream_accounting",Path::new("crates/rom-shadow-audit/src/accounting.rs")),
+        ("continuous_bridge",Path::new("crates/rom-shadow-audit/src/bridge.rs")),
         ("source_executor",Path::new("crates/snes/src/cpu_synchronous_executor/source_cpu.rs"))] {
         identities.insert(name.into(),Identity::bind(path)?);
     }
@@ -244,7 +245,8 @@ fn source(args:&[String])->Result<()> {
             if step.origin_pc==0x008038 && main_depth==0 {
                 if let Some((index,entry_host,return_pc))=pending_ordinary.take() {
                     let kind=entry_kind(module,snes.ram[0x11],step.origin_pc);
-                    ordinary=kind=="ordinary_admitted";
+                    // The continuous machine needs no native fork import map.
+                    ordinary=matches!(kind,"ordinary_admitted"|"ordinary_unadmitted");
                     *census_counts.entry(format!("{kind}/{module:02x}/{:02x}",snes.ram[0x11])).or_default()+=1;
                     writeln!(census,"{}",json!({"iteration":index,"host":entry_host,"pc":step.origin_pc,
                         "handler_return_pc":return_pc,"entry_host":host,"module":module,"submodule":snes.ram[0x11],"kind":kind,
@@ -280,6 +282,10 @@ fn source(args:&[String])->Result<()> {
                         "ordinal":count-1,"pc":step.origin_pc,"opcode":step.opcode,"master":clocks,
                         "m8":previous_registers.mf,"x8":previous_registers.xf,
                         "dp":previous_registers.dp,"db":previous_registers.db,"sp":previous_sp,
+                        "x":previous_registers.x,"y":previous_registers.y,"emulation":previous_registers.e,
+                        "retired_next_pc":match step.accepted_interrupt {
+                            Some(Interrupt::Nmi{interrupted_pc,..}|Interrupt::Irq{interrupted_pc,..})=>interrupted_pc,
+                            None=>pc(exec)},
                         "next_pc":pc(exec),"next_sp":snes.cpu.sp,"interrupt_after":step.accepted_interrupt.is_some(),
                         "status":"source_partition_only"}))?;
                 }
@@ -320,14 +326,14 @@ fn source(args:&[String])->Result<()> {
                         pending_ordinary=None;
                         *census_counts.entry(format!("resumed/{module:02x}/{:02x}",snes.ram[0x11])).or_default()+=1;
                         writeln!(census,"{}",json!({"iteration":row.index,"host":host,"pc":next_pc,
-                            "module":module,"submodule":snes.ram[0x11],"kind":"resumed","status":"unmapped_resume_handoff"}))?;
+                            "module":module,"submodule":snes.ram[0x11],"kind":"resumed","status":"continuous_entry_requires_call_context"}))?;
                     }
                     if step.accepted_interrupt.is_none() {return Ok(());}
                 } else if main_active && !resumed_seen && depth==0 && matches!(module,7|9) {
                     resumed_seen=true;
                     let index=current.as_ref().map(|r|r.index);
                     resume_cut=Some(json!({"iteration":index,"host":host,"pc":pc(exec),"module":module,"submodule":snes.ram[0x11]}));
-                    let mut r=Residual::new("main_instruction","native_resume_unmapped",index,None);
+                    let mut r=Residual::new("native_seeded_fork","unmapped_resume_handoff",index,None);
                     r.source_pcs.push(pc(exec));r.witness=Some("entries.jsonl.zst/resumed_entry".into());
                     writeln!(residuals,"{}",serde_json::to_string(&r)?)?;
                     writeln!(entries,"{}",json!({"kind":"resumed_entry","iteration":current.as_ref().map(|r|r.index),"host":host,"state":entry(exec)?,"restore_reexecute":checkpoint_trial(exec)?,"native_seeded":{"status":"unmapped_resume_handoff","source_pc":pc(exec),"reason":"native entry image and endpoint cannot prove continuation registers, live locals or retired-opcode cursor"}}))?;trial_count+=1;
@@ -488,8 +494,9 @@ fn main()->Result<()> {
         Some("source")=>source(&args[1..]),Some("receipts")=>receipts(&args[1..]),Some("census")=>census(&args[1..]),
         Some("account") if args.len()==5=>accounting::reconcile(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4])),
         Some("account") if args.len()==7=>accounting::reconcile_window(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4]),args[5].parse()?,args[6].parse()?),
+        Some("bridge") if args.len()==6=>bridge::run(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4]),Path::new(&args[5])),
         Some("verify") if args.len()==2=>serde_json::from_reader::<_,Manifest>(File::open(&args[1])?)?.verify(),
-        _=>Err("rom-shadow-audit: source | receipts | verify (explicit CPU-only commands required)".into())
+        _=>Err("rom-shadow-audit: source | receipts | census | account | bridge ROM SOURCE PREDICTOR EVENTS FRESH_OUT | verify (CPU only)".into())
     }
 }
 

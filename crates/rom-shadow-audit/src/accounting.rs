@@ -1,6 +1,6 @@
 //! Conservative live-stream reconciliation before call/site alignment admission.
 //! This deliberately cannot promote a routine difference into a price.
-use crate::{Conservation,Identity,Result,ordinary_regions};
+use crate::{Conservation,Identity,Result};
 use serde_json::{json,Value};
 use std::{collections::BTreeMap,fs::{self,File},io::{BufRead,BufReader,Write},path::Path};
 
@@ -36,8 +36,9 @@ pub fn reconcile_window(source:&Path,predictor:&Path,events:&Path,out:&Path,lo:u
         if !instructions.contains_key(&i) {continue;}
         let module=u8::try_from(row["module"].as_u64().ok_or("entry module")?)?;
         let sub=u8::try_from(row["submodule"].as_u64().ok_or("entry submodule")?)?;
-        if row["kind"]!="ordinary_admitted" {return Err("accounting entry is not admitted".into());}
-        ordinary_regions(module,sub,u32::try_from(row["pc"].as_u64().ok_or("entry PC")?)?)?;
+        if !matches!(row["kind"].as_str(),Some("ordinary_admitted"|"ordinary_unadmitted")) || row["pc"]!=0x8038 {
+            return Err("continuous accounting requires an ordinary source entry".into());
+        }
         if entries.insert(i,format!("{module:02x}/{sub:02x}@008038")).is_some() {return Err("duplicate accounting entry".into());}
     }
     let mut source_totals=BTreeMap::new();
@@ -94,12 +95,12 @@ pub fn reconcile_window(source:&Path,predictor:&Path,events:&Path,out:&Path,lo:u
             writeln!(blocks,"{}",json!({"iteration":i,"entry_variant":entry,"pc":r["pc"],"ordinal":r["ordinal"],
             "m8":r["m8"],"x8":r["x8"],"source_master":r["master"],"native_master":null,
             "signed_pair_error":null,"interrupt_after":r["interrupt_after"],"native_site":null,
-            "status":if after_interrupt {"unmapped_resume_handoff"}else{"source_call_site_unmapped"}}))?;
+            "status":"source_call_site_unmapped"}))?;
             if r["interrupt_after"]==true {
                 after_interrupt=true;
-                writeln!(residuals,"{}",json!({"iteration":i,"domain":"main_instruction","reason":"unmapped_resume_handoff",
+                writeln!(residuals,"{}",json!({"iteration":i,"domain":"main_instruction","reason":"continuous_interrupt_cut",
                     "source_pc":r["pc"],"source_resume_pc":source_rows.get(ordinal+1).map(|r|&r["pc"]),
-                    "master_clocks":null,"native_site_candidates":[],"entry_variant":entry}))?;
+                    "master_clocks":0,"interrupt_handler_excluded":true,"native_site_candidates":[],"entry_variant":entry}))?;
             }
         }
         interrupted_iterations+=usize::from(after_interrupt);
@@ -120,7 +121,7 @@ pub fn reconcile_window(source:&Path,predictor:&Path,events:&Path,out:&Path,lo:u
             "signed_pair_error":null,"retirement_stage":"unknown","domain":r["domain"],"status":"native_call_source_unmapped"}))?;}
         writeln!(blocks,"{}",json!({"iteration":i,"domain":"vwf_separate","source_master":null,"native_master":vwf,"status":"vwf_unmapped"}))?;
         writeln!(iterations,"{}",json!({"iteration":i,"entry_variant":entry,"conservation":c,"source_independent_equal":true,
-            "native_independent_equal":true,"unmapped_resume_handoff":after_interrupt,"resumed_source_instructions":resumed_instructions,
+            "native_independent_equal":true,"continuous_interrupt_cut":after_interrupt,"post_interrupt_source_instructions":resumed_instructions,
             "alignment":"unproved_call_site_mapping","exact":false}))?;
         joined+=1;
     }
@@ -129,7 +130,7 @@ pub fn reconcile_window(source:&Path,predictor:&Path,events:&Path,out:&Path,lo:u
     let report=json!({"identities":identities,"source_missing_ordinary_iterations":instructions.len(),
         "iteration_window":[lo,hi],
         "source_and_native_counter_reconciled":joined,"native_window_unobserved":missing_native,
-        "unmapped_resume_iterations":interrupted_iterations,
+        "continuous_interrupt_iterations":interrupted_iterations,
         "ordered_pairing_admitted":false,"pricing_verdict":"STOP","reason":"live call/site mapping not proved"});
     serde_json::to_writer_pretty(File::create(out.join("coverage.json"))?,&report)?;
     serde_json::to_writer_pretty(File::create(out.join("worklist.json"))?,&json!({"validated_positive_gaps":[],
@@ -161,6 +162,15 @@ mod tests {
         let report:Value=serde_json::from_reader(File::open(good.join("coverage.json")).unwrap()).unwrap();
         assert_eq!(report["source_and_native_counter_reconciled"],1);
         assert_eq!(report["ordered_pairing_admitted"],false);
+        // Continuous entry admission does not use the fork import map, and a
+        // lag NMI does not invalidate the already retained continuation.
+        compressed(&root.join("entry-kinds.jsonl.zst"),"{\"iteration\":0,\"kind\":\"ordinary_unadmitted\",\"module\":0,\"submodule\":1,\"pc\":32824}\n");
+        compressed(&root.join("source-instructions.jsonl.zst"),&instructions.replace("\"master\":60","\"master\":60,\"interrupt_after\":true"));
+        let continuous=root.join("continuous");reconcile(&root,&predictor,&events,&continuous).unwrap();
+        let residuals=zstd::decode_all(File::open(continuous.join("residuals.jsonl.zst")).unwrap()).unwrap();
+        let residuals=String::from_utf8(residuals).unwrap();
+        assert!(residuals.contains("continuous_interrupt_cut"));assert!(!residuals.contains("unmapped_resume_handoff"));
+        compressed(&root.join("source-instructions.jsonl.zst"),instructions);
         fs::write(&events,stream.replace("\"ledger_master\":100","\"ledger_master\":99")).unwrap();
         assert!(reconcile(&root,&predictor,&events,&root.join("wrong-counter")).is_err());
         fs::write(&events,stream).unwrap();
