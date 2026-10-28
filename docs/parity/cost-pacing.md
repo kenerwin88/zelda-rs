@@ -13525,3 +13525,171 @@ uncommitted patch bind this stop. Output is **294.0 MB**, below 3 GB.
 There were no GPU runs, `--video`, cached-av or Snes9x execution, oracle-cache or
 shared-ledger writes, cargo fmt, commits, pushes, or one-off repository scripts.
 The batch-43 and continuous-4 owners and batch-44's in-flight files were excluded.
+
+## Prefix closure 2
+
+**Verified partial CPU-only stop on `codex/prefix2`, main `d8c9d52c`.**
+Evidence: `target/prefix2/`. The fresh main ROM probes recompute **113 missing
+frames in 105 iterations** in `0..94,852`, and **58 in 58 iterations** in
+`94,853..142,086`. These are the before counts for this batch; Prefix closure 1's
+119 belongs to its earlier base. The supplied full-main ROM baseline is
+**3,277 / 0 / 0**; no full main census was repeated.
+
+### Ranking and admitted source work
+
+`first-owner-ranking.json` and `second-owner-ranking.json` compare the fresh
+main profiles with retained original profiles on **all 163 missing iterations**.
+The inverse is each iteration's existing full-count `cost_shortfall`; iteration
+729's multi-frame deficit uses the independently reproduced no-worker/no-bus P2.
+Independent owner predictions overlap. The raw rankings are not an additive
+price list.
+
+The first raw leaders are SingleLarge `$06:DC10` (31 closures), module routing
+`$00:80B5` (25), slot dispatch `$06:84E2` (16), shadow `$06:DC64` (8), and distress
+`$06:A72F` (6). Grouping large/shadow aliases leaves seven diagnostic closures;
+distress and inactive aliases leave zero. Existing drawing, movement, dispatch,
+startup and transition instruction models/scalars still need source-path and
+continuation ownership admission. No raw parent gap is charged.
+
+The highest admitted first-prefix body is Stalfos drawing (five independent
+closures), followed by sprite-disable and Antifairy drawing (two each).
+Second-prefix raw `RunInterface` leads at seven; its 264-clock dispatcher is
+already priced, and its JML target's work is not a dispatcher tax. The next
+complete self bodies are Desert Barrier drawing (five), Debirando pit drawing
+(four), and Debirando drawing (four). These disjoint bodies are admitted.
+
+**14 complete self bodies/entries, 116 new blocks / 449 ROM instructions** are
+priced with `scripts/rom_block_costs.py`; all **2,219 existing generated rows
+remain byte-identical**. Each has source-address comments. Their old self scalar
+total is **zero**: no legacy `charge(N)` is retained in a newly priced self body.
+Existing child scalars and instruction models remain separate. Partial sprite
+reset and Antifairy CPU-boundary resumes bypass the newly priced complete
+entries. No state classifier, threshold, multiplier, scene table, APU/SPC code,
+or pacing rule changed.
+
+| Owner | Entry | New clocks, first / second cohort | Independent frames, first / second |
+| --- | --- | ---: | ---: |
+| Stalfos draw | `$0D:C21C` | 25,866 / 0 | 5 / 0 |
+| Sprite disable | `$09:C22F` | 101,374 / 43,842 | 2 / 0 |
+| Running Boy long entry | `$05:E8A2` | 4,940 / 0 | 0 / 0 |
+| Running Man caller/state tails | `$05:E8B2` | 26,242 / 0 | 0 / 0 |
+| Running Man animate/dust | `$05:E9AC` | 0 / 0 | 0 / 0 |
+| Running Man run-away | `$05:E9BA` | 0 / 0 | 0 / 0 |
+| Running Man draw | `$05:EA4D` | 11,960 / 0 | 0 / 0 |
+| Kakariko Boy long entry | `$05:FF5E` | 6,270 / 0 | 0 / 0 |
+| Trough Boy caller | `$05:FF66` | 18,012 / 0 | 1 / 0 |
+| Trough Boy draw | `$05:FFDF` | 13,662 / 0 | 1 / 0 |
+| Debirando pit draw | `$05:86E4` | 0 / 74,232 | 0 / 4 |
+| Debirando draw | `$05:8857` | 0 / 76,462 | 0 / 4 |
+| Desert Barrier draw | `$05:9626` | 0 / 33,554 | 0 / 5 |
+| Antifairy draw | `$1D:F395` | 9,716 / 0 | 2 / 0 |
+
+The initial raw-source prediction was **14 + 12** frames. A source ownership
+audit removes **2,240 clocks** of already charged second-PLA/RTS work from caller
+receipts and excludes **2,080 clocks** of `$05:8AB1` shared-tail work called by
+other routines. The original prediction is retained in
+`source-predictions-raw.json`. `existing-tail-witnesses.json` derives failures
+from the fresh **before** per-sprite wrapper receipts: `$05:FA50` costs 126 on
+a normal return and 106 before its double-return tail. These are instruction
+ownership corrections, not prices fitted to lag counts. In particular,
+iteration 121,104's extra 70 clocks were already owned by its child.
+
+The corrected independent source-work prediction is **14 first-prefix + 11
+second-prefix frames**. **446,132 new marker clocks** on the frozen cohort
+equal both the normalized source self-instruction work and the signed
+main-counter increase on every one of the 163 cohort iterations.
+`frame-flips.json` retains the complete source/marker/main counter matrix. The
+combined prediction matches every observed cohort frame change. No prefix hold
+is lost and no new missing iteration appears. This is scoped instruction
+work and logical scheduling evidence, not physical CPU/NMI or A/V equivalence.
+The refreshed residual rankings are retained in
+`remaining-first-owner-ranking.json` and `remaining-second-owner-ranking.json`:
+**99 missing frames in 91 iterations**, then **47 in 47**. These remain raw
+ownership worklists, not admitted prices.
+
+### ROM and continuous live checks
+
+The single final full ROM census uses read-only corrected **full-v2**,
+`--report 0 --seed-every 2000`. Its unchanged gate **PASSes**, all
+**1,473,123 iterations**, unexplained zero and every runtime hold equal to P2.
+
+| Scope | Before missing / excess / FP | After |
+| --- | ---: | ---: |
+| ROM full | 3,277 / 0 / 0, supplied main | **3,197 / 0 / 0** |
+| ROM 0..94,852 | 113 / 0 / 0 | **99 / 0 / 0** |
+| ROM 94,853..142,086 | 58 / 0 / 0 | **47 / 0 / 0** |
+
+The fresh main continuous live control uses `--live-apu-reads`, **no
+`--seed-every`**, and passes its unchanged strict gate through all **142,090
+iterations** (last index 142,089), including both pendant polls. Thus the
+supplied approximately 142,086 first-divergence receipt is **not reproduced on
+this exact base/build**. There are zero actual reseeds, ordinary/song/polygon
+state differences, and unexplained command/RNG/APU-consumption differences.
+The command clocks below still show a large absolute deficit; the bounded
+control does not establish a first divergence beyond its tested prefix.
+
+The final cold continuous live boundary run uses `--logical-replay full-v2 ...
+--report 0 --live-apu-reads --frames 462628`, with **no `--seed-every`**. It
+completes **462,628 iterations**. Its first state difference is
+**462,626**, category `song-end-poll`, room `$0006`.
+The unchanged strict gate **FAILS** with **2 classified state
+comparisons**. The clean prefix is **462,626 iterations**, last clean index
+**462,625**. `live-classification-summary.json` retains each classified
+index. Full-route continuous live acceptance remains unfinished.
+Native polls zero at 462,626 while the source still reads `$13`. Ordinary
+comparisons and RNG/APU consumption are clean; the existing song classification
+also contains one command comparison. No comparison rule was widened.
+
+An initial **200,000-iteration cold live prefix PASSes**. Its complete
+predictor is byte-identical to the first 200,000 iterations of the longer cold
+replay; `live-200k-consistency.json` binds that extension. Neither live run
+uses periodic or post-polygon reseeding. No seeded live census was run.
+The intervening full-route diagnostic was interrupted after this same first
+failure was found; it is not a completed gate or ending receipt.
+
+### Absolute SPC command clocks
+
+The first `$13` command is source iteration **94,216**, native producer
+**94,215**; the second is source **141,450**, native producer **141,449**.
+Original delivery clocks are reused retained, pinned renderless receipts,
+with their complete selected-event reconstruction checks and hashes retained
+in `source-command-receipts.json`. No Snes9x execution was performed here.
+Native timestamps are observational `spc_port_write` delivery records.
+
+| Pendant command | Source absolute SPC cycles | Main | Candidate | Main minus source | Candidate minus source |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| First | 1,758,669,007 | 1,755,276,489 | 1,755,515,336 | -3,392,518 | -3,153,671 |
+| Second | 2,629,764,771 | 2,625,365,738 | 2,625,792,235 | -4,399,033 | -3,972,536 |
+
+Recovered time is **238,847 / 426,497 SPC cycles** at
+the two commands. `command-clocks.json` also retains exact rational
+master-clock equivalents using **328125/15664**. These are absolute SPC
+delivery clocks, not callback-buffer offsets or independently measured CPU bus
+timestamps. Both command observations lie inside the independently verified
+clean 200k live prefix. The deficits remain substantial despite matching these polls;
+no exact PCM or source CPU-clock equivalence is claimed.
+
+### Verification and stopping boundary
+
+All **11 new `assert_rom_marker_work` fixtures / 848 ROM cases** pass. The
+filtered touched-area checks pass: **119 drawing tests**, **117 sprite tests**,
+one transition-cache test and one partial-reset publication test. The **nine
+Python generator/worklist tests**, exact regeneration and `git diff --check`
+pass. Both production builds are warning-free; the reduced lib-test build
+retains its single existing unused-method warning. Full library suites and
+cargo GPU tests were not run.
+
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio. Default/ROM-timing ledgers and existing generated
+prices are unchanged. All **1,512 supplied ledger/cache files** retain size and
+nanosecond mtime, with none added or removed. Source/binary hashes, commands,
+pricing receipts, gates and the uncommitted patch bind this stop. Retained
+output is **461.8 MB**, below **3 GB**. The interrupted live diagnostic
+classification dump temporarily exceeded the cap (**19,508,374,173 bytes**):
+it was stopped, moved out, hashed/summarized and deleted. Its **42,016** records
+are represented by a compressed complete-line prefix, original SHA-256 and
+counts in `probe-pruning.json`; the completed cold boundary run supersedes it.
+No GPU run, `--video`, cached-av, Snes9x execution,
+oracle-cache/shared-ledger write, cargo fmt, commit, push or
+one-off repository script was used. Both prefix deficits and complete
+continuous live acceptance remain unfinished.

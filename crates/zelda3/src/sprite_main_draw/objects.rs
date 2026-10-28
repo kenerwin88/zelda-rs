@@ -1062,17 +1062,38 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DesertBarrier_Draw(int k) {  // 859626
     pub(super) fn desert_barrier_draw(&mut self, k: usize) {
+        // $05:9626..9669 JMPs to the shared 8AB1 JSL/RTS tail. Only
+        // this caller retires that tail here; the draw body is a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059626));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059626);
         if self.sprite_slot_view(k).delay_main() == 1 {
+            b.block(0x05962d);
             self.set_sound_effect_2(0x1b);
             self.set_ambient_sound_effect(5);
+        } else {
+            b.taken(0x05962b);
         }
+        b.block(0x059637);
         let x_step = (self.sprite_slot_view(k).delay_main() >> 1) & 1;
         self.sprite_workspace_mut().add_current_sprite_x_low(x_step);
         let (_, pt) = self.sprite_direction_and_offset_to_face_link(k);
-        if pt.x.wrapping_add(0x20) < 0x40 && pt.y.wrapping_add(0x20) < 0x40 {
-            self.oam_allocate_from_region_b(16);
+        b.block(0x059644);
+        if pt.x.wrapping_add(0x20) >= 0x40 {
+            b.taken(0x05964b);
+        } else {
+            b.block(0x05964d);
+            if pt.y.wrapping_add(0x20) >= 0x40 {
+                b.taken(0x059654);
+            } else {
+                b.block(0x059656);
+                self.oam_allocate_from_region_b(16);
+            }
         }
+        b.block(0x05965c);
+        b.block(0x058ab1);
         self.sprite_draw_multiple(k, &DESERT_BARRIER_DRAW_FRAMES);
+        b.block(0x058ab5);
     }
 
     // -----------------------------------------------------------------------

@@ -2551,3 +2551,281 @@ fn marker43_proximity_dispatch_matches_rom() {
         }
     }
 }
+
+#[test]
+fn prefix2_stalfos_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for (gfx, pause, delay) in [(0, 0, 0), (7, 0, 0), (8, 0, 0),
+            (11, 0, 0), (0, 1, 0), (0, 0, 1)] {
+            for head in 0..4 {
+                for pointer in [0x800u16, 0x8fe] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 9), (0xe20, 0x85), (0xdc0, gfx),
+                        (0xf00, pause), (0xe10, delay), (0xeb0, head),
+                        (0xd10, 0x40), (0xd00, 0x40)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.write_wram_word(0x90, pointer);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, 0x0dc21c, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(0x0dc21c, s,
+                        |s| s.cpu.k == 0x0d && (0xc217..0xc26a).contains(&s.cpu.pc),
+                        || n.stalfos_draw(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix2 Stalfos: {cases} ROM cases");
+}
+
+fn prefix2_npc_draw_cases(entry: u32) {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for direction in 0..4 {
+            for gfx in 0..2 {
+                for y in [0x40u16, 0x100] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 9), (0xde0, direction), (0xdc0, gfx),
+                        (0xd10, 0x40), (0xd00, y as u8), (0xd20, (y >> 8) as u8)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, entry, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                        |s| s.cpu.k == 5 && match entry {
+                            0x05ea4d => (0xea4d..0xea71).contains(&s.cpu.pc),
+                            _ => (0xffdf..0xffff).contains(&s.cpu.pc),
+                        }, || match entry {
+                            0x05ea4d => n.running_man_draw(k),
+                            _ => n.trough_boy_draw(k),
+                        });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix2 {entry:06x}: {cases} ROM cases");
+}
+
+#[test]
+fn prefix2_running_man_draw_matches_rom() { prefix2_npc_draw_cases(0x05ea4d); }
+
+#[test]
+fn prefix2_trough_boy_draw_matches_rom() { prefix2_npc_draw_cases(0x05ffdf); }
+
+#[test]
+fn prefix2_trough_boy_body_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for icons in [0u8, 2, 3, 255] {
+            for (state, submodule, modal, pause) in [(9, 0, 0, 0),
+                (8, 0, 0, 0), (9, 1, 0, 0), (9, 0, 1, 0), (9, 0, 0, 1)] {
+                for direction in 0..4 {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, state), (0xe20, 0xa7), (0xde0, direction),
+                        (0xd10, 0x40), (0xd00, 0x40), (0xf00, pause), (0xcaa, 0)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.write_wram_byte(0x11, submodule);
+                    n.write_wram_byte(0xfc1, modal);
+                    n.write_wram_byte(0xf3c7, icons);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, 0x05ff66, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(0x05ff66, s,
+                        |s| s.cpu.k == 5 && (0xff66..0xff9f).contains(&s.cpu.pc),
+                        || n.sprite_trough_boy(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix2 trough body: {cases} ROM cases");
+}
+
+#[test]
+fn prefix2_sprite_disable_complete_entry_matches_rom() {
+    let mut cases = 0;
+    for indoors in [0u8, 1] {
+        for pattern in 0..4 {
+            let mut n = marker29_state();
+            n.write_wram_byte(0x1b, indoors);
+            for k in 0..16 {
+                n.write_wram_byte(0xdd0 + k, if pattern == 0 { 0 } else { 9 });
+                n.write_wram_byte(0xe20 + k, if pattern == 2 || (pattern == 3 && k & 1 == 0) { 0x6c } else { 1 });
+            }
+            for a in (0xc4a..0xc54).chain(0xb00..0xb08).chain(0x1f800..0x1f81e) {
+                n.write_wram_byte(a, 1);
+            }
+            n.sync_native_game_state_from_ram();
+            let Some(s) = marker29_machine(&n, 0x09c22f, 0) else { return };
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x09c22f, s,
+                |s| s.cpu.k == 9 && (0xc22f..0xc290).contains(&s.cpu.pc),
+                || n.sprite_disable_all());
+            for a in (0xdd0..0xde0).chain(0xc4a..0xc54).chain(0xb00..0xb08)
+                .chain(0x1f800..0x1f81e) {
+                assert_eq!(n.read_wram_byte(a), source.snes().ram[a], "address={a:05x}");
+            }
+            cases += 1;
+        }
+    }
+    eprintln!("prefix2 disable: {cases} ROM cases");
+}
+
+#[test]
+fn prefix2_running_man_body_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for (ai, delay, a, route) in [(0, 0, 0, 0), (1, 1, 0, 0),
+            (2, 1, 0, 0), (1, 0, 0, 0), (1, 0, 2, 0),
+            (2, 0, 2, 0), (2, 0, 0, 0), (2, 0, 0, 1), (2, 0, 0, 2),
+            (3, 0, 0, 0)] {
+            for (state, submodule) in [(9, 0), (9, 2), (8, 0)] {
+                let mut n = marker29_state();
+                for (address, value) in [(0xe20, 0x74), (0xdd0, state),
+                    (0xd80, ai), (0xdf0, delay), (0xd90, a), (0xda0, route),
+                    (0xeb0, 2), (0xde0, 2), (0xd10, 0x40), (0xd00, 0x40),
+                    (0xcaa, 0x80)] {
+                    n.write_wram_byte(address + k, value);
+                }
+                n.write_wram_byte(0xfa0, k as u8);
+                n.write_wram_byte(0x11, submodule);
+                n.write_wram_byte(0x1a, 4);
+                n.write_wram_word(0x20, 0x100);
+                n.write_wram_word(0x22, 0x100);
+                n.sync_native_game_state_from_ram();
+                for owner in [0x05e8b2, 0x05e9ac, 0x05e9ba] {
+                    let mut candidate = n.clone();
+                    let Some(s) = marker29_machine(&candidate, 0x05e8b2, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(owner, s,
+                        |s| s.cpu.k == 5 && match owner {
+                            0x05e8b2 => (0xe8b2..0xe8ed).contains(&s.cpu.pc)
+                                || (0xe8f7..0xe96c).contains(&s.cpu.pc)
+                                || (0xe973..0xe9ac).contains(&s.cpu.pc),
+                            0x05e9ac => (0xe9ac..0xe9ba).contains(&s.cpu.pc),
+                            _ => (0xe9ba..0xe9cd).contains(&s.cpu.pc),
+                        }, || candidate.sprite_running_man(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix2 running body: {cases} ROM cases");
+}
+
+#[test]
+fn prefix2_npc_long_entries_match_rom() {
+    for entry in [0x05e8a2u32, 0x05ff5e] {
+        for k in [0usize, 15] {
+            for state in [0u8, 9] {
+                let mut n = marker29_state();
+                for (a, v) in [(0xdd0, state), (0xe20, if entry == 0x05e8a2 { 0x74 } else { 0x3c }),
+                    (0xd10, 0x40), (0xd00, 0x40)] {
+                    n.write_wram_byte(a + k, v);
+                }
+                n.write_wram_byte(0xfa0, k as u8);
+                n.sync_native_game_state_from_ram();
+                let Some(s) = marker29_machine(&n, entry, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                    |s| s.cpu.k == 5 && (entry as u16..entry as u16 + 8).contains(&s.cpu.pc),
+                    || if entry == 0x05e8a2 { n.sprite_running_boy(k); }
+                        else { n.sprite_kakariko_boy(k); });
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix2_desert_barrier_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for delay in [0u8, 1, 2, 255] {
+            for (x, y) in [(0x40u16, 0x40u16), (0x20, 0x40), (0x60, 0x40),
+                (0x40, 0x20), (0x40, 0x60), (0x100, 0x100)] {
+                let mut n = marker29_state();
+                for (a, v) in [(0xdd0, 9), (0xe20, 0xf2), (0xdf0, delay),
+                    (0xd10, 0x40), (0xd00, 0x40)] {
+                    n.write_wram_byte(a + k, v);
+                }
+                n.write_wram_byte(0xfa0, k as u8);
+                n.write_wram_word(0x22, x);
+                n.write_wram_word(0x20, y);
+                n.sync_native_game_state_from_ram();
+                let Some(s) = marker29_machine(&n, 0x059626, k) else { return };
+                crate::cycle_ledger::assert_rom_marker_work(0x059626, s,
+                    |s| s.cpu.k == 5 && ((0x9626..0x966a).contains(&s.cpu.pc)
+                        || (0x8ab1..0x8ab6).contains(&s.cpu.pc)),
+                    || n.desert_barrier_draw(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("prefix2 desert barrier: {cases} ROM cases");
+}
+
+fn prefix2_debirando_draw_cases(entry: u32) {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..if entry == 0x0586e4 { 7 } else { 4 } {
+            for ai in [0u8, 1] {
+                for y in [0x40u16, 0xf8, 0x100, 0x200] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 9), (0xe20, 0x6e), (0xdc0, gfx),
+                        (0xd80, ai), (0xd10, 0x40), (0xd00, y as u8),
+                        (0xd20, (y >> 8) as u8)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, entry, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                        |s| s.cpu.k == 5 && match entry {
+                            0x0586e4 => (0x86e4..0x874d).contains(&s.cpu.pc),
+                            _ => (0x8857..0x88c5).contains(&s.cpu.pc),
+                        }, || if entry == 0x0586e4 { n.debirando_pit_draw(k); }
+                            else { n.debirando_draw(k); });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix2 {entry:06x}: {cases} ROM cases");
+}
+
+#[test]
+fn prefix2_debirando_pit_draw_matches_rom() { prefix2_debirando_draw_cases(0x0586e4); }
+
+#[test]
+fn prefix2_debirando_draw_matches_rom() { prefix2_debirando_draw_cases(0x058857); }
+
+#[test]
+fn prefix2_antfairy_complete_entry_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for gfx in 0..6 {
+            for subtype in [0u8, 1, 255] {
+                for (submodule, modal) in [(0, 0), (1, 0), (0, 1)] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 9), (0xe20, 0x15), (0xdc0, gfx),
+                        (0xe80, subtype), (0xd10, 0x40), (0xd00, 0x40)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.write_wram_byte(0x11, submodule);
+                    n.write_wram_byte(0xfc1, modal);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, 0x1df395, k) else { return };
+                    crate::cycle_ledger::assert_rom_marker_work(0x1df395, s,
+                        |s| s.cpu.k == 0x1d && (0xf395..0xf3d4).contains(&s.cpu.pc),
+                        || n.sprite_draw_antfairy(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix2 antifairy: {cases} ROM cases");
+}

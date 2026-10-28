@@ -493,6 +493,48 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_disable_all(&mut self) {
+        // $09:C22F..C28F complete entry. Partial reset continuations below
+        // bypass this entry and retain their own instruction-work ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09c22f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09c22f);
+        for k in (0..16).rev() {
+            b.block(0x09c231);
+            if self.sprite_slot_view(k).state() == 0 {
+                b.taken(0x09c234);
+            } else {
+                b.block(0x09c236);
+                if self.game_state.world.location.is_indoors() {
+                    b.taken(0x09c238);
+                    b.block(0x09c241);
+                } else {
+                    b.block(0x09c23a);
+                    if self.sprite_slot_view(k).sprite_type() == 0x6c {
+                        b.taken(0x09c23f);
+                    } else {
+                        b.block(0x09c241);
+                    }
+                }
+            }
+            b.block(0x09c244);
+            if k != 0 { b.taken(0x09c245); }
+        }
+        b.block(0x09c247);
+        for k in (0..10).rev() {
+            b.block(0x09c249);
+            if k != 0 { b.taken(0x09c24d); }
+        }
+        b.block(0x09c24f);
+        for k in (0..8).rev() {
+            b.block(0x09c27e);
+            if k != 0 { b.taken(0x09c282); }
+        }
+        b.block(0x09c284);
+        for k in (0..30).rev() {
+            b.block(0x09c286);
+            if k != 0 { b.taken(0x09c28d); }
+        }
+        b.block(0x09c28f);
         self.apply_sprite_disable_actions_through(
             None,
             DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,

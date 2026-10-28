@@ -497,22 +497,45 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Stalfos_Draw(int k) {  // 8dc21c
     pub(in crate::zelda_rtl) fn stalfos_draw(&mut self, k: usize) {
+        // $0D:C21C..C269, including the C217 no-draw tail. Drawing,
+        // coordinate preparation and shadow bodies retain their own prices.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dc21c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dc21c);
         if self.sprite_slot_view(k).delay_aux2() != 0 {
+            b.taken(0x0dc21f);
+            b.block(0x0dc217);
             self.sprite_prep_oam_coord(k);
+            b.block(0x0dc21b);
             return;
         }
+        b.block(0x0dc221);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
         let mut info = self.sprite_draw_multiple(k, &STALFOS_DRAW_FRAMES[base..base + 3]);
-        if self.sprite_slot_view(k).graphics() < 8 && self.sprite_slot_view(k).pause() == 0 {
-            let oam = self.game_state.oam.current_pointer_usize();
-            let i = usize::from(self.sprite_slot_view(k).head_direction());
-            self.oam_state_mut()
-                .set_entry_char(oam, STALFOS_DRAW_CHARS[i]);
-            self.oam_state_mut()
-                .merge_entry_flags(oam, !0x70, STALFOS_DRAW_FLAGS[i]);
+        b.block(0x0dc241);
+        if self.sprite_slot_view(k).graphics() >= 8 {
+            b.taken(0x0dc246);
+        } else {
+            b.block(0x0dc248);
+            if self.sprite_slot_view(k).pause() != 0 {
+                b.taken(0x0dc24b);
+            } else {
+                b.block(0x0dc24d);
+                if self.game_state.oam.current_pointer() & 0xff > 0xfc {
+                    b.crossing(0x0dc25a);
+                }
+                let oam = self.game_state.oam.current_pointer_usize();
+                let i = usize::from(self.sprite_slot_view(k).head_direction());
+                self.oam_state_mut()
+                    .set_entry_char(oam, STALFOS_DRAW_CHARS[i]);
+                self.oam_state_mut()
+                    .merge_entry_flags(oam, !0x70, STALFOS_DRAW_FLAGS[i]);
+            }
         }
         // ROM $0D:C264
+        b.block(0x0dc264);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x0dc268);
     }
 
     // -----------------------------------------------------------------------
@@ -965,17 +988,31 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DebirandoPit_Draw(int k) {  // 8586e4
     pub(super) fn debirando_pit_draw(&mut self, k: usize) {
+        // $05:86E4..874C complete four-tile writer; coordinate preparation
+        // is a separate child. Legal graphics 0..5 keep every table in-page.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0586e4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0586e4);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x0586e7);
         let g = usize::from(self.sprite_slot_view(k).graphics());
         if g == 6 {
+            b.taken(0x0586ec);
+            b.block(0x05874c);
             return;
         }
+        b.block(0x0586ee);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let big = DEBIRANDO_PIT_DRAW_BIG[g];
         for i in (0..4).rev() {
             let j = g * 4 + i;
+            b.block(0x0586fc);
+            let y = info_y.wrapping_add(DEBIRANDO_PIT_DRAW_Y_OFFSETS[j] as u16);
+            if y.wrapping_add(16) < 256 { b.taken(0x058725); }
+            else { b.block(0x058727); }
+            b.block(0x05872b);
             self.set_oam_helper0_at(
                 oam,
                 info_x.wrapping_add(DEBIRANDO_PIT_DRAW_X_OFFSETS[j] as u16),
@@ -985,24 +1022,44 @@ impl ZeldaState {
                 big,
             );
             oam += 4;
+            if i != 0 { b.taken(0x058749); }
         }
+        b.block(0x05874b);
+        b.block(0x05874c);
     }
 
     // -----------------------------------------------------------------------
     // void Debirando_Draw(int k) {  // 858857
     pub(super) fn debirando_draw(&mut self, k: usize) {
+        // $05:8857..88C4 complete writer, excluding coordinate preparation.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x058857));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x058857);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.taken(0x05885a);
+            b.block(0x0588c4);
             return;
         }
 
+        b.block(0x05885c);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x05885f);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let d = usize::from(self.sprite_slot_view(k).graphics()) * 4;
         for i in (0..4).rev() {
             let j = d + i;
+            b.block(0x058869);
+            if 0xe7 + 2 * j > 0xff { b.crossing(0x058876); }
+            let y = info_y.wrapping_add(DEBIRANDO_DRAW_Y_OFFSETS[j] as i16 as u16);
+            if y.wrapping_add(16) < 256 { b.taken(0x058892); }
+            else { b.block(0x058894); }
+            b.block(0x058898);
             let f = DEBIRANDO_DRAW_FL[j];
+            if f & 0x0f == 0 { b.block(0x0588ac); }
+            else { b.taken(0x0588aa); }
+            b.block(0x0588ae);
             let flags = (f ^ info_flags) & if (f & 0x0f) == 0 { 0xf0 } else { 0xff };
             self.set_oam_helper0_at(
                 oam,
@@ -1013,7 +1070,10 @@ impl ZeldaState {
                 DEBIRANDO_DRAW_BIG[j],
             );
             oam += 4;
+            if i != 0 { b.taken(0x0588c1); }
         }
+        b.block(0x0588c3);
+        b.block(0x0588c4);
     }
 
     // -----------------------------------------------------------------------

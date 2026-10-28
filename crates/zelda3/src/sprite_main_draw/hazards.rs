@@ -84,24 +84,37 @@ impl ZeldaState {
     // void SpriteDraw_Antfairy(int k) {  // 9df395 — sprite_main.c:18841
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_antfairy(&mut self, k: usize) {
+        // $1D:F395..F3D3 complete self body. The 8549 draw wrapper and
+        // its child remain separate; CPU-boundary suffix resumes stay unpriced.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df395));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df395);
         self.sprite_slot_view_mut(k).add_subtype2(1);
-        self.sprite_draw_antfairy_after_subtype2_increment(k);
+        self.sprite_draw_antfairy_after_subtype2_increment(k, b);
     }
 
-    fn sprite_draw_antfairy_after_subtype2_increment(&mut self, k: usize) {
+    fn sprite_draw_antfairy_after_subtype2_increment(&mut self, k: usize, b: crate::cycle_ledger::BlockMarkers) {
         if (self.sprite_slot_view(k).subtype2() & 1)
             | self.game_state.frame.submodule
             | self.game_state.frame.modal_pause_flag
             == 0
         {
+            b.block(0x1df3a8);
             self.sprite_slot_view_mut(k).add_graphics(1);
             if self.sprite_slot_view(k).graphics() == 6 {
+                b.block(0x1df3b2);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_graphics(value);
+            } else {
+                b.taken(0x1df3b0);
             }
+        } else {
+            b.taken(0x1df3a6);
         }
+        b.block(0x1df3b5);
         let base = (self.sprite_slot_view(k).graphics() as usize) * 5;
         self.sprite_draw_multiple(k, &DRAW_FOUR_AROUND_ONE_DRAW_FRAMES[base..base + 5]);
+        b.block(0x1df3d2);
     }
 
     pub(in crate::zelda_rtl) fn complete_antfairy_after_subtype2_increment(
@@ -109,7 +122,7 @@ impl ZeldaState {
         k: usize,
         continuation: AntfairyDrawContinuation,
     ) {
-        self.sprite_draw_antfairy_after_subtype2_increment(k);
+        self.sprite_draw_antfairy_after_subtype2_increment(k, crate::cycle_ledger::blocks(false));
         match continuation {
             AntfairyDrawContinuation::BunnyBeam => self.sprite_bunny_beam_after_antfairy_draw(k),
             AntfairyDrawContinuation::Antifairy => self.sprite_15_antifairy_after_draw(k),

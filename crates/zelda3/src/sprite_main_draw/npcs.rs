@@ -975,40 +975,73 @@ impl ZeldaState {
     }
 
     // -----------------------------------------------------------------------
+    // $05:E8A2..E8A9 is the long-call entry; E8B2 is its JSR child.
+    pub(super) fn sprite_running_boy(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e8a2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05e8a2);
+        self.sprite_running_man(k);
+        b.block(0x05e8a8);
+    }
+
     // void Sprite_RunningMan(int k) {  // 85e8b2
     pub(super) fn sprite_running_man(&mut self, k: usize) {
+        // $05:E8B2..E8EC and the four RTS-table state tails. The table at
+        // E8ED and velocity data at E8F5 are data, never instruction work.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e8b2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05e8b2);
         self.running_man_draw(k);
+        b.block(0x05e8b5);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x05e8b8);
         self.sprite_track_body_to_head(k);
+        b.block(0x05e8bc);
         self.sprite_behave_as_barrier(k);
+        b.block(0x05e8c0);
         let value = 255;
         self.sprite_slot_view_mut(k).set_subtype(value);
         // ROM $05:E8C5 -> $05:B88D -> $06:E496
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        b.block(0x05e8c8);
         let bak0 = self.sprite_slot_view(k).flags4();
         let value = 7;
         self.sprite_slot_view_mut(k).set_flags4(value);
         // ROM $05:E8D1, $05:E904
-        if self.sprite_check_damage_same_layer_long_marked(k) {
+        let hit = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x05e8d5);
+        if hit {
+            b.block(0x05e8d7);
             let value = self.sprite_slot_view(k).ai_state();
             self.sprite_slot_view_mut(k).set_c(value);
             let value = 3;
             self.sprite_slot_view_mut(k).set_ai_state(value);
+        } else {
+            b.taken(0x05e8d5);
         }
+        b.block(0x05e8e2);
         let value = bak0;
         self.sprite_slot_view_mut(k).set_flags4(value);
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x05e8f7);
                 self.sprite_track_body_to_head(k);
+                b.block(0x05e8fb);
                 let j = self.sprite_direction_to_face_link(k);
+                b.block(0x05e8fe);
                 let value = j ^ 3;
                 self.sprite_slot_view_mut(k).set_head_direction(value);
                 // ROM $05:E8D1, $05:E904
-                if self.sprite_check_damage_same_layer_long_marked(k) {
+                let hit = self.sprite_check_damage_same_layer_long_marked(k);
+                b.block(0x05e908);
+                if hit {
+                    b.block(0x05e90a);
                     self.link_cancel_dash();
+                    b.block(0x05e90e);
+                    b.block(0x05e911);
                     let value = j ^ 3;
                     self.sprite_slot_view_mut(k).set_direction(value);
                     let value = j | 2;
@@ -1020,6 +1053,8 @@ impl ZeldaState {
                     let value = 32;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 } else {
+                    b.taken(0x05e908);
+                    b.block(0x05e931);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                     let value = 0;
@@ -1027,38 +1062,65 @@ impl ZeldaState {
                 }
             }
             1 | 2 => {
+                let left = self.sprite_slot_view(k).ai_state() == 1;
+                b.block(if left { 0x05e946 } else { 0x05e973 });
                 if self.sprite_slot_view(k).delay_main() != 0 {
+                    b.taken(if left { 0x05e949 } else { 0x05e976 });
+                    b.block(0x05e938);
                     let value = (self.game_state.frame.frame_counter >> 3) & 1;
                     self.sprite_slot_view_mut(k).set_graphics(value);
                     self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                    b.block(0x05e945);
                 } else {
-                    self.running_boy_spawn_dust_garnish(k);
-                    let value = (self.game_state.frame.frame_counter >> 2) & 1;
-                    self.sprite_slot_view_mut(k).set_graphics(value);
-                    let j = usize::from(self.sprite_slot_view(k).head_direction());
-                    let value = SPRITE_RUNNING_MAN_LOCAL_X_VELOCITIES[j] as u8;
-                    self.sprite_slot_view_mut(k).set_x_velocity(value);
-                    let value = SPRITE_RUNNING_MAN_LOCAL_Y_VELOCITIES[j] as u8;
-                    self.sprite_slot_view_mut(k).set_y_velocity(value);
-                    self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                    b.block(if left { 0x05e94b } else { 0x05e978 });
+                    {
+                        // $05:E9AC..E9B9 is a separate JSR child, not parent work.
+                        let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e9ac));
+                        b.block(0x05e9ac);
+                        self.running_boy_spawn_dust_garnish(k);
+                        b.block(0x05e9b0);
+                        let value = (self.game_state.frame.frame_counter >> 2) & 1;
+                        self.sprite_slot_view_mut(k).set_graphics(value);
+                    }
+                    b.block(if left { 0x05e94e } else { 0x05e97b });
+                    {
+                        // $05:E9BA..E9CC owns its velocity setup and move call.
+                        let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e9ba));
+                        b.block(0x05e9ba);
+                        let j = usize::from(self.sprite_slot_view(k).head_direction());
+                        let value = SPRITE_RUNNING_MAN_LOCAL_X_VELOCITIES[j] as u8;
+                        self.sprite_slot_view_mut(k).set_x_velocity(value);
+                        let value = SPRITE_RUNNING_MAN_LOCAL_Y_VELOCITIES[j] as u8;
+                        self.sprite_slot_view_mut(k).set_y_velocity(value);
+                        self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                        b.block(0x05e9cc);
+                    }
+                    b.block(if left { 0x05e951 } else { 0x05e97e });
                     if self.sprite_slot_view(k).a() != 0 {
+                        b.taken(if left { 0x05e954 } else { 0x05e981 });
+                        b.block(0x05e961);
                         self.sprite_slot_view_mut(k).subtract_a(1);
                     } else if self.sprite_slot_view(k).ai_state() == 1 {
+                        b.block(0x05e956);
                         let value = 255;
                         self.sprite_slot_view_mut(k).set_a(value);
                         let value = 2;
                         self.sprite_slot_view_mut(k).set_head_direction(value);
                     } else {
+                        b.block(0x05e983);
                         let j = usize::from(self.sprite_slot_view(k).b());
                         self.sprite_slot_view_mut(k).add_b(1);
                         let value = SPRITE_RUNNING_MAN_A[j];
                         self.sprite_slot_view_mut(k).set_a(value);
                         if sign8(SPRITE_RUNNING_MAN_DIRECTIONS[j] as u8) {
+                            b.taken(0x05e992);
+                            b.block(0x05e965);
                             let value = 0;
                             self.sprite_slot_view_mut(k).set_ai_state(value);
                             let value = 0;
                             self.sprite_slot_view_mut(k).set_subtype2(value);
                         } else {
+                            b.block(0x05e994);
                             let value = SPRITE_RUNNING_MAN_DIRECTIONS[j] as u8;
                             self.sprite_slot_view_mut(k).set_head_direction(value);
                         }
@@ -1066,13 +1128,19 @@ impl ZeldaState {
                 }
             }
             3 => {
+                b.block(0x05e998);
                 self.sprite_show_message_unconditional(0x00a6);
+                b.block(0x05e9a0);
                 if self.game_state.player.follower_link.handler_state()
                     >= SPRITE_RUNNING_MAN_PLAYER_STATE_RECOIL_WALL_LOCAL
                 {
+                    b.block(0x05e9a2);
                     let value = self.game_state.player.follower_link.handler_state();
                     self.sprite_slot_view_mut(k).set_direction(value);
+                } else {
+                    b.taken(0x05e9a0);
                 }
+                b.block(0x05e9a5);
                 let value = self.sprite_slot_view(k).c();
                 self.sprite_slot_view_mut(k).set_ai_state(value);
             }
@@ -1083,6 +1151,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void RunningMan_Draw(int k) {  // 85ea4d
     pub(super) fn running_man_draw(&mut self, k: usize) {
+        // $05:EA4D..EA70: pointer setup and calls; deferred drawing/shadow
+        // bodies remain separate. Valid direction/graphics indices stay in-page.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05ea4d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05ea4d);
         let base = (usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics()) * 2)
             & 0xf;
@@ -1091,7 +1164,9 @@ impl ZeldaState {
             &RUNNING_MAN_DRAW_FRAMES[base..base + 2],
         );
         // ROM $05:EA6C
+        b.block(0x05ea6c);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x05ea70);
     }
 
     // -----------------------------------------------------------------------
@@ -2295,15 +2370,33 @@ impl ZeldaState {
     }
 
     // -----------------------------------------------------------------------
+    // $05:FF5E..FF65 is the long-call entry; FF66 is its JSR child.
+    pub(super) fn sprite_kakariko_boy(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05ff5e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05ff5e);
+        self.sprite_trough_boy(k);
+        b.block(0x05ff64);
+    }
+
     // void Sprite_TroughBoy(int k) {  // 85ff66
     pub(super) fn sprite_trough_boy(&mut self, k: usize) {
+        // $05:FF66..FF9E complete self body, excluding every child body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05ff66));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05ff66);
         self.trough_boy_draw(k);
+        b.block(0x05ff69);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x05ff6c);
         self.sprite_behave_as_barrier(k);
+        b.block(0x05ff70);
         self.sprite_track_body_to_head(k);
+        b.block(0x05ff74);
         let value = self.sprite_direction_to_face_link(k) ^ 3;
+        b.block(0x05ff77);
         self.sprite_slot_view_mut(k).set_head_direction(value);
 
         if self
@@ -2313,24 +2406,40 @@ impl ZeldaState {
             .map_icons_indicator()
             < 3
         {
-            if self.sprite_show_solicited_message(k, 0x147) & 0x100 != 0 {
+            b.block(0x05ff85);
+            let shown = self.sprite_show_solicited_message(k, 0x147) & 0x100 != 0;
+            b.block(0x05ff8d);
+            if shown {
+                b.block(0x05ff8f);
                 self.save_progress_mut().set_map_icons_indicator(2);
+            } else {
+                b.taken(0x05ff8d);
             }
+            b.block(0x05ff95);
         } else {
+            b.taken(0x05ff83);
+            b.block(0x05ff96);
             self.sprite_show_solicited_message(k, 0x148);
+            b.block(0x05ff9e);
         }
     }
 
     // -----------------------------------------------------------------------
     // void TroughBoy_Draw(int k) {  // 85ffdf
     pub(super) fn trough_boy_draw(&mut self, k: usize) {
+        // $05:FFDF..FFFE: pointer setup and calls only.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05ffdf));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05ffdf);
         let base = usize::from(self.sprite_slot_view(k).direction()) * 2;
         let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &TROUGH_BOY_DRAW_FRAMES[base..base + 2],
         );
         // ROM $05:FFFA
+        b.block(0x05fffa);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x05fffe);
     }
 
     // -----------------------------------------------------------------------
