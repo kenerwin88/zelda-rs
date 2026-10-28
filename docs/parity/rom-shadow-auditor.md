@@ -890,3 +890,322 @@ pruned first; disk samples and final pruning keep the workspace below
 or shared-ledger write, pricing/pacing/classifier/P2/marker/table/seeding change,
 cargo fmt, commit or push was performed. This remains CPU audit evidence, not
 independent hardware or exact A/V acceptance.
+
+## M2c analysis
+
+**Pricing verdict remains STOP.** This is an analysis of the frozen M2b cohort
+at `8ca48655` on `codex/shadow-m2`, not a new pricing or execution pass. Only
+this document changes. The bridge, ordered kernel, observer, models, prices,
+markers, tables, classifiers, P2, seeding and runtime are unchanged. The other
+pricing worktree was not accessed.
+
+### Decomposition and counting method
+
+Evidence is in `target/shadow-m2/m2c-analysis/`. `summary.json` and
+`input-verification.json` bind the inputs; all **67 identities** bound by the
+M2b join were rehashed successfully. The source decomposition adds the
+source-side nonpaired kernel rows back to `residuals.jsonl.zst`: those opcodes
+were eligible for pairing and therefore absent from the ordinary residual
+stream. On native, subtract only the paired base-marker sequence **and its
+extra-event sequences** from the original charge stream. Classify the actual
+remaining events, rather than assigning a whole block's extras to its base
+site. Both decompositions reproduce **each of the 55 iteration counters**:
+
+| Side / class | Unmatched master clocks |
+| --- | ---: |
+| U: source call/block residual opcodes | 122,674,554 |
+| U: ordered-kernel residuals, including one-sided aftermath | 21,108 |
+| **U total** | **122,695,662** |
+| O: instruction models / native instruction continuations | 66,288,422 |
+| O: legacy scalar `charge(N)` and aggregate formulas | 32,292,054 |
+| O: block markers with mapping/width/extra/occurrence failure | 347,382 |
+| O: ordering family, including one-sided aftermath | 21,108 |
+| O: separate VWF counter | 0 |
+| **O total** | **98,948,966** |
+
+Thus S=125,893,178, N=102,146,482, P=Q=3,197,516 and E=0 remain
+unchanged; S-N=U-O=23,746,696. **99.63% of O is scalar/model ownership**, not
+an ordering failure. VWF is zero in this selected cohort, not generally absent.
+The instruction-model class includes the PC-stepped `hud_refill_prefix.rs`
+and `overworld_rain.rs` continuations outside the `cycle_models` directory.
+Decompressor-derived GetNextByte constants belong to that decompressor model.
+
+`native-sites.json` classifies all **759 observed unmatched sites**, retaining
+zero-clock observations, actual native paths, functions, charge excerpts and
+category totals. `scalar-model-by-clocks.json` and
+`scalar-model-by-holds.json` supply the two complete scalar/model rankings.
+`source-routines.json`, `source-paths.json` and `source-routine-detail.json`
+retain the complete exclusive U rankings, call paths, PCs and per-iteration
+routine clocks. These are additive exclusive partitions; ancestor inclusive
+totals must not be added to them.
+
+**Holds touched** means the union of cohort iteration IDs containing a site,
+weighted by that iteration's original missing-hold count. Nine holds in one
+iteration count as nine, once. It is investigation reach, not a hold inverse,
+validated coverage, or predicted recovery. Never add overlapping site scores.
+
+### Largest source-unmatched routines and paths
+
+Routine here means the reconstructed call frame's entry. A JMP/JML or local
+RTS dispatch can retain that frame while executing another routine's PCs;
+the entry alone is not a native implementation identity. In particular,
+`00879C` includes intro dispatch and the `$0C:C1A7..C1E3` WRAM-column stores,
+not four million clocks of dispatch instructions.
+
+| Source frame entry / work | U clocks | Holds touched |
+| --- | ---: | ---: |
+| `00:E843` GetNextByte | 17,459,860 | 14 |
+| `00:8888` song upload / acknowledgement polling | 16,302,856 | 2 |
+| `00:E78F` background decompressor | 14,557,694 | 13 |
+| `00:E772` sprite decompressor | 8,984,790 | 14 |
+| `01:B8F3` basic dungeon attributes | 7,111,528 | 2 |
+| `00:E60D` / `00:E609` background sheet callers | 5,807,586 / 5,470,116 | 13 each |
+| `00:E583` sprite sheet caller | 4,316,118 | 13 |
+| `00:879C` retained dispatch frame / intro work | 4,003,760 | 24 |
+| `00:E6B7` common sprite graphics | 3,775,904 | 13 |
+| `01:8A44` floor/block drawing | 3,407,458 | 3 |
+| `00:E783` fixed-buffer background decoder | 2,943,992 | 4 |
+| `00:E766` sprite decompression setup/shared tail | 2,748,436 | 9 |
+| `00:D5CE` animated low-plane conversion | 1,465,120 | 4 |
+| `01:893C` object dispatch/shared drawer frame | 1,237,422 | 3 |
+| `00:913F` quadrant upload preparation | 1,202,280 | 4 |
+
+For path specificity, all paths below begin `008034 > 0080B5`:
+
+| Remaining call path | Exclusive U clocks | Holds touched |
+| --- | ---: | ---: |
+| `0283C7 > 008913 > 008888` | 16,302,856 | 2 |
+| `01B8BF > 01B8F3` | 7,111,528 | 2 |
+| `00879C > 00879C` | 3,291,664 | 8 |
+| `0283C7 > 00E19B > 00E583 > 00E772` | 3,073,648 | 2 |
+| `00E19B > 00E609 > 00E78F` | 3,060,928 | 2 |
+| `0283C7 > 00E19B > 00E60D > 00E78F` | 2,994,080 | 2 |
+
+The large graphics rows have native counterparts despite some null bridge
+candidate lists. Dynamic native scopes frequently name the charged child
+routine without matching the source frame's call cardinality/parentage.
+Null candidates must not turn these into free-standing positive prices.
+
+### Top 20 native scalar/model sites by clocks
+
+Sites are relative to `crates/zelda3/src`; final columns identify the **claimed**
+ROM instruction set and the next ownership proof, not newly admitted ownership.
+`first-width-witnesses.json` retains actual M/X/DP witnesses. Twenty-six
+read-only invocations of `scripts/rom_block_costs.py` at those widths succeeded;
+their commands and disassemblies are retained as `decoder-checks.json` and
+`decode-*.txt`. Successful decoding alone does not prove path equivalence.
+
+| Rank / site | O clocks | Holds | Claimed instructions; replacement/proof assessment |
+| --- | ---: | ---: | --- |
+| 1. `load_gfx.rs:2812` | 40,411,870 | 13 | `tilesets::Instruction` steps without a Graphics publication: E19B/E6B7 composition, E583/E609/E60D callers, E772/E78F/E843 decoder/byte-reader and raw conversion. Export an auditor PC/child witness; broad constant-to-marker replacement is not straightforward. |
+| 2. `load_gfx.rs:3271` | 14,376,202 | 13 | `graphics_load::Instruction`, including delegated tileset steps with Graphics publications: caller/decode stores and shared conversion, tagged E19B/E583/E609/E60D/E6B7/E772/E78F. Complement of site 2812 within tileset execution; same PC/child ownership bridge required. |
+| 3. `load_gfx.rs:3010` | 5,934,632 | 14 | `decompress_cost.master - get_next_byte_master`: E772/E783/E78F through decoder E79E, excluding E843. Explicit subtraction is promising; prove command-stream paths and exclusion of separately charged byte reads. |
+| 4. `load_gfx.rs:3018` | 3,379,150 | 14 | E843 byte-reader calls except the final call at 3020. Model-derived scalar; prove bank-wrap cost and real call occurrence, including the separately booked last call. |
+| 5. `dungeon/object_draw.rs:1687` | 3,253,632 | 3 | 018A44 fixed n=8: STA, two 4x2 passes per block, row step, branches and CLC/RTS. Straightforward local marker replacement; keep general-n and fallthrough caller partitions separate. |
+| 6. `dungeon/attributes.rs:154` | 3,159,552 | 6 | 01B8FA..B918, 374 clocks per iteration. Straightforward static blocks, with SEP width change and the following BCC extra retained. |
+| 7. `dungeon/attributes.rs:203` | 3,075,072 | 6 | 01B941..B959 packing/stores/counters/BNE, 364 plus taken extra at 206. Straightforward with per-loop cardinality and three shared entry variants. |
+| 8. `load_gfx.rs:3195` | 2,179,584 | 5 | Animated 00D5D0..D616 (3,808) or 00DFBA..E02E (3,736), per tile. Split variants and four-row loops; child decode excluded. Moderately straightforward. |
+| 9. `sprite/loading.rs:680` | 1,245,160 | 4 | 09C47B..C480, 4,096 STA-long,X/DEX/BPL passes, M8/X16. Straightforward marker loop; C44E/C452 entries and fixed prefix stay separate. |
+| 10. `dungeon/room_load.rs:1559` | 1,202,280 | 4 | 00913F..91C3: setup, 128 eight-word copies, row steps and RTL. Straightforward fixed-loop replacement, no DMA instructions charged as copy work. |
+| 11. `sprite/loading.rs:1122` | 1,081,872 | 21 | 09C6F5..C730: X/Y bounds, in-bounds index/call, return. Straightforward branch blocks; Proxima child remains separately owned. |
+| 12. `dungeon/effects.rs:436` | 1,081,476 | 3 | 0091D3..9251 BG1 copy analogue with 268-clock tail. Straightforward body, but reconcile the C4/D3 entry alias before pairing. |
+| 13. `load_gfx.rs:3251` | 732,276 | 9 | `graphics_convert::Instruction`, standalone E5AF high-plane loop. PC witness exists only under cfg(test) today; add a dev observer mapping, not an extra price. |
+| 14. `overworld.rs:6452` | 718,464 | 1 | 02FE0E..FE3D groups split at stores, within FDF7/FD87 first-half call and second-half fallthrough. Requires explicit shared-frame/store-phase mapping; do not sum as a whole new row price. |
+| 15. `dungeon/attributes.rs:186` | 675,840 | 6 | 01B92A..B930, 80 clocks, between attribute branches. Straightforward static replacement as part of the same attribute batch. |
+| 16. `load_gfx.rs:2544` | 642,498 | 9 | 00E33B..E36C caller plus 256 CPU-copy passes; E766/E772 child excluded. Straightforward loop markers with child exclusion. |
+| 17. `misc.rs:2377` | 640,822 | 63 | `SpritePreparationWork`, 0085FC preparation/return and OAM helper instructions. Model PC/continuation witness needed; preserve helper ownership and resumed return. |
+| 18. `load_gfx.rs:1680` | 537,440 | 5 | 00EDCA additive palette restoration: per-colour comparison, three conditional channel steps, store, loop and RTS. Static branch conversion is feasible; test equality/unequal channels and range endpoints. |
+| 19. `dungeon/object_draw.rs:1238` | 466,752 | 3 | 0197F2..9810, four stores, cursor increments, DEC/BNE; STA at 1234 and return at 1245 separate. Feasible with JMP-entry/inherited-frame fixtures. |
+| 20. `tile_detect.rs:49` | 414,942 | 29 | 00882E..8887 attribute lookup and slope bit fold, M8/X8 through REP/SEP. Feasible static branch/width proof; keep attribute-domain predicates unchanged. |
+
+Models 1/2/13 retain instruction PC only under `cfg(test)` in their instruction
+records (and some composition instructions have no PC). Numeric costs and
+routine tags therefore cannot establish live opcode ownership. The next
+auditor adapter should expose a dev-only PC/occurrence/child contract without
+changing serialized product state or double-booking its existing charges.
+
+The ranking by holds is quite different. The first eight sites below all
+touch **55 iterations / 63 holds**; the next twelve all touch **36 holds**.
+Within each tie the order is by clocks:
+
+| Hold rank(s) / sites | O clocks, in listed order | Claimed work / proof |
+| --- | --- | --- |
+| 1. `misc.rs:2377` | 640,822 | Preparation model above. |
+| 2. `zelda_rtl/rtl_oam_obj.rs:1654` | 291,500 | 00841E ClearOamBuffer; literal 5,300. Fixed loop/return marker proof is straightforward. |
+| 3. `misc.rs:2664` | 13,200 | 0080B5 routing (240); selected child excluded. Straightforward selector/dispatch marker proof. |
+| 4–6. `zelda_rtl/rtl_dialogue.rs:2198,2219,2216` | 4,070; 3,410; 2,530 | Main 008034 fragments: CLI/BRA/INC, JSL routing, JSR ClearOam. Check the 8038 cut: entry scalar also claims pre-cut instructions. |
+| 7–8. `zelda_rtl/rtl_nmi.rs:1118,1138` | 2,530; 2,530 | Main caller's JSR preparation and modeled STZ/BRA return. Preserve once-only resumed retirement. |
+| 9–11. `hud.rs:2533,2316,2318` | 105,576; 69,440; 59,920 | HUD decimal division/helper and health-capacity branch prefixes. |
+| 12–14. `hud.rs:1920,1950,2336` | 31,376; 23,904; 14,628 | Hearts entry, magic entry and heart rendering body. |
+| 15–17. `hud.rs:2080,2254,1931` | 14,616; 11,972; 11,880 | Inventory prefix, decimal caller and heart tail. |
+| 18–20. `hud.rs:2215,2105,2178` | 10,788; 10,008; 10,008 | Inventory tail, count-digit prefix and arrow digits. |
+
+HUD fragments should be converted by their existing per-PC comments and
+branch fixtures as one caller/helper partition, not by adding the routine
+inclusive difference. Large reach here does not imply a large recoverable
+cost: much of the claim is already charged, and the main entry has a domain-cut
+issue. The complete source excerpts are retained with each individual rank.
+
+### Work with no observed native charge counterpart
+
+`no-observed-entry-counterpart.json` ranks all **132 source frame entries**
+absent from both observed native scope-entry and marker-entry PCs. This is an
+absence screen, **not** a pure-missing proof. It retains mapped candidates at
+other entries and explicit exclusions. The largest false positives are:
+
+- Song upload `008888` (16,302,856 clocks): `cycle_models/song_bank.rs`
+  already implements timed I/O and acknowledgement polling. Establish the
+  observer/domain bridge first; a whole upload price risks double ownership.
+- Dispatch frame `00879C` (4,003,760): retained intro aliases and existing
+  `IntroClear` work. Separate model/domain accounting from an absent charge.
+- Overlay `02F7CB` (110,208): native delegates to the differently priced
+  F595/F610 quadrant implementation. A replacement/mapping proof is needed.
+- Shadow `06DC64` (76,482), distress `06A72F` (66,994), palette `1BEF7B`
+  (29,952), bar `01B2F6` (21,576), and Proxima `09C55E` (12,876): existing
+  model, marker-entry variant, scalar alias or unscoped scalar respectively.
+- Intro sword `0CFE56` (39,170), sprite loader `09C327` (37,568), logo
+  `0CED82` (13,952), sprite-list loader `09C290` (10,790), object attributes
+  `01B967` (8,848), overlord loader `09C3E8` (8,680): native model/domain
+  counterparts exist even where the translated fallback has no charge.
+
+The separately ranked, source-reviewed **missing-charge candidates** below
+have uncharged translated bodies and no observed charge entry/marker or
+mapped scope counterpart. Their proposed ownership is **own instructions
+only**, excluding all called work. This is the cleanest small pricing
+investigation before the large scalar conversions; it is not a validated
+exclusive-gap list or an assertion that gameplay implementation is absent.
+
+| Rank / ROM routine | Exclusive U clocks | Holds touched | Proposed native site |
+| --- | ---: | ---: | --- |
+| 1. `01:93FF` Object_Table_Helper_ | 17,472 | 2 | `dungeon/object_draw.rs::object_table_helper` loop/body |
+| 2. `05:E1A7` Sprite_ShowSolicitedMessage | 10,234 | 25 | `sprite/movement_spawn.rs::sprite_show_solicited_message` guards/calls/return |
+| 3. `01:93F7` Object_Table_Helper | 9,632 | 2 | Same helper's entry/left-column prefix; separate its 93FF shared tail |
+| 4. `0D:C4AD` Sprite_SweepingLady | 7,632 | 18 | `sprite_main_draw/npcs.rs::sprite_sweeping_lady` own body |
+| 5. `0D:C4EB` SweepingLady_Draw | 7,452 | 18 | `sprite_main_draw/npcs.rs::sweeping_lady_draw` setup/calls; exclude multiple-draw/shadow children |
+
+These total **52,422 source clocks / 27 distinct holds touched**. The object
+helper cases are iterations 43,838 and 45,521; the NPC cases are later ordinary
+09/00 entries. Caller charges inspected cover dispatch/call instructions or
+other named ranges, not these bodies. ROM fixtures still must establish
+the actual helper entry/shared-tail partition and each early return before
+pricing. Other absence-screen entries remain explicitly ownership-unreviewed;
+they are not silently included in this clean shortlist. The auditor still
+admits **zero** pure-missing prices because its global scalar exclusion proof
+is incomplete.
+
+There is also a useful optimistic recovery check: union the five candidates'
+exclusive clocks per iteration and compare with the unchanged predictor's
+`cost_shortfall`. All 27 affected iterations have one missing hold, and
+**none reaches its full-count inverse threshold**. The closest is iteration
+50,628: 1,314 candidate clocks versus a 1,340-clock shortfall. Thus even
+assuming all five prices proved and additive, their expected recovery **alone
+is zero in the existing fixed worker/raster context**. This is a diagnostic
+inverse, not a replay or permission to price. Per-iteration values are in
+`pure-missing-inverse.json`.
+
+### EAA4 ordering family: no commutation admitted
+
+`ordering.json` retains all 184 nonpaired kernel rows: **92 ordered mismatches,
+46 source-only and 46 native-only**. Together they leave 21,108 clocks on
+**each** side across 26 iterations / 26 holds. They are one direction-predicate
+family, not 184 independent price errors.
+
+The ROM executes `EAA4 JSR EAD1` (X predicate), `EAA7 STY $00`, then
+`EAA9 JSR EAE8` (Y predicate). Native calls below/Y, then right/X, then retires
+the parent EAA7 marker. EAD1 writes `$0F`; EAE8 writes `$0E` and uses PHP/PLP;
+the parent saves the two Y results in `$00/$01`. The inspected native helpers
+read shared native state and return independent `PairU8`s, which explains why
+the gameplay result can agree while instruction retirement order disagrees.
+
+There is also a marker-predicate obstacle to a blanket permutation: the ROM's
+EAAE loads `$0E` (the below/Y difference) before BPL EAB0, and EAB8 loads `$0F`
+(right/X) before BPL EABA. Native marker selection at movement_spawn 1110/1112
+tests `right.b` for EAB0 and `below.b` for EABA. Opposite-sign axes therefore
+need a distinct branch-ownership proof, not just helper reordering. The final
+direction calculation uses both actual differences; this observation does
+not establish a gameplay bug or authorize a marker edit. The source
+disassemblies and unchanged native excerpt supply the concrete witness.
+
+A potential named rule would be
+`eaa4_private_axis_results_with_parent_save`: bind one EAA4 call, the same
+sprite/input image and widths, isolate `$0E/$0F/$00/$01` plus stack/register
+effects, retain each predicate result, and move the parent save/call opcodes
+with the correct result. It must also prove that no interrupt, publication,
+I/O, mutable input, or consumer observes the moved writes and that physical
+retirement cuts remain mapped. The retained streams lack the required
+register/write/consumer witnesses. **The complete permutation is not proved;
+no such rule or sorting is implemented.** Existing ordered-kernel tests
+continue to reject reordering and cancellation. Equal family totals do not
+substitute for that proof.
+
+### Concrete next batches and unadmitted entries
+
+These batches are recommendations for separate authorized work; this batch
+changes no marker or price. `next-batches.json` retains the exact iteration
+unions. Expected coverage below means making that many holds **investigable**;
+actual recovered holds remain unknown and zero are validated here.
+Equal-cost marker replacements/model witnesses themselves add no clocks and
+therefore predict zero direct recoveries; their value is enabling exclusive
+gap proofs. The pure-missing batch also predicts zero recoveries on its own
+under the fixed-context inverse above. The reach numbers must not be sold as
+recoveries.
+
+| Priority / next batch | Work exposed or converted | Holds touched, union |
+| --- | --- | ---: |
+| 1. Map graphics models at load_gfx 2812/3271/3010/3018/3251 | 64,834,130 O clocks; add dev-only PC/child/call witnesses, include final E843 call at 3020 in its proof; no additional price | 14 |
+| 2. Replace basic-attribute scalars 154/186/203 and their branch extras | 6,910,464 O clocks in these three sites; fixture full/partial B8E3/B8EC/B8F3 entries and per-loop widths | 6 |
+| 3. Replace floor n=8 plus quadrant/BG1 copy scalars | 5,537,388 O clocks at object_draw 1687, room_load 1559 and effects 436; fixed loops and entry aliases | 6 |
+| 4. Price reviewed object-helper/NPC own-body gaps | 52,422 U clocks; shared tail/early-return fixtures and child exclusion first | 27 |
+| 5. Replace Proxima bounds scalar at loading 1122 and tile lookup at tile_detect 49 | 1,081,872 and 414,942 O clocks; branch/width blocks, separately priced children | 21 and 29; overlapping |
+| 6. Map common main/preparation fragments, then HUD | Eight main/preparation sites total 960,592 O clocks; domain cuts and resumed return before broad-reach conversion | 63 |
+| 7. Replace low-plane conversion at load_gfx 3195 | 2,179,584 O clocks; animated/nonanimated loop variants | 5 |
+
+The 26 unadmitted iterations are predominantly startup, room preparation and
+overworld/dungeon transitions. Their exact module/substage breakdown is:
+
+| Entry | Iterations / holds | S-N clocks |
+| --- | ---: | ---: |
+| `08/00` | 2 / 2 | 16,387,828 |
+| `01/00` | 1 / 9 | 3,204,088 |
+| `00/01` | 7 / 7 | 2,898,770 |
+| `00/00` | 1 / 1 | 418,262 |
+| `06/00` | 2 / 2 | 239,380 |
+| `00/07` | 5 / 5 | 56,150 |
+| `07/02` | 4 / 4 | 52,828 |
+| `07/0E` | 1 / 1 | 49,962 |
+| `09/20` | 1 / 1 | 10,236 |
+| `0E/03` | 2 / 2 | 3,624 |
+| **Total** | **26 / 34** | **23,321,128** |
+
+`unadmitted-source-routines.json` ranks this group alone. Its largest U
+owners are E843 (17,459,860), song upload 8888 (16,302,856), E78F
+(14,557,694), E772 (8,984,790), B8F3 attributes (7,111,528), E60D/E609
+(5,807,586 / 5,470,116), E583 (4,316,118), intro dispatch/clear frame 879C
+(4,003,760), E6B7 (3,775,904) and floor drawer 018A44 (3,407,458).
+All these large source rows belong to the unadmitted group. Much of their
+work already has native model/scalar charges. Their U totals therefore
+describe the work mix, **not** additive explanations of S-N or price amounts.
+Song polling and intro-clear observation/domain gaps should be resolved
+before treating the transition deficit as missing product timing.
+
+### M2c verification and stop
+
+Analysis ran in temporary Python programs under `/tmp`, with reports only
+under `target/shadow-m2`; no one-off script was added to the repository.
+All original M2b inputs were read-only. The six retained observer off/on
+file pairs (predictor, stdout, routine, block, object and sprite CSVs) were
+freshly rehashed and remain byte-identical to each other and their M2b
+receipt. No product or auditor source changed, so this is a revalidation of
+the retained observer experiment, not a claim of a new runtime replay.
+
+Final build/test and disk receipts are retained in `m2c-verification.json`.
+All **26 feature-enabled auditor-package tests** and **eight feature-disabled
+package tests** pass. Ordinary default, `--no-default-features` and
+`--features rom-shadow-audit` product builds, plus enabled/disabled auditor
+builds, finish with **zero warnings/errors**. `git diff --check` passes and
+the only tracked change is this document. Retained workspace size is about
+**2.14 GB**, below 3,000,000,000 bytes; the private M2c build directory remains
+available. No absolute transient peak measurement is claimed.
+No full library suite, GPU run, video, cached-av, external Snes9x process,
+protected-cache/shared-ledger write, cargo fmt, commit or push was performed.
+This is a residual-analysis stop; no prices or recovered holds are admitted.
