@@ -3386,3 +3386,158 @@ fn route1_moblin_head_read_page_crossing_matches_rom() {
     }
     eprintln!("route1 Moblin page edges: {cases} ROM cases");
 }
+
+#[test]
+fn route2_octorok_inline_draw_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for direction in 0..4u8 {
+            for mouth in 0..3u8 {
+                for y in [0u16, 0x40, 0xef, 0xf0, 0xff, 0x100, 0x200] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    for (a, v) in [(0xe20, 8), (0xde0, direction), (0xdb0, mouth)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x06d54a, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x06d54a, s,
+                        |s| s.cpu.k == 6 && (0xd54a..0xd5b9).contains(&s.cpu.pc),
+                        || n.octorock_draw(k));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route2 Octorok draw: {cases} ROM cases");
+}
+
+#[test]
+fn route2_octorok_control_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for kind in [8u8, 10] {
+            for direction in 0..4u8 {
+                // Inactive, recoil, walk/stop, RNG, and both shooting bodies.
+                for (submodule, recoil, ai, delay, aux, graphics) in [
+                    (1, 0, 0, 0, 0, 7), (0, 8, 0, 0, 0, 0),
+                    (0, 0, 0, 0, 0, 0), (0, 0, 0, 1, 0, 7),
+                    (0, 0, 1, 0, 0, 0), (0, 0, 1, 1, 8, 7),
+                    (0, 0, 1, 8, 0, 0), (0, 0, 1, 16, 0, 0),
+                    (0, 0, 1, 28, 0, 0), (0, 0, 1, 60, 0, 0),
+                    (0, 0, 1, 128, 0, 0), (0, 0, 1, 159, 0, 0),
+                ] {
+                    if kind == 8 && delay > 60 { continue; }
+                    let mut n = prefix3_moldorm_state(k, 0x40);
+                    for (a, v) in [(0xe20, kind), (0xde0, direction), (0xdd0, 9),
+                        (0xd80, ai), (0xdf0, delay), (0xe00, aux), (0xdc0, graphics),
+                        (0xea0, recoil), (0xf50, 0), (0xdb0, 0)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0x11, submodule);
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x06d377, k).expect("ROM fixture");
+                    let random = std::cell::Cell::new(None);
+                    crate::cycle_ledger::assert_rom_marker_work(0x06d377, s,
+                        |s| {
+                            if s.cpu.k == 6 && s.cpu.pc == 0xd419 {
+                                random.set(Some((s.cpu.a as u8, s.cpu.c)));
+                            }
+                            s.cpu.k == 6 && ((0xd377..0xd44b).contains(&s.cpu.pc)
+                            || (0xd46f..0xd486).contains(&s.cpu.pc)
+                            || (0xd48a..0xd4b5).contains(&s.cpu.pc))
+                        }, || {
+                            if let Some((value, carry)) = random.get() {
+                                n.install_rom_random_replay(vec![crate::RomRandomSample::with_carry(
+                                    0, value, carry)], 0);
+                                n.rom_random_replay.begin_frame();
+                            }
+                            n.sprite_08_octorok(k);
+                        });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route2 Octorok control: {cases} ROM cases");
+}
+
+#[test]
+fn route2_raven_control_and_state_tails_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for ai in 0..4u8 {
+            for frame in [0u8, 1, 2, 3] {
+                for (x, y) in [(0x40u16, 0x40u16), (0x500, 0x40), (0x40, 0x500)] {
+                    for (delay, world, subtype, submodule, recoil) in [
+                        (0u8, 0u8, 0u8, 0u8, 0u8), (1, 0, 0, 0, 0),
+                        (0, 1, 0, 0, 0), (0, 1, 1, 0, 0),
+                        (0, 0, 0, 1, 0), (0, 0, 0, 0, 8),
+                    ] {
+                        let mut n = prefix3_moldorm_state(k, 0x40);
+                        for (a, v) in [(0xe20, 0), (0xdd0, 9), (0xd80, ai),
+                            (0xdf0, delay), (0xd90, subtype), (0xea0, recoil), (0xd50, 0xf0), (0xd40, 0x10)] {
+                            n.write_wram_byte(a + k, v);
+                        }
+                        n.write_wram_byte(0xfff, world);
+                        n.write_wram_byte(0x11, submodule);
+                        n.write_wram_word(0x22, x);
+                        n.write_wram_word(0x20, y);
+                        n.write_wram_byte(0x1a, frame);
+                        n.sync_native_game_state_from_ram();
+                        let s = marker29_machine(&n, 0x1ddd85, k).expect("ROM fixture");
+                        crate::cycle_ledger::assert_rom_marker_work(0x1ddd85, s,
+                            |s| (s.cpu.k == 0x1d && ((0xdd85..0xdda4).contains(&s.cpu.pc)
+                                || (0xddae..0xde82).contains(&s.cpu.pc)))
+                                || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)),
+                            || n.sprite_raven(k));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("route2 Raven: {cases} ROM cases");
+}
+
+#[test]
+fn route2_ropa_control_and_state_tails_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for ai in 0..2u8 {
+            for delay in [0u8, 1] {
+                for z in [0u8, 1, 255] {
+                    for submodule in [0u8, 1] {
+                        let mut n = prefix3_moldorm_state(k, 0x40);
+                        for (a, v) in [(0xe20, 0x22), (0xdd0, 9), (0xd80, ai),
+                            (0xdf0, delay), (0xf70, z), (0xf80, 0xf0)] {
+                            n.write_wram_byte(a + k, v);
+                        }
+                        n.write_wram_byte(0x11, submodule);
+                        n.sync_native_game_state_from_ram();
+                        let s = marker29_machine(&n, 0x069e1f, k).expect("ROM fixture");
+                        let random = std::cell::Cell::new(None);
+                        crate::cycle_ledger::assert_rom_marker_work(0x069e1f, s,
+                            |s| {
+                                if s.cpu.k == 6 && s.cpu.pc == 0x9e52 {
+                                    random.set(Some((s.cpu.a as u8, s.cpu.c)));
+                                }
+                                (s.cpu.k == 6 && ((0x9e1f..0x9e40).contains(&s.cpu.pc)
+                                    || (0x9e44..0x9e85).contains(&s.cpu.pc)))
+                                    || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc))
+                            }, || {
+                                if let Some((value, carry)) = random.get() {
+                                    n.install_rom_random_replay(vec![crate::RomRandomSample::with_carry(
+                                        0, value, carry)], 0);
+                                    n.rom_random_replay.begin_frame();
+                                }
+                                n.sprite_22_ropa(k);
+                            });
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("route2 Ropa: {cases} ROM cases");
+}

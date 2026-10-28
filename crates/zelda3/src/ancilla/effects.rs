@@ -149,23 +149,36 @@ impl ZeldaState {
     }
 
     pub(super) fn dash_dust_motive(&mut self, k: usize) {
+        // $09:ADF4..AE3D: complete dust caller, excluding allocation,
+        // coordinate preparation and the separate SetOamXY child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09adf4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09adf4);
         if self.ancilla_slot_view(k).timer() == 0 {
+            b.block(0x09adfc);
             self.ancilla_slot_view_mut(k).set_timer(3);
             let item_to_link = self.ancilla_slot_view_mut(k).advance_item_to_link();
             if item_to_link == 3 {
+                b.block(0x09ae0b); b.block(0x09ae3c);
                 self.ancilla_slot_view_mut(k).clear();
                 return;
             }
-        }
+            b.taken(0x09ae09);
+        } else { b.taken(0x09adfa); }
+        b.block(0x09ae10);
         if self.game_state.player.follower_link.facing() == 2 {
+            b.block(0x09ae16);
             self.oam_allocate_from_region_b(4);
         }
+        else { b.taken(0x09ae14); }
         let frame = self.ancilla_slot_view(k).item_to_link() as usize;
         if frame >= DASH_DUST_MOTIVE_MOTIVE_DASH_DUST_DRAW_CHAR.len() {
             self.ancilla_slot_view_mut(k).clear();
             return;
         }
+        b.block(0x09ae1c);
         let (x, y) = self.ancilla_prep_oam_coord(k);
+        b.block(0x09ae20);
         self.ancilla_set_oam(
             self.game_state.oam.current_pointer_usize(),
             x,
@@ -174,6 +187,7 @@ impl ZeldaState {
             4 | self.game_state.oam.priority_high(),
             0,
         );
+        b.block(0x09ae2b); b.block(0x09ae3c);
     }
 
     fn wall_hit_draw(&mut self, k: usize) {

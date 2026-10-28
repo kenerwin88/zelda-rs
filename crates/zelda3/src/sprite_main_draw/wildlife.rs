@@ -103,53 +103,89 @@ impl ZeldaState {
     //   Raven wait, ascend, attack, and flee state machine.
     // }
     pub(super) fn sprite_raven(&mut self, k: usize) {
+        // $1D:DD85..DDA3 and the four $DDAE..DE81 state bodies.
+        // Draw, movement, damage, recoil and projection keep their own prices.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddd85));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ddd85);
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         // ROM $1D:DD8D JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x1ddd91);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1ddd94);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1DE8C5) {
             return;
         }
+        b.block(0x1ddd97);
         // $1D:DD97 JSR $1D:C211: both complete damage calls.
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1DC211);
+        b.block(0x1ddd9a);
         self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
+        b.block(0x1ddd9d);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x1dddae);
                 let r = self.sprite_is_right_of_link(k);
+                b.block(0x1dddb1); b.block(0x1dde5a);
                 let value = (self.sprite_slot_view(k).oam_flags() & !0x40) | r.a.wrapping_mul(0x40);
                 self.sprite_slot_view_mut(k).set_oam_flags(value);
                 let x = i32::from(self.game_state.player.follower_link.x())
                     - i32::from(self.game_state.sprites.workspace.current_sprite_x());
                 let y = i32::from(self.game_state.player.follower_link.y())
                     - i32::from(self.game_state.sprites.workspace.current_sprite_y());
-                if ((x + 0x50 + i32::from(x >= 0)) as u16) < 0x00a0
-                    && ((y + 0x58 + i32::from(y >= 0)) as u16) < 0x00a0
-                {
+                b.block(0x1dddb4);
+                let near_x = ((x + 0x50 + i32::from(x >= 0)) as u16) < 0x00a0;
+                let near_y = ((y + 0x58 + i32::from(y >= 0)) as u16) < 0x00a0;
+                if !near_x { b.taken(0x1dddc2); }
+                else {
+                    b.block(0x1dddc4);
+                    if !near_y { b.taken(0x1dddd0); }
+                }
+                if near_x && near_y {
+                    b.block(0x1dddd2);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     let value = 24;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
                 }
+                b.block(0x1ddde2);
             }
             1 => {
+                b.block(0x1ddde5);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1dddea);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     let j = usize::from(self.sprite_slot_view(k).a());
                     let value = RAVEN_ASCEND_TIMERS[j];
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     self.sprite_apply_speed_towards_link(k, 32);
-                }
+                } else { b.taken(0x1ddde8); }
+                b.block(0x1dddfc);
                 self.sprite_slot_view_mut(k).add_z(1);
                 let value = ((self.game_state.frame.frame_counter >> 1) & 1).wrapping_add(1);
                 self.sprite_slot_view_mut(k).set_graphics(value);
             }
             2 => {
+                b.block(0x1dde09);
+                if self.sprite_slot_view(k).delay_main() != 0 { b.taken(0x1dde0c); }
+                else {
+                    b.block(0x1dde0e);
+                    if !self.game_state.world.region.is_in_dark_world() { b.taken(0x1dde11); }
+                    else {
+                        b.block(0x1dde13);
+                        if self.sprite_slot_view(k).a() != 0 { b.taken(0x1dde16); }
+                    }
+                }
                 if self.sprite_slot_view(k).delay_main() == 0
                     && !(self.game_state.world.region.is_in_dark_world()
                         && self.sprite_slot_view(k).a() != 0)
                 {
+                    b.block(0x1dde18);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                 }
                 self.raven_fly(k, false);
@@ -162,21 +198,39 @@ impl ZeldaState {
     }
 
     fn raven_fly(&mut self, k: usize, fleeing: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(if fleeing { 0x1dde66 } else { 0x1dde1b });
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 1) == 0 {
+            b.block(if fleeing { 0x1dde6c } else { 0x1dde21 });
             let mut pt = self.sprite_project_speed_towards_link(k, if fleeing { 48 } else { 32 });
             if fleeing {
+                b.block(0x1dde72);
                 pt.x = pt.x.wrapping_neg();
                 pt.y = pt.y.wrapping_neg();
             }
+            // CMP's N/Z flags select the ROM's increment/decrement branches.
+            // Price Y then X as the ROM does, before these independent writes.
+            let dy = self.sprite_slot_view(k).y_velocity().wrapping_sub(pt.y);
+            b.block(0x1dde27);
+            if dy == 0 { b.taken(0x1dde2c); }
+            else {
+                b.block(0x1dde2e);
+                if sign8(dy) { b.block(0x1dde30); }
+                else { b.taken(0x1dde2e); b.block(0x1dde35); }
+            }
+            b.block(0x1dde38);
             let dx = self.sprite_slot_view(k).x_velocity().wrapping_sub(pt.x);
             if dx != 0 {
+                b.block(0x1dde3f);
+                if sign8(dx) { b.block(0x1dde41); }
+                else { b.taken(0x1dde3f); b.block(0x1dde46); }
                 let value = self
                     .sprite_slot_view(k)
                     .x_velocity()
                     .wrapping_add(if sign8(dx) { 1 } else { 0xff });
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
             }
-            let dy = self.sprite_slot_view(k).y_velocity().wrapping_sub(pt.y);
+            else { b.taken(0x1dde3d); }
             if dy != 0 {
                 let value = self
                     .sprite_slot_view(k)
@@ -184,9 +238,11 @@ impl ZeldaState {
                     .wrapping_add(if sign8(dy) { 1 } else { 0xff });
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
             }
-        }
+        } else { b.taken(if fleeing { 0x1dde6a } else { 0x1dde1f }); }
+        b.block(0x1dde49);
         let value = ((self.game_state.frame.frame_counter >> 1) & 1).wrapping_add(1);
         self.sprite_slot_view_mut(k).set_graphics(value);
+        b.block(0x1dde5a);
         let j = (self.sprite_slot_view(k).x_velocity() >> 7) & 1;
         let value = (self.sprite_slot_view(k).oam_flags() & !0x40) | j.wrapping_mul(0x40);
         self.sprite_slot_view_mut(k).set_oam_flags(value);
@@ -914,46 +970,70 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_22_Ropa(int k) {  // 869e1f
     pub(super) fn sprite_22_ropa(&mut self, k: usize) {
+        // $06:9E1F..9E3F and the $9E44/$9E5D state bodies, excluding children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x069e1f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069e1f);
         self.ropa_draw(k);
+        b.block(0x069e22);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x069e25);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return;
         }
+        b.block(0x069e28);
         // $06:9E28 JSR $06:D88B: both complete damage calls.
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom06D88B);
+        b.block(0x069e2b);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let value = (self.sprite_slot_view(k).subtype2() >> 3) & 3;
         self.sprite_slot_view_mut(k).set_graphics(value);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x069e44);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x069e49);
                     self.sprite_apply_speed_towards_link(k, 16);
+                    b.block(0x069e4e);
                     // ROM $86:9E6C: `JSL GetRandomNumber : AND #$0F : ADC #$14`
                     // — the ADC consumes GetRandomNumber's carry-out (the C
                     // port drops it). Route boundary 21 (frame 567894): the
                     // hop left at $1C, the carry-less port at $1B.
                     let value = self.get_random_number_with_carry().masked_adc(15, 20);
+                    b.block(0x069e52);
                     self.sprite_slot_view_mut(k).set_z_velocity(value);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
-                }
+                } else { b.taken(0x069e47); }
+                b.block(0x069e5c);
             }
             1 => {
+                b.block(0x069e5d);
                 self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
-                if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0 {
+                b.block(0x069e60);
+                let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                b.block(0x069e63);
+                if collision != 0 {
+                    b.block(0x069e68);
                     self.sprite_zero_velocity_xy(k);
-                }
+                } else { b.taken(0x069e66); }
+                b.block(0x069e6b);
                 self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+                b.block(0x069e6e);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if sign8(self.sprite_slot_view(k).z()) {
+                    b.block(0x069e79);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_z(value);
                     let value = 48;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                }
+                } else { b.taken(0x069e77); }
+                b.block(0x069e84);
             }
             _ => {}
         }

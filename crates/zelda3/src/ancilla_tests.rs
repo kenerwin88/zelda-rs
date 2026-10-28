@@ -658,3 +658,34 @@ fn marker29_safe_oam_coordinates_match_rom() {
         }
     }
 }
+
+#[test]
+fn route2_dash_dust_caller_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 9] {
+        for timer in [0u8, 1] {
+            for frame in 0..3u8 {
+                for facing in [0u8, 2, 4, 6] {
+                    for y in [0x40u16, 0x100] {
+                        let mut n = marker29_state();
+                        for (a, v) in [(0xc4a, 0x1e), (0xc68, timer), (0xc5e, frame),
+                            (0xbfa, y as u8), (0xc0e, (y >> 8) as u8), (0xc04, 0x40)] {
+                            n.write_wram_byte(a + k, v);
+                        }
+                        n.write_wram_byte(0x2f, facing);
+                        n.write_wram_byte(0xfa0, k as u8);
+                        n.sync_native_game_state_from_ram();
+                        let mut s = marker29_machine(&n, 0x09adf4, k).expect("ROM fixture");
+                        s.cpu.sp = 0x1fc;
+                        s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 9]);
+                        crate::cycle_ledger::assert_rom_marker_work(0x09adf4, s,
+                            |s| s.cpu.k == 9 && (0xadf4..0xae3e).contains(&s.cpu.pc),
+                            || n.dash_dust_motive(k));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("route2 dash dust: {cases} ROM cases");
+}

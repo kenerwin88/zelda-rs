@@ -114,14 +114,25 @@ impl ZeldaState {
     //   Optional mouth tile followed by the canonical large body tile.
     // }
     pub(super) fn octorock_draw(&mut self, k: usize) {
+        // $06:D54A..D5B8: inline mouth writer and caller opcodes only.
+        // Coordinate preparation and DC13's body retain their own prices.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d54a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d54a);
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
         let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
+        b.block(0x06d54d);
         if self.sprite_slot_view(k).direction() != 3 {
+            b.block(0x06d554);
             let oam = self.game_state.oam.current_pointer_usize();
             let j = (self.sprite_slot_view(k).c() as usize) * 3
                 + self.sprite_slot_view(k).direction() as usize;
+            let mouth_y = y.wrapping_add(OCTOROCK_DRAW_Y_OFFSETS[j] as i16 as u16);
+            if mouth_y.wrapping_add(16) < 256 { b.taken(0x06d585); }
+            else { b.block(0x06d587); }
+            b.block(0x06d58b);
             self.set_oam_helper0_at(
                 oam,
                 x.wrapping_add(OCTOROCK_DRAW_X_OFFSETS[j] as i16 as u16),
@@ -131,6 +142,8 @@ impl ZeldaState {
                 0,
             );
         }
+        else { b.taken(0x06d552); }
+        b.block(0x06d59f);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(4));
@@ -139,6 +152,7 @@ impl ZeldaState {
             .set_current_extended_pointer(ext.wrapping_add(1));
         self.sprite_slot_view_mut(k).subtract_flags2(1);
         self.sprite_prep_and_draw_single_large_no_prep(k, &mut info);
+        b.block(0x06d5b5);
         self.sprite_slot_view_mut(k).add_flags2(1);
     }
 
@@ -862,11 +876,23 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_08_Octorok(int k) {  // 86d377
     pub(super) fn sprite_08_octorok(&mut self, k: usize) {
+        // $06:D377..D44A plus the RTS-selected $D46F/$D48A bodies.
+        // Draw, inactivity/recoil, movement, damage, collision and spawn
+        // children keep their existing instruction/scalar ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d377));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d377);
         let mut j = self.sprite_slot_view(k).direction();
         if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.block(0x06d380);
             let value = SPRITE_08_OCTOROK_DIRECTIONS[usize::from(j)];
             self.sprite_slot_view_mut(k).set_direction(value);
         }
+        else { b.taken(0x06d37e); }
+        b.block(0x06d386);
+        if self.sprite_slot_view(k).graphics() == 7 { b.block(0x06d38f); }
+        else { b.taken(0x06d38d); }
+        b.block(0x06d393);
         let value = (self.sprite_slot_view(k).oam_flags() & !0x40)
             | SPRITE_08_OCTOROK_OAM_FLAGS[usize::from(j)]
             | if self.sprite_slot_view(k).graphics() == 7 {
@@ -876,25 +902,32 @@ impl ZeldaState {
             };
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.octorock_draw(k);
+        b.block(0x06d3a3);
         let value = j;
         self.sprite_slot_view_mut(k).set_direction(value);
 
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x06d3aa);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return;
         }
+        b.block(0x06d3ad);
         // ROM $06:D3AD
         self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
+        b.block(0x06d3b0);
         // $06:D3B0 JSR $06:D88B: both complete damage calls.
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom06D88B);
+        b.block(0x06d3b3);
         if (self.sprite_slot_view(k).ai_state() & 1) == 0 {
+            b.block(0x06d3ba);
             self.sprite_slot_view_mut(k).add_subtype2(1);
             let value = ((self.sprite_slot_view(k).subtype2() >> 3) & 3)
                 | ((self.sprite_slot_view(k).direction() & 2) << 1);
             self.sprite_slot_view_mut(k).set_graphics(value);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                b.block(0x06d3d7);
                 self.sprite_slot_view_mut(k).add_ai_state(1);
                 let value = if self.sprite_slot_view(k).sprite_type() == 8 {
                     60
@@ -903,20 +936,29 @@ impl ZeldaState {
                 };
                 self.sprite_slot_view_mut(k).set_delay_main(value);
             } else {
+                b.taken(0x06d3d5);
+                b.block(0x06d3e4);
                 j = self.sprite_slot_view(k).direction();
                 let value = SPRITE_08_OCTOROK_LOCAL_X_VELOCITIES[usize::from(j)] as u8;
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
                 let value = SPRITE_08_OCTOROK_LOCAL_Y_VELOCITIES[usize::from(j)] as u8;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
-                if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0 {
+                let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                b.block(0x06d3f6);
+                if collision != 0 {
+                    b.block(0x06d3fb); b.block(0x06d435);
                     self.sprite_slot_view_mut(k).xor_direction(1);
-                }
+                } else { b.taken(0x06d3f9); b.block(0x06d405); }
             }
             return;
         }
 
+        b.taken(0x06d3b8); b.block(0x06d406);
         self.sprite_zero_velocity_xy(k);
+        b.block(0x06d409);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x06d40e);
+            let old_direction = self.sprite_slot_view(k).direction();
             self.sprite_slot_view_mut(k).add_ai_state(1);
             // ROM $86D416: `AND #$3F : ADC #$30` inherits the RNG routine's
             // final LSR carry (oracle sample 0x8D/C=1 wrote 0x3E at route
@@ -925,28 +967,45 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_delay_main(value);
             let value = self.sprite_slot_view(k).delay_main() & 3;
             self.sprite_slot_view_mut(k).set_direction(value);
+            b.block(0x06d419);
+            if old_direction == value { b.taken(0x06d429); }
+            else { b.block(0x06d42b); b.taken(0x06d42e); }
+            // EOR after a non-equal CMP cannot be zero; $D430 is unreachable.
+            b.block(0x06d435);
         } else {
+            b.taken(0x06d40c); b.block(0x06d436);
             match self.sprite_slot_view(k).sprite_type() {
                 8 => {
+                    b.block(0x06d46f);
                     j = self.sprite_slot_view(k).delay_main();
                     if j == 28 {
+                        b.block(0x06d476);
                         self.octorok_fire_loogie(k);
-                    }
+                        b.block(0x06d47a);
+                    } else { b.taken(0x06d474); }
+                    b.block(0x06d47b);
                     let value = OCTOROK_SPIT_POSE_BY_DELAY[usize::from(j >> 3)];
                     self.sprite_slot_view_mut(k).set_c(value);
                 }
                 10 => {
+                    b.block(0x06d48a);
                     j = self.sprite_slot_view(k).delay_main();
                     if j < 128 {
+                        b.block(0x06d492);
                         if (j & 15) == 0 {
+                            b.block(0x06d496);
                             let value = SPRITE_08_OCTOROK_NEXT_DIR
                                 [usize::from(self.sprite_slot_view(k).direction())];
                             self.sprite_slot_view_mut(k).set_direction(value);
                         }
+                        else { b.taken(0x06d494); }
+                        b.block(0x06d4a1);
                         if (j & 15) == 8 {
+                            b.block(0x06d4a5);
                             self.octorok_fire_loogie(k);
-                        }
-                    }
+                        } else { b.taken(0x06d4a3); }
+                    } else { b.taken(0x06d490); }
+                    b.block(0x06d4a8);
                     let value = FOUR_WAY_OCTOROK_SPIT_POSE_BY_DELAY[usize::from(j >> 4)];
                     self.sprite_slot_view_mut(k).set_c(value);
                 }
