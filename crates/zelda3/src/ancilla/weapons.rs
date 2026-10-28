@@ -1602,11 +1602,20 @@ impl ZeldaState {
     }
 
     fn arrow_draw(&mut self, k: usize) {
+        // $08:A36E..A45A: complete caller/writer, excluding adjusted
+        // coordinates and SetOamXY. The two BRL clear tails execute once.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08a36e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08a36e);
         let (mut x, mut y) = self.ancilla_prep_adjusted_oam_coord(k);
+        b.block(0x08a371);
         if self.ancilla_slot_view(k).object_priority() != 0 {
+            b.block(0x08a376);
             self.oam_state_mut().set_priority_high(0x30);
-        }
+        } else { b.taken(0x08a374); }
+        b.block(0x08a37a);
         if self.ancilla_slot_view(k).h() != 0 {
+            b.block(0x08a38e);
             x = x.wrapping_add(
                 self.game_state
                     .display
@@ -1621,29 +1630,48 @@ impl ZeldaState {
                     .bg2_h_copy2()
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg1_h_copy2()),
             );
-        }
+        } else { b.taken(0x08a38c); }
 
+        b.block(0x08a3a4);
         let r7 = self.ancilla_slot_view(k).item_to_link();
         let mut j = self.ancilla_slot_view(k).direction() & !4;
         if self.ancilla_slot_view(k).ancilla_type() == 0x0a {
+            b.block(0x08a3b8);
+            if r7 & 8 != 0 { b.block(0x08a3bf); }
+            else { b.taken(0x08a3bd); b.block(0x08a3c3); }
+            b.block(0x08a3c8);
             j = j
                 .wrapping_mul(4)
                 .wrapping_add(8)
                 .wrapping_add(if r7 & 8 != 0 { 1 } else { r7 & 3 });
-        } else if !sign8(r7) {
-            j |= 4;
+        } else {
+            b.taken(0x08a3b6);
+            b.block(0x08a3d6);
+            if !sign8(r7) { b.block(0x08a3db); j |= 4; }
+            else { b.taken(0x08a3d9); }
         }
         let mut j = j as usize * 2;
 
         let mut oam = self.game_state.oam.current_pointer_usize();
         let oam_org = oam;
+        b.block(0x08a3df);
         let flags = if self.game_state.inventory.items.has_silver_arrows() {
+            b.taken(0x08a3ec);
             2
         } else {
+            b.block(0x08a3ee);
             4
         };
-        for _ in 0..2 {
+        b.block(0x08a3f0);
+        for tile in 0..2 {
+            // ROM X is twice the interleaved native character-table index.
+            let source_x = j * 2;
+            b.block(0x08a3f6);
+            if 0x4e + source_x > 0xff { b.crossing(0x08a3f6); }
             if ARROW_DRAW_ARROW_DRAW_CHAR[j] != 0xff {
+                b.block(0x08a3fd);
+                if 0xae + source_x * 2 > 0xff { b.crossing(0x08a405); }
+                if 0xb0 + source_x * 2 > 0xff { b.crossing(0x08a40d); }
                 // $08:A417 JSR F6E1: complete XY body, once per executed draw.
                 self.ancilla_set_oam_marked(
                     oam,
@@ -1655,17 +1683,32 @@ impl ZeldaState {
                         | self.game_state.oam.priority_high(),
                     0,
                 );
+                b.block(0x08a41a);
+                if 0x4f + source_x > 0xff { b.crossing(0x08a420); }
                 oam += 4;
-            }
+            } else { b.taken(0x08a3fb); }
+            b.block(0x08a439);
+            if tile == 0 { b.block(0x08a443); }
+            else { b.taken(0x08a441); }
             j += 1;
         }
 
+        b.block(0x08a446);
+        if (oam_org & 0xff) + 1 > 0xff { b.crossing(0x08a449); }
+        if self.game_state.oam.entry_y(oam_org) == 0xf0 {
+            b.block(0x08a44f);
+            if (oam_org & 0xff) + 5 > 0xff { b.crossing(0x08a451); }
+            if self.game_state.oam.entry_y(oam_org + 4) != 0xf0 { b.taken(0x08a455); }
+        } else { b.taken(0x08a44d); }
         if self.game_state.oam.entry_y(oam_org) == 0xf0
             && self.game_state.oam.entry_y(oam_org + 4) == 0xf0
         {
+            b.block(0x08a457);
+            b.block(0x08a4da);
+            b.block(0x08e5d8);
             let value = 0;
             self.ancilla_slot_view_mut(k).set_ancilla_type(value);
-        }
+        } else { b.block(0x08a45a); }
     }
 
     pub(super) fn sprite_create_deflected_arrow(&mut self, k: usize) {
@@ -1694,4 +1737,47 @@ impl ZeldaState {
         }
     }
 
+}
+
+#[cfg(test)]
+mod route4_tests {
+    use super::super::tests::{marker29_machine, marker29_state};
+
+    #[test]
+    fn route4_arrow_draw_matches_rom() {
+        let mut cases = 0;
+        for k in [0usize, 9] {
+            for kind in [9u8, 10] {
+                for direction in 0..4u8 {
+                    for phase in [0u8, 1, 2, 3, 8, 0x80] {
+                        for (x, y, priority, h, silver, oam) in [
+                            (0x40u16, 0x40u16, 0u8, 0u8, 0u8, 0x800u16),
+                            (0x100, 0xf0, 1, 1, 4, 0x8fc),
+                            (0xfff0, 0x100, 1, 0, 4, 0x800),
+                        ] {
+                            let mut n = marker29_state();
+                            for (a, v) in [(0xc4a, kind), (0xc72, direction), (0xc5e, phase),
+                                (0x280, priority), (0x3c5, h), (0xbfa, y as u8),
+                                (0xc0e, (y >> 8) as u8), (0xc04, x as u8), (0xc18, (x >> 8) as u8)] {
+                                n.write_wram_byte(a + k, v);
+                            }
+                            n.write_wram_byte(0xf340, silver);
+                            n.write_wram_byte(0xfa0, k as u8);
+                            n.write_wram_word(0x90, oam);
+                            n.write_wram_byte(usize::from(oam) + 1, 0xf0);
+                            n.write_wram_byte(usize::from(oam) + 5, 0xf0);
+                            n.sync_native_game_state_from_ram();
+                            let s = marker29_machine(&n, 0x08a36e, k).expect("ROM fixture");
+                            crate::cycle_ledger::assert_rom_marker_work(0x08a36e, s,
+                                |s| s.cpu.k == 8 && ((0xa36e..0xa45b).contains(&s.cpu.pc)
+                                    || s.cpu.pc == 0xa4da || (0xe5d8..0xe5dc).contains(&s.cpu.pc)),
+                                || n.arrow_draw(k));
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("route4 Arrow: {cases} ROM cases");
+    }
 }

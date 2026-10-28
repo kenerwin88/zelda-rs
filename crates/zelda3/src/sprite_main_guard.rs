@@ -275,6 +275,17 @@ impl ZeldaState {
     /// `Sprite_PrepOamCoordOrDoubleRet`, immediately before the final
     /// `(oam.x | oam.y) >= 256` test at `$05:C21D`.
     pub(super) fn probe_until_after_oam_coordinates(&mut self, k: usize) -> Option<(u16, u16)> {
+        // $05:C15D..C21C: inline movement and control, ending at the
+        // coordinate child's return. The C21D suffix is retired on resume.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c15d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c15d);
+        if sign8(self.sprite_slot_view(k).x_velocity()) { b.block(0x05c164); }
+        else { b.taken(0x05c162); }
+        b.block(0x05c165);
+        if sign8(self.sprite_slot_view(k).y_velocity()) { b.block(0x05c17a); }
+        else { b.taken(0x05c178); }
+        b.block(0x05c17b);
         self.sprite_add_xy(
             k,
             self.sprite_slot_view(k).x_velocity() as i8 as i32,
@@ -283,6 +294,7 @@ impl ZeldaState {
 
         let parent = self.sprite_slot_view(k).c().wrapping_sub(1) as usize;
         let is_close = if self.sprite_slot_view(parent).sprite_type() == 0xce {
+            b.block(0x05c193);
             let x = self
                 .game_state
                 .sprites
@@ -297,15 +309,31 @@ impl ZeldaState {
                 .y()
                 .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
                 .wrapping_add(24);
+            if x >= 32 { b.taken(0x05c1a4); }
+            else {
+                b.block(0x05c1a6);
+                if y >= 32 { b.taken(0x05c1b7); }
+                else { b.block(0x05c1b9); }
+            }
+            if x >= 32 || y >= 32 { b.block(0x05c1bc); }
             x < 32 && y < 32
         } else {
-            if (self.probe_check_tile_solidity(k)
-                && self.game_state.sprites.workspace.tile() != NativeTile::SHALLOW_WATER)
-                || self.game_state.player.follower_link.is_cape_active()
-            {
+            b.taken(0x05c191);
+            b.block(0x05c1bf);
+            let solid = self.probe_check_tile_solidity(k);
+            b.block(0x05c1c3);
+            if solid { b.block(0x05c1c5); }
+            else { b.taken(0x05c1c3); }
+            let blocked = solid && self.game_state.sprites.workspace.tile() != NativeTile::SHALLOW_WATER;
+            if !blocked { b.block(0x05c1cc); }
+            if blocked || self.game_state.player.follower_link.is_cape_active() {
+                b.taken(if blocked { 0x05c1ca } else { 0x05c1cf });
+                b.block(0x05c223);
+                b.block(0x05c226);
                 self.sprite_slot_view_mut(k).clear();
                 return None;
             }
+            b.block(0x05c1d1);
             let x = self
                 .game_state
                 .sprites
@@ -318,6 +346,18 @@ impl ZeldaState {
                 .workspace
                 .current_sprite_y()
                 .wrapping_sub(self.game_state.player.follower_link.y());
+            if x >= 16 { b.taken(0x05c1de); }
+            else {
+                b.block(0x05c1e0);
+                if y >= 16 { b.taken(0x05c1ed); }
+                else {
+                    b.block(0x05c1ef);
+                    if self.sprite_slot_view(k).floor()
+                        != self.game_state.player.follower_link.lower_level_state() {
+                        b.taken(0x05c1f4);
+                    }
+                }
+            }
             x < 16
                 && y < 16
                 && self.sprite_slot_view(k).floor()
@@ -325,29 +365,42 @@ impl ZeldaState {
         };
 
         if is_close {
+            b.block(0x05c1f6);
             if self.sprite_slot_view(parent).ai_state() != 3 {
+                b.block(0x05c203);
                 {
                     let mut parent_sprite = self.sprite_slot_view_mut(parent);
                     parent_sprite.set_ai_state(3);
                 }
                 if self.sprite_slot_view(parent).sprite_type() != 0xce {
+                    b.block(0x05c20f);
                     let mut parent_sprite = self.sprite_slot_view_mut(parent);
                     parent_sprite.set_delay_main(16);
                     parent_sprite.set_subtype2(0);
-                }
-            }
+                } else { b.taken(0x05c20d); }
+            } else { b.taken(0x05c201); }
+            b.block(0x05c217);
+            b.block(0x05c223);
+            b.block(0x05c226);
             self.sprite_slot_view_mut(k).clear();
             None
         } else {
+            b.block(0x05c21a);
             self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet)
                 .map(|(x, y, _flags)| (x, y))
         }
     }
 
     pub(super) fn complete_probe_after_oam_coordinates(&mut self, k: usize, (x, y): (u16, u16)) {
+        // $05:C21D..C226, disjoint from the movement/preparation prefix.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c15d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c21d);
         if (x | y) >= 256 {
+            b.block(0x05c223);
             self.sprite_slot_view_mut(k).clear();
-        }
+        } else { b.taken(0x05c221); }
+        b.block(0x05c226);
     }
 
     // bool Probe_CheckTileSolidity(int k) {  // 8dc26e

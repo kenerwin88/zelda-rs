@@ -14614,3 +14614,118 @@ approximately **641.9 MB**, below **3 GB**. No GPU run, `--video`,
 cached-av, Snes9x execution, protected-cache/shared-ledger write, cargo fmt,
 commit, push or one-off repository script was used. Remaining owner pricing,
 Module09 pricing and continuous live ending acceptance remain unfinished.
+
+## Route pricing 4
+
+**Verified partial CPU-only stop on `codex/route4`, base `8e3f29b9`.**
+Evidence: `target/route4/`. The single final ROM census uses read-only
+**full-v2**, `--report 0 --seed-every 2000`, unsharded. Its unchanged gate
+**PASSes all 1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**,
+and every runtime hold equals P2.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,878 | **2,842** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 466 | **461** |
+| 461,989..1,473,122 | 2,286 | **2,255** |
+
+Missing holds fall **2,878 → 2,842**:
+**36 restored**, **0 lost**, no new missing iteration
+or changed source context. The retained final Route 3 predictor/profile is
+bound to this exact base by `baseline-identity.json`; no duplicate main census
+or seeded live census was run. The whole-route worklist is recomputed on all
+2,845 baseline missing iterations,
+with the existing exact multi-hold inverses. `owner-ranking.json` retains the
+four-window raw exclusive ranking; those parent/alias differences are not
+additive prices. Ties prefer the earlier route iteration.
+`remaining-owner-ranking.json` recomputes the final residual whole-route worklist.
+
+### Admitted instruction work
+
+Four complete self families, including their disjoint selected tails, add
+**115 blocks / 409 instructions** from
+`scripts/rom_block_costs.py`. All **2,768 existing rows remain byte-identical**.
+Markers are lagless-only and cite source addresses. The selected self bodies
+had **zero legacy `charge(N)` scalars** and retain none. Existing child prices,
+default/ROM-timing accounting and game-state operations remain unchanged.
+
+| Self family | Source entry | New clocks on frozen misses | Independent executed-marker flips |
+| --- | --- | ---: | ---: |
+| Probe prefix / post-OAM suffix | `$05c15d` | 767,726 | 16 |
+| Energy-ball caller / selected trail | `$1eda42` | 166,190 | 9 |
+| Arrow drawing / clear tails | `$08a36e` | 454,466 | 9 |
+| Lightning caller | `$1de3ed` | 46,672 | 3 |
+
+`source-predictions.json` separately ranks the retained original instruction
+subset: Probe **15**, Arrow **9**, energy-ball caller/trail **8**, Lightning
+**3** independent recoveries. These overlap and are not promised additive gains.
+The main whole-route ranking's higher collision/velocity, drawing, routing and
+slot-parent rows retain their existing scalar/instruction/child ownership.
+Guard drawing, weapon animation, screen-clear, weapon-tink and garnish writers
+already carry complete self scalars. Swamola still needs a complete caller and
+handoff partition. The statue scan is not admitted: source Y overlap is
+`+8 <16`, while native tests `+16 <32`; a behavior repair is separate work.
+`admission-notes.json` retains these exclusions. **Module09 is untouched**;
+its Route 2 all-entry retirement partition remains unestablished.
+
+Probe's `$05:C15D..C21C` prefix ends at the coordinate child's return;
+`$C21D..C226` executes on complete or resumed return, once. Its movement is
+inline source work, not an additional movement-child price. The complete/split
+fixture verifies equal work and state through this existing checkpoint.
+Arrow uses the actual interleaved table index, word-read page crossings,
+optional priority/scroll paths, sentinel skips and final OAM read crossings.
+Only its actual `$A457 → A4DA → E5D8` transfers retire the shared clear tails;
+other clear callers receive no price. Energy-ball's `$DA67 JMP DB54` tail stays
+in its caller frame. Its drawing, movement, collision, damage, projection,
+sound and spawn children remain separate. Lightning leaves the already marked
+large writer and garnish allocator separate and follows the actual signed
+X-offset branch. `pricing-audit.json` checks source calls, JML and dispatch-table
+bindings. No dispatcher tax or parent-plus-child charge is installed.
+
+**1,435,054 new marker clocks = 1,435,054 signed main-counter clocks**
+on every frozen missing row, with **0 work mismatches**.
+Original instruction work grouped into the generated blocks agrees on all
+**2,053 covered rows**, with
+**0 source mismatches**.
+The unchanged full-cohort inverse predicts **36** recoveries;
+observed cohort recovery is **36**, with
+**0 prediction exceptions**.
+`work-proof.json`, `source-new-instruction-work.json.gz` and
+`frame-flips.json.gz` retain the matrices. These are instruction-work and
+logical-scheduling checks, not physical CPU/NMI or exact A/V proof.
+No price was fitted to lag counts; no classifier, pacing rule, scene threshold,
+multiplier, scene table, SPC or APU implementation changed.
+
+### Continuous live and final verification
+
+The single cold live lane uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, and zero
+post-initial reseeds. It completes all **500,000 tested iterations**.
+Its first classified state difference is **380,880**, existing
+`song-end-poll` classification, reason `rupee sound queue`, room **`$005A`**,
+compared with base **229,034**. The last clean index is
+**380,879**. The unchanged strict gate reports
+`census gate: FAIL (unexplained=119240, complete=True)`. This is a completed bounded first-divergence receipt,
+not full-route live or ending acceptance. `live-classification-summary.json`
+retains the first rows and category counts; complete classified rows are
+compressed directly through a FIFO. Post-divergence observations do not extend
+the clean prefix, and no classifier is widened to accept them.
+
+All **four new ROM fixture tests / 488 cases per feature configuration** pass.
+Touched-area checks pass **158 drawing, 21 ancilla, nine guard and 14 small-boss
+tests**. **Nine Python generator/worklist tests**, exact table regeneration
+and `git diff --check` pass. Both ordinary production builds are warning-free;
+the existing default/reduced lib-test warning groups remain separate.
+Full library suites, cargo GPU tests and seeded live censuses were not run.
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio.
+
+All **1,512 protected ledger/cache input files** retain the same file set,
+sizes and nanosecond mtimes. Frozen source/binary identities, commands, gates,
+proof matrices and the final patch bind this stop. Evidence remains below
+**3 GB**. No GPU run, `--video`, cached-av, Snes9x execution, protected-cache
+or shared-ledger write, cargo fmt, commit, push or one-off repository script
+was used. Remaining pricing and continuous live ending acceptance remain
+unfinished.

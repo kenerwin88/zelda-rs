@@ -3704,3 +3704,136 @@ fn route3_mimic_caller_and_eyegore_entry_match_rom() {
     }
     eprintln!("route3 Mimic: {cases} ROM cases");
 }
+
+#[test]
+fn route4_probe_complete_and_split_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for parent_kind in [0x41u8, 0xce] {
+            for velocity in [0u8, 1, 0xff, 0x80] {
+                for (link_x, link_y, parent_ai, floor, cape, x, y) in [
+                    (0x40u16, 0x40u16, 0u8, 0u8, 0u8, 0x40u16, 0x40u16),
+                    (0x50, 0x40, 3, 0, 0, 0x40, 0x40),
+                    (0x40, 0x50, 0, 1, 0, 0x40, 0x40),
+                    (0x500, 0x500, 0, 0, 0, 0x40, 0x40),
+                    (0x500, 0x500, 0, 0, 1, 0x40, 0x40),
+                    (0x500, 0x500, 0, 0, 0, 0x400, 0x400),
+                ] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 9), (0xdb0, 8), (0xd50, velocity),
+                        (0xd40, velocity), (0xf20, floor), (0xd10, x as u8),
+                        (0xd30, (x >> 8) as u8), (0xd00, y as u8), (0xd20, (y >> 8) as u8)] {
+                        n.write_wram_byte(a + k, v);
+                    }
+                    n.write_wram_byte(0xe20 + 7, parent_kind);
+                    n.write_wram_byte(0xd80 + 7, parent_ai);
+                    n.write_wram_byte(0x55, cape);
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.write_wram_word(0x22, link_x);
+                    n.write_wram_word(0x20, link_y);
+                    n.sync_native_game_state_from_ram();
+                    let mut split = n.clone();
+                    let s = marker29_machine(&n, 0x05c15d, k).expect("ROM fixture");
+                    let before = crate::cycle_ledger::master();
+                    crate::cycle_ledger::assert_rom_marker_work(0x05c15d, s,
+                        |s| s.cpu.k == 5 && (0xc15d..0xc227).contains(&s.cpu.pc),
+                        || n.probe(k));
+                    let atomic_work = crate::cycle_ledger::master() - before;
+                    let before = crate::cycle_ledger::master();
+                    if let Some(p) = split.probe_until_after_oam_coordinates(k) {
+                        split.complete_probe_after_oam_coordinates(k, p);
+                    }
+                    assert_eq!(crate::cycle_ledger::master() - before, atomic_work);
+                    assert_eq!(n.wram_image(), split.wram_image());
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route4 Probe: {cases} ROM cases");
+}
+
+#[test]
+fn route4_lightning_caller_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for phase in 0..8u8 {
+            for (submodule, delay, room, y) in [
+                (0u8, 0u8, 0u16, 0x40u16), (0, 1, 0x20, 0x40),
+                (1, 0, 0, 0x40), (0, 0, 0x20, 0xd0), (0, 0, 0, 0x400),
+            ] {
+                let mut n = prefix3_moldorm_state(k, y);
+                for (a, v) in [(0xe20, 0xbf), (0xd90, phase), (0xdf0, delay)] {
+                    n.write_wram_byte(a + k, v);
+                }
+                n.write_wram_byte(0x11, submodule);
+                n.write_wram_word(0x48e, room);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n, 0x1de3ed, k).expect("ROM fixture");
+                let random = std::cell::Cell::new(None);
+                crate::cycle_ledger::assert_rom_marker_work(0x1de3ed, s,
+                    |s| {
+                        if s.cpu.k == 0x1d && s.cpu.pc == 0xe44a {
+                            random.set(Some((s.cpu.a as u8, s.cpu.c)));
+                        }
+                        s.cpu.k == 0x1d && (0xe3ed..0xe475).contains(&s.cpu.pc)
+                    }, || {
+                        if let Some((value, carry)) = random.get() {
+                            n.install_rom_random_replay(vec![crate::RomRandomSample::with_carry(
+                                0, value, carry)], 0);
+                            n.rom_random_replay.begin_frame();
+                        }
+                        n.sprite_bf_lightning(k);
+                    });
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route4 Lightning: {cases} ROM cases");
+}
+
+#[test]
+fn route4_energy_ball_caller_and_trail_match_rom() {
+    let mut cases = 0;
+    for k in [1usize, 15] {
+        for (ai, graphics, delay, seeker, reflected, submodule, frame, near, sword) in [
+            (1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, false, false),
+            (1, 2, 6, 0, 0, 0, 0, false, false),
+            (1, 0, 15, 1, 0, 0, 0, false, false),
+            (1, 0, 15, 0, 0, 1, 0, false, false),
+            (0, 0, 0, 0, 0, 1, 0, false, false),
+            (0, 0, 0, 0, 0, 0, 0, false, false),
+            (0, 0, 0, 0, 0, 0, k as u8, false, false),
+            (0, 0, 0, 0, 1, 0, 0, true, false),
+            (0, 0, 0, 0, 1, 0, 0, false, false),
+            (0, 0, 1, 1, 0, 0, 0, false, false),
+            (0, 0, 0, 0, 0, 0, 0, true, true),
+            (0, 0, 0, 1, 0, 0, 0, true, true),
+        ] {
+            let mut n = prefix3_moldorm_state(k, 0x40);
+            for (a, v) in [(0xe20, 0x7b), (0xd80, ai), (0xdc0, graphics),
+                (0xdf0, delay), (0xda0, seeker), (0xd90, reflected), (0xf60, 0),
+                (0xd50, 0), (0xd40, 0), (0xe40, 0), (0xea0, 0)] {
+                n.write_wram_byte(a + k, v);
+            }
+            n.write_wram_byte(0x11, submodule);
+            n.write_wram_byte(0x1a, frame);
+            n.write_wram_byte(0xdd0, 9);
+            n.write_wram_byte(0xe40, 0);
+            n.write_wram_byte(0xd10, if near { 0x40 } else { 0x80 });
+            n.write_wram_byte(0xd00, 0x40);
+            n.write_wram_byte(0xba0, 0);
+            n.write_wram_byte(0x3c, if sword { 9 } else { 0 });
+            n.write_wram_word(0x22, if near { 0x40 } else { 0x500 });
+            n.write_wram_word(0x20, if near { 0x40 } else { 0x500 });
+            n.sync_native_game_state_from_ram();
+            let s = marker29_machine(&n, 0x1eda42, k).expect("ROM fixture");
+            crate::cycle_ledger::assert_rom_marker_work(0x1eda42, s,
+                |s| s.cpu.k == 0x1e && ((0xda42..0xdb44).contains(&s.cpu.pc)
+                    || (0xdb54..0xdb8a).contains(&s.cpu.pc)),
+                || n.sprite_7_b_agahnim_balls(k));
+            cases += 1;
+        }
+    }
+    eprintln!("route4 Energy ball: {cases} ROM cases");
+}

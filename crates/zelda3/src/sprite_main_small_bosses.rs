@@ -1893,6 +1893,11 @@ impl ZeldaState {
 
     // void Sprite_BF_Lightning(int k) {  // 9de3ed
     pub(super) fn sprite_bf_lightning(&mut self, k: usize) {
+        // $1D:E3ED..E474: self instructions only; drawing, inactive,
+        // garnish allocation and RNG retain their existing child ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1de3ed));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1de3ed);
         let j = (self.sprite_slot_view(k).a() & 7) as usize;
         let oam_flags = (self.sprite_slot_view(k).oam_flags() & 0xb1)
             | LIGHTNING_OAM_FLAGS_BY_PHASE[j]
@@ -1904,13 +1909,26 @@ impl ZeldaState {
             } else {
                 0
             };
+        if self.game_state.dungeon.room_tracking.room_index2() as u8 == 0x20 {
+            b.block(0x1de40e);
+        } else { b.taken(0x1de40c); }
+        b.block(0x1de411);
         self.sprite_slot_view_mut(k).set_graphics(graphics);
         // ROM $1D:E414 JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) || self.sprite_slot_view(k).delay_main() != 0 {
+        b.block(0x1de418);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1de41b);
+        if self.sprite_slot_view(k).delay_main() != 0 {
+            b.taken(0x1de41e);
+            b.block(0x1de474);
+            return;
+        }
+        b.block(0x1de420);
         self.lightning_spawn_garnish(k);
+        b.block(0x1de423);
         self.sprite_slot_view_mut(k).set_delay_main(2);
         let y = self.sprite_get_y(k).wrapping_add(16);
         self.sprite_set_y(k, y);
@@ -1920,15 +1938,23 @@ impl ZeldaState {
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low())
             >= 0xd0
         {
+            b.block(0x1de442);
             self.sprite_slot_view_mut(k).set_state(0);
             return;
         }
+        b.taken(0x1de440);
+        b.block(0x1de446);
         let rr = self.get_random_number() & 7;
+        b.block(0x1de44a);
         let xoff = LIGHTNING_RANDOM_X_OFFSETS
             [((self.sprite_slot_view(k).a() & 7) as usize) * 8 + rr as usize];
+        if sign8(xoff as u8) { b.block(0x1de45e); }
+        else { b.taken(0x1de45c); }
+        b.block(0x1de460);
         let x = self.sprite_get_x(k).wrapping_add_signed(i16::from(xoff));
         self.sprite_set_x(k, x);
         self.sprite_slot_view_mut(k).set_a(rr);
+        b.block(0x1de474);
     }
 
     // void Sprite_BD_Vitreous(int k) {  // 9de4c8
