@@ -1480,6 +1480,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_1E_CrystalSwitch(int k) {  // 86b8d0
     pub(super) fn sprite_1_e_crystal_switch(&mut self, k: usize) {
+        // $06:B8D0..B94B: complete RTS-selected switch self body.
+        // Allocation, drawing, damage, RNG, sparkle and sound remain children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06b8d0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06b8d0);
         let value = (self.sprite_slot_view(k).oam_flags() & !0x0e)
             | CRYSTAL_SWITCH_PAL[usize::from(
                 self.game_state
@@ -1491,26 +1496,39 @@ impl ZeldaState {
 
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.oam_allocate_defer_to_player(k);
+        b.block(0x06b8eb);
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
+        b.block(0x06b8ee);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        b.block(0x06b8f1);
+        let hit = self.sprite_check_damage_to_link_same_layer(k);
+        b.block(0x06b8f4);
+        if hit {
+            b.block(0x06b8f6);
             self.sprite_nullify_hookshot_drag();
+            b.block(0x06b8fa);
             self.follower_link_state_mut().set_speed_setting(0);
             self.sprite_repel_dash();
-        }
+        } else { b.taken(0x06b8f4); }
+        b.block(0x06b900);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x06b905);
             let sparkle_y = u16::from(self.get_random_number() & 7);
+            b.block(0x06b911);
             self.sprite_garnish_spawn_sparkle(
                 k,
                 u16::from(self.game_state.frame.frame_counter & 7),
                 sparkle_y,
             );
+            b.block(0x06b91b);
             let value = 31;
             self.sprite_slot_view_mut(k).set_delay_main(value);
-        }
+        } else { b.taken(0x06b903); }
+        b.block(0x06b920);
         if self.sprite_slot_view(k).f() == 0 {
+            b.block(0x06b925);
             if sign8(
                 self.game_state
                     .player
@@ -1518,18 +1536,24 @@ impl ZeldaState {
                     .button_b_frames()
                     .wrapping_sub(9),
             ) {
+                b.block(0x06b92c);
                 self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
-            }
+            } else { b.taken(0x06b92a); }
+            b.block(0x06b92f);
         } else {
+            b.taken(0x06b923);
+            b.block(0x06b930);
             let old = self.sprite_slot_view(k).f();
             let value = old.wrapping_sub(1);
             self.sprite_slot_view_mut(k).set_f(value);
             if old == 11 {
+                b.block(0x06b937);
                 self.dungeon_environment_mut()
                     .toggle_orange_blue_barrier_state();
                 self.set_submodule(22);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x25);
-            }
+            } else { b.taken(0x06b935); }
+            b.block(0x06b94b);
         }
     }
 

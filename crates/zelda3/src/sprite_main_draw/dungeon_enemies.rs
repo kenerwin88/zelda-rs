@@ -1,7 +1,7 @@
 //! Dungeon enemies, undead, beetles, rats, ropes, and their draw helpers.
 
 use crate::zelda_rtl::sprite::{
-    PrepOamCoordsRet, SpriteDamageBothEntry, SpriteDamageToEntry, SpriteInactiveEntry,
+    DrawMultipleData, PrepOamCoordsRet, SpriteDamageBothEntry, SpriteDamageToEntry, SpriteInactiveEntry,
     SpriteMoveEntry, SpriteMoveZEntry, SpriteRecoilEntry, SpriteShadowEntry,
     SpriteSingleLargeEntry, SpriteSingleSmallEntry, SpriteSpawnInfo, SpriteTileCollisionEntry,
 };
@@ -283,28 +283,53 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void WallMaster_Draw(int k) {  // 9eafe4
     pub(in crate::zelda_rtl) fn wall_master_draw(&mut self, k: usize) {
+        // $1E:AFE4..B001: caller around the $87F0 wrapper and large shadow.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1eafe4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eafe4);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &WALL_MASTER_DRAW_FRAMES[base..base + 4]);
+        self.sprite_draw_multiple_bank1e_marked(k, &WALL_MASTER_DRAW_FRAMES[base..base + 4]);
+        b.block(0x1eaffd);
         self.sprite_draw_large_shadow2(k);
+        b.block(0x1eb001);
     }
 
     // -----------------------------------------------------------------------
     // void Zol_Draw(int k) {  // 9eb1c5
     pub(in crate::zelda_rtl) fn zol_draw(&mut self, k: usize) {
+        // $1E:B1C5..B213 and B254..B26E: self work only; drawing,
+        // allocation and coordinate children keep their existing prices.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1eb1c5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eb1c5);
+        if self.sprite_slot_view(k).oam_flags() & 1 != 0 { b.taken(0x1eb1c9); }
+        else {
+            b.block(0x1eb1cb);
+            if self.game_state.sprites.system.chr_halfslot_state() >= 3 { b.taken(0x1eb1d0); }
+        }
         if (self.sprite_slot_view(k).oam_flags() & 1) == 0
             && self.game_state.sprites.system.chr_halfslot_state() >= 3
         {
+            b.block(0x1eb213);
             return;
         }
+        b.block(0x1eb1d2);
         if self.sprite_slot_view(k).delay_aux4() != 0 {
+            b.block(0x1eb1d7);
             self.oam_allocate_from_region_b(8);
-        }
+        } else { b.taken(0x1eb1d5); }
+        b.block(0x1eb1dd);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.taken(0x1eb1e0);
+            b.block(0x1eb20f);
             self.sprite_prep_oam_coord(k);
+            b.block(0x1eb213);
             return;
         }
+        b.block(0x1eb1e2);
         let gfx = self.sprite_slot_view(k).graphics();
         if gfx < 4 {
+            b.block(0x1eb1e9);
             let bak1 = self.sprite_slot_view(k).oam_flags();
             let value = bak1 ^ ZOL_DRAW_OAM_FLAGS[usize::from(gfx)];
             self.sprite_slot_view_mut(k).set_oam_flags(value);
@@ -312,14 +337,26 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_graphics(value);
             // ROM $1E:B202 JSL $06:DBF0
             self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+            b.block(0x1eb206);
             let value = gfx;
             self.sprite_slot_view_mut(k).set_graphics(value);
             let value = bak1;
             self.sprite_slot_view_mut(k).set_oam_flags(value);
         } else {
+            b.taken(0x1eb1e7);
+            b.block(0x1eb254);
             let base = usize::from(gfx.wrapping_sub(4)) * 2;
-            self.sprite_draw_multiple(k, &ZOL_DRAW_FRAMES[base..base + 2]);
+            self.sprite_draw_multiple_bank1e_marked(k, &ZOL_DRAW_FRAMES[base..base + 2]);
         }
+    }
+
+    pub(super) fn sprite_draw_multiple_bank1e_marked(&mut self, k: usize, src: &[DrawMultipleData]) {
+        // $1E:87F0..87F4 JSL/RTS; DrawMultiple itself remains a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87f0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e87f0);
+        self.sprite_draw_multiple(k, src);
+        b.block(0x1e87f4);
     }
 
     // -----------------------------------------------------------------------

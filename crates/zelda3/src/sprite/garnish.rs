@@ -707,10 +707,17 @@ impl ZeldaState {
 
     // void Garnish0F_BlindLaserTrail(int k) {  // 89b591
     pub(in crate::zelda_rtl) fn garnish0_f_blind_laser_trail(&mut self, k: usize) {
+        // $09:B591..B5B8 and the shared B5D6..B5DD writer return.
+        // Prep owns its own failure/double-return path.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09b591));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09b591);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
+        b.block(0x09b594);
+        b.block(0x09b5d6);
         let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at(
             self.game_state.oam.current_pointer_usize(),

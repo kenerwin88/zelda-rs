@@ -787,9 +787,12 @@ impl ZeldaState {
     //                       sprite_graphics[k] * 2], 2, NULL);
     // }
     pub(in crate::zelda_rtl) fn fire_phlegm_draw(&mut self, k: usize) {
+        // $1E:9443..945F JMPs to the separately owned $87F0 wrapper.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e9443));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1e9443);
         let base = usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &FIRE_PHLEGM_DRAW_FRAMES[base..base + 2]);
+        self.sprite_draw_multiple_bank1e_marked(k, &FIRE_PHLEGM_DRAW_FRAMES[base..base + 2]);
     }
 
     // -----------------------------------------------------------------------

@@ -270,6 +270,67 @@ impl ZeldaState {
         b.block(0x059724);
     }
 
+    // void Zora_Submerged(int k) {  // 85975a
+    pub(super) fn zora_submerged(&mut self, k: usize) {
+        // $05:975A..97B4: actual branch-selected submerged state; RNG,
+        // coordinate and collision children retain their own work.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05975a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05975a);
+        let value = self.sprite_slot_view(k).delay_main();
+        self.sprite_slot_view_mut(k).set_ignore_projectile(value);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x059762);
+            let org_x = u16::from(self.sprite_slot_view(k).a())
+                | (u16::from(self.sprite_slot_view(k).b()) << 8);
+            let org_y = u16::from(self.sprite_slot_view(k).c())
+                | (u16::from(self.sprite_slot_view(k).head_direction()) << 8);
+            let x_idx = usize::from(self.get_random_number() & 7);
+            b.block(0x059766);
+            self.sprite_set_x(k, org_x.wrapping_add(SURFACE_XY[x_idx] as i16 as u16));
+            let y_idx = usize::from(self.get_random_number() & 7);
+            b.block(0x059780);
+            self.sprite_set_y(k, org_y.wrapping_add(SURFACE_XY[y_idx] as i16 as u16));
+            self.sprite_get16_bit_coords(k);
+            b.block(0x05979a);
+            // ROM $05:979A -> $05:B88D -> $06:E496
+            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            b.block(0x05979d);
+            if self.game_state.sprites.workspace.tile() == NativeTile::DEEP_WATER {
+                b.block(0x0597a4);
+            } else { b.taken(0x0597a2); }
+            let spawn_anyway = self.game_state.sprites.workspace.tile()
+                == NativeTile::DEEP_WATER
+                || (self.game_state.sprites.workspace.tile() == NativeTile::SHALLOW_WATER
+                    && self.sprite_slot_view(k).delay_aux2() == 1
+                    && self
+                        .game_state
+                        .enhanced_features
+                        .has(FEATURE_GAME_CHANGING_BUG_FIXES_DRAW));
+            if spawn_anyway {
+                let value = 127;
+                self.sprite_slot_view_mut(k).set_delay_main(value);
+                let value = self.sprite_slot_view(k).ai_state().wrapping_add(1);
+                self.sprite_slot_view_mut(k).set_ai_state(value);
+                self.sprite_slot_view_mut(k).or_flags3(0x40);
+            } else if self
+                .game_state
+                .enhanced_features
+                .has(FEATURE_GAME_CHANGING_BUG_FIXES_DRAW)
+            {
+                self.sprite_set_x(k, org_x);
+                self.sprite_set_y(k, org_y);
+                let value = 1;
+                self.sprite_slot_view_mut(k).set_ignore_projectile(value);
+                if self.sprite_slot_view(k).delay_aux2() == 0 {
+                    let value = 32;
+                    self.sprite_slot_view_mut(k).set_delay_aux2(value);
+                }
+            }
+        } else { b.taken(0x059760); }
+        b.block(0x0597b4);
+    }
+
     // -----------------------------------------------------------------------
     // void Sprite_Zora_Main(int k) {  // 859725
     pub(super) fn sprite_zora_main(&mut self, k: usize) {
@@ -283,51 +344,7 @@ impl ZeldaState {
         }
 
         match self.sprite_slot_view(k).ai_state() {
-            0 => {
-                let value = self.sprite_slot_view(k).delay_main();
-                self.sprite_slot_view_mut(k).set_ignore_projectile(value);
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    let org_x = u16::from(self.sprite_slot_view(k).a())
-                        | (u16::from(self.sprite_slot_view(k).b()) << 8);
-                    let org_y = u16::from(self.sprite_slot_view(k).c())
-                        | (u16::from(self.sprite_slot_view(k).head_direction()) << 8);
-                    let x_idx = usize::from(self.get_random_number() & 7);
-                    self.sprite_set_x(k, org_x.wrapping_add(SURFACE_XY[x_idx] as i16 as u16));
-                    let y_idx = usize::from(self.get_random_number() & 7);
-                    self.sprite_set_y(k, org_y.wrapping_add(SURFACE_XY[y_idx] as i16 as u16));
-                    self.sprite_get16_bit_coords(k);
-                    // ROM $05:979A -> $05:B88D -> $06:E496
-                    self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
-                    let spawn_anyway = self.game_state.sprites.workspace.tile()
-                        == NativeTile::DEEP_WATER
-                        || (self.game_state.sprites.workspace.tile() == NativeTile::SHALLOW_WATER
-                            && self.sprite_slot_view(k).delay_aux2() == 1
-                            && self
-                                .game_state
-                                .enhanced_features
-                                .has(FEATURE_GAME_CHANGING_BUG_FIXES_DRAW));
-                    if spawn_anyway {
-                        let value = 127;
-                        self.sprite_slot_view_mut(k).set_delay_main(value);
-                        let value = self.sprite_slot_view(k).ai_state().wrapping_add(1);
-                        self.sprite_slot_view_mut(k).set_ai_state(value);
-                        self.sprite_slot_view_mut(k).or_flags3(0x40);
-                    } else if self
-                        .game_state
-                        .enhanced_features
-                        .has(FEATURE_GAME_CHANGING_BUG_FIXES_DRAW)
-                    {
-                        self.sprite_set_x(k, org_x);
-                        self.sprite_set_y(k, org_y);
-                        let value = 1;
-                        self.sprite_slot_view_mut(k).set_ignore_projectile(value);
-                        if self.sprite_slot_view(k).delay_aux2() == 0 {
-                            let value = 32;
-                            self.sprite_slot_view_mut(k).set_delay_aux2(value);
-                        }
-                    }
-                }
-            }
+            0 => self.zora_submerged(k),
             1 => {
                 let value = self.sprite_slot_view(k).delay_main();
                 self.sprite_slot_view_mut(k).set_ignore_projectile(value);

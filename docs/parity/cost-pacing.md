@@ -14866,3 +14866,133 @@ approximately **459.5 MB**, below **3 GB**. No GPU run, `--video`, cached-av,
 Snes9x execution, protected-cache/shared-ledger write, cargo fmt, commit, push
 or one-off repository script was used. Remaining route pricing and continuous
 live ending acceptance remain unfinished.
+
+
+## Route pricing 6
+
+**Verified partial CPU-only stop on `codex/route6`, base `e7e10400`.**
+Evidence: `target/route6/`. The single final unsharded ROM census uses
+read-only **full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate
+**PASSes all 1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**,
+and every runtime hold equals P2.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,820 | **2,801** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 457 | **454** |
+| 461,989..1,473,122 | 2,237 | **2,221** |
+
+Missing holds fall **2,820 → 2,801**:
+**19 restored**, **0 lost**, no new missing iteration or changed source context.
+`baseline-identity.json` verifies the retained Route 5 binary hashes and binds
+its frozen source hashes to this exact base. No duplicate main census or seeded
+live census was run. The whole-route owner ranking is recomputed on all
+**2,787 baseline missing iterations**, with exact multi-hold inverses
+checked before reuse. Raw parent/alias differences remain ownership worklists,
+not additive prices. Ties prefer the earlier route iteration.
+`remaining-owner-ranking.json` retains the refreshed residual.
+
+### Admitted instruction work
+
+Six complete self bodies add **43 blocks /
+187 instructions** from `scripts/rom_block_costs.py`.
+All **2,934 existing generated rows remain byte-identical**.
+Markers are lagless-only and cite source addresses. These self bodies had
+**zero legacy `charge(N)` scalars** and retain none. Existing child scalars,
+default/ROM-timing accounting and game-state operations remain unchanged.
+
+| Self family, including selected existing wrappers | Entry | New clocks on frozen misses | Independent executed-marker flips |
+| --- | --- | ---: | ---: |
+| Crystal Switch handler | `$06:B8D0` | 278,202 | 7 |
+| Blind laser trail | `$09:B591` | 143,592 | 5 |
+| Zol drawing | `$1E:B1C5` | 158,622 | 3 |
+| Zora submerged state | `$05:975A` | 68,048 | 3 |
+| Fire Phlegm drawing | `$1E:9443` | 23,968 | 2 |
+| Wallmaster drawing | `$1E:AFE4` | 28,448 | 0 |
+
+Independent scores overlap. The retained original instruction subset covers
+**2,004** baseline missing iterations and separately
+predicts **12 joint recoveries**. Its independent scores are
+Blind trail **5**, Zora **3**, Fire Phlegm **2**, Crystal Switch **2**,
+Zol **1**, Wallmaster **0**. The complete ROM fixtures establish each admitted
+self price beyond this subset; subset coverage is not a whole-route gain.
+Higher collision/velocity, drawing, routing and slot-parent gaps retain their
+existing scalar/instruction/child ownership. **Module09 is untouched**;
+Route 2's all-entry retirement partition remains unestablished.
+
+Zora's existing state-zero arm becomes its actual branch-selected
+`$05:975A` body, preserving its operations and leaving RNG, coordinate and
+collision children separate. Crystal Switch prices the complete RTS-selected
+handler, including inactive returns, damage, timer, sparkle and toggle branches;
+its drawing and gameplay children retain their existing prices.
+Zol follows the actual CHR, allocation, AI, graphics and clipping paths.
+The existing `$1E:87F0` JSL/RTS wrapper is selected once at Zol's real JMP,
+Fire Phlegm's JMP and Wallmaster's JSR. The drawing body remains a separate
+child. Blind's laser trail prices its actual `$09:B5D6` shared writer return
+only after successful preparation; the preparation child's double return
+receives no completed writer price. No parent-plus-child charge is installed.
+`pricing-audit.json` checks the source bindings and table preservation.
+
+Push Switch drawing is not admitted: its full body reaches `$06:BB60 MVN`,
+which the generator currently rejects as dynamic state. No prefix-only price
+is installed. Trinexx drawing still needs a disjoint retirement partition for
+its segment/OAM checkpoint entries. Existing scalar/model-priced helpers and
+Route 3–5 owners receive no additional body tax.
+
+The complete Bomb_Draw candidate is withdrawn before final verification.
+Its fixture finds a source/native branch mismatch: on the nonnegative sign
+path, `$08:9EB3 BEQ` observes the surviving `CMP #$0080` flags, while
+native short-circuits on `z == 0`. The complete self path needs a behavior audit;
+no successful-path-only price or behavior repair is installed.
+`rejected-bomb/candidate.patch` and `dev-fixtures2.log` retain the failure.
+All candidate markers, generated rows and its fixture are removed.
+`admission-notes.json` retains these boundaries; remaining owners are not
+claimed exhausted.
+
+**700,880 new marker clocks = 700,880 signed main-counter clocks**
+on every frozen missing row, with **0 work mismatches**.
+Original instruction work grouped into generated blocks, including only the
+newly selected existing wrapper/shared-return work, agrees on all
+**2,004 covered rows**, with **0 source mismatches**.
+The unchanged full-cohort inverse predicts **19** recoveries;
+observed cohort recovery is **19**, with
+**0 prediction exceptions**.
+`work-proof.json`, compressed original instruction work and
+`frame-flips.json.gz` retain the complete matrices.
+These are instruction-work and logical-scheduling checks, not physical CPU/NMI
+or exact A/V proof. No price is fitted to lag counts; no classifier, pacing
+rule, scene threshold/multiplier/table or SPC/APU behavior changes.
+
+### Continuous live and final verification
+
+The single cold live lane uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, and zero post-initial
+reseeds. It completes all **500,000 tested iterations**. Its first classified state
+difference is **462,627**, **`song-end-poll`**, room **`$0006`**,
+reason `rupee sound queue`, compared with base **380,880**. The last clean
+index is **462,626**.
+The unchanged strict gate reports `census gate: FAIL (unexplained=37433, complete=True)`.
+This completed bounded receipt is not full-route live or ending acceptance.
+`live-classification-summary.json` retains the first rows and counts;
+complete classified rows are compressed directly through a FIFO.
+Post-divergence observations do not extend the clean prefix.
+
+All **five new `assert_rom_marker_work` fixture tests / 292 ROM cases per
+feature configuration** pass, covering all six self bodies. Touched-area
+checks pass **171 drawing and 118 sprite-helper/garnish tests**.
+**Nine Python generator/worklist tests**, exact table regeneration and
+`git diff --check` pass. Both production builds are warning-free;
+pre-existing default/reduced lib-test warnings remain **24 / one**.
+Full library suites, GPU tests and seeded live censuses were not run.
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio.
+
+All **1,512 protected ledger/cache input files** retain the same file set,
+sizes and nanosecond mtimes. Frozen source/binary hashes, commands, complete
+gates, proof matrices and the final patch bind this stop. Retained evidence is
+approximately **458.1 MB**, below **3 GB**. No GPU run, `--video`,
+cached-av, Snes9x execution, protected-cache/shared-ledger write, cargo fmt,
+commit, push or one-off repository script was used. Remaining route pricing
+and continuous live ending acceptance remain unfinished.
