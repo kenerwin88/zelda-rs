@@ -12,7 +12,10 @@ const BOUNDARY_SOURCES:&[(&str,&str)] = &[
 ];
 pub(super) fn verify_certificate_sources()->Result<()> { verify_certificate_sources_at(Path::new(".")) }
 fn verify_certificate_sources_at(root:&Path)->Result<()> {
-    for &(path,expected) in BOUNDARY_SOURCES {
+    verify_sources_at(root,BOUNDARY_SOURCES)
+}
+fn verify_sources_at(root:&Path,sources:&[(&str,&str)])->Result<()> {
+    for &(path,expected) in sources {
         if Identity::bind(&root.join(path))?.sha256!=expected {
             return Err(format!("local exclusion certificate needs source review: {path}").into());
         }
@@ -106,10 +109,16 @@ mod tests {
             let dest=root.join(path);fs::create_dir_all(dest.parent().unwrap()).unwrap();
             fs::copy(source.join(path),dest).unwrap();
         }
-        assert!(verify_certificate_sources_at(&root).is_ok());
+        // Main may have legitimately superseded the reviewed M3b source pins.
+        // Test mutation detection with independent fixture bindings; never
+        // renew the runtime certificate merely to make this test pass.
+        let hashes:Vec<_>=BOUNDARY_SOURCES.iter().map(|(p,_)|Identity::bind(&root.join(p)).unwrap().sha256).collect();
+        let pins:Vec<_>=BOUNDARY_SOURCES.iter().zip(&hashes).map(|((p,_),h)|(*p,h.as_str())).collect();
+        assert_eq!(verify_certificate_sources_at(&root).is_ok(),pins==BOUNDARY_SOURCES);
+        assert!(verify_sources_at(&root,&pins).is_ok());
         let path=root.join(BOUNDARY_SOURCES[0].0);
         let mut bytes=fs::read(&path).unwrap();bytes.extend_from_slice(b"\n// changed without moving the certified sites\n");fs::write(path,bytes).unwrap();
-        assert!(verify_certificate_sources_at(&root).is_err());
+        assert!(verify_sources_at(&root,&pins).is_err());
         fs::remove_dir_all(root).unwrap();
     }
     fn fixture()->(Calls,Vec<Instruction>,Native,BTreeMap<u64,u64>) {

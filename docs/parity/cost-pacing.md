@@ -15886,3 +15886,352 @@ No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test,
 protected-cache/shared-ledger write, cargo fmt, commit, push or one-off
 repository script was used. Remaining system-owner auditing/pricing and
 continuous live ending acceptance are unfinished.
+
+## Systematic undercharge diagnostic 1
+
+**Verified measurement stop on `codex/diag1`, main `cf51008df8f9969ebf8b39a4b0c586e8ddbcc7f9`.**
+Evidence: `target/diag1/`. The hypothesis is supported at the main-counter
+level: a positive instruction-work deficit occurs on **99.14% of ordinary
+gameplay iterations**, including non-missing controls. It is not a single
+validated routine surcharge. Most large raw owner scores contain aliases;
+a concrete custom-shadow bypass survives the caller/child accounting check.
+No price, pacing rule, classifier, P2 rule, marker, block table, seed decision
+or product operation is changed. No new price is admitted.
+
+### Coverage, cuts and measured rate
+
+One reset-driven source owner executes **500,000 original hosts /
+6,236,748,758 opcodes**, verifies **461,776 full-v2 iterations,
+0..461,775**, and stops without an alignment failure. Source EOF and the
+remaining **1,011,347 iterations** are unverified. Its execution/report timer
+is **1,356.842 s**, **4.596 million opcodes/s**; complete process wall time is
+**1,360.509 s**, **4.584 million opcodes/s / 367.51 hosts/s**. Whole-process
+peak RSS is **101,400,576 bytes**. The earlier 140,000-host pilot verified
+127,739 iterations; it is retained as a control, not added to this coverage.
+
+The serial native ROM-answer logical replay uses the original read-only
+**full-v2**, `--frames 461776 --report 0 --seed-every 2000` from iteration zero.
+Its bounded gate **PASSes**, unexplained **0**, first WRAM divergence **none**;
+all runtime holds equal P2. It takes **852.112 s / 541.92 iterations/s**,
+with **474,824,704 bytes peak RSS**. It has **578 missing holds in 561
+iterations**, excess/zero-lag FP **0/0**, out of 36,202 source lag holds.
+These are prefix measurements, not a new full-route census or A/V acceptance.
+
+The study includes **every one of the 393,848 ordinary source entries at
+`$00:8038` in modules 07 or 09**, including all their observed substages:
+340,212 in `07/00 + 09/00`, and 53,636 other gameplay substages. There are
+**427 missing iterations / 427 missing holds**, 7,306 source-lag iterations
+and **386,542 zero-source-lag controls**. Resumed entry kinds and non-gameplay
+modules remain outside this ordinary-entry comparison; they are retained in
+the source coverage/native predictor. Entry module/substage comes from the
+source entry, never the native closing-image columns. Eligibility for M1's
+import map is not a per-entry native/source handoff proof.
+
+`S` is retired main-instruction transaction time, from before `$00:8038`
+through `$00:805D`, excluding interrupt entry/handler, DMA, HDMA and refresh.
+`N` is the independent native main charge counter **including separate VWF**.
+Every observed charge sum plus VWF equals its predictor counter. Source and
+native exclusive routine/path sums reproduce S and N on **all 393,848 rows**;
+all source call reconstructions succeed, every expected ordinary row is
+present, and source main-domain CPU counters equal S on every row. No source
+state is imported at an internal interrupt. The existing M2 handoff/admission
+STOP and unmapped native resume limitation remain; continuous source counters
+are nevertheless verified against the ledger.
+
+### Distribution over all ordinary gameplay
+
+Units are **master clocks**, signed `S-N`; quantiles interpolate at `(n-1)*p`.
+Full p05/p10/p25/p50/p75/p90/p95/p99 data for **every individual substage and
+status**, including zero-miss substages, is in `distributions.csv` and
+`summary.json`. Non-missing includes correctly held and correctly unheld rows.
+
+
+| Entry/status | n | Mean | p05 | p25 | Median | p75 | p95 | p99 | S>N |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 07/00 missing | 81 | 43,644.6 | 16,186 | 19,830 | 25,232 | 77,770 | 89,916 | 93,144.0 | 100.00% |
+| 07/00 non-missing | 227,777 | 11,805.1 | 2,952 | 6,100 | 9,572 | 14,244 | 27,422 | 57,784 | 98.69% |
+| 09/00 missing | 176 | 18,812.0 | 9,514.5 | 13,432 | 15,880 | 21,214.5 | 36,418 | 49,305.5 | 100.00% |
+| 09/00 non-missing | 112,178 | 10,185.3 | 4,132 | 6,440 | 9,138 | 12,548 | 19,712 | 30,562.3 | 100.00% |
+| Other substages missing | 170 | 38,322.6 | 1,016 | 3,044 | 5,454 | 36,186 | 258,486.3 | 294,794.1 | 100.00% |
+| Other substages non-missing | 53,466 | 7,101.7 | 774 | 1,708 | 2,776 | 4,398 | 18,424 | 130,420 | 99.26% |
+| All missing | 427 | 31,290.3 | 1,779.4 | 9,777 | 16,602 | 29,546 | 88,500.8 | 279,066.3 | 100.00% |
+| All non-missing | 393,421 | 10,704.1 | 1,626 | 5,168 | 8,532 | 13,000 | 24,056 | 57,126 | 99.14% |
+
+
+The all-row median is **8,536 clocks (2.39% of a field)**, mean **10,726.4**;
+range **-2,710..310,616**. The 427 misses have inverse-shortfall median
+**10,596**, p25 **3,427**, p75 **20,611**, p95 **83,668**, and mean **21,974.9**.
+Their S-N median is 16,602; the ordinary `00`-substage missing median is
+18,872 versus 9,372 on non-missing controls. Every `00`-substage row is
+unmasked and has zero native raster wait and zero observed source iris poll
+work: this ordinary-control signal is not a masked-upload or iris-wait mix-up.
+
+As a diagnostic upper comparison, append each row's **positive actual S-N**
+to the unchanged completed model. This reaches **418/427** full inverses,
+including **255/257** in `07/00 + 09/00`, and risks **0/386,542** zero-lag FPs.
+This is not a permitted per-iteration charge or an ownership proof. It shows
+that measured main-work differences are large enough to explain most misses
+without a global tax; the nine residual threshold cases are not forced closed.
+
+### Other clock domains
+
+Below are **mean source / native clocks per `07/00 + 09/00` iteration**.
+Native values are stored work/wall budgets, not independent retired hardware
+instructions. Opening CPU+DMA is recovered from the existing handler-refresh
+budget encoding; no unavailable native CPU/DMA split is invented.
+
+
+| Component | Missing (257) | Non-missing (339,955) |
+| --- | --- | --- |
+| Main instructions | 308,742.8 / 282,104.2 | 170,389.6 / 159,118.9 |
+| Main refresh | 9,633.3 / 8,809.3 | 5,309.8 / 4,971.7 |
+| Main DMA | 0 / 0 | 0 / 0 |
+| Main bus/wall residual / native HDMA | 9,505.1 / 8,819.6 | 5,145.6 / 4,774.4 |
+| Opening NMI CPU+DMA | 34,622.4 / 34,622.4 | 34,520.6 / 34,520.6 |
+| Opening NMI wall | 35,667.6 / 35,667.6 | 35,562.3 / 35,562.2 |
+| Actual intervening lag-NMI wall | 3,103.5 / 0 | 7.6 / 7.6 |
+| Lag-NMI wall at the SOURCE count | 3,103.5 / 3,103.5 | 7.6 / 7.6 |
+| IRQ wall | 11.6 / unknown | 19.6 / unknown |
+| Polygon wall | 0 / unknown | 0 / unknown |
+| Separate raster wait | unknown / 0 | unknown / 0 |
+| Worker/composition residual | unknown / 0 | unknown / 0 |
+
+
+Opening wall and lag-handler wall at equal **source handler counts** match
+exactly on all 257 ordinary-`00` misses. Opening differences on controls are
+small, signed (**-92..128** clocks), not a common positive undercharge. Actual
+lag-handler totals differ on misses because native accepted one fewer hold;
+that is a consequence of the missing hold, not another handler price to add.
+The native refresh formula reproduces its own work on all 340,212 `00` rows.
+On the **same source work**, source refresh minus the nominal formula is
+**0 on 244 misses and -40 on 13**; controls stay within **±80**. Main interrupt
+refresh-edge ambiguity counts are zero throughout the ordinary cohort.
+
+The all-ordinary main interval difference is **4,491,744,254 clocks**:
+**4,224,563,598 instruction clocks (94.05%)**, 126,562,400 refresh clocks and
+140,618,256 bus/wall residual clocks; main DMA is zero. The bus residual is
+wall minus CPU, DMA and observed refresh, associated with HDMA in the ordinary
+non-waiting paths; it is retained as a residual where a complete stall partition
+is unproved. Shorter native work changes refresh/HDMA exposure. These differences
+do not establish missing per-line or per-access prices.
+
+Only **two of 257** `00` misses contain IRQ work: 1,492 clocks each;
+255 have none. Native has no separately observed IRQ counter, and its worker/
+composition residual is zero here. In all substages, source IRQ/poly means
+are 39.1/1,318.3 on misses versus 18.8/0 on controls; native composition residual
+means are 1,063.2/-0.45. These are distinct owners/ambiguities, not a new main
+instruction fee. Other-substage raster polling and worker ownership remain
+explicit in `domains.json`; unknown native domain clocks are null. No dominant
+new SYSTEM charge is established by this cohort.
+
+### Exclusive owners, sites and sign consistency
+
+The complete signed rankings are `routine-ranking.json`, `path-ranking.json`,
+`base-*-ranking.json`, and `site-totals.json`; negative rows are retained.
+Native scope counts are **not ROM call counts**, especially per-instruction
+models and continuation scopes. The following are **raw exclusive owner
+labels**, before alias interpretation, ranked by total positive delta.
+
+
+| ROM entry | Signed clocks | Mean / source call | Source calls / native scopes | Iterations present | Positive on present iterations |
+| --- | --- | --- | --- | --- | --- |
+| $06:84E2 | 980,060,552 | 154.8 | 6,330,397 / 12,660,794 | 393,848 | 99.34% |
+| $07:E245 | 753,568,818 | 2,466.7 | 305,494 / 305,494 | 305,494 | 100.00% |
+| $07:807F | 721,518,356 | 2,206.1 | 327,055 / 327,055 | 327,055 | 100.00% |
+| $00:80B5 | 626,026,262 | 1,589.5 | 393,848 / 393,848 | 393,848 | 99.91% |
+| $06:DC10 | 387,170,848 | 594.7 | 651,021 / 679,105 | 270,131 | 58.00% |
+| $00:8781 | 381,803,398 | 844.5 | 452,088 / 141,948 | 210,663 | 100.00% |
+| $06:E4AB | 272,193,606 | 636.1 | 427,891 / 427,891 | 207,104 | 98.52% |
+| $07:BA0A | 255,298,766 | 1,065.2 | 239,679 / 239,679 | 236,996 | 57.74% |
+| $05:B5D3 | 223,618,598 | 390.9 | 572,084 / 572,084 | 190,889 | 62.25% |
+| $07:C4D4 | 220,444,550 | 919.4 | 239,778 / 239,778 | 237,095 | 55.59% |
+| $1E:8B19 | 184,640,070 | 408.5 | 452,035 / 452,035 | 159,683 | 98.21% |
+| $1E:B6E9 | 176,197,812 | 37,617.0 | 4,684 / 0 | 4,684 | 100.00% |
+
+
+`mapped-site-deltas.json` retains the raw same-path/equal-cardinality cases
+with one observed native charge site; it does **not** certify that site's ROM
+instruction set. Multiple-site/model/alias cases retain unknown source-site
+allocation instead of duplicating source clocks across sites (52,083,680,134
+native clocks have no unique source-path/site partition under that screen).
+For a fixed, well-understood control, ClearOamBuffer `$00:841E`, native site
+`zelda_rtl/rtl_oam_obj.rs:1654`, is **5,300 source / 5,300 native on all
+393,848 calls**: 2,087,394,400 clocks each, delta zero. Native site totals also
+retain the preparation model at `misc.rs:2377` (4,607,942,236 clocks), HUD division
+at `hud.rs:2533` (1,957,309,542), and coordinate preparation at
+`sprite/drawing.rs:305` (1,866,258,316). Unresolved site ownership is not a claim
+that those already charged clocks are missing.
+
+Sign consistency alone produces false candidates. For example, in the retained
+21-iteration `09/00` detail window, the outer `$09:B06E` path has **+98 on
+21/21 calls**, exactly offset by **-98** in its nested same-PC native scope;
+the whole helper has zero delta. Other measured exclusive alias sums are:
+
+
+| Owner-label cluster | Iterations | Exactly zero after this fold | Residual signed clocks |
+| --- | --- | --- | --- |
+| control_default | 327,055 | 83.32% | 95,176,516 |
+| velocity_tails | 305,494 | 97.67% | 33,454,582 |
+| collision_tail | 207,104 | 100.00% | 0 |
+| single_large_writer | 264,538 | 73.19% | 131,002,196 |
+
+
+Collision `$06:E4AB`'s **272,193,606 positive clocks** cancel its `$E4DB`
+child-label negative on **every one of 207,104 iterations**. Most velocity and
+default-control residuals similarly move into already charged shared tails or
+selected state bodies. The nonzero remainders of these partial folds are not
+admitted gaps; other aliases/entries still need partitioning. Generic shadow
+`$06:DC66` is **-371,279,224** in the raw global owner table while its specialized
+unpriced bypass below is positive. A positive-only routine list can therefore
+miss a real local omission and recommend already charged parent work.
+
+A further checked metadata distinction matters: `profile_routine`,
+`routine_continuation` and `tail_routine` intentionally change labels when
+routine profiling is enabled. The full replay uses ordinary unprofiled scopes;
+the sample profiler uses its inherited-frame labels. All predictor bytes and
+all 21 sample charge-site clock/event totals agree across those modes, but
+path labels do not. Raw paths remain retained. For the guard-only subtree
+check, a named **attribution projection** collapses adjacent native `$06:84E2`
+continuation scopes; source has no recursive same-PC `$84E2` path anywhere in
+this cohort. This changes neither clocks nor opcode order and admits no price.
+Unmatched or unequal-cardinality guard contexts remain outside that check.
+
+### Concrete systematic candidates and fixed-context impact
+
+**Custom guard shadow:** `attract.rs::sprite_draw_shadow_custom_attract`
+(and its `set_guard_oam` / `set_oam_helper0_index` closure) writes OAM without
+any ledger call. `sprite_main.rs::guard_handle_all_animation` owns its caller
+instructions, head/body/weapon work and return, not this shadow body. The
+ordinary shadow model in `sprite/drawing.rs` is already priced and must not be
+charged again. The bypass's actual source frames are `$06:DC5C..DC63` (190-clock
+far wrapper) and `$06:DC66..DCEE` (body). Across all guard-shadow source contexts,
+there are **55,714 wrapper/body calls**: body cost **1,198 on 48,552 calls** and
+**540 on 7,162 clipped calls**. Both are uncharged local work in this bypass;
+pricing only successful OAM writes would omit the clipped path.
+
+After the explicit continuation-label projection, **77,416 source guard-parent
+calls match 77,416 native scopes** in 45,636 path/iteration contexts. In **every
+one**, folded guard-subtree S-N equals the source custom-shadow work: **zero
+residual**, totaling **69,183,072 clocks** on 38,960 iterations. The mean is
+**893.6534 per parent call**, including calls which never enter the shadow;
+actual source shadow calls cost **1,388 or 730**, wrapper included. Another
+3,435,364 source shadow clocks have unmatched parent paths/cardinality and
+remain unadmitted. Counter equality plus local code review is strong diagnostic
+evidence; it does not replace a complete continuation/escape certificate or
+all-entry ROM fixtures.
+
+**Far-wrapper bindings:** `$06:F121..F128` and `$06:EB5E..EB65` cost **190**;
+`$06:E496..E4A0` costs **222**, excluding its collision child. Existing typed
+F121/E496 entries already price these stubs where selected; other call paths
+still use legacy `Unpriced` entries. The exclusive source/native differences
+are exactly **82,752 × 190**, **50,827 × 190** and **94,251 × 222** respectively:
+**46,303,732 clocks**, with no negative wrapper delta in any iteration. This is
+a call-origin/binding investigation, not grounds to price the child bodies again.
+
+**Inactive predicate screen:** `$1E:FE78..FE94` has **418,015 source calls**
+across 140,842 iterations, raw mean **301.1463** and 125,883,674 clocks with no
+same-PC native scope. `sprite/lifecycle.rs::sprite_return_if_inactive` has an
+unpriced predicate path and priced 05/1A/06 entry variants, but no named FE78
+variant. Existing helper aliases and the double-return caller's 70 clocks must
+be excluded before treating that absence as a pure gap. This candidate fails
+the current FP screen: at **370,549 (`07/06`)**, its 2,304 source-frame clocks
+exceed the 2,236-clock first-hold inverse, while total S-N is only 2,010.
+Other owners contribute **-294 net clocks**. No frame/substage exception or
+classifier change is proposed to hide that conflict.
+
+All estimates below append work using the **unchanged completed-model inverse**,
+with current worker, raster and bus-program context fixed. Every missing target
+and the first-hold inverse on zero-lag controls is captured by a feature-gated,
+read-only observer; no hold count feeds scheduling. Means use signed work from
+all ordinary calls, never just missing frames. Source-call exposure is a proxy
+where native scopes do not establish real call cardinality. Individual scores
+overlap; they are not additive gains or live-replay acceptance.
+
+
+| Mean-charge scenario | Mean clocks / call | Missing holds reaching inverse | Zero-lag FP risk |
+| --- | --- | --- | --- |
+| $06:84E2 raw source-call mean | 154.8 | 80 | 28 |
+| $00:80B5 raw source-call mean | 1,589.5 | 60 | 11 |
+| $07:E245 raw source-call mean | 2,466.7 | 10 | 0 |
+| $07:807F raw source-call mean | 2,206.1 | 8 | 0 |
+| $1E:FE78 raw source-call mean | 301.1 | 6 | 3 |
+| Guard-parent mean / every native parent scope | 893.7 | 21 | 0 |
+
+
+| Conditional-work counterfactual | Clocks across cohort | Missing holds reaching inverse | Zero-lag FP risk |
+| --- | --- | --- | --- |
+| Qualified custom-shadow source work | 69,183,072 | 26 | 0 |
+| Three far-wrapper positive differences | 46,303,732 | 1 | 0 |
+| Qualified shadow + three wrappers, joint | 115,486,804 | 28 | 0 |
+| FE78 source-frame work (BLOCKED) | 125,883,674 | 5 | 1 |
+
+
+The clear shadow/wrapper footprint is only **2.73%** of the total instruction
+counter difference; even its joint 28-hold estimate explains **6.56%** of this
+ordinary missing cohort. A widespread main-work deficit exists, but no single
+validated systematic owner explains most of it. The remaining raw difference
+is still 4,109,076,794 clocks after that hypothetical footprint, with overlapping
+caller/tail ownership and compensating native work unresolved. A global slot,
+routing, instruction-access or refresh surcharge is contradicted by the alias
+and FP checks above.
+
+### Recommended next batches and verification
+
+1. **Guard custom-shadow pricing contract first:** owners
+   `attract.rs::sprite_draw_shadow_custom_attract`, `set_guard_oam`,
+   `zelda_rtl/rtl_oam_obj.rs::set_oam_helper0_index`, and all normal/resumed
+   `sprite_main.rs` guard-animation callers. Bind `$06:DC5C..DC63` and
+   `$06:DC66..DCEE` once, separate already priced generic shadow paths, prove
+   visible/clipped/paused/carried inputs and every continuation retirement,
+   and add a frame-local outside-charge certificate. The current prefix's
+   conditional-work estimate is **26 holds / zero FP** (mean-parent model:
+   21/zero); no runtime parent tax or route-ID selector. Unmatched entries
+   remain a blocker to general admission, not a reason for a partial-path price.
+2. **Far-call entry bindings:** audit actual call PCs selecting F121, E496 and
+   EB5E in `sprite/collision.rs` and their translated callers. Preserve existing
+   child prices, near entries and complete returns; select existing typed
+   entries only for proved far calls, with complete fixtures for a new EB5E
+   stub if needed. Expected conditional-work effect here is **1 hold / zero
+   FP**, or **28 jointly with qualified shadow work**, not 26+1. The three
+   wrapper mean-charge model instead estimates three; it is not the price.
+3. **Inactive-helper ownership audit, STOP for pricing:** bind FE78 and bank-5
+   F94E aliases plus both PLAs/RTS and existing caller-70 charges before any
+   additional cost. FE78's mean predicts **6 holds / 3 FP**; actual source-frame
+   work predicts **5 / 1**. The 370,549 conflict must be resolved by ownership
+   evidence and complete fixtures, not a scene gate or a fitted discount.
+
+All **34 feature-enabled auditor tests**, **8 disabled-feature tests**, and
+**5 filtered native observer tests** pass. Default, no-default-feature and
+feature product builds and enabled/disabled auditor builds are warning-free;
+lib-test compilation retains its **24 pre-existing dead-code warnings**.
+The old M3b exclusion certificate has two source pins already stale on HEAD.
+Its mutation test was repaired to bind its temporary fixture independently;
+runtime pins, admission checks and rejection of changed sources are unchanged.
+No stale certificate is renewed or used to admit a price.
+
+On a fresh **35,311-iteration** window, default, feature observer-off, compact
+observer-on and raw observer-on runs have **byte-identical predictor, stdout,
+routine, block, object and sprite files**. Compact summaries match every raw
+call/path/site field on the 21 detailed iterations. The full native predictor
+reproduces all 35,311 sample rows; charge-site totals agree even though profiling
+changes continuation labels as described above. The new source reproduces all
+127,739 pilot main-counter/entry rows, their domain rows plus the reset prefix,
+and all 111,371 ordinary-gameplay call partitions (ignoring only the added
+poll-summary field); the pilot also reproduces M2b's 53,706 main
+counter rows exactly and its entry classifications apart from 591 later-renamed
+resume-status labels. `prefix-and-metadata-proof.json` retains the comparison.
+
+The streaming join peaks at **228,261,888 bytes RSS**; the guard-footprint pass
+at **51,478,528**. Source/native manifests, binaries, exact commands, sampled
+disk guards, counters, call vectors, conditional-work matrices and inverse
+receipts remain under `target/diag1`. `diagnostic-pc-work.json.zst` is an
+investigation footprint and may include the final unclosed source main; all
+reported distributions, totals and impact matrices filter strictly below the
+verified source boundary. Negative work and unmapped site/domain clocks remain
+explicit. All **3,261 protected files** retain their file set, sizes and
+nanosecond mtimes; the final source manifest re-verifies. Retained output is
+**0.377 GB**, below 3 GB, with sampled disk guards retained. `git diff --check`
+passes; final input, code, binary and analysis-program identities bind this stop. No GPU, video, cached-av, external Snes9x process, native live-APU replay,
+full library suite, protected-cache/shared-ledger write, cargo fmt, commit or
+push was performed. This is a counter/ownership diagnostic, not full-route
+source EOF, pricing admission, suspended-CPU or exact A/V acceptance.

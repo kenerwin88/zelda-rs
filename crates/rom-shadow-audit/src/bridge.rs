@@ -509,6 +509,26 @@ fn call_path(c:&Calls,mut id:u64)->Vec<u32> {
     path.reverse();path
 }
 
+/// Compact, exclusive diagnostic partition. This reuses the verified continuous
+/// call reconstruction, including interrupt cuts and inherited return frames.
+/// Routine/path labels are ownership hypotheses, never admitted prices.
+pub fn diagnostic_calls(rows:&[Instruction],pc_work:&mut BTreeMap<(u32,u32,u8),[u64;2]>)->Result<Value> {
+    let c=calls(rows)?;
+    let mut costs=vec![0u64;c.frames.len()];
+    for (r,&owner) in rows.iter().zip(&c.owners) {
+        costs[owner as usize]+=r.master;
+        let v=pc_work.entry((c.frames[owner as usize].entry,r.pc,u8::from(r.m8)*32+u8::from(r.x8)*16)).or_default();
+        v[0]+=1;v[1]+=r.master;
+    }
+    let mut paths:BTreeMap<Vec<u32>,Vec<u64>>=BTreeMap::new();
+    for (frame,cost) in c.frames.iter().zip(costs) {
+        paths.entry(call_path(&c,frame.id)).or_default().push(cost);
+    }
+    Ok(json!({"iteration":rows[0].iteration,"paths":paths.into_iter().collect::<Vec<_>>(),
+        "rules":c.rules,"source_master":sum(rows),
+        "source_raster_poll_master":rows.iter().filter(|r|(0xf3a3..=0xf3b2).contains(&r.pc)).map(|r|r.master).sum::<u64>()}))
+}
+
 /// ROM SOURCE_OUT PREDICTOR EVENTS FRESH_OUT. Streams one source iteration;
 /// never writes ROM bytes or interpreter checkpoints to the report.
 pub fn run(rom:&Path,source:&Path,predictor:&Path,events:&Path,out:&Path)->Result<()> {
@@ -602,6 +622,11 @@ mod tests {
             r(0x803c,0xea,511,0x805d,511),r(0x805d,0xea,511,0x805e,511)]);
         rows[2].interrupt_after=true;rows[2].next_pc=0x80c9;rows[2].next_sp=502;
         let c=calls(&rows).unwrap();assert_eq!(c.owners,vec![0,1,2,2,1,0,0]);
+        let mut pc_work=BTreeMap::new();
+        let diagnostic=diagnostic_calls(&rows,&mut pc_work).unwrap();
+        assert_eq!(diagnostic["source_master"],70);
+        assert_eq!(pc_work.values().map(|v|v[1]).sum::<u64>(),70);
+        assert_eq!(diagnostic["paths"],json!([[[0x8034],[30]],[[0x8034,0x18000],[20]],[[0x8034,0x18000,0x18100],[20]]]));
         assert!(c.frames[2].aliases.contains(&0x28000));assert_eq!(c.rules["continuous_interrupt_cut_preserves_call"],1);
         rows[2].retired_next_pc=Some(0x28001);assert!(calls(&rows).is_err());
     }

@@ -31,6 +31,8 @@ fn freeze(rom: &Path,sram: &Path,input: &Path,ledger: &Path) -> Result<Manifest>
         ("import_map_and_contract",Path::new("crates/rom-shadow-audit/src/lib.rs")),("auditor_source",Path::new("crates/rom-shadow-audit/src/main.rs")),
         ("ordered_pairing",Path::new("crates/rom-shadow-audit/src/ordered.rs")),("stream_accounting",Path::new("crates/rom-shadow-audit/src/accounting.rs")),
         ("continuous_bridge",Path::new("crates/rom-shadow-audit/src/bridge.rs")),
+        ("diagnostic_domains",Path::new("crates/rom-shadow-audit/src/diagnostic.rs")),
+        ("local_exclusion",Path::new("crates/rom-shadow-audit/src/local_exclusion.rs")),
         ("source_executor",Path::new("crates/snes/src/cpu_synchronous_executor/source_cpu.rs"))] {
         identities.insert(name.into(),Identity::bind(path)?);
     }
@@ -205,6 +207,11 @@ fn source(args:&[String])->Result<()> {
     let mut census=zstd::Encoder::new(File::create(out.join("entry-kinds.jsonl.zst"))?,3)?;
     let mut census_counts:BTreeMap<String,u64>=BTreeMap::new();
     let mut partitions=zstd::Encoder::new(File::create(out.join("source-instructions.jsonl.zst"))?,3)?;
+    let mut diagnostic_calls=zstd::Encoder::new(File::create(out.join("diagnostic-calls.jsonl.zst"))?,3)?;
+    let mut diagnostic_domains=zstd::Encoder::new(File::create(out.join("diagnostic-domains.jsonl.zst"))?,3)?;
+    let mut domain_observer=diagnostic::Domains::default();
+    let mut diagnostic_rows=Vec::new();let mut diagnostic_active=false;
+    let mut diagnostic_pc_work=BTreeMap::new();
     let mut buttons=vec![0u16;hosts]; let mut assigned=vec![false;hosts];
     for line in fs::read_to_string(input)?.lines().filter(|l|!l.is_empty()&&!l.starts_with('#')) {
         let (range,value)=line.split_once(' ').ok_or("invalid input")?;
@@ -217,6 +224,8 @@ fn source(args:&[String])->Result<()> {
     let mut post=Images::new(&ledger.join("wram-post-nmi.xor.zst"))?;
     let mut cpu=Cpu::from_lorom_reset_with_sram(&fs::read(rom)?,Some(&fs::read(sram)?))?;
     cpu.enable_frame_capture(false);
+    let mut bus_observer=cpu.machine().timeline().synchronous_event_observer();
+    let mut dma_sizes=[0u16;8];
     let mut current:Option<Iteration>=None;let mut opening:Option<Iteration>=None;
     let mut next=0;let mut depth=0u32;let mut lag_handler=false;let mut checked=0u64;
     let mut failure=None;let mut benchmarks:BTreeMap<String,Bench>=BTreeMap::new();
@@ -234,7 +243,8 @@ fn source(args:&[String])->Result<()> {
         let started=Instant::now();let mut host_count=0;let mut apu_upload=false;let mut polygon=false;let mut long_load=false;
         let result=cpu.run_until_main_loop_return_with_quiescent_step_hook(|step,exec|->Result<()> {
             host_count+=1; if host_count>1_000_000 {return Err("host instruction limit".into());}
-            prelude.push_back(json!({"pc":step.origin_pc,"opcode":step.opcode,"start":step.started_at.master_cycles(),"end":step.ended_at.master_cycles()}));
+            // Keep the bounded failure prelude without allocating JSON per opcode.
+            prelude.push_back((step.origin_pc,step.opcode,step.started_at.master_cycles(),step.ended_at.master_cycles()));
             if prelude.len()>64 {prelude.pop_front();}
             if witness_hosts.contains(&host) {
                 witness_rows+=1;if witness_rows>200_000 {return Err("witness row budget".into());}
@@ -242,6 +252,25 @@ fn source(args:&[String])->Result<()> {
                     "line":exec.raster_position().scanline(),"irq":step.accepted_interrupt.is_some()}))?;
             }
             let snes=exec.machine().snes(); let module=snes.ram[0x10];polygon|=snes.ram[0x12a]!=0;
+            let mut refresh=0;
+            exec.machine().timeline().observe_processed_synchronous_events(&mut bus_observer,|event| {
+                if event==snes::CpuSynchronousTimelineEvent::Bus(snes::CpuBusEvent::WramRefresh){refresh+=1;}
+            });
+            let mut dma=0;
+            for access in &step.accesses {
+                if (access.address>>16)&0x7f<0x40 && access.address&0xffff==0x420b
+                    && let Access::Write{value,..}=access.kind && value!=0 {
+                    dma+=18;
+                    for (channel,size) in dma_sizes.iter().enumerate() {
+                        if value&(1<<channel)!=0 {dma+=8+8*if *size==0{65536}else{u64::from(*size)};}
+                    }
+                }
+            }
+            if step.accesses.iter().any(|a| (a.address>>16)&0x7f<0x40
+                && matches!(a.kind,Access::Write{..}) && matches!(a.address&0xffff,0x420b|0x4300..=0x437f)) {
+                dma_sizes=std::array::from_fn(|i|snes.dma.channel[i].size);
+            }
+            domain_observer.observe(step,snes.ram[0x12],next,previous_sp,refresh,dma,&mut diagnostic_domains)?;
             if step.origin_pc==0x008038 && main_depth==0 {
                 if let Some((index,entry_host,return_pc))=pending_ordinary.take() {
                     let kind=entry_kind(module,snes.ram[0x11],step.origin_pc);
@@ -269,11 +298,24 @@ fn source(args:&[String])->Result<()> {
                     }
                 }
             }
-            if step.origin_pc==0x008038 { main_active=true;main_depth=0;master=0;count=0;path=Sha256::new(); }
+            if step.origin_pc==0x008038 {
+                main_active=true;main_depth=0;master=0;count=0;path=Sha256::new();
+                diagnostic_rows.clear();diagnostic_active=ordinary && matches!(module,7|9);
+            }
             if main_active && main_depth==0 && previous_sp>>8==1 {
                 let end=match step.accepted_interrupt {Some(Interrupt::Nmi{started_at,..}|Interrupt::Irq{started_at,..})=>started_at,None=>step.ended_at};
                 let clocks:u64=step.transactions.iter().filter(|t|t.started_at<end).map(|t|u64::from(t.duration_master_cycles)).sum();
                 master+=clocks;count+=1; path.update(step.origin_pc.to_le_bytes());path.update([step.opcode]);
+                if diagnostic_active {
+                    if diagnostic_rows.len()>=2_000_000 {return Err("diagnostic iteration instruction budget".into());}
+                    diagnostic_rows.push(bridge::Instruction {iteration:current.as_ref().unwrap().index,
+                        ordinal:count-1,pc:step.origin_pc,opcode:step.opcode,master:clocks,
+                        m8:previous_registers.mf,x8:previous_registers.xf,dp:previous_registers.dp,db:previous_registers.db,
+                        sp:previous_sp,x:Some(previous_registers.x),y:Some(previous_registers.y),emulation:previous_registers.e,
+                        retired_next_pc:Some(match step.accepted_interrupt {
+                            Some(Interrupt::Nmi{interrupted_pc,..}|Interrupt::Irq{interrupted_pc,..})=>interrupted_pc,None=>pc(exec)}),
+                        next_pc:pc(exec),next_sp:snes.cpu.sp,interrupt_after:step.accepted_interrupt.is_some()});
+                }
                 if ordinary && current.as_ref().is_some_and(|r|selected.contains(&r.index)) {
                     // One opcode is the smallest exclusive partition. Calls own
                     // their opcode only; callee work has separate rows. Dynamic
@@ -291,6 +333,14 @@ fn source(args:&[String])->Result<()> {
                 }
             }
             if step.origin_pc==0x00805d && main_active {
+                if diagnostic_active {
+                    match bridge::diagnostic_calls(&diagnostic_rows,&mut diagnostic_pc_work) {
+                        Ok(row)=>writeln!(diagnostic_calls,"{row}")?,
+                        Err(e)=>writeln!(diagnostic_calls,"{}",json!({"iteration":current.as_ref().unwrap().index,
+                            "source_master":master,"error":e.to_string(),"paths":null}))?,
+                    }
+                    diagnostic_rows.clear();diagnostic_active=false;
+                }
                 writeln!(summaries,"{}",json!({"iteration":current.as_ref().map(|r|r.index),"host":host,"source_master":master,"source_instructions":count,
                     "path_sha256":format!("{:x}",path.clone().finalize()),"native_master":null,"alignment":"source_only","domains":"main_instruction; interrupt entry excluded"}))?;
                 main_active=false;
@@ -381,7 +431,11 @@ fn source(args:&[String])->Result<()> {
             }
             eprintln!("source host={host} checked={checked} instructions={total_instructions}");}
     }
-    if let Some(w)=&failure {write_json(&out.join("first-divergence.json"),w)?;write_json(&out.join("prelude.json"),&prelude)?;}
+    if let Some(w)=&failure {
+        write_json(&out.join("first-divergence.json"),w)?;
+        let rows:Vec<_>=prelude.iter().map(|(pc,opcode,start,end)|json!({"pc":pc,"opcode":opcode,"start":start,"end":end})).collect();
+        write_json(&out.join("prelude.json"),&rows)?;
+    }
     let reason=if failure.is_some(){"alignment_stop"}else{"bounded_source_prefix_native_handoff_unproved"};
     for domain in DOMAINS {
         let r=Residual::new(domain,if *domain=="main_instruction"{reason}else{"unpaired_domain"},Some(checked),None);
@@ -389,6 +443,10 @@ fn source(args:&[String])->Result<()> {
     }
     writeln!(blocks,"{}",json!({"status":"unpaired","reason":reason,"source_master":null,"native_master":null}))?;
     residuals.finish()?;summaries.finish()?;entries.finish()?;blocks.finish()?;witness.finish()?;census.finish()?;partitions.finish()?;
+    diagnostic_calls.finish()?;diagnostic_domains.finish()?;
+    let mut pc_out=zstd::Encoder::new(File::create(out.join("diagnostic-pc-work.json.zst"))?,3)?;
+    serde_json::to_writer(&mut pc_out,&diagnostic_pc_work.into_iter().collect::<Vec<_>>())?;
+    pc_out.finish()?;
     write_json(&out.join("entry-census.json"),&json!({"counts":census_counts,"checked_source_rows":checked,
         "note":"last entry may be unclosed; cross only indices below checked_source_rows","verified_eof":false}))?;
     manifest.verify()?;

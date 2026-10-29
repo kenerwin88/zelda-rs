@@ -1656,6 +1656,14 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     cost_lag_handler = game.native_cost_lag_handler();
                     if pacing_predictor.is_some() {
                         cost_shortfall = game.native_cost_shortfall(iteration.map_or(0, |row| row.lag_nmis));
+                        #[cfg(feature = "rom-shadow-audit")]
+                        if zelda3::debug_env::var_os("ZELDA3_SHADOW_AUDIT_INVERSES").is_some()
+                            && let Some(row)=iteration {
+                            let targets=std::iter::once(1).chain((cost_predictions[2]+1)..=row.lag_nmis)
+                                .collect::<std::collections::BTreeSet<_>>();
+                            let values=targets.into_iter().map(|n|(n,game.native_cost_shortfall(n))).collect::<Vec<_>>();
+                            zelda3::rom_shadow_audit::completed_inverses(row.index,&values);
+                        }
                         cost_main_dma = game.native_cost_main_dma();
                         cost_bus_waits = game.native_cost_bus_waits();
                         cost_main_hdma = game.native_cost_main_hdma();

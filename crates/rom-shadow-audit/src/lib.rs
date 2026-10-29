@@ -9,6 +9,8 @@ pub mod ordered;
 pub mod accounting;
 #[cfg(feature = "rom-shadow-audit")]
 pub mod bridge;
+#[cfg(feature = "rom-shadow-audit")]
+pub mod diagnostic;
 pub const CUTS: &str = "main:before-008038/after-00805d;label:008034;native:profile_main_begin/end";
 pub const DOMAINS: &[&str] = &["main_instruction", "opening_nmi", "lag_nmi", "irq", "polygon", "dma", "hdma", "refresh", "idle", "poll_wait", "native_domain_unknown", "active_wall"];
 

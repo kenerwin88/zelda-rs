@@ -83,6 +83,17 @@ thread_local! {
 }
 /// Logical replay supplies identity only; this never alters seeding or inputs.
 pub fn iteration(index: Option<u64>) { ITERATION.with(|i| i.set(index)); }
+/// Completed-model diagnostic inverse; source counts never enter scheduling.
+pub fn completed_inverses(index:u64,values:&[(u32,(u64,u64))]) {
+    thread_local! {
+        static OUT:RefCell<Option<BufWriter<Box<dyn Write>>>>=RefCell::new(
+            crate::debug_env::var_os("ZELDA3_SHADOW_AUDIT_INVERSES")
+                .map(|p|event_writer(p.into())));
+    }
+    OUT.with(|out|if let Some(out)=out.borrow_mut().as_mut() {
+        writeln!(out,"{}",serde_json::json!({"iteration":index,"inverses":values})).expect("inverse observation");
+    });
+}
 /// Capture at the actual native main cut, after its opening handler.
 pub(crate) fn entry(wram: &[u8], sram: &[u8]) {
     ENTRIES.with(|entries| {
@@ -113,6 +124,55 @@ struct Ordered {
     model: Option<Vec<(Option<u32>, u32, bool)>>,
     range: (u64,u64),
     selected: Option<std::collections::BTreeSet<u64>>,
+    compact: Option<Compact>,
+}
+
+// Per-iteration aggregation bounds disk/memory without sampling execution.
+// Call IDs stay native-only; these summaries do not certify ROM ownership.
+#[derive(Default)]
+struct Compact {
+    calls: std::collections::BTreeMap<u64,(Vec<u32>,u64)>,
+    sites: std::collections::BTreeMap<(Vec<u32>,String),[u64;2]>,
+}
+impl Compact {
+    fn charge(&mut self,path:Vec<u32>,id:u64,clocks:u64,site:String) {
+        let row=self.calls.entry(id).or_insert_with(||(path.clone(),0));
+        assert_eq!(row.0,path);row.1+=clocks;
+        let site=self.sites.entry((path,site)).or_default();
+        site[0]+=clocks;site[1]+=1;
+    }
+    fn emit(&mut self,value:&serde_json::Value,out:&mut impl Write) {
+        match value["event"].as_str().unwrap() {
+            "begin"=>{
+                self.calls.clear();self.sites.clear();
+                let mut path=Vec::new();
+                for frame in value["calls"].as_array().unwrap() {
+                    path.push(frame[1].as_u64().unwrap() as u32);
+                    self.calls.insert(frame[0].as_u64().unwrap(),(path.clone(),0));
+                }
+            }
+            "charge"=>{
+                let path:Vec<u32>=value["path"].as_array().unwrap().iter()
+                    .map(|v|v[1].as_u64().unwrap() as u32).collect();
+                let id=value["call"][0].as_u64().unwrap_or(u64::MAX);
+                let clocks=value["clocks"].as_u64().unwrap();
+                self.charge(path,id,clocks,value["site"].as_str().unwrap().into());
+            }
+            "end"=>{
+                let mut paths=std::collections::BTreeMap::<Vec<u32>,Vec<u64>>::new();
+                for (path,clocks) in self.calls.values() {
+                    paths.entry(path.clone()).or_default().push(*clocks);
+                }
+                assert_eq!(self.calls.values().map(|r|r.1).sum::<u64>(),value["ledger_master"].as_u64().unwrap());
+                writeln!(out,"{}",serde_json::json!({"iteration":value["iteration"],
+                    "ledger_master":value["ledger_master"],"paths":paths.into_iter().collect::<Vec<_>>(),
+                    "sites":self.sites.iter().map(|((path,site),v)|(path,site,v)).collect::<Vec<_>>()})).expect("compact audit");
+            }
+            // Zero-work scopes are retained when their enter event arrives.
+            "enter"|"exit"=>{},
+            _=>panic!("unknown compact event"),
+        }
+    }
 }
 fn event_writer(path:std::path::PathBuf)->BufWriter<Box<dyn Write>> {
     let file=File::options().write(true).create_new(true).open(&path).expect("fresh ordered audit");
@@ -123,7 +183,11 @@ fn event_writer(path:std::path::PathBuf)->BufWriter<Box<dyn Write>> {
 }
 thread_local! {
     static ORDERED: RefCell<Option<Ordered>> = RefCell::new(
-        crate::debug_env::var_os("ZELDA3_SHADOW_AUDIT_EVENTS").map(|path| {
+        crate::debug_env::var_os("ZELDA3_SHADOW_AUDIT_EVENTS")
+            .or_else(||crate::debug_env::var_os("ZELDA3_SHADOW_AUDIT_SUMMARY")).map(|path| {
+            assert!(crate::debug_env::var_os("ZELDA3_SHADOW_AUDIT_EVENTS").is_none()
+                || crate::debug_env::var_os("ZELDA3_SHADOW_AUDIT_SUMMARY").is_none(),
+                "choose raw events or compact summary");
             let range=crate::debug_env::var("ZELDA3_SHADOW_AUDIT_RANGE").ok()
                 .map(|v| {let (lo,hi)=v.split_once('-').expect("shadow range LO-HI");
                     (lo.parse().expect("shadow lower bound"),hi.parse().expect("shadow upper bound"))})
@@ -132,11 +196,17 @@ thread_local! {
             let selected=crate::debug_env::var("ZELDA3_SHADOW_AUDIT_ITERATIONS").ok()
                 .map(|v|v.split(',').map(|s|s.parse().expect("shadow iteration ID")).collect());
             Ordered {out:event_writer(std::path::PathBuf::from(path)),
-                active:false,sequence:0,next_call:0,calls:Vec::new(),clocks:0,marker:None,model:None,range,selected}
+                active:false,sequence:0,next_call:0,calls:Vec::new(),clocks:0,marker:None,model:None,range,selected,
+                compact:crate::debug_env::var_os("ZELDA3_SHADOW_AUDIT_SUMMARY").map(|_|Compact::default())}
         }));
 }
 fn emit(s:&mut Ordered,value:serde_json::Value) {
-    writeln!(s.out,"{value}").expect("ordered audit write");
+    if let Some(compact)=s.compact.as_mut() {
+        if value["event"]=="enter" {
+            compact.calls.insert(value["call"].as_u64().unwrap(),(s.calls.iter().map(|c|c.1).collect(),0));
+        }
+        compact.emit(&value,&mut s.out);
+    }else{writeln!(s.out,"{value}").expect("ordered audit write");}
     s.sequence+=1;
 }
 fn ordered_begin() {
@@ -167,6 +237,12 @@ fn ordered_charge(clocks:u64,site:&'static std::panic::Location<'static>) {
         let model=s.model.take();
         let site=marker.map_or(site,|m|m.3);
         s.clocks+=clocks;
+        if let Some(compact)=s.compact.as_mut() {
+            compact.charge(s.calls.iter().map(|c|c.1).collect(),
+                s.calls.last().map_or(u64::MAX,|c|c.0),clocks,
+                format!("{}:{}:{}",site.file(),site.line(),site.column()));
+            s.sequence+=1;return;
+        }
         emit(s,serde_json::json!({"event":"charge","iteration":ITERATION.with(std::cell::Cell::get),"sequence":s.sequence,
             "clocks":clocks,"call":s.calls.last(),"path":s.calls,
             "model_instructions":model,"pc":marker.map(|m|m.0),"kind":marker.map(|m|m.1),"declared_width":marker.and_then(|m|m.2),
@@ -211,11 +287,26 @@ impl Drop for LocalScope {
 #[cfg(test)]
 mod ordered_tests {
     #[test]
+    fn compact_summary_keeps_zero_calls_sites_and_exclusive_clocks() {
+        use serde_json::json;
+        let mut compact=super::Compact::default();let mut out=Vec::new();
+        compact.emit(&json!({"event":"begin","calls":[[1,0x8034]]}),&mut out);
+        compact.calls.insert(2,(vec![0x8034,0x9000],0));
+        compact.emit(&json!({"event":"charge","path":[[1,0x8034]],"call":[1,0x8034],"site":"a:1","clocks":17}),&mut out);
+        compact.emit(&json!({"event":"charge","path":[],"call":null,"site":"a:2","clocks":3}),&mut out);
+        compact.emit(&json!({"event":"end","iteration":42,"ledger_master":20}),&mut out);
+        let v:serde_json::Value=serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["iteration"],42);assert_eq!(v["ledger_master"],20);
+        assert_eq!(v["paths"],json!([[[],[3]],[[0x8034],[17]],[[0x8034,0x9000],[0]]]));
+        assert_eq!(v["sites"].as_array().unwrap().len(),2);
+    }
+    #[test]
     fn ordered_observation_preserves_sites_and_muting() {
         let path=std::env::temp_dir().join(format!("shadow-ordered-test-{}",std::process::id()));
         super::ORDERED.with(|o|*o.borrow_mut()=Some(super::Ordered {
             out:std::io::BufWriter::new(Box::new(std::fs::File::create(&path).unwrap())),active:false,
             sequence:0,next_call:0,calls:Vec::new(),clocks:0,marker:None,model:None,range:(0,42),selected:Some([42].into_iter().collect()),
+            compact:None,
         }));
         super::iteration(Some(41));
         super::main_begin(crate::cycle_ledger::master());
