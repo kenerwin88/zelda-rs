@@ -1895,6 +1895,24 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_70_KingHelmasaurFireball(int k) {  // 85807f
     pub(super) fn sprite_70_king_helmasaur_fireball(&mut self, k: usize) {
+        let _bounce = self.lag_free.then(|| crate::cycle_ledger::routine(0x05807f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $05:807F JSL $1D:EDD6; $05:8083 RTS after the far wrapper returns.
+        b.block(0x05807f);
+        {
+            let _long = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dedd6));
+            // $1D:EDD6..EDDC PHB/PHK/PLB/JSR $EDE3; PLB/RTL at EDDC.
+            b.block(0x1dedd6);
+            {
+                let _body = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dede3));
+                self.sprite_70_king_helmasaur_fireball_body(k);
+            }
+            b.block(0x1deddc);
+        }
+        b.block(0x058083);
+    }
+
+    fn sprite_70_king_helmasaur_fireball_body(&mut self, k: usize) {
         let oam = self.game_state.oam.current_pointer_usize();
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let flags = SPRITE_70_KING_HELMASAUR_FIREBALL_FLAGS

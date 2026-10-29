@@ -2459,30 +2459,48 @@ impl ZeldaState {
 
     // void Sprite_81_Hover(int k) {  // 9ecc02
     pub(super) fn sprite_81_hover(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ecc02));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1E:CC02..CC3F caller/guards and local dispatch only. Selected
+        // CC47/CC89 handlers, FE78/FE9B and other child bodies stay separate.
+        b.block(0x1ecc02);
         self.sprite_slot_view_mut(k).or_object_priority(48);
         // ROM $1E:CC0A JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x1ecc0e);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1ecc11);
         if self.sprite_slot_view(k).f() != 0 {
+            b.block(0x1ecc16);
             self.sprite_slot_view_mut(k).set_ai_state(0);
-        }
+        } else { b.taken(0x1ecc14); }
+        b.block(0x1ecc19);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1EFE9B) {
             return;
         }
         // $1E:CC1C JSR $1E:C267: both complete damage calls.
+        b.block(0x1ecc1c);
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
+        b.block(0x1ecc1f);
         if self.sprite_slot_view(k).wall_collision() == 0 {
+            b.block(0x1ecc24);
             // ROM $1E:CC24
             self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
-        }
+        } else { b.taken(0x1ecc22); }
+        b.block(0x1ecc27);
         // ROM $1E:CC27 -> $1E:8B2E -> $06:E496
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E);
+        b.block(0x1ecc2a);
         self.sprite_slot_view_mut(k).increment_subtype2();
         let value = (self.sprite_slot_view(k).subtype2() >> 3) & 2;
         self.sprite_slot_view_mut(k).set_graphics(value);
 
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+          b.block(0x008781); }
+        b.block(0x008784);
+        b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {

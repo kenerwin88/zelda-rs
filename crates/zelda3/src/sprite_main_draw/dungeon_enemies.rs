@@ -1351,6 +1351,9 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_26_hardhat_beetle_through_subtype2_increment(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a460));
+        // $06:A460..A46D graphics and drawing JSR; shared tail below owns itself.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06a460);
         let value = (self.sprite_slot_view(k).subtype2() >> 2) & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
         self.hard_hat_beetle_draw(k);
@@ -1360,9 +1363,14 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void HelmasaurHardHatBeetleCommon(int k) {  // 86a46d
     fn helmasaur_hard_hat_beetle_common_through_subtype2_increment(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a46d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:A46D JSR inactive; its child owns any double return.
+        b.block(0x06a46d);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return false;
         }
+        b.block(0x06a470); // $06:A470 INC, reached only after normal return.
         self.sprite_slot_view_mut(k).add_subtype2(1);
         true
     }
@@ -1379,58 +1387,86 @@ impl ZeldaState {
     /// `Sprite_CheckTileCollision`: the recoil return, Link damage and the
     /// wall-collision-gated movement. Returns `false` on the recoil return.
     fn helmasaur_hard_hat_until_tile_collision(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a46d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:A473..A492: actual recoil/damage/movement/tile call opcodes.
+        b.block(0x06a473);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return false;
         }
         // $06:A476 JSR $06:D88B: both complete damage calls.
+        b.block(0x06a476);
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom06D88B);
+        b.block(0x06a479);
         if (self.sprite_slot_view(k).wall_collision() & 15) != 0 {
+            b.block(0x06a480);
             if (self.sprite_slot_view(k).wall_collision() & 3) != 0 {
+                b.block(0x06a484);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
-            }
+            } else { b.taken(0x06a482); }
+            b.block(0x06a487);
             let value = 0;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
         } else {
+            b.taken(0x06a47e);
+            b.block(0x06a48c);
             // $06:A48C JSR $06:E92C: complete body, caller opcode unchanged.
             self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
         }
+        b.block(0x06a48f);
         true
     }
 
     /// `HelmasaurHardHatBeetleCommon` after `Sprite_CheckTileCollision`: the
     /// periodic speed targeting and the velocity steps.
     fn helmasaur_hard_hat_after_tile_collision(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a46d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:A492..A4D2 targeting, actual signed velocity steps and RTS.
+        b.block(0x06a492);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 31) == 0 {
+            b.block(0x06a499);
             let pt = self.sprite_project_speed_towards_link(k, self.sprite_slot_view(k).a());
+            b.block(0x06a49f);
             let value = pt.y;
             self.sprite_slot_view_mut(k).set_b(value);
             let value = pt.x;
             self.sprite_slot_view_mut(k).set_c(value);
-        }
+        } else { b.taken(0x06a497); }
+        b.block(0x06a4a9);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & self.sprite_slot_view(k).ai_state())
             != 0
         {
+            b.taken(0x06a4af);
+            b.block(0x06a4d1);
             return;
         }
+        b.block(0x06a4b1);
         let dy = self
             .sprite_slot_view(k)
             .y_velocity()
             .wrapping_sub(self.sprite_slot_view(k).b());
+        if sign8(dy) { b.block(0x06a4b9); }
+        else { b.taken(0x06a4b7); b.block(0x06a4be); }
         let value = self
             .sprite_slot_view(k)
             .y_velocity()
             .wrapping_add(if sign8(dy) { 1 } else { 0xff });
         self.sprite_slot_view_mut(k).set_y_velocity(value);
+        b.block(0x06a4c1);
         let dx = self
             .sprite_slot_view(k)
             .x_velocity()
             .wrapping_sub(self.sprite_slot_view(k).c());
+        if sign8(dx) { b.block(0x06a4c9); }
+        else { b.taken(0x06a4c7); b.block(0x06a4ce); }
         let value = self
             .sprite_slot_view(k)
             .x_velocity()
             .wrapping_add(if sign8(dx) { 1 } else { 0xff });
         self.sprite_slot_view_mut(k).set_x_velocity(value);
+        b.block(0x06a4d1);
     }
 
     /// Runs the Helmasaur/Hardhat body on the interrupted host through

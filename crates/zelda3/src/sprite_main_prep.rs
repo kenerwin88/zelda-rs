@@ -17,7 +17,18 @@ impl ZeldaState {
 
     // void SpriteModule_Initialize(int k) {  // 86864d
     pub(super) fn sprite_module_initialize(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06864d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:864D JSL properties; child body/return remains separately priced.
+        b.block(0x06864d);
         self.sprite_module_initialize_properties(k);
+        // $06:8651..865B INC state, LDA type, JSL local dispatch. Native
+        // property continuations bypass this complete-entry wrapper.
+        b.block(0x068651);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+          b.block(0x008781); }
+        b.block(0x008784);
+        b.block(0x008799);
         self.sprite_module_initialize_after_properties(k);
     }
 
@@ -4170,6 +4181,9 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_fairy_pond(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x068de9));
+        // $06:8DE9..8DFD: complete inline prep handler and inherited RTS.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x068de9);
         let j = ((self.sprite_slot_view(k).x_low() >> 4) & 1) as usize;
         self.sprite_slot_view_mut(k).set_a(j as u8);
         self.sprite_slot_view_mut(k)

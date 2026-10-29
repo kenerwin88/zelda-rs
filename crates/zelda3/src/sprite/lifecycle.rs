@@ -1650,23 +1650,44 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_module_carried(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06de83));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:DE83..DF61: carried handler, including its actual JSR/JMP/RTS
+        // instructions; DF6D/84C1/9271/E2BA child work is separate.
+        b.block(0x06de83);
         let value = self.game_state.world.region.overworld_area_low();
         self.sprite_slot_view_mut(k).set_room(value);
         if self.sprite_slot_view(k).draw_work_byte_3() != 3 {
+            b.block(0x06de91);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                b.block(0x06de96);
                 let value = if self.sprite_slot_view(k).c() == 6 {
+                    b.block(0x06de9f);
                     8
                 } else {
+                    b.taken(0x06de9d);
                     4
                 };
+                b.block(0x06dea1);
                 self.sprite_slot_view_mut(k).set_delay_main(value);
                 self.sprite_slot_view_mut(k).increment_draw_work_byte_3();
-            }
+            } else { b.taken(0x06de94); }
+            b.block(0x06dead);
         } else {
+            b.taken(0x06de8f);
+            b.block(0x06deaf);
             self.sprite_slot_view_mut(k).and_flags3(!0x10);
         }
 
+        b.block(0x06deb7);
         let t = self.sprite_slot_view(k).delay_aux4().wrapping_sub(1);
+        if t >= 63 { b.taken(0x06debf); }
+        else {
+            b.block(0x06dec1);
+            if t & 2 == 0 { b.taken(0x06dec3); }
+            else { b.block(0x06dec5); }
+        }
+        b.block(0x06dec7);
         let r0 = u16::from(t < 63 && (t & 2) != 0);
         let j = usize::from(
             self.game_state
@@ -1696,6 +1717,10 @@ impl ZeldaState {
         } else {
             0
         };
+        if self.game_state.player.follower_link.animation_step() < 6 {
+            b.taken(0x06def1);
+        } else { b.block(0x06def3); }
+        b.block(0x06def5);
         let z = self
             .game_state
             .player
@@ -1716,10 +1741,15 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_floor(value);
 
         self.carried_sprite_check_for_throw(k);
+        b.block(0x06df2a);
         self.sprite_get16_bit_coords(k);
+        b.block(0x06df2d);
         if self.sprite_slot_view(k).draw_work_byte_4() != 11 {
+            b.block(0x06df35);
             self.sprite_active_main_jsr(k);
+            b.block(0x06df38);
             if self.sprite_slot_view(k).delay_aux4() == 1 {
+                b.block(0x06df3e);
                 let value = 9;
                 self.sprite_slot_view_mut(k).set_state(value);
                 let value = 0;
@@ -1730,8 +1760,11 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
                 self.sprite_slot_view_mut(k).or_flags3(0x10);
                 self.follower_link_state_mut().set_picking_throw_state(2);
-            }
+            } else { b.taken(0x06df3c); }
+            b.block(0x06df5d);
         } else {
+            b.taken(0x06df33);
+            b.block(0x06df5e);
             self.sprite_stunned_main_func1(k);
         }
     }

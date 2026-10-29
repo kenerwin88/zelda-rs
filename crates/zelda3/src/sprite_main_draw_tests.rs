@@ -4931,3 +4931,262 @@ fn bypass1_default_shadow_prefix_excludes_shared_child() {
             },||n.sprite_draw_shadow_custom(0,&mut info,10,SpriteShadowEntry::Rom06DC54Default));
     }
 }
+
+#[test]
+fn bypass5_carried_handler_matches_rom() {
+    for k in [0, 15] {
+        for (lift, delay, kind) in [(0, 0, 4), (2, 0, 6), (2, 1, 4), (3, 0, 6)] {
+            for aux in [0, 1, 2, 3, 63, 64, 255] {
+                for (facing, animation, x, z) in [(0, 0, 0x100, 0),
+                    (2, 5, 0x1ff, 0xff), (4, 6, 0x200, 0x100), (6, 1, 0xffff, 0xffff)] {
+                    for tail in [10, 11] {
+                        let mut native = marker29_state();
+                        for (a, v) in [(0xdd0, 10), (0xe20, 0x0c), (0xdb0, kind),
+                            (0xdf0, delay), (0xf10, aux), (0xe60, 0x10),
+                            (0xfa1c, lift), (0xfa2c, tail), (0xfa3c, 1)] {
+                            native.write_wram_byte(a + k, v);
+                        }
+                        for (a, v) in [(0x2f, facing), (0x2e, animation), (0x1a, 1)] {
+                            native.write_wram_byte(a, v);
+                        }
+                        native.write_wram_word(0x22, x);
+                        native.write_wram_word(0x20, x.wrapping_add(0x80));
+                        native.write_wram_word(0x24, z);
+                        native.sync_native_game_state_from_ram();
+                        let machine = marker29_machine(&native, 0x06de83, k).expect("ROM");
+                        let source = crate::cycle_ledger::assert_rom_marker_work(0x06de83, machine,
+                            |s| s.cpu.k == 6 && (0xde83..0xdf61).contains(&s.cpu.pc),
+                            || native.sprite_module_carried(k));
+                        for a in [0xc9a, 0xdf0, 0xe60, 0xd10, 0xd30, 0xd00,
+                            0xd20, 0xf70, 0xf20, 0xdd0, 0xda0, 0xf10, 0xf80, 0xfa1c] {
+                            assert_eq!(native.read_wram_byte(a + k), source.snes().ram[a + k],
+                                "{a:x} slot {k} lift {lift} aux {aux} facing {facing} animation {animation} tail {tail}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn bypass5_initialize_and_fairy_handler_match_rom() {
+    for k in [0, 15] {
+        for ty in [2, 0x50, 0x71] {
+            for x in [0, 0x10, 0x7f, 0xff] {
+                let mut native = marker29_state();
+                for (a, v) in [(0xdd0, 8), (0xe20, ty), (0xd10, x)] {
+                    native.write_wram_byte(a + k, v);
+                }
+                native.sync_native_game_state_from_ram();
+                let machine = marker29_machine(&native, 0x06864d, k).expect("ROM");
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x06864d, machine,
+                    |s| (s.cpu.k == 6 && (0x864d..0x865b).contains(&s.cpu.pc))
+                        || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)),
+                    || native.sprite_module_initialize(k));
+                assert_eq!(native.read_wram_byte(0xdd0+k), source.snes().ram[0xdd0+k]);
+                assert_eq!(native.read_wram_byte(0xf50+k), source.snes().ram[0xf50+k]);
+            }
+        }
+        for x in 0..=255 {
+            let mut native = marker29_state();
+            native.write_wram_byte(0xd10+k, x);
+            native.sync_native_game_state_from_ram();
+            let machine = marker29_machine(&native, 0x068de9, k).expect("ROM");
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x068de9, machine,
+                |s| s.cpu.k == 6 && (0x8de9..0x8dfd).contains(&s.cpu.pc),
+                || native.sprite_prep_fairy_pond(k));
+            for a in [0xd90, 0xf50] {
+                assert_eq!(native.read_wram_byte(a+k), source.snes().ram[a+k]);
+            }
+        }
+    }
+}
+
+#[test]
+fn bypass5_hardhat_and_shared_tail_match_rom() {
+    for k in [0, 15] {
+        for (state, recoil) in [(8, 0), (9, 0), (9, 8)] {
+            for (frame, mask, vy, vx, target_y, target_x) in [
+                (0, 0, 0, 0, 0, 0), (1, 1, 0, 0, 1, 1),
+                (2, 0, 0xff, 1, 1, 0xff), (3, 0, 0x7f, 0x80, 0x80, 0x7f)] {
+                for wall in [0, 1, 4, 15] {
+                    for entry in [0x06a460, 0x06a46d] {
+                        let mut native = marker29_state();
+                        for (a, v) in [(0xdd0, state), (0xe20, 0x26), (0xea0, recoil),
+                            (0xe80, 7), (0xd80, mask), (0xd90, 16), (0xd40, vy),
+                            (0xd50, vx), (0xda0, target_y), (0xdb0, target_x),
+                            (0xd10, 0x40), (0xd00, 0x40), (0xe70, wall), (0xcd2, 0x80)] {
+                            native.write_wram_byte(a+k, v);
+                        }
+                        native.write_wram_byte(0x1a, frame);
+                        native.write_wram_byte(0xfa0, k as u8);
+                        native.write_wram_word(0x20, 0x180);
+                        native.write_wram_word(0x22, 0x180);
+                        native.sync_native_game_state_from_ram();
+                        let machine = marker29_machine(&native, entry, k).expect("ROM");
+                        let source = crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+                            |s| s.cpu.k == 6 && if entry == 0x06a460 {
+                                (0xa460..0xa46d).contains(&s.cpu.pc)
+                            } else { (0xa46d..0xa4d2).contains(&s.cpu.pc) },
+                            || if entry == 0x06a460 { native.sprite_26_hardhat_beetle(k); }
+                            else {
+                                // The Mini Helmasaur alias enters the same shared
+                                // tail after its separate drawing call.
+                                native.sprite_26_hardhat_beetle(k);
+                            });
+                        for a in [0xe80, 0xd40, 0xd50, 0xda0, 0xdb0] {
+                            assert_eq!(native.read_wram_byte(a+k), source.snes().ram[a+k]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn bypass5_caller70_wrappers_match_rom() {
+    for k in [0, 15] {
+        for (x, y, state) in [(0, 0x40, 9), (0x40, 0, 9), (0x40, 0x40, 8),
+            (0x40, 0x40, 9), (0xff, 0xff, 9)] {
+            for entry in [0x05807f, 0x1dedd6] {
+                let mut native = marker29_state();
+                for (a, v) in [(0xdd0, state), (0xe20, 0x70), (0xd10, x),
+                    (0xd00, y), (0xdf0, 1)] { native.write_wram_byte(a+k, v); }
+                native.write_wram_word(0x20, 0x180);
+                native.write_wram_word(0x22, 0x180);
+                native.sync_native_game_state_from_ram();
+                // Enter through the bank-5 bounce even when measuring its
+                // far child's self-work: the return kind stays unmodified.
+                let machine = marker29_machine(&native, 0x05807f, k).expect("ROM");
+                crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+                    |s| if entry == 0x05807f { s.cpu.k == 5 && (0x807f..0x8084).contains(&s.cpu.pc) }
+                        else { s.cpu.k == 0x1d && (0xedd6..0xedde).contains(&s.cpu.pc) },
+                    || native.sprite_70_king_helmasaur_fireball(k));
+            }
+        }
+    }
+}
+
+#[test]
+fn bypass5_dispatch_retirement_order_matches_rom() {
+    use std::cell::RefCell;
+    let mut evidence = Vec::new();
+    for (state, ty, owner, target) in [(8, 0x71, 0x06864d, 0x06864d),
+        (10, 0x0c, 0x06de83, 0x06de83), (9, 0x70, 0x05807f, 0x05807f)] {
+        let mut native = marker29_state();
+        for (a, v) in [(0xdd0, state), (0xe20, ty), (0xd10, 0x40),
+            (0xd00, 0x40), (0xfa1c, 3), (0xfa2c, 10), (0xf10, 8), (0xdf0, 1)] {
+            native.write_wram_byte(a, v);
+        }
+        native.write_wram_word(0x20, 0x180);
+        native.write_wram_word(0x22, 0x180);
+        native.sync_native_game_state_from_ram();
+        let machine = marker29_machine(&native, 0x0684e2, 0).expect("ROM");
+        let trace = RefCell::new(Vec::new());
+        crate::cycle_ledger::assert_rom_marker_work(owner, machine, |s| {
+            let pc = u32::from(s.cpu.k) << 16 | u32::from(s.cpu.pc);
+            trace.borrow_mut().push((pc, s.cpu.sp, s.cpu.db, s.cpu.pack_flags()));
+            match owner {
+                0x06864d => (0x06864d..0x06865b).contains(&pc)
+                    // The first dispatcher belongs to ExecuteSingle; the
+                    // second is prep dispatch after its properties child.
+                    || ((0x008784..0x00879c).contains(&pc)
+                        && trace.borrow().iter().any(|r| r.0 == 0x06864d)),
+                0x06de83 => (0x06de83..0x06df61).contains(&pc),
+                _ => (0x05807f..0x058084).contains(&pc),
+            }
+        }, || native.sprite_execute_single(0));
+        let trace = trace.into_inner();
+        let edges: Vec<_> = trace.windows(2).map(|w| (w[0].0, w[1].0)).collect();
+        if state != 9 {
+            assert!(edges.contains(&(0x0684f0, 0x008781)));
+            assert!(edges.contains(&(0x008799, target)));
+            // PLY consumes the real JSL return before the inherited JMP.
+            let j = trace.iter().position(|r| r.0 == 0x008783).unwrap();
+            assert_eq!(trace[j+1].1, trace[j].1 + 1);
+        } else {
+            assert!(edges.contains(&(0x069282, 0x06bfea)));
+            assert!(edges.contains(&(0x06bfea, 0x05b5c3)));
+            assert!(edges.contains(&(0x05b5e7, target)));
+        }
+        match owner {
+            0x06864d => {
+                assert!(edges.contains(&(0x06864d, 0x0db818)));
+                assert!(edges.contains(&(0x068657, 0x008781)));
+                assert!(edges.contains(&(0x008799, 0x068de9)));
+                assert_eq!(trace.last().unwrap().0, 0x068dfc);
+            }
+            0x06de83 => {
+                for edge in [(0x06df27, 0x06df6d), (0x06df2a, 0x0684c1),
+                    (0x06df35, 0x069271)] { assert!(edges.contains(&edge)); }
+                assert_eq!(trace.last().unwrap().0, 0x06df5d);
+            }
+            _ => {
+                assert!(edges.contains(&(0x05807f, 0x1dedd6)));
+                assert!(edges.contains(&(0x1dedd9, 0x1dede3)));
+                assert!(edges.contains(&(0x1deddd, 0x058083)));
+                assert!(trace.iter().any(|r| r.0 == 0x058083));
+            }
+        }
+        evidence.push((state, ty, trace));
+    }
+    eprintln!("bypass5 ordered source retirements: {evidence:x?}");
+}
+
+#[test]
+fn bypass5_hover_prefix_and_dispatch_match_rom() {
+    for k in [0, 15] {
+        for (state, recoil, ai, delay) in [(8, 0, 0, 0), (9, 0, 0, 0),
+            (9, 0, 0, 1), (9, 0, 1, 0), (9, 0, 1, 1), (9, 0, 1, 31), (9, 8, 1, 0)] {
+            for direction in 0..4 {
+                for wall in [0, 15] {
+                    let mut native = marker29_state();
+                    for (a, v) in [(0xdd0, state), (0xe20, 0x81), (0xea0, recoil),
+                        (0xd80, ai), (0xdf0, delay), (0xde0, direction), (0xe70, wall),
+                        (0xd10, 0x40), (0xd00, 0x40), (0xcd2, 0x80)] {
+                        native.write_wram_byte(a+k, v);
+                    }
+                    native.write_wram_byte(0xfa0, k as u8);
+                    native.write_wram_word(0x20, 0x180);
+                    native.write_wram_word(0x22, 0x180);
+                    native.sync_native_game_state_from_ram();
+                    let machine = marker29_machine(&native, 0x1ecc02, k).expect("ROM");
+                    crate::cycle_ledger::assert_rom_marker_work(0x1ecc02, machine,
+                        |s| (s.cpu.k == 0x1e && (0xcc02..0xcc3f).contains(&s.cpu.pc))
+                            || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc))
+                            // Existing recoil marker: second PLA/RTS is
+                            // inherited caller work, not a new prefix price.
+                            || (s.cpu.k == 0x1e && (s.cpu.pc == 0xff18
+                                || (s.cpu.pc == 0xff19 && s.cpu.sp == 0x1fa))),
+                        || native.sprite_81_hover(k));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn bypass5_new_families_are_muted() {
+    let mut native = marker29_state();
+    for (a, v) in [(0xdd0, 10), (0xe20, 0x0c), (0xfa1c, 3), (0xfa2c, 10)] {
+        native.write_wram_byte(a, v);
+    }
+    native.sync_native_game_state_from_ram();
+    let before = crate::cycle_ledger::master();
+    crate::cycle_ledger::muted(|| {
+        native.sprite_module_carried(0);
+        native.sprite_prep_fairy_pond(0);
+        native.sprite_slot_view_mut(0).set_sprite_type(0x71);
+        native.sprite_slot_view_mut(0).set_state(8);
+        native.sprite_module_initialize(0);
+        native.sprite_slot_view_mut(0).set_sprite_type(0x26);
+        native.sprite_26_hardhat_beetle(0);
+        native.sprite_slot_view_mut(0).set_sprite_type(0x70);
+        native.sprite_70_king_helmasaur_fireball(0);
+        native.sprite_slot_view_mut(0).set_sprite_type(0x81);
+        native.sprite_81_hover(0);
+    });
+    assert_eq!(crate::cycle_ledger::master(), before);
+}

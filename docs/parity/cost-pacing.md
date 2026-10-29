@@ -17367,3 +17367,154 @@ Arrghus orbit and BNC flail were not priced. No candidate needed an exception
 or withdrawal. No GPU, video, cached-av, external Snes9x, continuous live or
 seeded live census, full library suite, protected-cache/shared-ledger write,
 cargo fmt, commit or push was performed. Scratch drivers stayed in `/tmp`.
+
+
+## Bypass pricing 5
+
+**Verified partial CPU-only stop on `codex/bypass5`, base `8b3cdcbb`.**
+Evidence: `target/bypass5/`. One final unsharded **full-v2 ROM-answer census**
+uses `--report 0 --seed-every 2000`, completes **1,473,123 ordered iterations
+and EOF**, and the unchanged census gate **PASSes, unexplained 0**.
+ROM excess/zero-lag FP remain **0/0**; every runtime hold equals P2.
+Missing holds fall **2,421 → 2,410**:
+**11 restored, 0 lost,
+0 newly missing iterations**.
+
+| Inclusive iteration window | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,421 | **2,410** |
+| 0..94,852 | 79 | **79** |
+| 94,853..142,086 | 37 | **36** |
+| 142,087..461,988 | 378 | **376** |
+| 461,989..1,473,122 | 1,927 | **1,919** |
+
+The before column reuses Bypass 4's retained complete predictor; it is not a
+fresh control replay. `baseline-source-identity.json` verifies the previous
+batch's runtime/table bindings against this clean base, and `counts.json`
+binds both complete CSV hashes. The independent source prefix remains
+**0..461,775**, separate from the reporting window ending 461,988. Missing
+holds within the verified prefix fall **494 →
+491**. On Diagnostic 2's same **393,848 ordinary
+source-entry rows**, signed main-instruction deficit falls
+**3,577,781,098 → 3,461,747,864 master clocks**, with
+**116,033,234** additional native instruction clocks. This is a
+counter comparison, not complete opcode pairing or source suffix/EOF proof.
+
+### Refreshed screen and dispatch ownership
+
+`refreshed-estimates.json` applies current main-counter growth to Diagnostic
+2's retained fixed-context inverse screen, while preserving its unresolved
+owner projections. The resulting diagnostic estimates are **26 holds / one
+potential zero-lag FP** for the broad 008781 owner, **27/0** for 0684E2,
+**11/0** for 05B5D3, and **3/0** for 1E8B19. The 365,056,892-clock broad
+008781 difference is therefore neither an admitted price nor a zero-FP
+candidate. Bypass 3 already priced the entire original **58,464,004-clock
+B956 footprint**; that old two-hold estimate is no longer available.
+`refresh-context-check.json` retains changed output bus/handler/raster fields;
+these remain fixed-context diagnostic screens, not fresh exact inverses for
+changed contexts. The final full census is the acceptance authority.
+
+The source call signatures explain the ambiguity: PLY removes the JSL return,
+but the source frame can retain the selected RTS handler. Native ExecuteSingle
+already charges **62 + 52 + 362** for its state dispatch; Active2/3 already
+charge their **290** selector clocks. None is increased. The new initialization
+prep and Hover local dispatches were previously absent: their actual generated
+STY/PLY, REP/table/restore and JMP instructions are bound at their own translated
+call sites. No generic dispatch surcharge or owner difference is installed.
+
+`source-call-signatures.json` retains full per-call block/width/cost/count
+signatures for selected ranges under **six source owners**, including inherited
+8781, ExecuteSingle, Active_Main, Active2/3 and the far caller-70 wrapper.
+Those signatures describe source frame membership, not an ordered opcode
+sequence. The separate unmodified-ROM ordered fixture records actual PCs,
+stack, DB and flags from ExecuteSingle through each selected target:
+**84F0 JSL 8781 → 8799 JMP 864D/DE83**, inner prep dispatch to **8DE9**,
+and **9271 RTS → BFEA JSL B5C3 → B5E7 RTS → 5807F JSL 1DEDD6 →
+EDD9 JSR EDE3 → RTL 58083 → RTS**. PLY's actual stack change and the
+real JSR child targets/return boundaries are asserted. The complete traces
+are retained in `tests-drawing.log`.
+
+### Instruction ranges and retirement boundaries
+
+**59 generated blocks / 193 source instructions**
+come only from `scripts/rom_block_costs.py`. All **3,547
+previous rows are byte-unchanged**, and all **3,606
+rows regenerate exactly. Existing generated local-dispatch blocks are reused.
+Every new family opens its own lagless `cycle_ledger::routine(entry)` scope,
+so a priced caller's self-work excludes its children. The selected self ranges
+had **no legacy `charge(N)` scalar**; there is no scalar retained alongside a
+new price. Existing child/setup/dispatch prices remain unchanged.
+
+| Range, end exclusive | Newly owned instructions |
+| --- | --- |
+| `$06:DE83..DF61` | Complete carried self body: actual lift/delay/aux/animation branches, coordinate arithmetic, child-call opcodes, ordinary DF5D RTS or alternate DF5E JMP. |
+| `$06:864D..865B`, plus its local dispatch | Complete-entry initialization call/state/type/prep-dispatch prefix; property/reset/load children excluded. Direct continuation helpers bypass this wrapper. |
+| `$06:8DE9..8DFD` | Fairy-pond prep's immutable-table read, stores and inherited RTS. |
+| `$06:A460..A4D2` | Hardhat graphics prefix and independently scoped Mini Helmasaur shared tail: inactive/recoil calls, subtype, damage/movement/tile calls, targeting, actual signed velocity steps and RTS. |
+| `$05:807F..8084`, `$1D:EDD6..EDDE` | Caller-70 bounce and far wrapper, exactly **104 + 190**; EDE3 body and its aliases excluded. |
+| `$1E:CC02..CC3F`, plus its local dispatch | Hover caller/guards, child-call opcodes, subtype/graphics and actual local dispatch; CC47/CC89 state handlers excluded. |
+
+Carried's DF6D throw, 84C1 coordinates, 9271 active and E2BA stunned bodies
+remain separate; the alternate tail never acquires DF5D's RTS. Hardhat's
+shared continuation starts only at its reached translated suffix, preserving
+already retired prefixes. Child-call blocks end at their call opcodes;
+post-call tests retire after the child. Inactive/recoil double returns skip
+subsequent markers. Hover's already-priced **FF18 second PLA/RTS (70 clocks)**
+remains inherited caller work; the new scope relocates its attribution without
+adding another return. Caller-70's early body returns still execute its actual
+far and bounce returns. All selected source entries are M8/X8, DP=0; their
+valid slot/table indices cannot cross the annotated pages.
+
+`outside-charge-certificate.json` records these local exclusions and hashes.
+It does not renew the auditor's narrow M3b admission certificate or claim
+all legacy scalar/model ownership is solved. No lag-derived fit, per-scene
+threshold/table/multiplier, classifier widening or parent/child double price
+is introduced. Collision-response work was left aside.
+
+| Added ordinary-prefix work | Master clocks |
+| --- | ---: |
+| initialize | 12,336,126 |
+| carried | 39,005,874 |
+| fairy_prep | 4,820,248 |
+| hardhat_and_common | 31,942,792 |
+| caller70_wrappers | 659,736 |
+| hover_prefix | 27,268,458 |
+
+On every ordinary prefix row, new marker work equals main-counter growth,
+and observed path totals plus separate VWF reconcile with the predictor:
+**zero counter/marker mismatches**. `prefix-proof.json`, compressed per-row
+additions and the complete hold-change matrix retain that comparison.
+
+### Verification and stop
+
+All **seven new tests** pass, including **1,311 unmodified-ROM comparisons**:
+448 carried, 536 initialization/fairy, 192 Hardhat/shared-tail, 20 caller-70
+wrappers, 112 Hover prefix/dispatch and three ordered whole-caller traces.
+They cover slots 0/15, lift/delay/aux and coordinate wrap boundaries, all
+normal facing directions, animation clipping, alternate carried tails,
+all 256 fairy X bytes, inactive/recoil exits, signed velocity branches,
+wall/movement paths, selected prep entries and wrapper early returns.
+An invalid unused sprite-table entry in an initial fixture was replaced with
+a real source target; product behavior was not changed to satisfy the fixture.
+The existing Hover recoil return marker was added to its fixture's ownership
+predicate, rather than charged again.
+
+Final targeted groups pass: **205 drawing, 39 prep, seven Mothula-file,
+79 runtime-sprite, 16 sprite-main caller and one Hardhat continuation test**
+(**347 checks**, with overlapping coverage and all seven new tests included).
+Default, no-default-feature and observer-enabled product builds are
+**warning-free**. Lib-test compilation retains the same **24 pre-existing
+dead-code warnings**. Nine Python generator/worklist tests, exact regeneration
+and `git diff --check` pass. The default **200,000-frame state ledger matches
+all records and EOF**. Protected input file sets, sizes and nanosecond mtimes
+remain unchanged. Commands, source/binary/input hashes and sampled disk bounds
+bind the stop; retained `target/bypass5` output stays below **3 GB**.
+
+This is a partial stop. Remaining inherited 8781 handlers, state/death/stunned
+and caller aliases, Active2/3 bodies/returns, caller-70 EDE3 aliases, Hover
+CC47/CC89, unresolved B956 continuations, BNC body/flail and Arrghus orbit
+remain unpriced. No candidate required a full-census exception or withdrawal.
+No GPU, video, cached-av, external Snes9x, continuous live or seeded live census,
+full library suite, protected-cache/shared-ledger write, cargo fmt, commit
+or push was performed. Scratch orchestration stayed in `/tmp`. These are CPU
+accounting/regression receipts, not exact A/V acceptance.
