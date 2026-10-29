@@ -601,3 +601,71 @@ fn zelda_dialogue_drawing_cycles_match_rom() {
         }
     }
 }
+
+#[test]
+fn bypass1_guard_shadow_retires_once_at_every_animation_checkpoint() {
+    use crate::GuardAnimationCheckpoint as Stage;
+    let mut stages=vec![Stage::HeadCharacterPending,Stage::HeadFlagsPending,
+        Stage::HeadExtendedPending,Stage::ShadowOamPending,Stage::DrawReturned,
+        Stage::ActiveStateChecked];
+    for entry in 0..=3 {
+        stages.extend([Stage::BodyBeforeEntry{entry},Stage::BodyCoordinates{entry},Stage::BodyFlagsPending{entry}]);
+    }
+    for entry in 0..=1 {
+        stages.extend([Stage::WeaponBeforeCoordinates{entry},Stage::WeaponCoordinates{entry}]);
+    }
+    for stage in stages {
+        let mut n=ZeldaState::new();
+        n.set_lag_free(true);
+        n.set_main_module(9);
+        n.set_indoor_flag(0);
+        n.set_submodule(1); // animation completes; gameplay continuation exits inactive
+        n.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        n.oam_state_mut().set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+        {
+            let mut s=n.sprite_slot_view_mut(0);
+            s.set_state(9); s.set_sprite_type(0x41); s.set_x(0x40); s.set_y(0x40);
+            s.set_flags3(0x10); s.set_flags2(7);
+        }
+        let wrapper=crate::cycle_ledger::measure_routine_self_work(0x06dc5c,|| {
+            let c=n.guard_animation_until_checkpoint(0,stage);
+            n.complete_guard_animation_at_checkpoint(0,c);
+        });
+        assert_eq!(wrapper,190,"checkpoint {stage:?}");
+        // The already returned entry cannot run the shadow again on completion.
+    }
+}
+
+#[test]
+fn bypass1_guard_shadow_initializer_and_offscreen_retirements() {
+    for active_call in 1..=2 {
+        let mut n=ZeldaState::new();
+        n.set_lag_free(true); n.set_main_module(9); n.set_indoor_flag(0); n.set_submodule(0x23);
+        n.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        n.oam_state_mut().set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+        {
+            let mut s=n.sprite_slot_view_mut(10);
+            s.set_state(9); s.set_sprite_type(0x45); s.set_x(0x80); s.set_y(0x80);
+            s.set_flags3(0x10); s.set_flags2(7); s.set_deflection_bits(0x20);
+        }
+        let work=crate::cycle_ledger::measure_routine_self_work(0x06dc5c,||{
+            let c=n.guard_animation_until_checkpoint(10,
+                crate::GuardAnimationCheckpoint::HogSpearInitializerBodyReturned{active_call});
+            n.complete_guard_animation_at_checkpoint(10,c);
+        });
+        assert_eq!(work,380,"initializer active call {active_call}");
+    }
+    let mut n=ZeldaState::new();
+    n.set_lag_free(true); n.set_main_module(9); n.set_submodule(1);
+    n.sprite_workspace_mut().set_current_sprite_x(0x0130);
+    n.sprite_workspace_mut().set_current_sprite_y(0x0050);
+    {
+        let mut s=n.sprite_slot_view_mut(0);
+        s.set_state(9); s.set_sprite_type(0x41); s.set_x(0x200); s.set_y(0x200); s.set_flags3(0x10);
+    }
+    let work=crate::cycle_ledger::measure_routine_self_work(0x06dc5c,||{
+        let c=n.guard_animation_until_checkpoint(0,crate::GuardAnimationCheckpoint::OffscreenKillSelfPending);
+        n.complete_guard_animation_at_checkpoint(0,c);
+    });
+    assert_eq!(work,0);
+}

@@ -495,12 +495,25 @@ impl ZeldaState {
     }
 
     pub(super) fn link_check_new_a_press(&mut self) -> bool {
-        if self.game_state.player.follower_link.y_button_action_flags() & 0x80 != 0
-            || self.game_state.player.follower_link.incapacitated_timer() != 0
-            || self.game_state.player.follower_link.filtered_joypad_l() & 0x80 == 0
-        {
+        // $07:B5C0..B5D5: complete predicate, separate from the 9BAA caller.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07b5c0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07b5c0);
+        if self.game_state.player.follower_link.y_button_action_flags() & 0x80 != 0 {
+            b.taken(0x07b5c4); b.block(0x07b5d4);
             return false;
         }
+        b.block(0x07b5c6);
+        if self.game_state.player.follower_link.incapacitated_timer() != 0 {
+            b.taken(0x07b5c8); b.block(0x07b5d4);
+            return false;
+        }
+        b.block(0x07b5ca);
+        if self.game_state.player.follower_link.filtered_joypad_l() & 0x80 == 0 {
+            b.taken(0x07b5ce); b.block(0x07b5d4);
+            return false;
+        }
+        b.block(0x07b5d0);
         self.follower_link_state_mut()
             .add_y_button_action_flag_bits(0x80);
         true

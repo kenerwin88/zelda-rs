@@ -16235,3 +16235,198 @@ passes; final input, code, binary and analysis-program identities bind this stop
 full library suite, protected-cache/shared-ledger write, cargo fmt, commit or
 push was performed. This is a counter/ownership diagnostic, not full-route
 source EOF, pricing admission, suspended-CPU or exact A/V acceptance.
+
+
+## Bypass pricing 1
+
+**Verified partial CPU-only stop on `codex/bypass1`, base `f83e906a`.**
+Evidence: `target/bypass1/`. The final unsharded **full-v2 ROM lane** uses
+`--report 0 --seed-every 2000`, completes **1,473,123 ordered iterations and EOF**,
+and its unchanged census gate **PASSes, unexplained 0**. ROM excess/zero-lag
+FP are **0/0**, and every runtime hold equals P2. Missing holds fall
+**2,736 → 2,643: 93 restored, 0 lost, 0 newly missing iterations**.
+
+| Inclusive iteration window | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,736 | **2,643** |
+| 0..94,852 | 87 | **82** |
+| 94,853..142,086 | 38 | **37** |
+| 142,087..461,988 | 453 | **424** |
+| 461,989..1,473,122 | 2,158 | **2,100** |
+
+The fresh main control independently reproduces the supplied 2,736/0/0.
+Its binary SHA-256 and all seven runtime-source changes since `cf51008d`
+match Diagnostic 1's recorded build. Its first **461,776 predictor records
+are byte-identical** to that diagnostic. `main-control-identity.json`,
+`main-prefix-reproduction.json`, both final gate logs, before/after count
+JSONs, and `hold-changes.json.gz` bind the comparison. The main control takes
+801.273 s; the accepted candidate takes 1,535.195 s with its prefix observer.
+
+### Admitted work and the outside-charge boundary
+
+**84 generated blocks / 100 instructions** come from
+`scripts/rom_block_costs.py`; all **3,350 previous rows remain byte-identical**.
+Every new price is lagless-only and cites source addresses. No newly priced
+self body keeps a lagless legacy scalar. Default/ROM-timing accounting and
+already priced children retain their previous amounts.
+
+| Family | Source ownership | Added ordinary-prefix clocks |
+| --- | --- | ---: |
+| Guard custom shadow | `$06:DC5C..DC63` wrapper plus `$DC66..DCEE` body | **72,618,436** |
+| Proved far-call bindings | F121 / E496 / EB5E stubs only, children excluded | **28,347,964** |
+| New A-button predicate | `$07:B5C0..B5D5`, complete leaf | **49,678,230** |
+
+The guard shortcut previously had no ledger call, including its OAM helpers.
+Its lagless path now uses the existing source-owned `ShadowWork` body, with
+one generated instruction marker at each retirement. This also restores its
+ROM paused/carried-hidden exits, small-shadow selection and independent
+extended-OAM pointer; the non-lagless shortcut is unchanged. The wrapper owns
+190 clocks and the body its actual branch/read path, including clipped exits.
+The measured guard footprint is **55,714 calls**, including **48,552 visible
+and 7,162 clipped bodies**. The body's 62,032,776 clocks plus 10,585,660 wrapper
+clocks reproduce the complete source guard-shadow footprint; no parent tax
+is used. Generic shadow calls already price DC66: their model charges are
+converted at equal cost, never added again. The DC54 default wrapper's existing
+118/16/72 lagless scalars become existing markers. Its DC64 default-offset
+fallthrough fences the DC66 body in a separate scope; this scope does not
+invent another ROM JSR or another charge. Non-lagless scalars remain unchanged.
+
+Guard C680's coordinate/head/body/weapon calls, selector and return already
+own disjoint caller instructions. The custom-shadow helper, `set_guard_oam`
+and `set_oam_helper0_index` have no other deferred/model price for this body.
+`outside-charge-certificate.json` records those ranges, source hashes and
+normal/resumed retirement contracts. Head/body/weapon continuations enter the
+shadow once; ShadowOamPending stops before it; DrawReturned and
+ActiveStateChecked have already completed it. Both nested initializer active
+calls own their respective invocation. The offscreen kill path never enters
+it. **25 continuation cases** exercise these boundaries.
+
+The new EB5E stub owns only PHB/PHK/PLB/JSR and PLB/RTL, **190 clocks**;
+EB76's existing behavior and children remain separate. The actual bank-5 far
+sites C25F, CBE9, CC6E and B02D are byte-checked. The EB94 continuation retires
+the 118-clock prefix before suspension and the 72-clock return after the child,
+once. F121 is selected at proved C263/CBF6/D795 far calls. E496 is selected
+through C2A5/CBF3 → B88D → JSL E496. Near entries are not widened.
+The added clocks are **9,329,760 F121 + 9,361,074 E496 + 9,657,130 EB5E**.
+
+This is a **partial F121/E496 call-origin conversion**, not a claim that all
+legacy Unpriced callers are resolved. Their remaining source-prefix differences
+are **6,393,120 / 11,562,648 clocks**; EB5E's is **zero**. Together the remaining
+17,955,768 clocks reach **zero** additional fixed-context prefix inverses and
+risk zero zero-lag FPs. `far-binding-residual.json` retains every boundary
+check: no negative residual row, and both source/native call counts reproduce
+the fixed wrapper totals on every ordinary row. Other callers retain their
+near/far or retirement ambiguity and receive no inferred wrapper price.
+
+The A-button predicate had **no self charge, child, continuation, deferred
+price or external model claim**. Its generated 9BAA caller owns the JSR only;
+control/normal/sword/cape models do not retire B5C0..B5D5. It now opens its own
+lagless routine scope and prices every rejection and success branch. ROM
+fixtures check carry and the flag byte, not just totals. Executed new work
+matches the independent source contribution on **all 393,848 ordinary rows**:
+**232,189 calls / 49,678,230 clocks**, zero source-work mismatches.
+
+### Systematic bypass hunt and remaining footprint
+
+The retained reset-driven source verifies **461,776 iterations, 0..461,775**,
+from 500,000 original hosts. Its manifest re-verifies after relocating its two
+historical table bindings to byte-identical private files; originals are
+unchanged. It is **not extended**, and source EOF / **461,776..1,473,122** remain
+unverified. A native full census does not close that source boundary or M2's
+unmapped-resume STOP. Investigation and estimates below cover all **393,848
+ordinary gameplay rows**, including **386,542 zero-source-lag controls**.
+
+`absence-screen.json` ranks every source owner with no same-PC native scope
+in the matching iteration, by clocks and unchanged completed-model inverses.
+That is a screen, not an admission rule. `reviewed-bypass-ranking.json` adds
+native-code review, aliases, model exclusions, status and both rankings.
+Diagnostic 1's control/default, velocity, collision-tail and single-large
+folds are retained. DC64/DC66, guard CA10/C6E0, reset C452, decompression,
+interlace and map8 labels already have charged owners. Overlay F7CB/FD26,
+sword/cape, Y-button and mixed tile-detection paths have existing model claims;
+absence of a local charge is not a second price. Unresolved routing, sweat
+entry and dynamic-MVN contexts stay excluded. The original signed rankings,
+including negative work, remain the read-only diagnostic evidence.
+
+These are disjoint **source-exclusive footprints in reviewed uncharged code**;
+remaining rows are candidate work, not certified all-entry additive prices.
+Individual inverse scores overlap and are not full-route recovery promises.
+
+| Owner / native code | Prefix clocks | Estimated holds | Zero-lag FP risk | Status |
+| --- | ---: | ---: | ---: | --- |
+| `1EB6E9` / `arrghus_handle_puffs` and pure orbit math | 176,197,812 | 0 | 0 | No ledger/model claim found; full arithmetic, table and caller fixtures remain. |
+| `1DF822` / `moldorm_draw` | 113,943,486 | 4 | 0 | **Withdrawn after full-route excess; see below.** |
+| `00F649` / `AdjustWaterHDMAWindow` | 75,690,012 | 0 | 0 | No ledger; complete caller/X-body contract remains. |
+| `07B5C0` / `link_check_new_a_press` | 49,678,230 | 2 | 0 | **Priced.** |
+| `07B5D6` / `link_handle_toss` | 32,603,518 | 2 | 0 | Blocked: source B601/B603 velocity stores for `$0305==1` are absent natively. |
+| `00F660` / `adjust_water_hdma_window_x` | 32,406,408 | 0 | 0 | No ledger; zero-radius saturation versus wrapping, clipping and loop contract need fixtures. |
+| `05B468` / BNC flail drawing | 29,098,594 | 0 | 0 | No ledger in native chain/math/OAM helpers; full child/math/clip contract remains. |
+| `05B3CD` / BNC body drawing | 28,102,796 | 1 | 0 | No ledger; CB/CD entry/fallthrough and all loop/flag variants remain. |
+
+Hold-priority review selected Moldorm (4), then the A predicate (2). Toss (2)
+fails the behavior contract; BNC body (1) is a next fixture/entry task. The
+remaining zero-recovery owners are still reported by clocks. Source FE78's
+**125,883,674 clocks** are **not admitted or added to this candidate sum**:
+F94E aliases, double returns and caller-70 ownership remain unresolved, including
+the **370,549** inverse conflict. FE78 is unchanged and unpriced.
+
+Accepted work removes **150,644,630 clocks, 3.566%**, from the original
+**4,224,563,598-clock** ordinary instruction deficit, leaving
+**4,073,918,968**. The remaining reviewed-code footprint is **488,042,626
+clocks (11.553% of the original deficit)**, including withdrawn/behavior-blocked
+work; its joint fixed-context estimate is **7 holds / zero zero-lag FP risk**.
+The separate unresolved wrapper footprint adds **17,955,768 clocks (0.425%)**.
+These remaining footprints are not proof that all those clocks can be safely
+added. Most of the deficit remains outside established price ownership.
+
+The final observer reconciles every charge-path sum with its independent
+ledger counter and every ledger-plus-VWF total with the final predictor.
+Old fixed wrapper ownership is independently reconstructed from both source
+and native call counts at ROM-derived 190/222 clocks; the retained diagnostic
+and fresh control agree byte for byte. On **all 393,848 rows**, actual new
+marker work equals signed main-counter growth: **zero counter-work mismatches**.
+The unchanged fixed-context prefix estimate is **31 holds / zero zero-lag FP
+risk** jointly (shadow 26, wrappers 1, A predicate 2 individually; scores
+are not additive). Whole-route measured recovery is 93. `prefix-work-proof.json`,
+`priced-prefix-rows.jsonl.gz`, the final compressed summary and hold-change
+matrix retain the separate populations. This is instruction/counter and
+logical-scheduling evidence, not ordered full-CPU or exact A/V equivalence.
+
+### Withdrawn Moldorm family and final verification
+
+The first full candidate has zero unexplained state/RNG/APU differences but
+**one excess hold**, at **931,965 (`0F/01`)**. Its only added instruction work
+there is the **122-clock clipped Moldorm return**: main work
+**408,614 → 408,736**, iris wait **0 → 270,204**, P2/runtime holds **1 → 2**
+against source **1**. Standalone complete-body ROM fixtures and the prefix
+source-work matrix pass; they do not prove common retirement/placement at this
+later nonordinary boundary. The **entire Moldorm price, entry, scope and fixture
+are withdrawn**. No clipped-path, scene or iteration exception, scalar
+reduction, classifier or raster-rule change is installed. The accepted rerun
+restores that witness to **408,614 / wait 0 / one hold**. The rejected full
+predictor, summary, source patch/hashes, binaries, relocation receipt and exact
+witness remain in `rejected-moldorm/`; its lower missing count is not accepted
+proof. This failure necessitated the revised checks and census; the main
+control was not repeated.
+
+The final **six new tests** pass in both default and reduced configurations:
+**four assert_rom_marker_work fixtures / 256 ROM ownership/state cases**, plus
+two tests covering **25** continuation retirements. The default-shadow prefix
+fixture fences the already priced shared child explicitly. Existing touched
+checks pass **197 drawing, 119 sprite, 16 main, 9 guard, 39 prep, 16 player and
+one shadow-model tests**, including callers' self-work, generic shadow
+split-publication and source-instruction fixtures. No auditor code changed.
+**Nine Python generator/worklist tests**, exact regeneration and final
+`git diff --check` pass. Default, reduced (`--no-default-features --features
+parity-debug`) and observer product builds are **warning-free**; the existing
+lib-test dead-code warning class remains separate.
+
+The final **default 200,000-frame state ledger matches every record and EOF**,
+including state, display, SRAM and audio. Final source/binary hashes, commands,
+full gates, input-integrity and sampled disk receipts bind this uncommitted
+stop. Retained output remains below **3 GB**, including the rejected candidate.
+No GPU, video, cached-av, external Snes9x process, live-APU replay, seeded live
+census, full library suite, protected cache/shared-ledger write, cargo fmt,
+commit, push or one-off repository script was used. Scratch drivers stayed
+in `/tmp`. Remaining far-call contexts, candidate fixtures, resumed source
+ownership and the source suffix remain unfinished.

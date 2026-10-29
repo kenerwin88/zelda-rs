@@ -406,3 +406,24 @@ fn marker39_main_tile_response_matches_rom() {
             });
     }
 }
+
+#[test]
+fn bypass1_new_a_press_matches_rom_all_branches() {
+    for flags in [0,0x10,0x80,0xff] {
+        for incapacitated in [0,1,0xff] {
+            for joy in [0,0x80,0xff] {
+                let mut n=ZeldaState::new(); n.set_lag_free(true);
+                n.write_wram_byte(0x3b,flags);
+                n.write_wram_byte(0x46,incapacitated);
+                n.write_wram_byte(0xf6,joy);
+                n.sync_native_game_state_from_ram();
+                let Some(s)=marker36_player_machine(&n,0x07b5c0)else{panic!("development ROM required")};
+                let mut result=false;
+                let source=crate::cycle_ledger::assert_rom_marker_work(0x07b5c0,s,
+                    |s|s.cpu.k==7 && (0xb5c0..0xb5d6).contains(&s.cpu.pc),||result=n.link_check_new_a_press());
+                assert_eq!(result,source.snes().cpu.c);
+                assert_eq!(n.wram_image()[0x3b],source.snes().ram[0x3b]);
+            }
+        }
+    }
+}

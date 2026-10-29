@@ -2314,8 +2314,162 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x06dc54, 0x06dc5a, true, true, 118, 0x000000, &[]),
     // $06:DC5A: fixed cost
     (0x06dc5a, 0x06dc5c, true, true, 72, 0x000000, &[]),
+    // $06:DC5C: fixed cost
+    (0x06dc5c, 0x06dc62, true, true, 118, 0x000000, &[]),
+    // $06:DC62: fixed cost
+    (0x06dc62, 0x06dc64, true, true, 72, 0x000000, &[]),
     // $06:DC64: fixed cost
     (0x06dc64, 0x06dc66, true, true, 16, 0x000000, &[]),
+    // $06:DC66: fixed cost
+    (0x06dc66, 0x06dc67, true, true, 14, 0x000000, &[]),
+    // $06:DC67: 06dc67 +6 if the index crosses a page
+    (0x06dc67, 0x06dc6a, true, true, 32, 0x000000, &[0x06dc67]),
+    // $06:DC6A: fixed cost
+    (0x06dc6a, 0x06dc6c, true, true, 24, 0x000000, &[]),
+    // $06:DC6C: 06dc6c +6 if the index crosses a page
+    (0x06dc6c, 0x06dc6f, true, true, 32, 0x000000, &[0x06dc6c]),
+    // $06:DC6F: fixed cost
+    (0x06dc6f, 0x06dc71, true, true, 16, 0x000000, &[]),
+    // $06:DC71: fixed cost
+    (0x06dc71, 0x06dc73, true, true, 24, 0x000000, &[]),
+    // $06:DC73: 06dc73 +6 if the index crosses a page
+    (0x06dc73, 0x06dc76, true, true, 32, 0x000000, &[0x06dc73]),
+    // $06:DC76: 06dc76 taken +6
+    (0x06dc76, 0x06dc78, true, true, 16, 0x06dc76, &[]),
+    // $06:DC78: 06dc78 +6 if the index crosses a page
+    (0x06dc78, 0x06dc7b, true, true, 32, 0x000000, &[0x06dc78]),
+    // $06:DC7B: fixed cost
+    (0x06dc7b, 0x06dc7d, true, true, 16, 0x000000, &[]),
+    // $06:DC7D: 06dc7d taken +6
+    (0x06dc7d, 0x06dc7f, true, true, 16, 0x06dc7d, &[]),
+    // $06:DC7F: fixed cost
+    (0x06dc7f, 0x06dc83, true, true, 40, 0x000000, &[]),
+    // $06:DC83: fixed cost
+    (0x06dc83, 0x06dc85, true, true, 16, 0x000000, &[]),
+    // $06:DC85: 06dc85 taken +6
+    (0x06dc85, 0x06dc87, true, true, 16, 0x06dc85, &[]),
+    // $06:DC87: fixed cost
+    (0x06dc87, 0x06dc89, true, true, 22, 0x000000, &[]),
+    // $06:DC89: fixed cost
+    (0x06dc89, 0x06dc8b, false, true, 32, 0x000000, &[]),
+    // $06:DC8B: fixed cost
+    (0x06dc8b, 0x06dc8c, false, true, 14, 0x000000, &[]),
+    // $06:DC8C: fixed cost
+    (0x06dc8c, 0x06dc8e, false, true, 32, 0x000000, &[]),
+    // $06:DC8E: fixed cost
+    (0x06dc8e, 0x06dc90, false, true, 32, 0x000000, &[]),
+    // $06:DC90: fixed cost
+    (0x06dc90, 0x06dc91, false, true, 14, 0x000000, &[]),
+    // $06:DC91: fixed cost
+    (0x06dc91, 0x06dc94, false, true, 24, 0x000000, &[]),
+    // $06:DC94: fixed cost
+    (0x06dc94, 0x06dc97, false, true, 24, 0x000000, &[]),
+    // $06:DC97: fixed cost
+    (0x06dc97, 0x06dc99, false, true, 22, 0x000000, &[]),
+    // $06:DC99: 06dc99 taken +6
+    (0x06dc99, 0x06dc9b, true, true, 16, 0x06dc99, &[]),
+    // $06:DC9B: 06dc9b +6 if the index crosses a page
+    (0x06dc9b, 0x06dc9e, true, true, 32, 0x000000, &[0x06dc9b]),
+    // $06:DC9E: fixed cost
+    (0x06dc9e, 0x06dca0, true, true, 16, 0x000000, &[]),
+    // $06:DCA0: fixed cost
+    (0x06dca0, 0x06dca1, true, true, 14, 0x000000, &[]),
+    // $06:DCA1: fixed cost
+    (0x06dca1, 0x06dca2, true, true, 14, 0x000000, &[]),
+    // $06:DCA2: fixed cost
+    (0x06dca2, 0x06dca3, true, true, 14, 0x000000, &[]),
+    // $06:DCA3: fixed cost
+    (0x06dca3, 0x06dca5, true, true, 24, 0x000000, &[]),
+    // $06:DCA5: fixed cost
+    (0x06dca5, 0x06dca7, true, true, 46, 0x000000, &[]),
+    // $06:DCA7: 06dca7 +6 if the index crosses a page
+    (0x06dca7, 0x06dcaa, true, true, 32, 0x000000, &[0x06dca7]),
+    // $06:DCAA: fixed cost
+    (0x06dcaa, 0x06dcac, true, true, 16, 0x000000, &[]),
+    // $06:DCAC: 06dcac taken +6
+    (0x06dcac, 0x06dcae, true, true, 16, 0x06dcac, &[]),
+    // $06:DCAE: fixed cost
+    (0x06dcae, 0x06dcaf, true, true, 14, 0x000000, &[]),
+    // $06:DCAF: 06dcaf +6 if the index crosses a page
+    (0x06dcaf, 0x06dcb1, true, true, 40, 0x000000, &[0x06dcaf]),
+    // $06:DCB1: fixed cost
+    (0x06dcb1, 0x06dcb3, true, true, 24, 0x000000, &[]),
+    // $06:DCB3: fixed cost
+    (0x06dcb3, 0x06dcb4, true, true, 14, 0x000000, &[]),
+    // $06:DCB4: fixed cost
+    (0x06dcb4, 0x06dcb6, true, true, 46, 0x000000, &[]),
+    // $06:DCB6: fixed cost
+    (0x06dcb6, 0x06dcb7, true, true, 14, 0x000000, &[]),
+    // $06:DCB7: fixed cost
+    (0x06dcb7, 0x06dcb9, true, true, 16, 0x000000, &[]),
+    // $06:DCB9: fixed cost
+    (0x06dcb9, 0x06dcbb, true, true, 46, 0x000000, &[]),
+    // $06:DCBB: fixed cost
+    (0x06dcbb, 0x06dcbd, true, true, 24, 0x000000, &[]),
+    // $06:DCBD: fixed cost
+    (0x06dcbd, 0x06dcbf, true, true, 16, 0x000000, &[]),
+    // $06:DCBF: fixed cost
+    (0x06dcbf, 0x06dcc1, true, true, 16, 0x000000, &[]),
+    // $06:DCC1: fixed cost
+    (0x06dcc1, 0x06dcc2, true, true, 14, 0x000000, &[]),
+    // $06:DCC2: fixed cost
+    (0x06dcc2, 0x06dcc4, true, true, 46, 0x000000, &[]),
+    // $06:DCC4: fixed cost
+    (0x06dcc4, 0x06dcc5, true, true, 14, 0x000000, &[]),
+    // $06:DCC5: fixed cost
+    (0x06dcc5, 0x06dcc6, true, true, 14, 0x000000, &[]),
+    // $06:DCC6: fixed cost
+    (0x06dcc6, 0x06dcc7, true, true, 14, 0x000000, &[]),
+    // $06:DCC7: fixed cost
+    (0x06dcc7, 0x06dcc8, true, true, 14, 0x000000, &[]),
+    // $06:DCC8: fixed cost
+    (0x06dcc8, 0x06dcca, true, true, 24, 0x000000, &[]),
+    // $06:DCCA: fixed cost
+    (0x06dcca, 0x06dccc, true, true, 16, 0x000000, &[]),
+    // $06:DCCC: fixed cost
+    (0x06dccc, 0x06dcce, true, true, 46, 0x000000, &[]),
+    // $06:DCCE: fixed cost
+    (0x06dcce, 0x06dccf, true, true, 42, 0x000000, &[]),
+    // $06:DCCF: fixed cost
+    (0x06dccf, 0x06dcd1, true, true, 24, 0x000000, &[]),
+    // $06:DCD1: fixed cost
+    (0x06dcd1, 0x06dcd2, true, true, 14, 0x000000, &[]),
+    // $06:DCD2: fixed cost
+    (0x06dcd2, 0x06dcd4, true, true, 46, 0x000000, &[]),
+    // $06:DCD4: fixed cost
+    (0x06dcd4, 0x06dcd6, true, true, 16, 0x000000, &[]),
+    // $06:DCD6: fixed cost
+    (0x06dcd6, 0x06dcd7, true, true, 14, 0x000000, &[]),
+    // $06:DCD7: fixed cost
+    (0x06dcd7, 0x06dcd9, true, true, 46, 0x000000, &[]),
+    // $06:DCD9: fixed cost
+    (0x06dcd9, 0x06dcdb, true, true, 24, 0x000000, &[]),
+    // $06:DCDB: fixed cost
+    (0x06dcdb, 0x06dcdd, true, true, 16, 0x000000, &[]),
+    // $06:DCDD: fixed cost
+    (0x06dcdd, 0x06dcdf, true, true, 16, 0x000000, &[]),
+    // $06:DCDF: fixed cost
+    (0x06dcdf, 0x06dce0, true, true, 14, 0x000000, &[]),
+    // $06:DCE0: fixed cost
+    (0x06dce0, 0x06dce2, true, true, 46, 0x000000, &[]),
+    // $06:DCE2: fixed cost
+    (0x06dce2, 0x06dce3, true, true, 14, 0x000000, &[]),
+    // $06:DCE3: fixed cost
+    (0x06dce3, 0x06dce4, true, true, 14, 0x000000, &[]),
+    // $06:DCE4: fixed cost
+    (0x06dce4, 0x06dce5, true, true, 14, 0x000000, &[]),
+    // $06:DCE5: fixed cost
+    (0x06dce5, 0x06dce6, true, true, 14, 0x000000, &[]),
+    // $06:DCE6: fixed cost
+    (0x06dce6, 0x06dce8, true, true, 24, 0x000000, &[]),
+    // $06:DCE8: fixed cost
+    (0x06dce8, 0x06dcea, true, true, 16, 0x000000, &[]),
+    // $06:DCEA: fixed cost
+    (0x06dcea, 0x06dcec, true, true, 16, 0x000000, &[]),
+    // $06:DCEC: fixed cost
+    (0x06dcec, 0x06dcee, true, true, 46, 0x000000, &[]),
+    // $06:DCEE: fixed cost
+    (0x06dcee, 0x06dcef, true, true, 42, 0x000000, &[]),
     // $06:DCEF: fixed cost
     (0x06dcef, 0x06dcf2, true, true, 46, 0x000000, &[]),
     // $06:DCF2: 06dd0d taken +6
@@ -2616,6 +2770,10 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x06eb08, 0x06eb09, true, true, 14, 0x000000, &[]),
     // $06:EB09: fixed cost
     (0x06eb09, 0x06eb0a, true, true, 42, 0x000000, &[]),
+    // $06:EB5E: fixed cost
+    (0x06eb5e, 0x06eb64, true, true, 118, 0x000000, &[]),
+    // $06:EB64: fixed cost
+    (0x06eb64, 0x06eb66, true, true, 72, 0x000000, &[]),
     // $06:EDCB: fixed cost
     (0x06edcb, 0x06edd2, true, true, 100, 0x000000, &[]),
     // $06:EDD2: fixed cost
@@ -3076,6 +3234,16 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x079c41, 0x079c4c, true, true, 138, 0x000000, &[]),
     // $07:9C4C: fixed cost
     (0x079c4c, 0x079c4f, true, true, 66, 0x000000, &[]),
+    // $07:B5C0: 07b5c4 taken +6
+    (0x07b5c0, 0x07b5c6, true, true, 56, 0x07b5c4, &[]),
+    // $07:B5C6: 07b5c8 taken +6
+    (0x07b5c6, 0x07b5ca, true, true, 40, 0x07b5c8, &[]),
+    // $07:B5CA: 07b5ce taken +6
+    (0x07b5ca, 0x07b5d0, true, true, 56, 0x07b5ce, &[]),
+    // $07:B5D0: fixed cost
+    (0x07b5d0, 0x07b5d4, true, true, 94, 0x000000, &[]),
+    // $07:B5D4: fixed cost
+    (0x07b5d4, 0x07b5d6, true, true, 56, 0x000000, &[]),
     // $07:B64F: fixed cost
     (0x07b64f, 0x07b652, true, true, 46, 0x000000, &[]),
     // $07:B652: 07b652 taken +6

@@ -965,6 +965,17 @@ impl ZeldaState {
         poc: (u16, u16, u8),
         y_offset: u8,
     ) {
+        if self.lag_free {
+            // $05:C699 JSL $06:DC5C. Use the shared source-owned body once,
+            // including paused/carried/clipped exits and its selected shape.
+            // Generic shadow callers already enter DC66 and never enter here.
+            let mut info = super::sprite::PrepOamCoordsRet {
+                x: poc.0, y: poc.1, r4: 0, flags: poc.2,
+            };
+            self.sprite_draw_shadow_custom(k, &mut info, y_offset,
+                super::sprite::SpriteShadowEntry::Rom06DC5C);
+            return;
+        }
         let y = self
             .sprite_slot_view(k)
             .y()

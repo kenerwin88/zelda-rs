@@ -91,6 +91,7 @@ pub(super) enum SpriteSingleLargeEntry {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpriteShadowEntry {
     Unpriced,
+    Rom06DC5C,
     Rom06DC54,
     Rom06DC54Default,
 }

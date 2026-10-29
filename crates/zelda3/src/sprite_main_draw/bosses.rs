@@ -1177,7 +1177,8 @@ impl ZeldaState {
         }
 
         if self.game_state.player.follower_link.incapacitated_timer() == 0
-            && self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced)
+            // $1D:D795 JSL $06:F121; the near tile-collision entry stays unpriced here.
+            && self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121)
         {
             self.link_cancel_dash();
             let pt = self.sprite_project_speed_towards_link(k, 0x28);

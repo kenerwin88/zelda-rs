@@ -1024,6 +1024,30 @@ impl ZeldaState {
     }
 
     // void Guard_ParrySwordAttacks(int k) {  // 86eb5e
+    pub(in crate::zelda_rtl) fn guard_parry_sword_attacks_far(&mut self, k: usize) {
+        // $06:EB5E..EB65: bank wrapper only; EB76 and its children are separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb5e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06eb5e);
+        {
+            let _body = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb76));
+            self.guard_parry_sword_attacks(k);
+        }
+        b.block(0x06eb64);
+    }
+
+    pub(in crate::zelda_rtl) fn guard_parry_far_prefix(&self) {
+        // $05:C25F JSL $06:EB5E, suspended inside EB76 at EB94.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb5e));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06eb5e);
+    }
+
+    pub(in crate::zelda_rtl) fn guard_parry_far_return(&self) {
+        // $06:EB64..EB65 retires only after the suspended child returns.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb5e));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06eb64);
+    }
+
     pub(in crate::zelda_rtl) fn guard_parry_sword_attacks(&mut self, k: usize) {
         if self.game_state.player.follower_link.lower_level_state()
             != self.sprite_slot_view(k).floor()

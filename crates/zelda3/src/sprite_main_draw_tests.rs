@@ -4839,3 +4839,94 @@ fn route11_sprite_transform_caller_matches_rom() {
         }
     }
 }
+
+#[test]
+fn bypass1_custom_shadow_matches_rom_all_paths() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for (pause, state, draw_work) in [(0,9,0),(1,9,0),(0,10,3),(0,10,2)] {
+            for flags3 in [0x10, 0x30] {
+                for y in [0u16, 0xe0, 0xf0, 0x100, 0xfff0, 0xffff] {
+                    for owner in [0x06dc5c, 0x06dc66] {
+                        let mut n = marker29_state();
+                        for (a,v) in [(0xdd0,state),(0xf00,pause),(0xe40,31),
+                            (0xe60,flags3),(0xd00,y as u8),(0xd20,(y>>8)as u8)] {
+                            n.write_wram_byte(a+k,v);
+                        }
+                        n.write_wram_byte(0x1fa1c+k,draw_work);
+                        n.write_wram_word(0,0x123);
+                        n.write_wram_byte(5,0x37);
+                        n.write_wram_word(0x90,0x8fc); // indirect read page crossing
+                        n.write_wram_word(0x92,0xa60);
+                        n.sync_native_game_state_from_ram();
+                        let Some(mut s) = marker29_machine(&n,0x06dc5c,k) else { panic!("development ROM required") };
+                        s.cpu.a = 10;
+                        let source = crate::cycle_ledger::assert_rom_marker_work(owner,s,
+                            |s| s.cpu.k==6 && if owner==0x06dc5c {
+                                (0xdc5c..0xdc64).contains(&s.cpu.pc)
+                            } else { (0xdc66..0xdcef).contains(&s.cpu.pc) },
+                            || n.sprite_draw_shadow_custom_attract(k,(0x123,0,0x37),10));
+                        let image=n.wram_image();
+                        assert_eq!(&image[0x800..0xb00],&source.snes().ram[0x800..0xb00],
+                            "slot={k} pause={pause} state={state} hidden={draw_work} shape={flags3:x} y={y:x}");
+                        cases+=1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("bypass1 custom shadow: {cases} ROM ownership/state cases");
+}
+
+#[test]
+fn bypass1_far_wrappers_match_rom_and_split_return() {
+    for k in [0usize,15] {
+        for reject in 0..4 {
+            for entry in [0x06f121,0x06e496,0x06eb5e] {
+                let mut n=marker29_state();
+                n.write_wram_byte(0xdd0+k,9);
+                n.write_wram_byte(0xe20+k,0x41);
+                n.write_wram_byte(0xfa0,k as u8);
+                n.write_wram_byte(0x4d,1); // reject parry before RNG
+                n.write_wram_byte(0x370,1); // reject damage child
+                if reject==1 { n.write_wram_byte(0xf50+k,1); }
+                if reject==2 { n.write_wram_byte(0x46,1); }
+                if reject==3 { n.write_wram_byte(0xea0+k,0x80); }
+                n.sync_native_game_state_from_ram();
+                let Some(s)=marker29_machine(&n,entry,k)else{panic!("development ROM required")};
+                crate::cycle_ledger::assert_rom_marker_work(entry,s,
+                    |s|s.cpu.k==6 && (entry as u16..entry as u16+if entry==0x06e496 {11}else{8}).contains(&s.cpu.pc),|| {
+                        match entry {
+                            0x06f121=>{n.sprite_check_damage_to_link(k,SpriteDamageToEntry::Rom06F121);},
+                            0x06e496=>{n.sprite_check_tile_collision(k,crate::zelda_rtl::sprite::SpriteTileCollisionEntry::Rom06E496);},
+                            _=>n.guard_parry_sword_attacks_far(k),
+                        }
+                    });
+            }
+        }
+    }
+    let n=marker29_state();
+    let Some(s)=marker29_machine(&n,0x06eb5e,0)else{panic!("development ROM required")};
+    crate::cycle_ledger::assert_rom_marker_work(0x06eb5e,s,
+        |s|s.cpu.k==6 && (0xeb5e..0xeb66).contains(&s.cpu.pc),||{
+            n.guard_parry_far_prefix();
+            n.guard_parry_far_return();
+        });
+}
+
+#[test]
+fn bypass1_default_shadow_prefix_excludes_shared_child() {
+    for owner in [0x06dc54,0x06dc64,0x06dc66] {
+        let mut n=marker29_state();
+        n.write_wram_byte(0xdd0,9); n.write_wram_byte(0xd00,0x40);
+        n.sync_native_game_state_from_ram();
+        let Some(s)=marker29_machine(&n,0x06dc54,0)else{panic!("development ROM required")};
+        let mut info=crate::zelda_rtl::sprite::PrepOamCoordsRet{x:0,y:0,r4:0,flags:0};
+        crate::cycle_ledger::assert_rom_marker_work(owner,s,
+            |s|s.cpu.k==6 && match owner {
+                0x06dc54=>(0xdc54..0xdc5c).contains(&s.cpu.pc),
+                0x06dc64=>s.cpu.pc==0xdc64,
+                _=>(0xdc66..0xdcef).contains(&s.cpu.pc),
+            },||n.sprite_draw_shadow_custom(0,&mut info,10,SpriteShadowEntry::Rom06DC54Default));
+    }
+}

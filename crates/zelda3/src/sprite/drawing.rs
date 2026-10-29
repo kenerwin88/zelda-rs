@@ -957,6 +957,14 @@ impl ZeldaState {
         entry: SpriteShadowEntry,
     ) {
         match entry {
+            SpriteShadowEntry::Rom06DC5C => {
+                // $06:DC5C..DC63: custom-offset far wrapper. DC66 owns the body.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dc5c));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x06dc5c);
+                self.sprite_draw_shadow_custom(k, info, a, SpriteShadowEntry::Unpriced);
+                b.block(0x06dc62);
+            }
             SpriteShadowEntry::Unpriced => {
                 let _scope = crate::cycle_ledger::routine(0x06_dc66);
                 if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, a) {
@@ -976,15 +984,22 @@ impl ZeldaState {
             // Default-offset entry executes LDA #10 in its DC64 child scope.
             SpriteShadowEntry::Rom06DC54Default => {
                 let _wrapper = crate::cycle_ledger::routine(0x06_dc54);
-                crate::cycle_ledger::charge(118); // PHB : PHK : PLB : JSR.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                // $06:DC54..DC5B wrapper, with the DC64 LDA prefix separate.
+                if self.lag_free { b.block(0x06dc54); }
+                else { crate::cycle_ledger::charge(118); }
                 {
                     let _body = crate::cycle_ledger::routine(0x06_dc64);
-                    crate::cycle_ledger::charge(16); // LDA #10.
+                    if self.lag_free { b.block(0x06dc64); }
+                    else { crate::cycle_ledger::charge(16); }
+                    // DC64's self work must not absorb the shared DC66 child.
+                    let _shadow = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dc66));
                     if let Some(tail) = self.sprite_shadow_body_before_extended(k, info, 10) {
                         self.finish_shadow_body(tail);
                     }
                 }
-                crate::cycle_ledger::charge(72); // PLB : RTL after the body returns.
+                if self.lag_free { b.block(0x06dc5a); }
+                else { crate::cycle_ledger::charge(72); }
 
             }
         }
@@ -1047,7 +1062,21 @@ impl ZeldaState {
             extended_pointer: self.game_state.oam.current_extended_pointer_usize() as u16,
         };
         let instruction = tail.work.step(input)?;
-        crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        if self.lag_free {
+            // $06:DC66..DCEE: one generated instruction block per retained
+            // retirement. This also covers split generic-shadow continuations;
+            // no aggregate body price is added by their callers.
+            let b = crate::cycle_ledger::blocks(true);
+            b.block(instruction.pc);
+            match instruction.pc {
+                0x06dc76 | 0x06dc7d | 0x06dc85 | 0x06dc99 | 0x06dcac
+                    if instruction.master_cycles == 22 => b.taken(instruction.pc),
+                0x06dcaf if instruction.master_cycles == 46 => b.crossing(instruction.pc),
+                _ => {}
+            }
+        } else {
+            crate::cycle_ledger::charge(u64::from(instruction.master_cycles));
+        }
         match instruction.publication {
             Some(Publication::YLow(value)) => {
                 tail.y = (tail.y & 0xff00) | u16::from(value);

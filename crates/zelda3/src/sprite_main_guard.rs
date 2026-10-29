@@ -703,6 +703,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
         assert!(!self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC));
+        self.guard_parry_far_prefix();
         assert_eq!(
             self.game_state.player.follower_link.lower_level_state(),
             self.sprite_slot_view(k).floor()
@@ -749,6 +750,7 @@ impl ZeldaState {
         } else {
             self.guard_parry_sword_attacks_after_hitbox(k, hitbox);
         }
+        self.guard_parry_far_return();
         self.guard_main_after_parry(k);
     }
 
@@ -769,7 +771,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
-        self.guard_parry_sword_attacks(k);
+        self.guard_parry_sword_attacks_far(k);
         self.guard_main_after_parry(k);
     }
 
@@ -786,7 +788,7 @@ impl ZeldaState {
         if self.sprite_return_if_paused(k, SpritePausedEntry::Rom05F955) {
             return;
         }
-        self.guard_parry_sword_attacks(k);
+        self.guard_parry_sword_attacks_far(k);
         self.guard_main_after_parry(k);
     }
 
@@ -805,7 +807,8 @@ impl ZeldaState {
     }
 
     fn guard_main_after_parry_through_collision(&mut self, k: usize) -> bool {
-        let dmg_link = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced);
+        // $05:C263 JSL $06:F121, after the C25F far parry call returns.
+        let dmg_link = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
         let alert = self.game_state.sprites.system.alert_flag() != 0;
         if (dmg_link || alert) && self.sprite_slot_view(k).ai_state() < 3 {
             self.sprite_slot_view_mut(k).set_ai_state(3);
@@ -822,7 +825,8 @@ impl ZeldaState {
                 // $05:C2A2 / $05:C2AA JSR $F9ED: complete same-bank XY.
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
             }
-            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+            // $05:C2A5 JSR B88D, whose JSL selects E496; the E4AB body is separate.
+            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
         } else {
             // $05:C2A2 / $05:C2AA JSR $F9ED: complete same-bank XY.
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
@@ -842,7 +846,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
         assert!(!self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC));
-        self.guard_parry_sword_attacks(k);
+        self.guard_parry_sword_attacks_far(k);
         assert!((self.sprite_slot_view(k).subtype() & 7) < 5);
         assert!(self.guard_main_after_parry_through_collision(k));
     }
@@ -858,7 +862,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
         assert!(!self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC));
-        self.guard_parry_sword_attacks(k);
+        self.guard_parry_sword_attacks_far(k);
         assert!(self.guard_main_after_parry_until_ai(k));
         assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
         assert!(self.guard_patrol_prefix(k));
