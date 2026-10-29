@@ -74,6 +74,7 @@ impl ZeldaState {
     pub(super) fn handle_pushing_bonking_snaps_y(&mut self) {
         let r14 = self.game_state.player.tile_detection.collision_bits();
         if r14 & 7 == 0 {
+            self.clear_collision_return_markers(true);
             if self.game_state.player.follower_link.is_on_lower_level() {
                 return;
             }
@@ -189,6 +190,7 @@ impl ZeldaState {
     pub(super) fn handle_pushing_bonking_snaps_x(&mut self) {
         let r14 = self.game_state.player.tile_detection.collision_bits();
         if r14 & 7 == 0 {
+            self.clear_collision_return_markers(false);
             if self.game_state.player.follower_link.is_on_lower_level() {
                 return;
             }
@@ -1474,6 +1476,7 @@ impl ZeldaState {
 
     /// `$07:C59E`: the slope and tile checks after the doorway clears.
     fn finish_indoor_x_collision_after_setup(&mut self) {
+        self.indoor_slope_guard_markers(false);
         if self.game_state.player.tile_detection.collision_bits() & 2 == 0
             && self.game_state.player.tile_detection.slope_collision_bits() & 5 != 0
         {
@@ -1493,6 +1496,11 @@ impl ZeldaState {
 
         self.follower_link_state_mut()
             .clear_moving_against_diag_tile();
+        // $07:C5B7 STZ $6B, before the shared layer-selection fragment.
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07c5b7));
+            crate::cycle_ledger::blocks(self.lag_free).block(0x07c5b7);
+        }
         self.finish_indoor_collision_common(false);
     }
 
@@ -2102,6 +2110,115 @@ impl ZeldaState {
             .set_handler_state(player_state);
     }
 
+    /// $07:BAF4..BB00 / C59E..C5AA: only the two slope guards.
+    /// The slope call, child and post-call return remain separate/unpriced.
+    fn indoor_slope_guard_markers(&self, y_axis: bool) {
+        if !self.lag_free { return; }
+        let pc = if y_axis { 0x07baf4 } else { 0x07c59e };
+        let _scope = crate::cycle_ledger::routine(pc);
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(pc);
+        let mask = if y_axis { 7 } else { 2 };
+        if self.game_state.player.tile_detection.collision_bits() & mask != 0 {
+            b.taken(pc + 4);
+        } else {
+            b.block(pc + 6);
+            if self.game_state.player.tile_detection.slope_collision_bits() & 5 == 0 {
+                b.taken(pc + 10);
+            }
+        }
+    }
+
+    /// $07:BB2C..BB72 / C5B9..C5FF: layer selection and rupee guard,
+    /// excluding chest restoration and the rupee body and its child calls.
+    fn indoor_layer_markers(&self, y_axis: bool) {
+        if !self.lag_free { return; }
+        let pc = if y_axis { 0x07bb2c } else { 0x07c5b9 };
+        let _scope = crate::cycle_ledger::routine(pc);
+        let b = crate::cycle_ledger::blocks(true);
+        let tiles = &self.game_state.player.tile_detection;
+        b.block(pc);
+        if self.game_state.player.follower_link.is_on_lower_level() {
+            b.taken(pc + 2);
+            b.block(pc + 41);
+            if tiles.moving_floor_tiles() & 7 == 0 {
+                b.taken(pc + 46);
+                b.block(pc + 55);
+            } else { b.block(pc + 48); }
+        } else {
+            b.block(pc + 4);
+            if tiles.water_staircase() & 7 != 0 { b.block(pc + 11); }
+            else {
+                b.taken(pc + 9);
+                b.block(pc + 18);
+                if tiles.spike_cactus_tiles() & 7 != 0 { b.taken(pc + 23); }
+                else {
+                    b.block(pc + 25);
+                    if tiles.collision_bits() & 2 != 0 { b.taken(pc + 29); }
+                    else { b.block(pc + 31); }
+                }
+            }
+        }
+        b.block(pc + 63);
+        if tiles.misc_tiles() & 0x2200 == 0 { b.taken(pc + 68); }
+    }
+
+    /// $07:BBAE..BBE6 / C63B..C673: complete conveyor selection.
+    /// Native Rupee tails enter here; SurfaceTail enters after this fragment.
+    fn indoor_conveyor_markers(&self, y_axis: bool) {
+        if !self.lag_free { return; }
+        let pc = if y_axis { 0x07bbae } else { 0x07c63b };
+        let _scope = crate::cycle_ledger::routine(pc);
+        let b = crate::cycle_ledger::blocks(true);
+        let flags = self.game_state.dungeon.environment.moving_floor_check_flags();
+        let tiles = &self.game_state.player.tile_detection;
+        b.block(pc);
+        if flags & 0x22 != 0 {
+            b.block(pc + 9);
+            if flags & 0x20 == 0 { b.taken(pc + 11); }
+            else { b.block(pc + 13); }
+            b.block(pc + 15);
+        } else {
+            b.taken(pc + 7);
+            b.block(pc + 20);
+            if flags & 0x2200 != 0 {
+                b.block(pc + 29);
+                if flags & 0x2000 == 0 { b.taken(pc + 31); }
+                else { b.block(pc + 33); }
+                b.block(pc + 35);
+            } else {
+                b.taken(pc + 27);
+                b.block(pc + 40);
+                if tiles.spike_cactus_tiles() & 7 != 0 { b.taken(pc + 45); }
+                else {
+                    b.block(pc + 47);
+                    if tiles.collision_bits() & 2 != 0 { b.taken(pc + 51); }
+                    else { b.block(pc + 53); }
+                }
+            }
+        }
+    }
+
+    /// Clear-collision branch only: $07:BDB1..BDBA -> BE99..BEAF,
+    /// or C7FC..C805 -> C8D3..C8E9. The shared reset and RTS are owned
+    /// here only on this branch; blocked/bonk/nudge returns stay unpriced.
+    fn clear_collision_return_markers(&self, y_axis: bool) {
+        if !self.lag_free { return; }
+        let (pc, tail) = if y_axis { (0x07bdb1, 0x07be99) }
+            else { (0x07c7fc, 0x07c8d3) };
+        let _scope = crate::cycle_ledger::routine(pc);
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(pc);
+        b.block(pc + 6);
+        b.block(tail);
+        if self.game_state.player.follower_link.is_on_lower_level() {
+            b.taken(tail + 2);
+        } else {
+            b.block(tail + 4);
+        }
+        b.block(tail + 21);
+    }
+
     fn finish_indoor_y_collision(&mut self) {
         if self.game_state.player.follower_link.tile_coll_flag() & 2 == 0 {
             self.follower_link_state_mut().clear_doorway_state();
@@ -2122,6 +2239,7 @@ impl ZeldaState {
     }
 
     fn finish_indoor_y_collision_after_setup(&mut self) {
+        self.indoor_slope_guard_markers(true);
         if self.game_state.player.tile_detection.collision_bits() & 7 == 0
             && self.game_state.player.tile_detection.slope_collision_bits() & 5 != 0
         {
@@ -2160,6 +2278,7 @@ impl ZeldaState {
     }
 
     fn finish_indoor_collision_common(&mut self, y_axis: bool) {
+        self.indoor_layer_markers(y_axis);
         let r14 = self.game_state.player.tile_detection.collision_bits();
         if !self.game_state.player.follower_link.is_on_lower_level() {
             if self.game_state.player.tile_detection.water_staircase() & 7 != 0 {
@@ -2226,6 +2345,7 @@ impl ZeldaState {
     }
 
     fn finish_indoor_collision_after_rupees(&mut self, y_axis: bool) {
+        self.indoor_conveyor_markers(y_axis);
         let r14 = self.game_state.player.tile_detection.collision_bits();
         let moving_floor_flags = self
             .game_state
@@ -3027,7 +3147,8 @@ impl ZeldaState {
             blocks.taken(0x07b854);
             blocks.block(0x07b8cb);
             self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks(CollisionOrder::HorizontalFirst);
+            // $07:B8CB..B8D2 calls the complete C4D4/BA0A wrapper.
+            self.run_slope_collision_checks_marked(CollisionOrder::HorizontalFirst);
         } else if collision == 4 || moved {
             blocks.block(0x07b852);
             blocks.block(0x07b856);
@@ -3035,7 +3156,8 @@ impl ZeldaState {
             else { blocks.block(0x07b85a); blocks.taken(0x07b85e); }
             blocks.block(0x07b8c1);
             self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
+            // $07:B8C1..B8C9 calls the complete BA0A/C4D4 wrapper.
+            self.run_slope_collision_checks_marked(CollisionOrder::VerticalFirst);
             blocks.block(0x07b8c9);
         } else if !self
             .game_state
@@ -3094,7 +3216,7 @@ impl ZeldaState {
             } else { blocks.taken(0x07b899); }
             blocks.block(0x07b8c1);
             self.follower_link_state_mut().set_tile_coll_flag(1);
-            self.run_slope_collision_checks(CollisionOrder::VerticalFirst);
+            self.run_slope_collision_checks_marked(CollisionOrder::VerticalFirst);
             blocks.block(0x07b8c9);
         } else {
             blocks.block(0x07b879);
@@ -3257,6 +3379,180 @@ impl ZeldaState {
 #[cfg(test)]
 mod response_price_tests {
     use super::*;
+
+    #[test]
+    fn bypass3_horizontal_clear_handoff_matches_rom() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        for flags in [0, 1, 15, 16, 255] {
+            let mut native = ZeldaState::new();
+            native.set_assets(&assets).unwrap();
+            let mut image = native.wram_image().into_owned();
+            image[0x1b] = 1; image[0x6b] = flags;
+            native.import_wram_image(&image);
+            native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+            let mut machine = snes::Snes::new();
+            machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+            machine.ram.copy_from_slice(&image);
+            machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+            machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+            machine.cpu.k = 7; machine.cpu.db = 7;
+            machine.cpu.pc = 0xc5b7; machine.cpu.sp = 0x1fc;
+            crate::cycle_ledger::assert_rom_marker_work(0x07c5b7, machine,
+                |s|s.cpu.k == 7 && s.cpu.pc == 0xc5b7,
+                ||native.finish_indoor_x_collision_after_setup());
+            assert_eq!(native.game_state.player.follower_link.moving_against_diag_tile(), 0);
+        }
+    }
+
+    #[test]
+    fn bypass3_collision_fragments_match_rom() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        let mut base = ZeldaState::new();
+        base.set_assets(&assets).unwrap();
+        for y_axis in [true, false] {
+            // Independent source entries bound each fragment's ownership.
+            // The ROM continues through all unpriced tails/children to RTS.
+            for family in 0..4 {
+                for variant in 0..128u8 {
+                    let mut native = base.clone();
+                    let mut image = base.wram_image().into_owned();
+                    image[0x1b] = 1;
+                    image[0x20] = 0x40;
+                    image[0x22] = 0x40;
+                    image[0x66] = variant & 3;
+                    image[0xee] = (variant >> 2) & 1;
+                    image[0x48] = variant;
+                    image[0x371] = variant;
+                    image[0x46] = (variant >> 3) & 1;
+                    image[0x308] = if variant & 16 != 0 { 0x80 } else { 0 };
+                    image[0x6c] = (variant >> 4) % 3;
+                    image[0x46c] = (variant >> 3) % 5;
+                    let (entry, end) = match (family, y_axis) {
+                        (0, true) => (0x07baf4, 0x07bb00),
+                        (0, false) => (0x07c59e, 0x07c5aa),
+                        (1, true) => (0x07bb2c, 0x07bb72),
+                        (1, false) => (0x07c5b9, 0x07c5ff),
+                        (2, true) => (0x07bbae, 0x07bbe6),
+                        (2, false) => (0x07c63b, 0x07c673),
+                        (3, true) => (0x07bdb1, 0x07bdba),
+                        (3, false) => (0x07c7fc, 0x07c805),
+                        _ => unreachable!(),
+                    };
+                    match family {
+                        0 => { image[0x0e] = variant & 7; image[0x0c] = (variant >> 3) & 7; }
+                        1 => {
+                            image[0x34c] = (variant >> 3) & 1;
+                            image[0x320] = (variant >> 4) & 1;
+                            image[0x2e8] = (variant >> 5) & 1;
+                            image[0x0e] = (variant >> 5) & 2;
+                            image[0x2f7] = if variant & 64 != 0 { 2 } else { 0 };
+                        }
+                        2 => {
+                            let flags = [0,2,0x20,0x22,0x200,0x2000,0x2200,0x2222][(variant & 7) as usize];
+                            image[0x3f1..0x3f3].copy_from_slice(&u16::to_le_bytes(flags));
+                            image[0x2e8] = (variant >> 3) & 1;
+                            image[0x0e] = (variant >> 3) & 2;
+                        }
+                        _ => {}
+                    }
+                    native.import_wram_image(&image);
+                    native.sync_native_game_state_from_ram();
+                    native.set_lag_free(true);
+                    let mut machine = snes::Snes::new();
+                    machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    machine.ram.copy_from_slice(&image);
+                    machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0x30);
+                    machine.cpu.k = 7; machine.cpu.db = 7;
+                    machine.cpu.pc = entry as u16; machine.cpu.sp = 0x1fc;
+                    let tail = if y_axis { 0x07be99..0x07beaf } else { 0x07c8d3..0x07c8e9 };
+                    eprintln!("bypass3 axis={y_axis} family={family} variant={variant}");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(entry, machine, |s| {
+                        let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                        (entry..end).contains(&pc) || (family == 3 && tail.contains(&pc))
+                    }, || match family {
+                        0 => if y_axis { native.finish_indoor_y_collision_after_setup(); }
+                            else { native.finish_indoor_x_collision_after_setup(); },
+                        1 => native.finish_indoor_collision_common(y_axis),
+                        2 => native.finish_indoor_collision_after_rupees(y_axis),
+                        3 => if y_axis { native.handle_pushing_bonking_snaps_y(); }
+                            else { native.handle_pushing_bonking_snaps_x(); },
+                        _ => unreachable!(),
+                    });
+                    if family == 3 {
+                        let actual = native.wram_image();
+                        for address in [0x48, 0x371] {
+                            assert_eq!(actual[address], source.snes().ram[address]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bypass3_complete_slope_wrappers_match_rom() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        let mut base = ZeldaState::new();
+        base.set_assets(&assets).unwrap();
+        for order in [CollisionOrder::VerticalFirst, CollisionOrder::HorizontalFirst] {
+            for flags in [0,1,15,16,17,31,32,33,47,48,49,63,127,255] {
+                for indoors in [0, 1] {
+                    for (vy, vx) in [(0,0),(1,0),(0,255),(1,1),(255,255)] {
+                        let mut native = base.clone();
+                        let mut image = base.wram_image().into_owned();
+                        for (a,v) in [(0x1b,indoors),(0x10,7),(0x20,0x40),(0x22,0x40),
+                            (0x6b,flags),(0x30,vy),(0x31,vx)] { image[a] = v; }
+                        native.import_wram_image(&image);
+                        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+                        let entry = if order == CollisionOrder::VerticalFirst { 0x07b956 } else { 0x07b969 };
+                        let mut machine = snes::Snes::new();
+                        machine.cart.load(snes::CartType::LoRom,&rom,0x2000);
+                        machine.ram.copy_from_slice(&image);
+                        machine.ram[0x1fd..0x200].copy_from_slice(&[0xff,0x7f,0]);
+                        machine.cpu.e=false; machine.cpu.unpack_flags(0x30);
+                        machine.cpu.k=7; machine.cpu.db=7;
+                        machine.cpu.pc=entry as u16; machine.cpu.sp=0x1fc;
+                        crate::cycle_ledger::assert_rom_marker_work(entry,machine,
+                            |s|s.cpu.k==7 && (entry as u16..entry as u16+19).contains(&s.cpu.pc),
+                            ||native.run_slope_collision_checks_marked(order));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bypass3_collision_fragments_preserve_default_and_muting() {
+        let mut native = ZeldaState::new();
+        for lagless in [false, true] {
+            native.set_lag_free(lagless);
+            let before = crate::cycle_ledger::master();
+            crate::cycle_ledger::muted(|| {
+                for y_axis in [false, true] {
+                    native.indoor_slope_guard_markers(y_axis);
+                    native.indoor_layer_markers(y_axis);
+                    native.indoor_conveyor_markers(y_axis);
+                    native.clear_collision_return_markers(y_axis);
+                }
+            });
+            assert_eq!(crate::cycle_ledger::master(), before);
+            if !lagless {
+                native.indoor_slope_guard_markers(true);
+                native.indoor_layer_markers(true);
+                native.indoor_conveyor_markers(true);
+                native.clear_collision_return_markers(true);
+                assert_eq!(crate::cycle_ledger::master(), before);
+            }
+        }
+    }
 
     #[test]
     fn marker30_diagonal_whole_body_matches_rom() {

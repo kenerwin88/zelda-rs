@@ -17102,3 +17102,146 @@ bind this uncommitted stop. No GPU execution, video, cached-av, external
 Snes9x process, continuous live replay, seeded live census, full library suite,
 protected cache/shared-ledger write, cargo fmt, commit or push was performed.
 Scratch orchestration stayed in `/tmp`.
+
+
+## Bypass pricing 3
+
+**Verified partial CPU-only stop on `codex/bypass3`, base `71f053bc`.**
+Evidence: `target/bypass3/`. One final unsharded **full-v2 ROM-answer census**
+uses `--report 0 --seed-every 2000`, completes **1,473,123 ordered iterations
+and EOF**, and the unchanged census gate **PASSes, unexplained 0**.
+ROM excess/zero-lag FP stay **0/0**; every runtime hold equals P2.
+Missing holds fall **2,508 → 2,437**:
+**71 restored, 0 lost, 0 newly missing iterations**.
+
+| Inclusive iteration window | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,508 | **2,437** |
+| 0..94,852 | 80 | **79** |
+| 94,853..142,086 | 37 | **37** |
+| 142,087..461,988 | 380 | **378** |
+| 461,989..1,473,122 | 2,011 | **1,943** |
+
+The before column is Bypass 2's retained full-ROM predictor, not a fresh
+control replay. The nine runtime/table bindings from Bypass 2 match current
+main byte for byte (`baseline-source-identity.json`). `counts.json` binds
+both complete CSV hashes. The independently
+verified source prefix still ends at **461,775**; the reporting window ending
+461,988 does not extend it. Missing holds within **0..461,775** fall
+**497 → 494**.
+On the same **393,848 ordinary source-entry rows** as Diagnostic 2,
+the signed main-instruction deficit falls **3,899,425,318 →
+3,614,618,534 master clocks**, with **284,806,784** additional
+native instruction clocks. This is a counter comparison against retained
+independent source work, not complete opcode pairing or source suffix/EOF proof.
+
+### Bounded collision prices and retirement ownership
+
+The batch adds **57 generated blocks / 153 source instructions**.
+All **3,439 previous table rows are byte-unchanged**; all **3,496 rows**
+regenerate exactly. Prices come only from `scripts/rom_block_costs.py` at
+M8/X8, DP=0. Source-address comments identify every new range. The newly
+priced helpers had no legacy scalar to replace. The exact **82-clock
+stationary return**, existing setup scalars and child prices remain intact.
+
+| Fragment, end exclusive | Newly owned work | Added ordinary-prefix clocks |
+| --- | --- | ---: |
+| `$07:BAF4..BB00` / `$C59E..C5AA` | Collision/slope guards only; no slope call or post-call work | 19,779,076 |
+| `$07:BB2C..BB72` / `$C5B9..C5FF`, plus `$C5B7..C5B9` | Complete layer selection, rupee guard and horizontal diagonal-state clear | 68,075,868 |
+| `$07:BBAE..BBE6` / `$C63B..C673` | Complete conveyor selection, with each actual branch | 55,361,980 |
+| `$07:BDB1..BDBA → BE99..BEAF` / `$C7FC..C805 → C8D3..C8E9` | Clear-collision branch and its shared return, on either level | 83,125,856 |
+| Existing `$07:B956..B97C` wrapper blocks | Three complete translated cardinal-call bindings | 58,464,004 |
+
+The clear-collision branch owns **344 clocks on the upper level / 174 on the
+lower level**, including its actual RTS. Its shared reset/return is emitted
+only when that branch executes. Blocked, bonk, drag and nudge paths do not
+inherit a return price. This shared branch can also be reached by an outdoor
+response; the outdoor body before it remains unpriced. These are instruction
+fragments, not a complete indoor or outdoor response price.
+
+Each new fragment opens its own lagless `cycle_ledger::routine(entry)` scope.
+Existing B956/B969 wrappers already own theirs. Parent self-work fixtures
+therefore exclude the additions. Muted previews remain muted; default and
+ROM-timing paths retain their previous counters. No fitted lag count,
+scene threshold, multiplier, exception or classifier change is introduced.
+
+`source-costs/call-signatures.json` retains Diagnostic 2's full per-call
+source block signatures: **418 vertical shapes / 239,679 calls** and
+**393 horizontal shapes / 239,778 calls**, plus wrapper signatures. Their
+selected blocks are all M8/X8. These inventories include contexts with
+unresolved native call mappings; they do not relabel every source call as
+paired. `outside-charge-certificate.json` records the reviewed native
+handoffs, excluded prices and source hashes. It is a local ownership review,
+not a renewed auditor admission certificate.
+
+The native vertical response starts at BA2E. Its slope handoff has already
+retired the actual setup/guard path through **BB03 JSR E076**; translated
+completion enters after the guards. The chest handoff has retired through
+**BB1F JSL EB66** and enters common layer work only after its still-unpriced
+BB23 restoration. Rupee handoffs have retired through **BBA5 JSL E8BD** or
+**BBAB JSR 802F**, and enter conveyor work at BBAE. SurfaceTail starts at
+BBE6, after all new layer/conveyor instructions. Thus none rebooks its native
+prefix from a helper name.
+
+SurfaceEffect stops after BBEF/BC18/BC63 calls; StairDash after BCB5,
+Damage after BD39, PushBlock at BD65, ResetSwim after BDC5, Bonk at the
+BDE5/BE3B/BE60 continuations (including the independently retired inline
+child prefix where present), and Nudge after BE65. Their surface/event
+instructions remain unpriced. Only a subsequently reached clear-collision
+branch can add work. ResetSwim has already taken the nonzero-collision path
+and cannot rebook the clear-only marker on its translated re-entry. Bonk
+continuations skip the top of the handler entirely. Doorway/door-snap
+handoffs and all still-unpriced restoration ranges are listed in the
+certificate. The checkout has no independent horizontal response/surface
+continuation model; no horizontal event price is inferred from vertical ones.
+
+The complete wrapper bindings are the translated calls at **B8C6 JSR B956**
+(two cardinal paths sharing that call site) and **B8D0 JSR B969**. Their
+parents already own the JSR opcodes; the wrapper markers own their two guard/
+child-call fragments and return only. The native
+`CardinalCollisionTail::SlopeChecks` path retains its unmarked call because
+its partially retired wrapper boundary has not been proved.
+
+### Verification and remaining work
+
+Four new tests pass: **1,029** unmodified-ROM fragment comparisons, **560**
+complete wrapper comparisons, and default/muting checks. Fragment fixtures
+exercise both axes, guard masks, all directions, both levels, layer/spike/
+collision combinations, both conveyor axes/priorities, carrying/hurt/doorway
+state, and shared return outputs. They do **not** establish the full event
+family matrix. Existing tests pass: **two cardinal/diagonal caller fixtures,
+one setup fixture, one wrapper fixture, 13 runtime collision tests and both
+vertical response/surface model fixtures**. Those model fixtures retain their
+existing slope/chest/rupee/pit/deep-water/bonk/pushblock handoff checks.
+
+All three product builds (default, no-default-feature, observer-enabled) are
+**warning-free**. The final lib-test build retains the same **24 pre-existing
+dead-code warnings**. Nine Python generator/worklist tests, exact table
+regeneration and `git diff --check` pass. The default **200,000-frame state
+ledger matches all records and EOF**. The last source edit adds only the isolated C5B7
+`cfg(test)` fixture; `test-only-source-binding.json` verifies that removing
+that fixture exactly reproduces the source hash compiled into the three
+product binaries. Runtime code, generated table and prices stayed frozen
+through the census. On every ordinary prefix row, new
+marker work plus the change in existing wrapper work equals actual counter
+growth; path totals plus separate VWF reconcile with the predictor, with
+**zero counter/marker mismatches**. `prefix-proof.json` and compressed
+per-row additions retain that check.
+
+This is a partial stop. Slope calls/post-call returns, vertical chest guard/
+body/restoration, rupee body/suffix, eventful surface branches, blocked/bonk/
+pushblock/nudge loops and outdoor bodies remain unfinished and unpriced.
+The complete slope/doorway/carrying/hurt/layer/chest/pit/deep-water/direction
+matrix is still required before admitting those ranges. Selected inline
+handlers at 1E:8B19 and 05:B5D3 (including caller-70 aliases), BNC body/flail
+and Arrghus orbit were not priced. No candidate required an exception or
+withdrawal at this verified stop.
+
+Protected input file sets, sizes and nanosecond mtimes remain unchanged;
+`protected-final.json`, command/build/test logs, frozen source hashes and
+binary identities bind the receipts. Retained `target/bypass3` output stays
+below **3 GB**; `disk.jsonl` records samples, not an absolute transient peak.
+Scratch programs stayed in `/tmp`. No GPU execution, video, cached-av,
+external Snes9x, continuous or seeded live census, full library suite,
+protected-cache/shared-ledger write, cargo fmt, commit or push was performed.
+These are CPU accounting and regression checks, not exact A/V acceptance.
