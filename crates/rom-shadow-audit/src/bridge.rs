@@ -513,20 +513,54 @@ fn call_path(c:&Calls,mut id:u64)->Vec<u32> {
 /// call reconstruction, including interrupt cuts and inherited return frames.
 /// Routine/path labels are ownership hypotheses, never admitted prices.
 pub fn diagnostic_calls(rows:&[Instruction],pc_work:&mut BTreeMap<(u32,u32,u8),[u64;2]>)->Result<Value> {
+    diagnostic_block_calls(rows,pc_work,None)
+}
+
+/// Optional private block map records executed source work without adding prices.
+/// Keys retain the real call path and entry widths; missing mappings fail closed.
+pub fn diagnostic_block_calls(rows:&[Instruction],pc_work:&mut BTreeMap<(u32,u32,u8),[u64;2]>,
+    block_map:Option<&std::collections::HashMap<(u32,u32,u8),u32>>)->Result<Value> {
     let c=calls(rows)?;
     let mut costs=vec![0u64;c.frames.len()];
+    let call_paths:Vec<_>=c.frames.iter().map(|f|call_path(&c,f.id)).collect();
+    let mut block_paths:BTreeMap<(Vec<u32>,u32,u8),[u64;3]>=BTreeMap::new();
+    let mut frame_blocks=std::collections::HashMap::<(u64,u32,u8),[u64;3]>::new();
     for (r,&owner) in rows.iter().zip(&c.owners) {
         costs[owner as usize]+=r.master;
-        let v=pc_work.entry((c.frames[owner as usize].entry,r.pc,u8::from(r.m8)*32+u8::from(r.x8)*16)).or_default();
+        let width=u8::from(r.m8)*32+u8::from(r.x8)*16;
+        let key=(c.frames[owner as usize].entry,r.pc,width);
+        let v=pc_work.entry(key).or_default();
         v[0]+=1;v[1]+=r.master;
+        if let Some(map)=block_map {
+            let block=*map.get(&key).ok_or_else(||format!("unmapped diagnostic instruction {key:?}"))?;
+            let v=frame_blocks.entry((owner,block,width)).or_default();
+            v[0]+=r.master;v[1]+=1;
+            v[2]+=u64::from(r.pc==block);
+        }
+    }
+    let mut call_blocks=vec![Vec::new();c.frames.len()];
+    for ((owner,block,width),v) in frame_blocks {
+        call_blocks[owner as usize].push((block,width,v));
+        let total=block_paths.entry((call_paths[owner as usize].clone(),block,width)).or_default();
+        for k in 0..3 {total[k]+=v[k];}
     }
     let mut paths:BTreeMap<Vec<u32>,Vec<u64>>=BTreeMap::new();
     for (frame,cost) in c.frames.iter().zip(costs) {
         paths.entry(call_path(&c,frame.id)).or_default().push(cost);
     }
-    Ok(json!({"iteration":rows[0].iteration,"paths":paths.into_iter().collect::<Vec<_>>(),
+    let mut value=json!({"iteration":rows[0].iteration,"paths":paths.into_iter().collect::<Vec<_>>(),
         "rules":c.rules,"source_master":sum(rows),
-        "source_raster_poll_master":rows.iter().filter(|r|(0xf3a3..=0xf3b2).contains(&r.pc)).map(|r|r.master).sum::<u64>()}))
+        "source_raster_poll_master":rows.iter().filter(|r|(0xf3a3..=0xf3b2).contains(&r.pc)).map(|r|r.master).sum::<u64>()});
+    if block_map.is_some() {
+        value["block_paths"]=json!(block_paths.into_iter().map(|((path,pc,width),v)|(path,pc,width,v)).collect::<Vec<_>>());
+        let mut shapes=BTreeMap::<Vec<u32>,Vec<_>>::new();
+        for (index,mut blocks) in call_blocks.into_iter().enumerate() {
+            blocks.sort_by_key(|b|(b.0,b.1));
+            shapes.entry(call_paths[index].clone()).or_default().push(blocks);
+        }
+        value["call_blocks"]=json!(shapes.into_iter().collect::<Vec<_>>());
+    }
+    Ok(value)
 }
 
 /// ROM SOURCE_OUT PREDICTOR EVENTS FRESH_OUT. Streams one source iteration;
@@ -616,6 +650,15 @@ mod tests {
             interrupt_after:false,retired_next_pc:Some(next),x:Some(0),y:Some(0),emulation:false}
     }
     fn trace(mut rows:Vec<Instruction>)->Vec<Instruction> {for (i,r) in rows.iter_mut().enumerate(){r.ordinal=i as u64;}rows}
+    #[test] fn diagnostic_blocks_conserve_and_reject_missing_instruction_keys() {
+        let rows=trace(vec![r(0x8038,0xea,511,0x805d,511),r(0x805d,0xea,511,0x805e,511)]);
+        let mut map=std::collections::HashMap::from([((0x8034,0x8038,48),0x8038),((0x8034,0x805d,48),0x805d)]);
+        let row=diagnostic_block_calls(&rows,&mut BTreeMap::new(),Some(&map)).unwrap();
+        assert_eq!(row["block_paths"],json!([[[0x8034],0x8038,48,[10,1,1]],[[0x8034],0x805d,48,[10,1,1]]]));
+        assert_eq!(row["source_master"],20);
+        map.remove(&(0x8034,0x805d,48));
+        assert!(diagnostic_block_calls(&rows,&mut BTreeMap::new(),Some(&map)).is_err());
+    }
     #[test] fn jsr_jsl_jml_and_interrupt_keep_one_call_identity() {
         let mut rows=trace(vec![r(0x8038,0x22,511,0x18000,508),r(0x18000,0x20,508,0x18100,506),
             r(0x18100,0x5c,506,0x28000,506),r(0x28000,0x60,506,0x18003,508),r(0x18003,0x6b,508,0x803c,511),

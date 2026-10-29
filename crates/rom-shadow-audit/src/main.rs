@@ -164,7 +164,7 @@ fn tree_bytes(root:&Path)->Result<u64> {
 }
 
 fn source(args:&[String])->Result<()> {
-    if !(6..=9).contains(&args.len()) { return Err("source ROM SRAM INPUT FULL_V2 HOSTS FRESH_OUT [NATIVE_ENTRIES|- [WITNESS_HOSTS|- [PREDICTOR]]]".into()); }
+    if !(6..=10).contains(&args.len()) { return Err("source ROM SRAM INPUT FULL_V2 HOSTS FRESH_OUT [NATIVE_ENTRIES|- [WITNESS_HOSTS|- [PREDICTOR|- [BLOCK_MAP]]]]".into()); }
     let (rom,sram,input,ledger)=(Path::new(&args[0]),Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]));
     let hosts:usize=args[4].parse()?; if hosts==0 { return Err("zero hosts".into()); }
     let native_dir=args.get(6).filter(|s|s.as_str()!="-").map(PathBuf::from);
@@ -172,8 +172,17 @@ fn source(args:&[String])->Result<()> {
     if witness_hosts.len()>8 {return Err("at most eight witness hosts".into());}
     let out=PathBuf::from(&args[5]); fs::create_dir(&out)?;
     let mut manifest=freeze(rom,sram,input,ledger)?;
+    let block_map=if let Some(path)=args.get(9) {
+        manifest.identities.insert("diagnostic_block_map".into(),Identity::bind(Path::new(path))?);
+        let rows:Vec<(u32,u32,u8,u32)>=serde_json::from_reader(File::open(path)?)?;
+        let mut map=std::collections::HashMap::new();
+        for (owner,pc,width,block) in rows {
+            if map.insert((owner,pc,width),block).is_some() {return Err("duplicate diagnostic block map key".into());}
+        }
+        Some(map)
+    }else{None};
     let mut selected=std::collections::BTreeSet::new();
-    if let Some(predictor)=args.get(8) {
+    if let Some(predictor)=args.get(8).filter(|s|s.as_str()!="-") {
         manifest.identities.insert("missing_predictor".into(),Identity::bind(Path::new(predictor))?);
         let mut lines=BufReader::new(File::open(predictor)?).lines();
         let h=lines.next().ok_or("missing predictor header")??;
@@ -211,6 +220,7 @@ fn source(args:&[String])->Result<()> {
     let mut diagnostic_domains=zstd::Encoder::new(File::create(out.join("diagnostic-domains.jsonl.zst"))?,3)?;
     let mut domain_observer=diagnostic::Domains::default();
     let mut diagnostic_rows=Vec::new();let mut diagnostic_active=false;
+    let mut diagnostic_bus=[0u64;3*3*256];
     let mut diagnostic_pc_work=BTreeMap::new();
     let mut buttons=vec![0u16;hosts]; let mut assigned=vec![false;hosts];
     for line in fs::read_to_string(input)?.lines().filter(|l|!l.is_empty()&&!l.starts_with('#')) {
@@ -301,12 +311,23 @@ fn source(args:&[String])->Result<()> {
             if step.origin_pc==0x008038 {
                 main_active=true;main_depth=0;master=0;count=0;path=Sha256::new();
                 diagnostic_rows.clear();diagnostic_active=ordinary && matches!(module,7|9);
+                diagnostic_bus.fill(0);
             }
             if main_active && main_depth==0 && previous_sp>>8==1 {
                 let end=match step.accepted_interrupt {Some(Interrupt::Nmi{started_at,..}|Interrupt::Irq{started_at,..})=>started_at,None=>step.ended_at};
                 let clocks:u64=step.transactions.iter().filter(|t|t.started_at<end).map(|t|u64::from(t.duration_master_cycles)).sum();
                 master+=clocks;count+=1; path.update(step.origin_pc.to_le_bytes());path.update([step.opcode]);
                 if diagnostic_active {
+                    for access in step.accesses.iter().filter(|a|a.timestamp<end) {
+                        let address=access.address&0xffffff;
+                        let slow=if address&0x408000!=0 || address.wrapping_add(0x6000)&0x4000!=0 {8}
+                            else if address.wrapping_sub(0x4000)&0x7e00!=0 {6}else{12};
+                        let region=if address>>16==0x7e || address>>16==0x7f {1}
+                            else if address&0xffff>=0x8000 {0}
+                            else if address&0xffff<0x2000 {1}else{2};
+                        let speed=match slow {6=>0,8=>1,_=>2};
+                        diagnostic_bus[(region*3+speed)*256+usize::from(access.charged_master_cycles)]+=1;
+                    }
                     if diagnostic_rows.len()>=2_000_000 {return Err("diagnostic iteration instruction budget".into());}
                     diagnostic_rows.push(bridge::Instruction {iteration:current.as_ref().unwrap().index,
                         ordinal:count-1,pc:step.origin_pc,opcode:step.opcode,master:clocks,
@@ -334,8 +355,14 @@ fn source(args:&[String])->Result<()> {
             }
             if step.origin_pc==0x00805d && main_active {
                 if diagnostic_active {
-                    match bridge::diagnostic_calls(&diagnostic_rows,&mut diagnostic_pc_work) {
-                        Ok(row)=>writeln!(diagnostic_calls,"{row}")?,
+                    match bridge::diagnostic_block_calls(&diagnostic_rows,&mut diagnostic_pc_work,block_map.as_ref()) {
+                        Ok(mut row)=>{
+                            if block_map.is_some() {
+                                row["bus_speeds"]=json!(diagnostic_bus.iter().enumerate().filter(|(_,count)|**count!=0)
+                                    .map(|(key,count)|(key/768,[6,8,12][key/256%3],key%256,count)).collect::<Vec<_>>());
+                            }
+                            writeln!(diagnostic_calls,"{row}")?;
+                        },
                         Err(e)=>writeln!(diagnostic_calls,"{}",json!({"iteration":current.as_ref().unwrap().index,
                             "source_master":master,"error":e.to_string(),"paths":null}))?,
                     }

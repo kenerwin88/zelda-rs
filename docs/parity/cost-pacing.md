@@ -16430,3 +16430,544 @@ census, full library suite, protected cache/shared-ledger write, cargo fmt,
 commit, push or one-off repository script was used. Scratch drivers stayed
 in `/tmp`. Remaining far-call contexts, candidate fixtures, resumed source
 ownership and the source suffix remain unfinished.
+
+
+## Systematic undercharge diagnostic 2
+
+Measurement on `codex/diag2`, base **`b37a5105587888659e20bdee95db3a2b429f0c32`**.
+Evidence is under `target/diag2/`. No price, pacing rule, classifier, P2, marker,
+generated table or seed decision changes. The only implementation changes are
+feature-gated source/native observation. No pricing is admitted by this study.
+
+### Live-lane excess: fresh paired censuses
+
+Both commits were built from their own source: an archived `f83e906a` tree in
+`/tmp/diag2-base`, then the current worktree, reusing a private target directory
+sequentially. Both seeded live censuses run serially from iteration zero with
+`--logical-replay full-v2 <cache>/initial.srm --report 0 --seed-every 2000
+--live-apu-reads --pacing-predictor ...`. Both complete **1,473,123 ordered
+iterations and EOF**, with runtime holds equal to P2 throughout. Both unchanged
+census gates **PASS, unexplained 0**, with first unexplained WRAM divergence none.
+These are seeded logical gates, not continuous live or exact A/V acceptance.
+
+| Commit | Missing | Excess holds | Zero-lag FP iterations | Replay seconds |
+| --- | ---: | ---: | ---: | ---: |
+| `f83e906a` | 3,109 | 279 | 77 | 1,093.620 |
+| `b37a5105` plus observer-only edits, observer off | 3,136 | 464 | 86 | 1,096.367 |
+| Change | +27 | **+185** | **+9** | |
+
+There are **217 gained excess holds on 20 iterations**, offset by **32 removed
+excess holds on seven iterations**. Sixteen iterations become false positives
+and seven cease being false positives. The supplied ROM-lane improvement
+2,736 → 2,643 with zero excess/FP comes from Bypass pricing 1's retained full
+receipts; this batch does not repeat those full ROM censuses.
+
+**All changed excess rows have zero ROM-answer main-work growth between the
+two commits.** The live changes are different executed paths after song-poll
+phase disagreements, not a higher price for the same local source block.
+Source module/substage below is independently recovered from `full-v2`'s
+opening post-NMI XOR stream; it agrees with both predictors on all 27 changed
+rows. It is not guessed from the native's advanced state.
+
+| Song-poll cluster | Gained excess | Removed excess | Net | Evidence |
+| --- | ---: | ---: | ---: | --- |
+| 380,880 | 90 | 0 | +90 | After: native `$00`, source `$13`; before has no disagreement here. |
+| 627,255 | 27 | 0 | +27 | After: native `$00`, source `$13`; before has no disagreement here. |
+| 881,732 / 881,733 | 5 | 5 | 0 | The first disagreement shifts from before 881,733 to after 881,732. |
+| 1,064,733 | 95 | 0 | +95 | After: native `$00`, source `$13`; before has no disagreement here. |
+| 1,318,334 | 0 | 27 | -27 | Before: native `$00`, source `$13`; after has no disagreement here. |
+| **Total** | **217** | **32** | **+185** | |
+
+The unchanged crystal poll is `$08:C606..C610`,
+`ancilla_receipt_after_sparkle` in `ancilla/items.rs`: a zero APUI00 answer
+selects the rising-crystal continuation; nonzero keeps the receipt animation
+running. Thus dialogue, reward and screen-load work moves to different
+logical iterations. This is a carried SPC/APU phase effect: most affected
+iterations do not themselves read the song-end port. The source's load
+iterations also contain upload acknowledgement polling, separately identified
+below. No source lag value is used to alter native scheduling.
+
+Every gained iteration is listed here. `S lag` is the immutable source count;
+`holds` and `main` are before → after in the live lane, in master clocks.
+FP marks a newly false-positive iteration. All rows have **zero** ROM-answer
+price/work delta. `Carried` means the preceding song-poll disagreement changes
+the path; `+upload` additionally identifies APU reads in the source iteration.
+
+| Iteration | Source module/substage | S lag | Live holds | Live main clocks | FP | Phase evidence |
+| --- | --- | ---: | --- | --- | --- | --- |
+| 380,945 | `07/18` | 0 | 0 → 1 | 143,774 → 611,068 | Yes | Carried, 380,880 |
+| 380,955 | `07/18` | 0 | 0 → 4 | 190,426 → 1,239,906 | Yes | Carried, 380,880 |
+| 381,425 | `07/00` | 0 | 0 → 8 | 66,266 → 1,933,944 | Yes | Carried, 380,880 |
+| 383,178 | `07/00` | 0 | 0 → 7 | 63,738 → 1,677,070 | Yes | Carried, 380,880 |
+| 383,346 | `0E/02` | 0 | 0 → 7 | 59,494 → 1,674,242 | Yes | Carried, 380,880 |
+| 383,634 | `10/00` | 1 | 1 → 59 | 205,268 → 13,894,540 | — | Carried +upload, 380,880 |
+| 383,635 | `10/01` | 1 | 1 → 6 | 216,984 → 1,568,688 | — | Carried +upload, 380,880 |
+| 627,316 | `07/18` | 0 | 0 → 1 | 147,486 → 614,120 | Yes | Carried, 627,255 |
+| 627,326 | `07/18` | 0 | 0 → 4 | 193,946 → 1,245,348 | Yes | Carried, 627,255 |
+| 627,799 | `07/00` | 0 | 0 → 8 | 74,598 → 1,894,846 | Yes | Carried, 627,255 |
+| 629,327 | `0E/02` | 0 | 0 → 7 | 66,272 → 1,684,212 | Yes | Carried, 627,255 |
+| 629,458 | `07/00` | 0 | 0 → 7 | 70,912 → 1,681,384 | Yes | Carried, 627,255 |
+| 881,793 | `07/18` | 0 | 0 → 1 | 151,752 → 618,206 | Yes | Carried, 881,732 |
+| 881,803 | `07/18` | 0 | 0 → 4 | 198,032 → 1,248,790 | Yes | Carried, 881,732 |
+| 1,064,797 | `07/18` | 0 | 0 → 1 | 146,690 → 613,684 | Yes | Carried, 1,064,733 |
+| 1,064,807 | `07/18` | 0 | 0 → 4 | 197,782 → 1,247,134 | Yes | Carried, 1,064,733 |
+| 1,065,280 | `07/00` | 0 | 0 → 7 | 73,366 → 1,859,618 | Yes | Carried, 1,064,733 |
+| 1,066,543 | `07/00` | 0 | 0 → 7 | 74,304 → 1,684,218 | Yes | Carried, 1,064,733 |
+| 1,066,959 | `08/01` | 6 | 6 → 59 | 1,525,982 → 13,945,784 | — | Carried, 1,064,733 |
+| 1,066,961 | `10/00` | 1 | 1 → 24 | 179,170 → 5,731,772 | — | Carried +upload, 1,064,733 |
+
+The seven removed excess rows are:
+
+| Iteration | Source module/substage | Live holds before → after | Removed excess |
+| --- | --- | --- | ---: |
+| 881,794 | `07/18` | 1 → 0 | 1 |
+| 881,804 | `07/18` | 4 → 0 | 4 |
+| 1,318,395 | `07/18` | 1 → 0 | 1 |
+| 1,318,405 | `07/18` | 4 → 0 | 4 |
+| 1,318,877 | `07/00` | 8 → 0 | 8 |
+| 1,320,353 | `07/00` | 7 → 0 | 7 |
+| 1,320,544 | `0E/02` | 7 → 0 | 7 |
+
+At 383,634, live main work grows **205,268 → 13,894,540**, while both
+ROM-answer runs have identical main work. At 1,066,959 it grows
+**1,525,982 → 13,945,784**, again with zero ROM-answer work delta. Smaller
+reward/dialogue cases likewise execute hundreds of thousands or millions of
+additional clocks, rather than a new wrapper's 190/222 clocks. Separate VWF
+values and every unchanged model-context field remain in `live-changes.json`;
+the conclusion is not based only on a hold-count correlation.
+
+**No newly priced marker is identified as wrong.** The four fresh poll
+disagreements and the shifted/removed clusters explain the complete excess
+change. Bypass pricing 1's source-work equality and complete marker fixtures
+remain the pricing evidence; the current ROM prefix reproduction below checks
+that observer instrumentation has not changed that lane. This does not prove
+SPC synchronization or source/native instruction equivalence outside the
+verified source prefix. Do not remove valid child prices to suppress live
+phase-shifted work. `live-summary.json`, `live-changes.json`, both full CSVs
+and logs/gates, and `live-source-contexts.json` retain the per-row evidence.
+
+### Block study: population, identity and accounting
+
+The fresh reset-driven source executes **500,000 hosts / 6,236,748,758
+opcodes**, verifies **461,776 full-v2 iterations, 0..461,775**, and stops
+without an alignment failure. Source execution/report time is **2,249.499 s**;
+the build/launch wrapper records **2,259.562 s**. Its instruction summaries,
+entry classifications and domain streams reproduce Diagnostic 1 **byte for
+byte**, including the reset domain row. Original evidence is read-only;
+`retained-source-bound/manifest.json` relocates only changed auditor-source
+bindings to hash-identical `f83e906a` files. Both relocated and fresh manifests
+verify. Source EOF and 461,776..1,473,122 remain unverified; the existing native
+handoff/resume STOP remains in force.
+
+The native ROM-answer replay covers the same prefix with `--report 0
+--seed-every 2000`, observes every charge, and adds separate VWF exactly once.
+Its **461,776 predictor records are byte-identical** to Bypass pricing 1's
+retained after-ROM prefix, with a passing unchanged gate and unexplained zero.
+The study includes **all 393,848 ordinary `$00:8038` entries in modules 07/09**,
+including nonzero substages and zero-lag controls. Source entry classification,
+not the predictor's image context, selects that population. Internal interrupts
+retain the same continuous source call; interrupt entry/handler, refresh, DMA,
+HDMA and wait clocks are excluded from source instruction work.
+
+`source-block-map.json` and `source-block-map-details.json` bind every observed
+source instruction to owner/PC/M/X and a block start. All **3,434 current
+generated identities** come directly from `scripts/rom_block_costs.py` and the
+unchanged entry manifest. Those explicit instruction boundaries take precedence.
+Outside generated ranges, the private audit map uses observed instruction
+boundaries, real entries, branch/jump targets, and the instruction following
+control transfers, including calls, as leaders. These are observed source CFG
+blocks, not newly admitted generator entries; unsupported/dynamic ownership
+is not silently made priceable. No table is regenerated into the product.
+Source clocks are retired transaction clocks, not static estimates.
+
+The source retains each actual call's block/width/work signature and block-entry
+counts. The native compact observer retains marker PC/kind/declared width,
+clocks/count and per-native-scope marker vectors alongside existing scalar
+sites and charge totals. Both streams conserve their independent counters.
+Diagnostic 1's four folds are retained: control/default, velocity tails,
+collision tail and single-large writer, plus adjacent native `$06:84E2`
+continuations. Native ancestors can omit a real ROM wrapper or add an interior
+partition. Unique compatible source-entry paths and observed interior-PC/block
+membership supply named **context projections**; ambiguous paths stay unmapped.
+For example, source `$07:B956` can be absent between native `$07:B7C7` and
+`$07:BA0A`; that does not make the existing BA0A setup charge disappear.
+These projections are aggregate ownership evidence, not M2 ordered opcode
+pairing or a source/native state-handoff certificate.
+
+Every source block/context receives one observation class:
+
+- **A:** the same generated block identity has a native marker in the matched
+  context. Entry-count, width and cost differences remain explicit; A does not
+  assert equal occurrence sequences or exact coverage of every occurrence.
+- **B:** no matching generated marker, but legacy scalar/model work is observed
+  in the matched scope. This includes the unmarked remainder of a mixed scope.
+  A scalar claim for a caller/dispatcher is not proof it prices the whole
+  source frame inherited through a jump or RTS dispatch.
+- **C:** no matching marker or scalar/model charge was identified in that
+  context. This is an absence observation, **not** a certified uncharged body.
+  Known model, continuation and alias exclusions from Diagnostic 1/Bypass 1
+  remain blockers even when a raw context lands here.
+
+Unmapped native scalars, unmatched markers and separate VWF remain signed
+residuals; they are not discarded or distributed across source blocks. The
+per-call tables retain actual source block signatures and compare unique
+single-source-call contexts or equal-length call vectors. Unequal-cardinality
+per-instruction model scopes remain unresolved rather than being assigned to
+ROM calls by equal numeric cost. Thus this batch measures block/context
+coverage and scalar differences; it does **not** finish an exact per-call
+instruction-set exclusion proof for every legacy model. The complete residuals
+and this limitation are part of the stopping point.
+
+### Block coverage and what remains unallocated
+
+All **393,848** ordinary rows reconcile independently: source block sums equal
+source main instructions, native charges plus VWF equal the predictor, and the
+signed class equations equal S−N on every row. Totals are **S = 69,815,206,224**,
+**N = 65,741,287,256**, leaving **4,073,918,968 clocks**, exactly the post-Bypass-1
+deficit. It is **5.84% of source instruction work**. A positive main gap remains
+on **390,399 rows (99.12%)**. There are **396 missing ordinary holds**; appending
+each row's actual positive main gap reaches **387**, with **0/386,542** zero-lag
+FP risks. This counterfactual is not a permitted runtime price.
+
+The gross source coverage observations are:
+
+| Source class | Source clocks | Share of source work |
+| --- | ---: | ---: |
+| A: matching generated identity observed | 8,425,379,222 | 12.07% |
+| B: scalar/model scope | 55,797,799,154 | 79.92% |
+| C: no matching context charge identified | 5,592,027,848 | 8.01% |
+
+The honest signed deficit decomposition requires retaining the unmapped native
+side. The B row below deducts **only matched-context scalars**; its unallocated
+2,218,400,738 clocks are shown separately instead of being silently assigned
+to C blocks. Percentages are signed contributions to the net deficit, not
+positive, independently additive price opportunities.
+
+| Accounting component | Source clocks | Native clocks | Signed S−N | Fraction of net deficit |
+| --- | ---: | ---: | ---: | ---: |
+| A: observed block/context matches | 8,425,379,222 | 8,437,828,726 | -12,449,504 | -0.31% |
+| B: matched scalar/model contexts | 55,797,799,154 | 54,773,644,000 | +1,024,155,154 | +25.14% |
+| C: source-only context observations | 5,592,027,848 | 0 | +5,592,027,848 | +137.26% |
+| Unallocated native scalar/model work | 0 | 2,218,400,738 | -2,218,400,738 | -54.45% |
+| Unmatched native markers / separate VWF | 0 | 311,413,792 | -311,413,792 | -7.64% |
+| **Total** | **69,815,206,224** | **65,741,287,256** | **4,073,918,968** | **100.00%** |
+
+**A strict three-way pricing allocation of the entire deficit is unfinished.**
+C's 5.592B clocks cannot be called free work: already charged decompression,
+map/interlace, normal/sword/cape and continuation models still appear among
+its unmatched contexts. Conversely, B includes unpriced inline tails inside
+a scope that charges its dispatcher. The earlier “15% uncharged / 85% in code
+that charges” is an owner/code-review screen, not a block-ownership theorem.
+This table does not establish either percentage as an exclusive pricing share.
+The unresolved native side is material and remains an explicit blocker to
+claiming exact coverage or charging every unmatched source block.
+
+`block-ranking.json` contains every source owner/block/class observation,
+including negative work and count/width flags. `iteration-coverage.jsonl.gz`
+retains every row's conservation equation and signed owner deltas. The actual
+source call signatures and scalar comparisons are in
+`source-call-block-shapes.json.gz`, `scalar-call-costs.json.gz` and
+`scalar-footprint-call-costs.json.gz`. The call comparison screen covers
+**66,401,166 source calls**; **11,007,496** have unequal native cardinality
+and **9,361,275** have no matched native call path. Those two residual groups
+are not converted into zero native per-call charges or fitted call mappings.
+
+### A: per-block differences, not a blanket marker increase
+
+There are **3,715 owner/block rows** with a marker identity observed; **332**
+have nonzero-cost contexts, including rows whose signed errors cancel. There
+are **399,165 occurrence-count mismatch contexts**, **65,404 equal-entry-count
+cost-difference contexts**, and **248,627 entry-width metadata mismatches**.
+A context is a path/iteration, not a block call or unique iteration. All
+positive and negative cases remain in `marker-cost-mismatches.json`; no
+net-cancellation pass is claimed. The net A difference is **−12,449,504**,
+so this class is not a common positive 6% instruction-price bias.
+
+Representative complete-prefix rows follow. Counts are source block entries /
+native base markers; their differences must not be mistaken for unit prices.
+
+| Owner / generated block | Source / native entries | Signed clocks | Interpretation |
+| --- | ---: | ---: | --- |
+| `$01:8A44` / `$01:8A4B` | 166,744 / 164,864 | +1,795,400 | Different loop counts; static base 952 plus actual taken extras. |
+| `$00:8781` / `$00:8784` | 14,004 / 9,704 | +1,350,200 | Both sides price 314 per observed entry; counts/dispatch ownership differ. |
+| `$06:DBF0` / `$06:DBF0` | 412,459 / 423,303 | -1,279,592 | Both sides price 118; native executes 10,844 more entries. |
+| `$06:EAA4` / `$06:EAAC` | 69,821 / 69,788 | +29,532 | Branch/path residual; 29,813 equal-count cost contexts. |
+| `$06:EAA4` / `$06:EAB5` | 69,821 / 69,788 | -24,864 | Opposite branch/path residual in the same direction-predicate family. |
+| `$08:8BCF` / `$08:8CAB` | 5,558 / 5,558 | +11,310 | Missing indexed-read page extra; separate proof below. |
+
+The `$06:EAAC` / `$06:EAB5` family already has the source/native order and
+branch-selection limitation described in M2b; source and native below/right
+helper order is not an admitted semantic commutation. These observations do
+not justify changing the 64/72-clock static bases. The largest width flags,
+`$0E:DE49` and `$02:AA2E`, occur **112,190 times each with zero cost difference**:
+the former resets widths with REP before its JSR, and the latter is a
+width-independent JSL. Metadata disagreement alone is not a missing wide
+operand fee. Other flagged rows remain listed rather than waived globally.
+
+**Concrete omitted per-access penalty:** `$08:8CAB..8CB0` contains TAY,
+`LDA $8ABF,Y` at **`$08:8CAC`**, then BEQ. Its generated base is **62**, with
+separate +6 taken and +6 indexed-crossing extras. Native
+`ancilla_check_tile_collision_class2_inner` emits the base and taken marker,
+but never the crossing marker for `$08:8CAC`. With X/Y width 8, the table read
+crosses for the actual tile index **>= $41**, since `$BF + $41 = $100`.
+The earlier `$08:8C46` crossing is already priced and is a different access.
+
+Source branch counts are recovered independently from the `$08:8CB1`
+fallthrough entries. Across **6,041 source entries**, actual block clocks
+contain **2,114 crossings / 12,684 page-extra clocks**. Native emits **zero**
+crossing clocks. In the **5,942 entries with equal base counts and BEQ counts**,
+the source/native difference is exactly **12,504 = 2,084 × 6**. For example,
+**55,489–55,491** each have source **74**, native **62 base + 6 taken = 68**,
+with one source page crossing and no native crossing. Remaining contexts are
+retained unmatched, not included in that equality claim.
+
+The complete source footprint predicts **0 holds / 0 zero-lag FP** and is
+only **0.00031%** of the current deficit. This is a real, localized missing
+indexed-read penalty, not a wrong 62-clock block base and not a newly priced
+Bypass-1 marker. `ancilla-page-crossing-proof.json`, its compressed per-row
+records, footprint and inverse files bind the measurement. A later fix must
+select the crossing from the actual native table index and fixture both entry
+forms and `$40/$41/$FF` boundaries. No marker was added in this batch.
+
+### B: concrete per-call scalar/body comparisons
+
+These are actual source block footprints versus native work in compared call
+contexts, not regressions fitted to instruction count. Marker-covered work is
+removed before the scalar-footprint comparison. Every other cost pair and
+source block signature is retained in the call tables.
+
+| Owner / actual path | Source / native clocks per call | Compared calls with this pair | What the native price covers |
+| --- | ---: | ---: | --- |
+| ClearOamBuffer `$00:841E` | **5,300 / 5,300** | **393,848** | Complete fixed leaf; exact on every call. |
+| PrepareSprites `$00:85FC`, common variants | **11,598 / 11,598**, **11,604 / 11,604** | **181,291**, **132,092** | Instruction-stepped packing/source/animation/pointer model. All 393,848 compared calls have zero difference, including other variants. |
+| Module09 common caller under `$00:80B5` | **1,838 / 418** | **118,803** | Routing 240 plus rain/return 178; the 1,420-clock caller body is absent. Other source/rain variants retain the same missing caller body. |
+| Vertical collision `$07:BA0A`, stationary | **82 / 82** | **91,112** | LDA, branch, RTS; no response tail runs. |
+| Vertical collision, common moving indoor paths | **2,842 / 796**, **2,852 / 806** | **34,157**, **27,753** | Existing setup is priced; **2,046** clocks of the executed response remain. |
+| Vertical collision, another common path | **1,998 / 564**, **2,008 / 574** | **20,803**, **20,575** | **1,434** response clocks remain; not a uniform 2,046 surcharge. |
+| Horizontal collision `$07:C4D4`, stationary | **82 / 82** | **100,799** | Same complete cheap return. |
+| Horizontal collision, common moving indoor paths | **2,712 / 796**, **2,722 / 806** | **19,153**, **17,109** | **1,916** clocks of the executed response remain. |
+| Horizontal collision, other paths | **1,822 / 628**, **1,832 / 638** | **11,461**, **12,539** | **1,194** response clocks remain; data/branch-dependent work must be priced locally. |
+
+**Module09's missing common caller is 43 executed source instructions, not a
+mean parent tax.** Its exact block costs are:
+
+| Source block start | Actual M/X | Source self clocks |
+| --- | --- | ---: |
+| `$02:A475` | M8/X8 | 136 |
+| `$02:A47E` | M8/X8, REP to M16 | 22 |
+| `$02:A480` | M16/X8, scroll saves/offset stores and SEP | 760 |
+| `$02:A4B1` | M8/X8, Sprite_Main JSL opcode only | 62 |
+| `$02:A4B5` | M8/X8, REP to M16 | 22 |
+| `$02:A4B7` | M16/X8, scroll restores and SEP | 294 |
+| `$02:A4C5` | M8/X8, LinkOam_Main JSL opcode only | 62 |
+| `$02:A4C9` | M8/X8, HUD JSL opcode only | 62 |
+| **Total** | **43 instructions, through `$02:A4CC`** | **1,420** |
+
+`module09_overworld`, `begin_module09_sprite_main_scroll_prefix`, and
+`publish_module09_link_oam_prefix` execute the translated dispatch/scroll work
+without these ledger charges. Sprite/OAM/HUD bodies already have their own
+prices. Full native instruction models and resumed callers can already own
+some of this work, so “add 1,420 to every Module09 iteration” is **not** the
+implementation contract. In the measured source-entry Module09 contexts whose
+matched owner difference is exactly this body, **122,336 iterations /
+173,717,120 clocks** reach **28 inverses / zero FP**. That is a conditional
+source-body estimate, not a runtime module or iteration selector.
+
+The collision scalars likewise are **partial setup contracts**, not a cheap
+branch assumed for an entire expensive routine. `price_indoor_collision_setup`
+explicitly stops before the unpriced slope/tile response. Source indoor tails
+begin at **`$07:BAF4`** and **`$07:C59E`**, with common no-event returns through
+**`$07:BEAE` / `$07:C8E8`**. Outdoor setup ends before
+**`$07:BEF8` / `$07:C92F`**. The translated finish/slope/tile handlers must
+price their actual branches, loop counts and widths while preserving already
+priced child calls. No evidence supports replacing the setup scalar with an
+all-call average. The tables compare **234,314 / 239,679** vertical source
+calls and **234,413 / 239,778** horizontal calls; the remaining call mappings
+stay unresolved. Across all observed contexts, the owner gaps are
+**255,298,766** and **220,444,550**, with no negative owner iteration.
+
+### Ranked owners, signs and fixed-context impact
+
+Rank is total positive per-iteration shortfall **after the stated folds and
+context projections**; signed totals and compensating negatives remain.
+`Positive/present` counts iterations, not model instruction scopes. Estimates
+append each row's positive owner difference using its unchanged completed-model
+inverse, with worker/raster/bus context fixed. They are overlapping diagnostic
+upper comparisons, not prices or full-route recoveries. Zero FP risk alone does
+not establish instruction ownership. The full ranking retains all owners.
+
+| Source owner | Positive shortfall | Signed clocks | Positive/present | Estimated holds / zero-lag FP | Review |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `$00:8781` | 365,056,892 | +365,056,892 | 206,032/210,663 | 31 / 0 | Blocked: mixed RTS-dispatch/caller ownership; no dispatch tax. |
+| `$07:BA0A` | 255,298,766 | +255,298,766 | 136,850/236,996 | 9 / 0 | Response-body batch; retain setup/children. |
+| `$07:C4D4` | 220,444,550 | +220,444,550 | 131,799/237,095 | 7 / 0 | Response-body batch; retain setup/children. |
+| `$1e:B6E9` | 176,197,812 | +176,197,812 | 4,684/4,684 | 0 / 0 | Uncharged orbit math; full fixtures required. |
+| `$00:80B5` | 173,968,772 | -130,299,210 | 122,596/393,848 | 28 / 0 | Use the qualified common caller, not a parent tax. |
+| `$1e:8B19` | 168,807,706 | +165,722,976 | 151,732/159,683 | 2 / 0 | Bind selected inline handlers; 290-clock dispatch already prices itself. |
+| `$05:B5D3` | 167,031,678 | +164,786,192 | 118,452/190,889 | 15 / 0 | Bind selected handlers/returns, including caller-70 aliases. |
+| `$06:84E2` | 149,994,658 | +125,860,168 | 174,307/393,848 | 19 / 0 | State/tail/handler aliases; no all-slot surcharge. |
+| `$07:CF12` | 136,502,264 | +136,502,264 | 84,841/88,210 | 1 / 0 | Blocked: mixed existing tile/collision model claims. |
+| `$1e:FE78` | 125,883,674 | +125,883,674 | 140,842/140,842 | 5 / 1 | Blocked: one zero-lag FP; inactive/double-return ownership. |
+| `$1d:F822` | 113,943,486 | +113,943,486 | 15,551/15,551 | 4 / 0 | Withdrawn: full-route 931,965 excess remains decisive. |
+| `$05:F94E` | 103,552,672 | +103,552,672 | 140,255/194,233 | 11 / 0 | Blocked: inactive-entry / FE78 / caller-70 aliases. |
+| `$07:807F` | 93,922,212 | +93,922,212 | 54,538/327,055 | 3 / 0 | Resolve remaining normal/state-body model coverage. |
+| `$00:F649` | 75,690,012 | +75,690,012 | 594/594 | 0 / 0 | Uncharged code; saturation/wrapping and caller fixtures remain. |
+| `$02:FEBB` | 75,013,448 | +75,013,448 | 168/168 | 9 / 0 | Blocked: existing decompression model. |
+| `$07:E370` | 58,702,362 | +58,702,362 | 21,306/21,306 | 3 / 0 | Blocked: existing velocity model; compensating negative owner. |
+| `$07:B956` | 58,464,004 | +58,464,004 | 237,954/237,954 | 2 / 0 | Wrapper/body audit; preserve both axis children. |
+| `$08:833C` | 56,533,398 | +56,533,398 | 24,945/76,956 | 0 / 0 | Selected ancilla-handler/dispatch coverage, not a uniform tax. |
+| `$07:9CD9` | 50,063,316 | +50,063,316 | 229,607/229,607 | 1 / 0 | Blocked: existing sword/cape model claim. |
+| `$09:C452` | 49,886,020 | +49,886,020 | 142/142 | 4 / 0 | Blocked: reset fragments already have charged owners. |
+
+The folded collision family `$06:E4AB/$E4DB` is **exactly zero on all
+207,104 present iterations**. ClearOamBuffer and PrepareSprites are also zero
+on every ordinary row. The velocity fold `$07:E245/$E373/$E3E0` has
+**−57,139,818**, while the separately excluded `$07:E370` source label has
+**+58,702,362**: most of that attractive positive score is already compensating
+model attribution. Their 1,562,544-clock remainder is not admitted as new work.
+The single-large writer fold is mixed-sign, **+35,890,624 net** versus
+**38,521,626 positive / −2,631,002 negative**; the common **2,090 / 892** call
+pair leaves 1,198 clocks, the already priced shadow-body size. It cannot be
+priced again without resolving the shadow/tail scope. Generic parent rankings
+remain investigation labels even when their positive inverse screen has zero FP.
+
+The concrete bounded counterfactuals are:
+
+| Candidate footprint | Prefix clocks | Estimated holds | Zero-lag FP risk | Share of current deficit |
+| --- | ---: | ---: | ---: | ---: |
+| Qualified Module09 caller body | 173,717,120 | 28 | 0 | 4.264% |
+| Vertical response owner difference | 255,298,766 | 9 | 0 | 6.267% |
+| Horizontal response owner difference | 220,444,550 | 7 | 0 | 5.411% |
+| Both response owners, joint | 475,743,316 | 15 | 0 | 11.678% |
+| Common caller + both responses, joint | 649,460,436 | 41 | 0 | 15.942% |
+| Arrghus orbit math | 176,197,812 | 0 | 0 | 4.325% |
+| BNC body drawing | 28,102,796 | 1 | 0 | 0.690% |
+| Remaining F121 wrapper footprint | 6,393,120 | 0 | 0 | 0.157% |
+| Remaining E496 wrapper footprint | 11,562,648 | 0 | 0 | 0.284% |
+
+The caller/response joint comparison is **649,460,436 clocks (15.942%)**,
+reaching **41/396** ordinary missing holds, not 28+9+7. The 1,420 caller body is
+independently source-derived; the response totals still require all-path
+instruction/child exclusion fixtures before they become prices. FE78 and
+Moldorm remain blocked despite their attractive prefix scores. The unchanged
+actual-positive-main-work upper comparison reaches **387/396**, leaving nine
+threshold cases; it is not a 4.074B-clock runtime surcharge.
+
+### Global memory-speed and per-access hypothesis
+
+The source bus observation uses the actual receipt address, nominal hardware
+map, and recorded charged duration, separately from opcode totals. These are
+access **groups**: a 16/24-clock group combines two/three 8-clock bytes. The
+region names are audit windows, not a claim that every low cartridge address
+is physical WRAM. All rows are filtered to the verified ordinary cohort.
+
+| Audit window / nominal byte speed | Recorded duration : group count |
+| --- | --- |
+| Cartridge/high-address window, excluding `$7E/$7F`, 8 | **8 : 3,718,843,075; 16 : 804,454,146; 24 : 80,476,039** |
+| WRAM / low-address 8-clock window, 8 | **8 : 726,235,128; 16 : 630,538,436** |
+| System register window, 6 | **6 : 3,745,164** |
+| Other system/SRAM window, 8 | **8 : 9,592** |
+| Slow I/O window, 12 | **12 : 448** |
+
+No observed nominal-8 group is charged 6, and no nominal-6/12 group has a
+different duration. The source hardware map supports FastROM 6 when its bank
+and enable conditions apply; no such 6-clock cartridge group occurs in this
+cohort. `rom_block_costs.py` prices ROM/WRAM bytes at 8 and internal cycles at
+6, with explicit system-bank 6/12 adjustments; unknown DB register-window
+prices fail generator admission rather than being silently forced to 6.
+The shared native `native_work::Work` **fetch/read/write** operations use
+**8 × width**, its operand/internal split uses **8 × width then 6**, and its
+I/O helpers use **6 per register byte**. The checked intro/half-slot memory
+helpers also use 8 per memory byte. `Snes::access_time`'s old flat-6 fast-emulator
+helper is not the source hardware clock or this ledger's native Work law.
+
+The low-address group's inferred 1,987,312,000 nominal bytes make a hypothetical
+2-clock discount **3,974,624,000 clocks**—numerically close to the deficit.
+That near-fit is not causal evidence: native Work does not use that discount,
+and the WRAM-heavy ClearOamBuffer and PrepareSprites controls match all
+393,848 calls, including their 8-bit/16-bit and data-dependent variants.
+A universal memory tax would overcharge those already exact controls.
+
+The independent static PC screen finds no aggregate retired-PC cost above its
+base plus declared branch/page-extra capacity. That investigation aggregate
+includes **90,738 clocks of the final unverified main**, so its totals are not
+substituted for the checked cohort. The precise source bus table above and
+the checked per-call controls carry the cohort claims. Widths, branch extras,
+loop multiplicities and bank assumptions are retained, not normalized away.
+
+**Verdict:** no general SlowROM/FastROM or WRAM-6 pricing error is established
+in the checked generated/shared-model paths. A localized +6 indexed-page
+omission at `$08:8CAC` is established, but its whole source footprint is only
+12,684 clocks and predicts no hold. Unmapped legacy instruction sets and the
+448 slow-I/O groups are not an all-model per-access pairing proof; this batch
+does not claim every scalar's memory-region ownership has been certified.
+
+### Recommended next pricing batches and verified stop
+
+1. **Module09 common caller first:** bind the 43 self instructions at
+   `$02:A475..A4CC` to actual translated dispatch/scroll-save, Sprite_Main
+   call/return, restore, LinkOam and HUD call phases. Keep child bodies and
+   existing rain work separate. Prove ordinary and resumed/final-scroll-pair
+   retirements, full-model bypasses and muted previews before emitting markers.
+   Qualified estimate: **28 holds / zero FP**, 173,717,120 clocks. No per-module
+   surcharge or iteration selector; the code's actual retirement owns each price.
+2. **Collision responses:** source entries `$07:BAF4/$C59E` and outdoor
+   `$07:BEF8/$C92F`, under BA0A/C4D4. Keep the exact 82-clock stationary return
+   and current setup/child prices. Fixture all slope, doorway, carrying/hurt,
+   layer, chest, pit/deep-water and direction cases, widths and shared returns;
+   mark actual branches/loops rather than 2,046/1,916 means. The measured owner
+   difference reaches **15 holds jointly / zero FP**; caller+responses reaches
+   **41**, with the stated unresolved call mappings still requiring admission.
+3. **Small access-law correction:** `$08:8CAC` crossing selected by the actual
+   table index, in both class-2 entry forms. Prove `$40/$41/$FF`, all collision
+   categories, count/branch equality and no outside charge. **12,684 source
+   clocks / zero estimated holds / zero FP**. This fixes a concrete omission,
+   not the 4.074B systemic residual.
+4. **Independent bodies after hold-priority work:** BNC body `$05:B3CD`
+   (**one hold / zero FP**) and complete flail `$05:B468`; Arrghus orbit
+   `$1E:B6E9` is a large **176,197,812-clock** omission but predicts zero holds.
+   Preserve child math/OAM prices and prove all entry, clipping, arithmetic
+   and continuation variants. Existing water and toss behavior blockers,
+   inactive aliases and the withdrawn Moldorm family are not waived. Remaining
+   F121/E496 wrappers still total 17,955,768 clocks and reach zero inverses.
+5. **Continue the auditor before broad scalar repricing:** add independently
+   bound per-model PC/width/parent-call witnesses for the unresolved source
+   calls and 2.218B unmapped native scalar clocks. Resolve inherited RTS/JMP
+   handlers and source wrappers omitted from native paths with the ordered
+   bridge, not numeric-cost matching. No all-owner multiplier, slot tax,
+   instruction-access tax, global width correction or refresh surcharge is
+   supported by this measurement.
+
+All **35 enabled auditor tests (32 library + three binary)**, **eight disabled
+feature tests**, and **six filtered native observer tests** pass. Default,
+`--no-default-features`, and `--features rom-shadow-audit` product builds and
+enabled/disabled auditor builds are **warning-free**. The existing native
+lib-test dead-code warning class is separate; no full library suite ran.
+
+Default, feature observer-off, compact-on and raw-on runs over **35,311
+iterations** have byte-identical predictor, stdout/stderr log, routine, block,
+object and sprite files. Compact marker aggregates and per-call marker/work
+vectors reproduce the raw event stream on all **21 detailed iterations**.
+Fresh source metadata streams and all 393,848 call partitions reproduce their
+retained controls; the full native ROM prefix reproduces its retained control
+byte for byte. Both fresh live and bounded ROM census gates pass unchanged.
+
+The source is one reset-driven CPU owner; native censuses and observer replays
+are serial. The offline join uses four disjoint iteration ranges; all range
+sums merge exactly. Peak measured worker RSS is **175,439,872 bytes**; the sum
+of the four worker peak bounds is below **702 MB**, not a measured simultaneous
+512-MiB analysis-pool bound. Per-row source/native conservation, signed negative
+work, unknown mappings, source/binary/input hashes and commands are retained.
+Strict all-model per-call allocation, source suffix/EOF, native resume handoff
+and pricing admission remain unfinished. This is a verified measurement stop,
+not source/native full-CPU equivalence or exact A/V acceptance.
+
+All **1,512 protected input files** retain their file set, sizes and nanosecond
+mtimes. The maximum recorded workspace sample is **2,563,710,739 bytes**;
+after pruning build and superseded range/pilot artifacts, retained evidence is
+about **1.020 GB**, below 3 GB. Sampled guards and retention
+hashes are retained; an unobserved absolute peak is not claimed. Final
+`git diff --check` passes. No GPU execution, `--video`, cached-av, external
+Snes9x process, continuous live replay, cargo GPU test, full library suite,
+protected-cache/shared-ledger write, cargo fmt, commit or push was performed.
+Scratch orchestration stayed in `/tmp`.

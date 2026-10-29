@@ -133,6 +133,9 @@ struct Ordered {
 struct Compact {
     calls: std::collections::BTreeMap<u64,(Vec<u32>,u64)>,
     sites: std::collections::BTreeMap<(Vec<u32>,String),[u64;2]>,
+    // Generated marker identity is evidence only; scalar charges stay separate.
+    blocks: std::collections::BTreeMap<(Vec<u32>,u32,u8,Option<(bool,bool)>),[u64;2]>,
+    call_blocks: std::collections::BTreeMap<u64,std::collections::BTreeMap<(u32,u8,Option<(bool,bool)>),[u64;2]>>,
 }
 impl Compact {
     fn charge(&mut self,path:Vec<u32>,id:u64,clocks:u64,site:String) {
@@ -144,7 +147,7 @@ impl Compact {
     fn emit(&mut self,value:&serde_json::Value,out:&mut impl Write) {
         match value["event"].as_str().unwrap() {
             "begin"=>{
-                self.calls.clear();self.sites.clear();
+                self.calls.clear();self.sites.clear();self.blocks.clear();self.call_blocks.clear();
                 let mut path=Vec::new();
                 for frame in value["calls"].as_array().unwrap() {
                     path.push(frame[1].as_u64().unwrap() as u32);
@@ -160,12 +163,17 @@ impl Compact {
             }
             "end"=>{
                 let mut paths=std::collections::BTreeMap::<Vec<u32>,Vec<u64>>::new();
-                for (path,clocks) in self.calls.values() {
+                let mut call_blocks=std::collections::BTreeMap::<Vec<u32>,Vec<_>>::new();
+                for (id,(path,clocks)) in &self.calls {
                     paths.entry(path.clone()).or_default().push(*clocks);
+                    call_blocks.entry(path.clone()).or_default().push(self.call_blocks.get(id)
+                        .map(|blocks|blocks.iter().map(|((pc,kind,width),v)|(pc,kind,width,v)).collect::<Vec<_>>()).unwrap_or_default());
                 }
                 assert_eq!(self.calls.values().map(|r|r.1).sum::<u64>(),value["ledger_master"].as_u64().unwrap());
                 writeln!(out,"{}",serde_json::json!({"iteration":value["iteration"],
                     "ledger_master":value["ledger_master"],"paths":paths.into_iter().collect::<Vec<_>>(),
+                    "blocks":self.blocks.iter().map(|((path,pc,kind,width),v)|(path,pc,kind,width,v)).collect::<Vec<_>>(),
+                    "call_blocks":call_blocks.into_iter().collect::<Vec<_>>(),
                     "sites":self.sites.iter().map(|((path,site),v)|(path,site,v)).collect::<Vec<_>>()})).expect("compact audit");
             }
             // Zero-work scopes are retained when their enter event arrives.
@@ -238,6 +246,13 @@ fn ordered_charge(clocks:u64,site:&'static std::panic::Location<'static>) {
         let site=marker.map_or(site,|m|m.3);
         s.clocks+=clocks;
         if let Some(compact)=s.compact.as_mut() {
+            if let Some((pc,kind,width,_))=marker {
+                let row=compact.blocks.entry((s.calls.iter().map(|c|c.1).collect(),pc,kind,width)).or_default();
+                row[0]+=clocks;row[1]+=1;
+                let row=compact.call_blocks.entry(s.calls.last().map_or(u64::MAX,|c|c.0)).or_default()
+                    .entry((pc,kind,width)).or_default();
+                row[0]+=clocks;row[1]+=1;
+            }
             compact.charge(s.calls.iter().map(|c|c.1).collect(),
                 s.calls.last().map_or(u64::MAX,|c|c.0),clocks,
                 format!("{}:{}:{}",site.file(),site.line(),site.column()));
@@ -287,6 +302,28 @@ impl Drop for LocalScope {
 #[cfg(test)]
 mod ordered_tests {
     #[test]
+    fn compact_observation_keeps_generated_marker_identity_and_scalar_separation() {
+        let path=std::env::temp_dir().join(format!("shadow-block-summary-test-{}",std::process::id()));
+        super::ORDERED.with(|o|*o.borrow_mut()=Some(super::Ordered {
+            out:std::io::BufWriter::new(Box::new(std::fs::File::create(&path).unwrap())),active:false,
+            sequence:0,next_call:0,calls:Vec::new(),clocks:0,marker:None,model:None,range:(42,42),selected:None,
+            compact:Some(super::Compact::default()),
+        }));
+        super::iteration(Some(42));
+        let before=crate::cycle_ledger::master();super::main_begin(before);
+        {
+            let _scope=crate::cycle_ledger::routine(0x008034);
+            crate::cycle_ledger::blocks(true).block(0x008781);
+            crate::cycle_ledger::charge(17);
+        }
+        super::main_end(crate::cycle_ledger::master());
+        let value:serde_json::Value=serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(value["blocks"],serde_json::json!([[[0x8034],0x8781,0,[true,true],[52,1]]]));
+        assert_eq!(value["ledger_master"],69);
+        super::ORDERED.with(|o|*o.borrow_mut()=None);super::iteration(None);
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
     fn compact_summary_keeps_zero_calls_sites_and_exclusive_clocks() {
         use serde_json::json;
         let mut compact=super::Compact::default();let mut out=Vec::new();
@@ -299,6 +336,7 @@ mod ordered_tests {
         assert_eq!(v["iteration"],42);assert_eq!(v["ledger_master"],20);
         assert_eq!(v["paths"],json!([[[],[3]],[[0x8034],[17]],[[0x8034,0x9000],[0]]]));
         assert_eq!(v["sites"].as_array().unwrap().len(),2);
+        assert_eq!(v["blocks"],json!([]),"scalar work cannot become a block marker");
     }
     #[test]
     fn ordered_observation_preserves_sites_and_muting() {
