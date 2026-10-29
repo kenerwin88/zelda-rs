@@ -648,31 +648,65 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_44_BluesainBolt(int k) {  // 85cc65
     pub(super) fn sprite_44_bluesain_bolt(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cc65));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $05:CC65..CCD5: Active2 handler, including inline targeting and
+        // final graphics/RTS. Existing draw, guard and movement bodies excluded.
+        b.block(0x05cc65);
         self.psycho_trooper_draw(k);
+        b.block(0x05cc68);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x05cc6b);
         self.bolt_guard_trigger_chase_theme(k);
+        b.block(0x05cc6e);
         self.guard_parry_sword_attacks_far(k);
+        b.block(0x05cc72);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return;
         }
+        b.block(0x05cc75);
         if self.sprite_slot_view(k).wall_collision() == 0 {
             self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
         }
         // ROM $05:CC78 -> $05:B88D -> $06:E496
+        b.block(0x05cc78);
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        b.block(0x05cc7b);
         // $05:CC7B JSL $06:F121: complete body, caller opcode unchanged.
         self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
+        b.block(0x05cc7f);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
+            b.block(0x05cc86);
             let dir = self.sprite_direction_to_face_link(k);
+            b.block(0x05cc89);
             let value = dir;
             self.sprite_slot_view_mut(k).set_direction(value);
             let value = dir;
             self.sprite_slot_view_mut(k).set_head_direction(value);
             self.sprite_apply_speed_towards_link(k, 18);
-            self.guard_apply_speed_in_direction(k);
+            b.block(0x05cc9b);
+            let wall = self.sprite_slot_view(k).wall_collision();
+            if wall == 0 {
+                b.taken(0x05cc9e);
+                self.guard_apply_speed_in_direction(k);
+            } else {
+                b.block(0x05cca0);
+                if wall & 3 != 0 {
+                    b.block(0x05cca4);
+                    self.guard_apply_speed_in_direction(k);
+                    b.block(0x05cca7);
+                } else {
+                    b.taken(0x05cca2);
+                    b.block(0x05ccab);
+                    self.guard_apply_speed_in_direction(k);
+                }
+                b.block(0x05ccae);
+            }
         }
+        else { b.taken(0x05cc84); }
+        b.block(0x05ccba);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let j = usize::from(
             ((self.sprite_slot_view(k).subtype2() >> 1) & 7)

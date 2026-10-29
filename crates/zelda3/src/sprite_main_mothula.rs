@@ -2502,53 +2502,64 @@ impl ZeldaState {
         b.block(0x008784);
         b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
-            0 => {
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_view_mut(k).set_ai_state(1);
-                    let j = self.sprite_is_right_of_link(k).a + self.sprite_is_below_link(k).a * 2;
-                    self.sprite_slot_view_mut(k).set_direction(j);
-                    let value = (self.sprite_slot_view(k).oam_flags() & !0x40)
-                        | HOVER_OAM_FLAGS[usize::from(j)];
-                    self.sprite_slot_view_mut(k).set_oam_flags(value);
-                    // ROM Sprite_81_Hover $1E:CC6A: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
-                    let value = self.get_random_number_with_carry().masked_adc(15, 12);
-                    self.sprite_slot_view_mut(k).set_delay_main(value);
-                    self.sprite_zero_velocity_xy(k);
-                }
-            }
-            1 => {
-                let j = usize::from(self.sprite_slot_view(k).direction());
-                if self.sprite_slot_view(k).delay_main() != 0 {
-                    let value = self
-                        .sprite_slot_view(k)
-                        .x_velocity()
-                        .wrapping_add(HOVER_PRIMARY_X_ACCELERATIONS[j] as u8);
-                    self.sprite_slot_view_mut(k).set_x_velocity(value);
-                    let value = self
-                        .sprite_slot_view(k)
-                        .y_velocity()
-                        .wrapping_add(HOVER_PRIMARY_Y_ACCELERATIONS[j] as u8);
-                    self.sprite_slot_view_mut(k).set_y_velocity(value);
-                    let value = (self.sprite_slot_view(k).subtype2() >> 3) & 1;
-                    self.sprite_slot_view_mut(k).set_graphics(value);
-                } else {
-                    let value = self
-                        .sprite_slot_view(k)
-                        .x_velocity()
-                        .wrapping_add(HOVER_SECONDARY_X_ACCELERATIONS[j] as u8);
-                    self.sprite_slot_view_mut(k).set_x_velocity(value);
-                    let value = self
-                        .sprite_slot_view(k)
-                        .y_velocity()
-                        .wrapping_add(HOVER_SECONDARY_Y_ACCELERATIONS[j] as u8);
-                    self.sprite_slot_view_mut(k).set_y_velocity(value);
-                    if self.sprite_slot_view(k).y_velocity() == 0 {
-                        self.sprite_slot_view_mut(k).set_ai_state(0);
-                        self.sprite_slot_view_mut(k).set_delay_main(64);
-                    }
-                }
-            }
+            0 => self.hover_idle(k),
+            1 => self.hover_move(k),
             _ => {}
+        }
+    }
+
+    pub(super) fn hover_idle(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ecc47));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1E:CC47..CC79: idle handler and inherited RTS. Children excluded.
+        b.block(0x1ecc47);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x1ecc4c);
+            self.sprite_slot_view_mut(k).set_ai_state(1);
+            let right = self.sprite_is_right_of_link(k).a;
+            b.block(0x1ecc52);
+            let below = self.sprite_is_below_link(k).a;
+            b.block(0x1ecc57);
+            let j = right + below * 2;
+            self.sprite_slot_view_mut(k).set_direction(j);
+            let flags = (self.sprite_slot_view(k).oam_flags() & !0x40) | HOVER_OAM_FLAGS[usize::from(j)];
+            self.sprite_slot_view_mut(k).set_oam_flags(flags);
+            // $1E:CC6A JSL RNG; CC70 ADC consumes its actual carry-out.
+            let random = self.get_random_number_with_carry();
+            b.block(0x1ecc6e);
+            self.sprite_slot_view_mut(k).set_delay_main(random.masked_adc(15, 12));
+            self.sprite_zero_velocity_xy(k);
+        } else { b.taken(0x1ecc4a); }
+        b.block(0x1ecc78);
+    }
+
+    pub(super) fn hover_move(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ecc89));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1E:CC89..CCD3: both velocity/graphics branches and actual RTS.
+        b.block(0x1ecc89);
+        let j = usize::from(self.sprite_slot_view(k).direction());
+        if self.sprite_slot_view(k).delay_main() != 0 {
+            b.block(0x1ecc8e);
+            let value = self.sprite_slot_view(k).x_velocity().wrapping_add(HOVER_PRIMARY_X_ACCELERATIONS[j] as u8);
+            self.sprite_slot_view_mut(k).set_x_velocity(value);
+            let value = self.sprite_slot_view(k).y_velocity().wrapping_add(HOVER_PRIMARY_Y_ACCELERATIONS[j] as u8);
+            self.sprite_slot_view_mut(k).set_y_velocity(value);
+            let value = (self.sprite_slot_view(k).subtype2() >> 3) & 1;
+            self.sprite_slot_view_mut(k).set_graphics(value);
+        } else {
+            b.taken(0x1ecc8c);
+            b.block(0x1eccb1);
+            let value = self.sprite_slot_view(k).x_velocity().wrapping_add(HOVER_SECONDARY_X_ACCELERATIONS[j] as u8);
+            self.sprite_slot_view_mut(k).set_x_velocity(value);
+            let value = self.sprite_slot_view(k).y_velocity().wrapping_add(HOVER_SECONDARY_Y_ACCELERATIONS[j] as u8);
+            self.sprite_slot_view_mut(k).set_y_velocity(value);
+            if self.sprite_slot_view(k).y_velocity() == 0 {
+                b.block(0x1eccca);
+                self.sprite_slot_view_mut(k).set_ai_state(0);
+                self.sprite_slot_view_mut(k).set_delay_main(64);
+            } else { b.taken(0x1eccc8); }
+            b.block(0x1eccd2);
         }
     }
 

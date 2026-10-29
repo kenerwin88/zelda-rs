@@ -327,16 +327,27 @@ impl ZeldaState {
     //   tmp_counter = -1;
     // }
     pub(super) fn helmasaur_fireball_tri_split(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1deed3));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1D:EED3..EF2D: tri-split tail, including actual
+        // spawn success/failure loops and RTS. Child bodies stay separate.
+        b.block(0x1deed3);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
+        b.block(0x1deed9);
         self.sprite_slot_view_mut(k).clear();
         let random = self.get_random_number();
+        b.block(0x1deee5);
         self.sprite_workspace_mut().set_shared_scratch_a(random);
         for i in (0..=2usize).rev() {
+            b.block(0x1deee8);
             let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0x70, &mut info);
+            b.block(0x1deeee);
             if j >= 0 {
+                b.block(0x1deef0);
                 let j = j as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
+                b.block(0x1deef4);
                 let delay = HELMASAUR_FIREBALL_TRI_SPLIT_DELAYS
                     [((self.game_state.sprites.workspace.shared_scratch_a() & 3) as usize) + i];
                 let mut sprite = self.sprite_slot_view_mut(j);
@@ -347,8 +358,11 @@ impl ZeldaState {
                 sprite.set_delay_main(delay);
                 sprite.set_head_direction(0);
                 sprite.set_graphics(1);
-            }
+            } else { b.taken(0x1deeee); }
+            b.block(0x1def27);
+            if i != 0 { b.taken(0x1def2a); }
         }
+        b.block(0x1def2c);
         self.temp_counter_mut().set(0xff);
     }
 
@@ -371,21 +385,34 @@ impl ZeldaState {
     //   tmp_counter = -1;
     // }
     pub(super) fn helmasaur_fireball_quad_split(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1def3d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1D:EF3D..EF76: quad-split tail, including actual
+        // spawn success/failure loops and RTS. Child bodies stay separate.
+        b.block(0x1def3d);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
+        b.block(0x1def43);
         self.sprite_slot_view_mut(k).clear();
         for i in (0..=3usize).rev() {
+            b.block(0x1def4b);
             let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0x70, &mut info);
+            b.block(0x1def51);
             if j >= 0 {
+                b.block(0x1def53);
                 let j = j as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
+                b.block(0x1def57);
                 let mut sprite = self.sprite_slot_view_mut(j);
                 sprite.set_x_velocity(HELMASAUR_FIREBALL_QUAD_SPLIT_X_VELOCITIES[i] as u8);
                 sprite.set_y_velocity(HELMASAUR_FIREBALL_QUAD_SPLIT_Y_VELOCITIES[i] as u8);
                 sprite.set_ai_state(4);
                 sprite.set_ignore_projectile(4);
-            }
+            } else { b.taken(0x1def51); }
+            b.block(0x1def70);
+            if i != 0 { b.taken(0x1def73); }
         }
+        b.block(0x1def75);
         self.temp_counter_mut().set(0xff);
     }
 

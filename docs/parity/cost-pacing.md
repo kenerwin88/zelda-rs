@@ -17518,3 +17518,184 @@ No GPU, video, cached-av, external Snes9x, continuous live or seeded live census
 full library suite, protected-cache/shared-ledger write, cargo fmt, commit
 or push was performed. Scratch orchestration stayed in `/tmp`. These are CPU
 accounting/regression receipts, not exact A/V acceptance.
+
+
+## Bypass pricing 6
+
+**Verified partial CPU-only stop on `codex/bypass6`, base `301a69ff`.**
+Evidence: `target/bypass6/`. The one final unsharded **full-v2 ROM-answer
+census** completes **1,473,123 ordered iterations and EOF**, using
+`--report 0 --seed-every 2000`. Its unchanged census gate **PASSes,
+unexplained 0**; ROM excess/zero-lag FP remain **0/0**, and every runtime
+hold equals P2.
+
+Missing holds fall **2,410 → 2,398**: **12 restored, 0 lost, 0 newly missing iterations**.
+
+| Inclusive iteration window | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,410 | **2,398** |
+| 0..94,852 | 79 | **79** |
+| 94,853..142,086 | 36 | **36** |
+| 142,087..461,988 | 376 | **371** |
+| 461,989..1,473,122 | 1,919 | **1,912** |
+
+The before ROM column reuses Bypass 5's retained full predictor, whose runtime
+bindings match this clean base byte for byte (`baseline-source-identity.json`).
+`counts.json` binds both complete predictor hashes and the hold-change matrix
+retains all gains and losses. The independently verified source prefix still
+ends at **461,775**; the reporting window ending 461,988 does not extend it.
+Missing holds within **0..461,775** change **491 →
+486**. On Diagnostic 2's same **393,848 ordinary
+source-entry rows**, signed main-instruction deficit changes
+**3,461,747,864 → 3,387,739,792 master clocks**, with
+**74,008,072** added native instruction clocks. This is a signed
+counter comparison, not full opcode pairing or source suffix/EOF proof.
+
+### Live-lane diagnosis completed before pricing
+
+Both commits were built from their own source and run serially from iteration zero, with the unmodified full-v2 ledger, `--report 0 --seed-every 2000 --live-apu-reads`. Both complete 1,473,123 ordered iterations and EOF, runtime holds equal P2, and both unchanged census gates PASS with unexplained zero. These are seeded logical results, not continuous live or exact A/V acceptance.
+
+| Commit | Missing | Excess holds | Zero-lag FP iterations |
+| --- | ---: | ---: | ---: |
+| `8b3cdcbb` | 2,677 | 252 | 72 |
+| `301a69ff` | 2,807 | 369 | 82 |
+
+Gained **135 excess holds on 17 iterations**, offset by **18 removed excess holds on 5 iterations**. 15 iterations become false positives and 5 cease being false positives.
+
+| Song-poll / seed-lineage cluster | Gained excess | Removed excess | Net |
+| --- | ---: | ---: | ---: |
+| 380,880 (new; then fresh seed 382,000) | 90 | 0 | +90 |
+| 462,626 → 462,627 | 13 | 13 | 0 |
+| 627,255 (new; then fresh seed 628,000) | 27 | 0 | +27 |
+| 881,732 → 881,733 | 5 | 5 | 0 |
+| Total | 135 | 18 | +117 |
+
+**21 of 22 changed excess rows, including every FP change, have zero ROM-answer main-work delta.** At 383,634, the delta is exactly **622 clocks**, separately checked below. The control ROM predictors are the retained full Bypass-4 and Bypass-5 receipts, hash-bound in `live-summary.json`; they are not repeated ROM censuses. The source module/substage below is independently recovered from full-v2 opening post-NMI XOR images. Separate VWF, raster/handler/model fields, source APU reads and actual seed lineage are retained per row in `live-changes.json`.
+
+| Iteration | Source module/substage | Source lag | Live holds before → after | Main clocks before → after | Excess Δ | FP change | ROM main Δ | Song-poll phase / seed witness |
+| --- | --- | ---: | --- | --- | ---: | --- | ---: | --- |
+| 380,945 | `07/18` | 0 | 0 → 1 | 143,774 → 611,068 | +1 | gained | +0 | before 142,087; after 380,880; last seeds 0 → 0 |
+| 380,955 | `07/18` | 0 | 0 → 4 | 190,426 → 1,239,906 | +4 | gained | +0 | before 142,087; after 380,880; last seeds 0 → 0 |
+| 381,425 | `07/00` | 0 | 0 → 8 | 66,266 → 1,933,944 | +8 | gained | +0 | before 142,087; after 380,880; last seeds 0 → 0 |
+| 383,178 | `07/00` | 0 | 0 → 7 | 63,738 → 1,677,070 | +7 | gained | +0 | before 142,087; after 380,880; last seeds 0 → 382,000 |
+| 383,346 | `0E/02` | 0 | 0 → 7 | 59,494 → 1,674,242 | +7 | gained | +0 | before 142,087; after 380,880; last seeds 0 → 382,000 |
+| 383,634 | `10/00` | 1 | 1 → 59 | 205,268 → 13,894,540 | +58 | — | +622 | before 142,087; after 380,880; last seeds 0 → 382,000; source APU reads |
+| 383,635 | `10/01` | 1 | 1 → 6 | 216,984 → 1,568,688 | +5 | — | +0 | before 142,087; after 380,880; last seeds 0 → 382,000; source APU reads |
+| 462,698 | `07/18` | 0 | 1 → 0 | 617,742 → 146,488 | -1 | removed | +0 | before 462,626; after 462,627; last seeds 0 → 383,636 |
+| 462,699 | `07/18` | 0 | 0 → 1 | 86,136 → 613,662 | +1 | gained | +0 | before 462,626; after 462,627; last seeds 0 → 383,636 |
+| 462,708 | `07/18` | 0 | 4 → 0 | 1,243,582 → 193,488 | -4 | removed | +0 | before 462,626; after 462,627; last seeds 0 → 383,636 |
+| 462,709 | `07/18` | 0 | 0 → 4 | 68,296 → 1,246,238 | +4 | gained | +0 | before 462,626; after 462,627; last seeds 0 → 383,636 |
+| 463,178 | `07/00` | 0 | 8 → 0 | 1,984,746 → 73,420 | -8 | removed | +0 | before 462,626; after 462,627; last seeds 0 → 383,636 |
+| 463,179 | `07/00` | 0 | 0 → 8 | 124,746 → 1,984,588 | +8 | gained | +0 | before 462,626; after 462,627; last seeds 0 → 383,636 |
+| 627,316 | `07/18` | 0 | 0 → 1 | 147,486 → 614,120 | +1 | gained | +0 | before 462,626; after 627,255; last seeds 464,000 → 464,000 |
+| 627,326 | `07/18` | 0 | 0 → 4 | 193,946 → 1,245,348 | +4 | gained | +0 | before 462,626; after 627,255; last seeds 464,000 → 464,000 |
+| 627,799 | `07/00` | 0 | 0 → 8 | 74,598 → 1,894,846 | +8 | gained | +0 | before 462,626; after 627,255; last seeds 464,000 → 464,000 |
+| 629,327 | `0E/02` | 0 | 0 → 7 | 66,272 → 1,684,212 | +7 | gained | +0 | before 462,626; after 627,255; last seeds 464,000 → 628,000 |
+| 629,458 | `07/00` | 0 | 0 → 7 | 70,912 → 1,681,384 | +7 | gained | +0 | before 462,626; after 627,255; last seeds 464,000 → 628,000 |
+| 881,793 | `07/18` | 0 | 1 → 0 | 618,206 → 151,752 | -1 | removed | +0 | before 881,732; after 881,733; last seeds 464,000 → 629,845 |
+| 881,794 | `07/18` | 0 | 0 → 1 | 86,208 → 618,206 | +1 | gained | +0 | before 881,732; after 881,733; last seeds 464,000 → 629,845 |
+| 881,803 | `07/18` | 0 | 4 → 0 | 1,248,790 → 198,032 | -4 | removed | +0 | before 881,732; after 881,733; last seeds 464,000 → 629,845 |
+| 881,804 | `07/18` | 0 | 0 → 4 | 70,070 → 1,244,864 | +4 | gained | +0 | before 881,732; after 881,733; last seeds 464,000 → 629,845 |
+
+At 383,634 (`10/00`), ROM main is **205,268 → 205,890 (+622)**, raster wait **51,442 → 50,730**, and runtime/P2 holds remain **1 → 1**. The new work is one exact initialization prefix: **62 at 06864D + 146 at 068651 + 52 at 008781 + 314 at 008784 + 48 at 008799 = 622**. The child properties body is excluded. `live-rom-383634-markers.json` binds the native marker receipt; The Bypass-5 ordered unmodified-ROM initialization fixtures validate these exact instruction ranges and child exclusion. The retained Diagnostic-2 call-detail stream is ordinary-gameplay-only, so it supplies no source call-occurrence witness for this nonordinary `10/00` row. That limitation remains explicit. Its live main grows **205,268 → 13,894,540**, a different upload/seed path after the earlier 380,880 disagreement and fresh seed 382,000. Thus the requested all-zero ROM check has this explicit valid-price exception; it is not silently asserted to pass.
+
+Song-end disagreement lists (native `$00`, source `$13` for each retained witness):
+
+- before: 142,087, 462,626, 881,732.
+- after: 142,087, 380,880, 462,627, 627,255, 881,733.
+
+The unchanged crystal poll at `$08:C606..C610` (`ancilla_receipt_after_sparkle`) takes the rising-crystal path on zero and continues receipt animation on nonzero. Changed carried SPC/APU phase therefore moves reward, dialogue and screen-load work between logical iterations, including iterations with no local song-end read. Upload acknowledgement reads remain separate source evidence. The detailed before/after phase clusters account for the whole excess change; all FP rows and every other excess row except the 622-clock initialization witness have identical ROM-answer main instruction work. Source seed lineage also changes after the new disagreements: 382,000 and 628,000 are fresh after-run seeds absent in the before lineage. Those reset-dependent load/upload paths are reported explicitly, not described as uninterrupted execution of the preceding SPC owner.
+
+**No wrong new Bypass-5 marker is identified.** Its retained source-work/fixture receipts remain the pricing evidence. Removing a valid local price would hide the carried live phase effect. This diagnosis does not prove SPC synchronization, continuous-live acceptance, full-source suffix/EOF or exact A/V. No marker is altered or withdrawn by this live study.
+
+### Instruction ownership and retirement
+
+**177 generated blocks / 624 source instructions**
+come only from `scripts/rom_block_costs.py`. All **3,606 previous
+rows remain byte-unchanged**; all **3,783 rows** regenerate exactly.
+Every new family called from another priced routine has its own lagless
+`cycle_ledger::routine(entry)` scope; EDE3 retains its existing independent
+scope. Callers' existing self-work fixtures are repeated. The selected self
+bodies had no legacy `charge(N)` scalar to retain or replace. Existing dispatch,
+setup, child and double-return prices are unchanged. No fitted lag count,
+per-scene table/multiplier/threshold, exception or classifier change is added.
+
+| Source range, end exclusive | Newly priced retirement |
+| --- | --- |
+| `$06:F8A2..F917`, including F8C9 alias | Actual type/delay/pose branches, poof/active/scatter call opcodes and reached returns; death/drop children excluded. |
+| `$06:DFFA..E02A`, `$06:E2B6..E341` | Complete-entry stunned prefix, ripple JSL/fallthrough alias, independently scoped drawing/timer/sparkle body and actual returns. Second interaction entry skips the prefix. |
+| `$06:8543..8548`, `$1D:FF5B..FFBD` | Burn near bounce and complete far body, saved pose/allocation stores, draw/death/active calls and true epilogues. |
+| `$06:859C..864D` | Both drown bodies, actual allocation/draw/pause/movement call boundaries, OAM flags/characters, landing and returns. Other callers of its shared 8612 alias remain unpriced. |
+| `$05:CC65..CCD5` | Active2 Bluesain Bolt caller, inline direction/wall branch, animation and inherited RTS; existing children excluded. |
+| `$1D:EDE3..EECD`, `$EED3..EF2D`, `$EF3D..EF76` | Caller-70 body, early returns, all five states, tri/quad split success/failure loops and their real returns. Old bounce/far wrappers unchanged. |
+| `$1E:A982..AA4B` | Active3 Bumper caller and all sixteen scan slots, real phase/z/state/flag/coordinate branches and inherited RTS. |
+| `$1E:CC47..CC79`, `$CC89..CCD3` | Both Hover state handlers and their actual inherited returns, beneath the already priced prefix/local dispatch. |
+
+Markers retire before/after their actual child calls; clipped, inactive and
+recoil exits skip subsequent work. Direct E2BA aliases never acquire the
+E2B6 ripple call. Shared fallthrough scopes fence instructions without
+inventing another ROM call opcode. Fireball EE5D and Bumper AA45 SEP are
+separately bounded: their cost is independent of incoming M8/M16, and fixtures
+exercise both source paths. REP/SEP and wide arithmetic remain explicit;
+normal slot/direction/table indices stay within their annotated pages.
+
+`outside-charge-certificate.json` records the reviewed instruction exclusions,
+entry/alias/continuation limits and source hashes. `source-call-signatures.json`
+retains source frame membership, widths/counts and full signatures. Ordered
+unmodified-ROM fixtures separately retain actual PCs, stack, DB/status,
+JSL/PLY/JMP and RTS-dispatch edges plus child/return paths. These are local
+ownership and fixture receipts, not renewal of M3b's narrow auditor admission
+certificate or route-wide source/native retirement equivalence.
+
+On every ordinary prefix row, new marker work equals actual main-counter
+growth. Observer path sums reconcile with the independent ledger, and ledger
+plus separate VWF equals the predictor: **zero counter/marker mismatches**.
+`prefix-proof.json` and compressed per-row additions preserve that check.
+
+| Added ordinary-prefix work | Master clocks |
+| --- | ---: |
+| death_handler | 13,960,216 |
+| stunned_prefix | 1,151,064 |
+| freeze_alias | 165,044 |
+| stunned_draw | 1,375,540 |
+| drown | 2,764,684 |
+| bumper | 43,037,592 |
+| bluesain_bolt | 3,971,474 |
+| fireball_body | 2,994,662 |
+| fireball_tri | 8,298 |
+| fireball_quad | 18,816 |
+| hover_idle | 1,197,580 |
+| hover_move | 3,363,102 |
+
+### Verification and remaining work
+
+All **11 new tests** pass, including **4,533 unmodified-ROM comparisons**
+(the five ordered whole-caller traces are counted separately from the fixture
+case counters). They exercise both slots, dispatch and inherited aliases,
+actual branches and returns, source widths, clipping/pause/recoil, timer and
+coordinate boundaries, spawn success/failure and complete scans.
+
+Existing targeted groups pass: **7 mothula**, **39 prep**, **216 drawing**, **79 runtime-sprites**, **16 sprite-main-callers**, **9 guard**, **9 helmasaur**, **119 sprite**. These filtered groups overlap; no full library suite ran.
+
+Default, no-default-feature and observer-enabled product builds are
+**warning-free**. Lib-test compilation retains the existing dead-code warning
+class, separate from product builds. Nine Python generator/worklist tests,
+exact table regeneration and `git diff --check` pass. The default
+**200,000-frame state ledger matches all records and EOF**. Default and
+ROM-timing paths retain their existing prices. Protected input file sets,
+sizes and nanosecond mtimes remain unchanged; frozen runtime/binary identities,
+commands, logs and disk samples bind this uncommitted stop. Retained
+`target/bypass6` output stays below **3 GB**.
+
+This is a partial stop. Remaining inherited 8781/state/death/drop/stunned
+landing and caller aliases, other Active2/3 handlers, Hog Spear's staged
+increment/graphics child, BNC body/flail and Arrghus orbit remain unpriced.
+The whole Poof E393..E416 family was withdrawn before the census: its full fixture reaches the existing unsupported PrepareEnemyDrop(0x0D) native child and panics beyond the D8..E6 prize table. Its new self-price/scope, generated ranges and fixture were removed intact; original behavior is preserved. `withdrawn-poof/` retains the candidate patch, initial test log and reason. No source-path price exception was added. The death fixture now respects Lanmola trail slots 0..3, and Hover fixtures replay the actual source RNG result/carry. No product behavior or price was changed to satisfy those setup corrections. The source suffix
+461,776..1,473,122, source EOF and the suspended-CPU handoff STOP remain
+unverified. These results are CPU accounting/regression evidence, not exact
+A/V acceptance.
+
+Only the explicitly allowed paired seeded live census was run, before pricing.
+No continuous live replay, GPU execution, video, cached-av, external Snes9x,
+full library suite, protected cache/shared-ledger write, cargo fmt, commit or
+push was used. Scratch programs stayed in `/tmp`.

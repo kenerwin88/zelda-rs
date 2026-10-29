@@ -1028,59 +1028,93 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_death_main_ex(&mut self, k: usize, second_entry: bool) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f8a2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:F8A2..F917: death handler and F8C9 alias. DoTheDeath,
+        // scatter, poof and active children own their bodies and returns.
         if !second_entry {
+            b.block(0x06f8a2);
             let type_ = self.sprite_slot_view(k).sprite_type();
             if type_ == 0xec {
+                b.block(0x06f8a9);
                 self.throwable_scenery_scatter_into_debris(k);
+                b.block(0x06f8ac);
                 return;
             }
-            if type_ == 0x53
-                || type_ == 0x54
-                || type_ == 0x92
-                || (type_ == 0x4a && self.sprite_slot_view(k).c() >= 2)
-            {
+            b.taken(0x06f8a7);
+            b.block(0x06f8ad);
+            let active = if type_ == 0x53 { b.taken(0x06f8af); true }
+                else {
+                    b.block(0x06f8b1);
+                    if type_ == 0x54 { b.taken(0x06f8b3); true }
+                    else {
+                        b.block(0x06f8b5);
+                        if type_ == 0x92 { b.taken(0x06f8b7); true }
+                        else {
+                            b.block(0x06f8b9);
+                            if type_ != 0x4a { b.taken(0x06f8bb); false }
+                            else {
+                                b.block(0x06f8bd);
+                                if self.sprite_slot_view(k).c() >= 2 {
+                                    b.taken(0x06f8c2); true
+                                } else { false }
+                            }
+                        }
+                    }
+                };
+            if active {
+                b.block(0x06f913);
                 self.sprite_active_main_jsr(k);
+                b.block(0x06f916);
                 return;
             }
+            b.block(0x06f8c4);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                b.taken(0x06f8c7);
                 self.sprite_do_the_death(k);
                 return;
             }
         }
+        b.block(0x06f8c9);
         if sign8(self.sprite_slot_view(k).flags3()) {
+            b.taken(0x06f8cc);
+            b.block(0x06f913);
             self.sprite_active_main_jsr(k);
+            b.block(0x06f916);
             return;
         }
+        b.block(0x06f8ce);
         if ((self.game_state.frame.frame_counter & 3)
-            | self.game_state.frame.submodule
-            | self.game_state.frame.modal_pause_flag)
-            == 0
+            | self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
         {
+            b.block(0x06f8d9);
             let value = self.sprite_slot_view(k).delay_main().wrapping_add(1);
             self.sprite_slot_view_mut(k).set_delay_main(value);
-        }
-        // ROM $06:F8DC JSR $FB2A.
+        } else { b.taken(0x06f8d7); }
+        b.block(0x06f8dc);
         self.sprite_death_draw_poof_marked(k);
-
-        if self.sprite_slot_view(k).sprite_type() != 0x40
-            && self.sprite_slot_view(k).delay_main() < 10
-        {
-            return;
+        b.block(0x06f8df);
+        if self.sprite_slot_view(k).sprite_type() == 0x40 { b.taken(0x06f8e4); }
+        else {
+            b.block(0x06f8e6);
+            if self.sprite_slot_view(k).delay_main() < 10 {
+                b.taken(0x06f8eb);
+                b.block(0x06f912);
+                return;
+            }
         }
+        b.block(0x06f8ed);
         let oam = self.game_state.oam.current_pointer().wrapping_add(16);
-        let ext = self
-            .game_state
-            .oam
-            .current_extended_pointer()
-            .wrapping_add(4);
+        let ext = self.game_state.oam.current_extended_pointer().wrapping_add(4);
         self.oam_state_mut().set_current_pointer(oam);
         self.oam_state_mut().set_current_extended_pointer(ext);
         let bak = self.sprite_slot_view(k).flags2();
-        let value = self.sprite_slot_view(k).flags2().wrapping_sub(4);
+        let value = bak.wrapping_sub(4);
         self.sprite_slot_view_mut(k).set_flags2(value);
         self.sprite_active_main_jsr(k);
-        let value = bak;
-        self.sprite_slot_view_mut(k).set_flags2(value);
+        b.block(0x06f90e);
+        self.sprite_slot_view_mut(k).set_flags2(bak);
+        b.block(0x06f912);
     }
 
     // void Sprite_DoTheDeath(int k) {  // 86f923
@@ -1317,13 +1351,31 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_module_burn(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x068543));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:8543..8548: state-7 JSL bounce and inherited RTS.
+        b.block(0x068543);
+        self.sprite_module_burn_body(k);
+        b.block(0x068547);
+    }
+
+    fn sprite_module_burn_body(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dff5b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1D:FF5B..FFBD: far burn body including PHB/PLB/RTL, not
+        // Flame_Draw, SpriteDeath_Func1 or active-wrapper child bodies.
+        b.block(0x1dff5b);
         let value = 0;
         self.sprite_slot_view_mut(k).set_hit_timer(value);
         let j = i16::from(self.sprite_slot_view(k).delay_main()) - 1;
         if j == 0 {
+            b.block(0x1dff67);
             self.sprite_do_the_death(k);
+            b.block(0x1dff6b);
             return;
         }
+        b.taken(0x1dff65);
+        b.block(0x1dff6d);
         let bak_graphics = self.sprite_slot_view(k).graphics();
         let bak_oam = self.sprite_slot_view(k).oam_flags();
         let value = SPRITE_MODULE_BURN_FLAME_GFX[(j >> 3) as usize];
@@ -1331,6 +1383,7 @@ impl ZeldaState {
         let value = 3;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.flame_draw(k);
+        b.block(0x1dff8b);
         let value = bak_oam;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         let value = bak_graphics;
@@ -1344,13 +1397,16 @@ impl ZeldaState {
         self.oam_state_mut().set_current_pointer(next_oam);
         self.oam_state_mut().set_current_extended_pointer(next_ext);
         if self.sprite_slot_view(k).delay_main() >= 0x10 {
+            b.block(0x1dffaa);
             let bak = self.sprite_slot_view(k).flags2();
             let value = self.sprite_slot_view(k).flags2().wrapping_sub(2);
             self.sprite_slot_view_mut(k).set_flags2(value);
             self.sprite_active_main_long(k);
+            b.block(0x1dffb7);
             let value = bak;
             self.sprite_slot_view_mut(k).set_flags2(value);
-        }
+        } else { b.taken(0x1dffa8); }
+        b.block(0x1dffbb);
     }
 
     // void SpriteModule_Poof(int k) {  // 86e393
@@ -1403,70 +1459,106 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_module_drown(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06859c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:859C..864D: both drowning handlers and actual returns.
+        // OAM allocation/drawing, pause, movement and draw-multiple are children.
+        b.block(0x06859c);
         if self.sprite_slot_view(k).ai_state() != 0 {
+            b.block(0x0685a1);
             if self.sprite_slot_view(k).a() == 6 {
+                b.block(0x0685a8);
                 self.oam_allocate_from_region_c(8);
             }
+            else { b.taken(0x0685a6); }
+            b.block(0x0685ae);
             self.sprite_slot_view_mut(k).xor_flags3(16);
             self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
+            b.block(0x0685b9);
             let oam = self.game_state.oam.current_pointer_usize();
             let j = self.sprite_slot_view(k).delay_main();
             if j == 1 {
+                b.block(0x0685cd);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
             }
+            else { b.taken(0x0685cb); }
+            b.block(0x0685d0);
             if j != 0 {
+                b.block(0x0685d5);
+                b.block(0x0685df);
+                b.taken(0x0685ee);
                 self.oam_state_mut().set_entry_char(
                     oam,
                     SPRITE_MODULE_DROWN_OAM_CHARS[usize::from((j >> 1).min(10))],
                 );
                 self.oam_state_mut().set_entry_flags(oam, 0x24);
+                b.block(0x06861a);
                 return;
             }
+            b.taken(0x0685d3);
+            b.block(0x0685df);
             self.oam_state_mut().set_entry_char(oam, 0x8a);
             let flags = SPRITE_MODULE_DROWN_OAM_FLAGS
                 [usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 3)]
                 | 0x24;
             self.oam_state_mut().set_entry_flags(oam, flags);
+            b.block(0x0685f0);
             if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
                 return;
             }
+            b.block(0x0685f3);
             self.sprite_slot_view_mut(k).increment_subtype2();
             // $06:85F6 JSR $06:E92C: complete body, caller opcode unchanged.
             self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
             // ROM $06:85F9
+            b.block(0x0685f9);
             self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
+            b.block(0x0685fc);
             let value = self.sprite_slot_view(k).z_velocity().wrapping_sub(2);
             self.sprite_slot_view_mut(k).set_z_velocity(value);
             if sign8(self.sprite_slot_view(k).z()) {
+                b.block(0x06860a);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_z(value);
                 let value = 18;
                 self.sprite_slot_view_mut(k).set_delay_main(value);
                 self.sprite_slot_view_mut(k).and_flags3(!0x10);
             }
+            else { b.taken(0x068608); }
+            b.block(0x06861a);
         } else {
+            b.taken(0x06859f);
+            b.block(0x06861b);
             if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
                 return;
             }
+            b.block(0x06861e);
             if self.game_state.frame.frame_counter & 1 == 0 {
+                b.block(0x068624);
                 let value = self.sprite_slot_view(k).delay_main().wrapping_add(1);
                 self.sprite_slot_view_mut(k).set_delay_main(value);
             }
+            else { b.taken(0x068622); }
+            b.block(0x068627);
             let value = 0;
             self.sprite_slot_view_mut(k).set_oam_flags(value);
             let value = 0;
             self.sprite_slot_view_mut(k).set_hit_timer(value);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                b.block(0x068635);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
             }
+            else { b.taken(0x068633); }
+            b.block(0x068638);
             let base =
                 usize::from(((self.sprite_slot_view(k).delay_main() << 1) & 0xf8) >> 2).min(6);
             self.sprite_draw_multiple(
                 k,
                 &SPRITE_MODULE_DROWN_DROWN_DRAW_FRAMES[base..base + 2],
             );
+            b.block(0x06864c);
         }
     }
 
@@ -1864,35 +1956,61 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_stunned_main_ex(&mut self, k: usize, second_entry: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:DFFA..E02A: complete-entry prefix only; E02A/E041 shared
+        // interaction/landing tails stay separate. The second entry skips it.
         if !second_entry {
-            self.sprite_draw_ripple_if_in_water(k);
-            self.sprite_stunned_main_func1(k);
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dffa));
+            b.block(0x06dffa);
+            {
+                // $06:E2B6 JSL ripple; E2BA is an inherited body alias.
+                let _freeze = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e2b6));
+                b.block(0x06e2b6);
+                self.sprite_draw_ripple_if_in_water(k);
+                self.sprite_stunned_main_func1(k);
+            }
+            b.block(0x06dffd);
             if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
                 return;
             }
+            b.block(0x06e000);
             if self.sprite_slot_view(k).f() != 0 {
+                b.block(0x06e005);
                 if sign8(self.sprite_slot_view(k).f()) {
+                    b.block(0x06e007);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_f(value);
                 }
+                else { b.taken(0x06e005); }
+                b.block(0x06e00a);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
             }
+            else { b.taken(0x06e003); }
+            b.block(0x06e00d);
             if self.sprite_slot_view(k).delay_main() < 0x20 {
+                b.block(0x06e014);
                 self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
             }
+            else { b.taken(0x06e012); }
+            b.block(0x06e017);
             if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
                 return;
             }
+            b.block(0x06e01a);
             self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+            b.block(0x06e01d);
             if self.sprite_slot_view(k).e() == 0 {
+                b.block(0x06e022);
                 self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                b.block(0x06e025);
                 if self.sprite_slot_view(k).state() == 0 {
+                    b.taken(0x06e028);
                     return;
                 }
-            }
+            } else { b.taken(0x06e020); }
         }
 
         if (second_entry || self.sprite_slot_view(k).e() == 0)
@@ -2005,45 +2123,74 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_stunned_main_func1(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e2ba));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $06:E2BA..E341: selected stunned drawing/timer handler. Actual
+        // call opcodes only; active, RNG, sparkle and MoveX children excluded.
+        b.block(0x06e2ba);
         self.sprite_active_main_jsr(k);
+        b.block(0x06e2bd);
         if self.sprite_slot_view(k).draw_work_byte_5() != 0 {
+            b.block(0x06e2c3);
             if self.sprite_slot_view(k).delay_main() < 32 {
+                b.block(0x06e2ca);
                 let value = (self.sprite_slot_view(k).oam_flags() & 0xf1) | 4;
                 self.sprite_slot_view_mut(k).set_oam_flags(value);
             }
+            else { b.taken(0x06e2c8); }
+            b.block(0x06e2d4);
             let t = (((k as u8) << 4) ^ self.game_state.frame.frame_counter)
                 | self.game_state.frame.submodule;
             let mask = SPRITE_STUNNED_MAIN_FUNC1_SPRITE_STUNNED_MAIN_FUNC1_MASKS
                 [usize::from(self.sprite_slot_view(k).delay_main() >> 4)];
             if t & mask != 0 {
+                b.taken(0x06e2e8);
+                b.block(0x06e310);
                 return;
             }
+            b.block(0x06e2ea);
+            let rx = self.get_random_number();
+            b.block(0x06e2ee);
             let x = SPRITE_STUNNED_MAIN_FUNC1_SPARKLE_GARNISH_XY
-                [usize::from(self.get_random_number() & 3)] as i16 as u16;
+                [usize::from(rx & 3)] as i16 as u16;
+            let ry = self.get_random_number();
+            b.block(0x06e2ff);
             let y = SPRITE_STUNNED_MAIN_FUNC1_SPARKLE_GARNISH_XY
-                [usize::from(self.get_random_number() & 3)] as i16 as u16;
+                [usize::from(ry & 3)] as i16 as u16;
             self.sprite_garnish_spawn_sparkle(k, x, y);
+            b.block(0x06e310);
             return;
         }
 
+        b.taken(0x06e2c1);
+        b.block(0x06e311);
         if (self.game_state.frame.frame_counter & 1)
             | self.game_state.frame.submodule
             | self.game_state.frame.modal_pause_flag
             != 0
         {
+            b.taken(0x06e31a);
+            b.block(0x06e334);
             return;
         }
+        b.block(0x06e31c);
         let t = self.sprite_slot_view(k).stunned();
         if t != 0 {
+            b.block(0x06e321);
             let value = self.sprite_slot_view(k).stunned().wrapping_sub(1);
             self.sprite_slot_view_mut(k).set_stunned(value);
             if t < 0x38 {
+                b.block(0x06e328);
                 let value = if (t & 1) != 0 { (-8i8) as u8 } else { 8 };
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
                 self.sprite_move_x(k, SpriteMoveEntry::Unpriced);
             }
+            else { b.taken(0x06e326); }
+            b.block(0x06e334);
             return;
         }
+        b.taken(0x06e31f);
+        b.block(0x06e335);
         let value = 9;
         self.sprite_slot_view_mut(k).set_state(value);
         let value = 0;

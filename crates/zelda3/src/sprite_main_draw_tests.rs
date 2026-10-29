@@ -5190,3 +5190,402 @@ fn bypass5_new_families_are_muted() {
     });
     assert_eq!(crate::cycle_ledger::master(), before);
 }
+#[test]
+fn bypass6_death_handler_and_alias_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 1, 2, 3, 15] {
+        for (ty, c, flags, delay) in [(0x0c, 0, 0, 0), (0x0c, 0, 0, 1),
+            (0x0c, 0, 0, 9), (0x0c, 0, 0, 10), (0x0c, 0, 0x80, 12),
+            (0x40, 0, 0, 1), (0x4a, 1, 0, 8), (0x4a, 2, 0, 8),
+            (0x53, 0, 0, 12), (0x54, 0, 0, 12), (0x92, 0, 0, 12),
+            (0xec, 0, 0, 12)] {
+            // Lanmola's four 64-byte trail heads are slots 0..3. Slot 15
+            // is outside that child contract; other handlers cover it.
+            if ty == 0x54 && k >= 4 { continue; }
+            for entry in [0x06f8a2, 0x06f8c9] {
+                for (frame, sub, pause) in [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 6), (0xe20, ty), (0xdb0, c),
+                        (0xe60, flags), (0xdf0, delay), (0xe40, 8),
+                        (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a+k, v); }
+                    for (a, v) in [(0xfa0, k as u8), (0x1a, frame), (0x11, sub),
+                        (0xfc1, pause)] { n.write_wram_byte(a, v); }
+                    n.write_wram_word(0x20, 0x180); n.write_wram_word(0x22, 0x180);
+                    n.sync_native_game_state_from_ram();
+                    let machine = marker29_machine(&n, entry, k).expect("ROM");
+                    eprintln!("bypass6 death fixture k={k} entry={entry:x} type={ty:x} c={c} flags={flags:x} delay={delay} frame={frame} sub={sub} pause={pause}");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x06f8a2, machine,
+                        |s| s.cpu.k == 6 && (0xf8a2..0xf917).contains(&s.cpu.pc),
+                        || n.sprite_death_main_ex(k, entry == 0x06f8c9));
+                    // Compare the handler's saved allocation flags and delay;
+                    // children keep their independently tested behavior.
+                    for a in [0xe40, 0xdf0] {
+                        assert_eq!(n.read_wram_byte(a+k), source.snes().ram[a+k],
+                            "entry={entry:x} type={ty:x} address={a:x}");
+                    }
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 death: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_stunned_drawing_handler_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for work in [0, 1] {
+            for delay in [0, 1, 15, 16, 31, 32, 55, 56, 96] {
+                for stunned in [0, 1, 2, 55, 56, 255] {
+                    for (frame, sub, pause) in [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)] {
+                        let mut n = marker29_state();
+                        for (a, v) in [(0xdd0, 11), (0xe20, 0x0c), (0xdf0, delay),
+                            (0xb58, stunned), (0x1fa3c, work), (0xf50, 0x71),
+                            (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a+k, v); }
+                        for (a, v) in [(0xfa0, k as u8), (0x1a, frame), (0x11, sub),
+                            (0xfc1, pause)] { n.write_wram_byte(a, v); }
+                        n.sync_native_game_state_from_ram();
+                        let machine = marker29_machine(&n, 0x06e2ba, k).expect("ROM");
+                        let source = crate::cycle_ledger::assert_rom_marker_work(0x06e2ba, machine,
+                            |s| s.cpu.k == 6 && (0xe2ba..0xe341).contains(&s.cpu.pc),
+                            || n.sprite_stunned_main_func1(k));
+                        for a in [0xdd0, 0xb58, 0xf50, 0xd50, 0xf30, 0xf40] {
+                            assert_eq!(n.read_wram_byte(a+k), source.snes().ram[a+k]);
+                        }
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 stunned: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_hover_handlers_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for entry in [0x1ecc47, 0x1ecc89] {
+            for direction in 0..4 {
+                for delay in [0, 1, 31, 255] {
+                    for velocity in [0u8, 1, 255, 128] {
+                        for link in [0x20u16, 0x40, 0x60] {
+                            let mut n = marker29_state();
+                            for (a, v) in [(0xdd0, 9), (0xe20, 0x81), (0xde0, direction),
+                                (0xdf0, delay), (0xd40, velocity), (0xd50, velocity),
+                                (0xe80, velocity), (0xf50, 0xff), (0xd10, 0x40),
+                                (0xd00, 0x40)] { n.write_wram_byte(a+k, v); }
+                            n.write_wram_word(0xfd8, 0x40); n.write_wram_word(0xfda, 0x40);
+                            n.write_wram_word(0x20, link); n.write_wram_word(0x22, link);
+                            n.sync_native_game_state_from_ram();
+                            let machine = marker29_machine(&n, entry, k).expect("ROM");
+                            let random = std::cell::RefCell::new(Vec::new());
+                            let source = crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+                                |s| {
+                                    if s.cpu.k == 0x0d && s.cpu.pc == 0xba7f {
+                                        random.borrow_mut().push(crate::RomRandomSample::with_carry(0, s.cpu.a as u8, s.cpu.c));
+                                    }
+                                    s.cpu.k == 0x1e && if entry == 0x1ecc47 {
+                                        (0xcc47..0xcc79).contains(&s.cpu.pc)
+                                    } else { (0xcc89..0xccd3).contains(&s.cpu.pc) }
+                                }, || {
+                                    n.install_rom_random_replay(random.borrow().clone(), 0);
+                                    n.rom_random_replay.begin_frame();
+                                    if entry == 0x1ecc47 { n.hover_idle(k); } else { n.hover_move(k); }
+                                });
+                            for a in [0xd80, 0xde0, 0xdf0, 0xd40, 0xd50, 0xf50, 0xdc0] {
+                                assert_eq!(n.read_wram_byte(a+k), source.snes().ram[a+k]);
+                            }
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 hover: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_caller70_body_and_split_aliases_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for (x, y, state) in [(0, 0x40, 9), (0x40, 0, 9), (0x40, 0x40, 8),
+            (0x40, 0x40, 9), (0xff, 0xff, 9)] {
+            for ai in 0..5 {
+                for delay in [0, 1, 18, 31] {
+                    for head in [0, 19, 20] {
+                        let mut n = marker29_state();
+                        for (a, v) in [(0xdd0, state), (0xe20, 0x70), (0xd10, x),
+                            (0xd00, y), (0xdf0, delay), (0xd80, ai), (0xeb0, head),
+                            (0xdc0, 1)] { n.write_wram_byte(a+k, v); }
+                        n.write_wram_byte(0xfa0, k as u8);
+                        n.write_wram_word(0x20, 0x40); n.write_wram_word(0x22, 0x40);
+                        n.sync_native_game_state_from_ram();
+                        let machine = marker29_machine(&n, 0x05807f, k).expect("ROM");
+                        crate::cycle_ledger::assert_rom_marker_work(0x1dede3, machine,
+                            |s| s.cpu.k == 0x1d && (0xede3..0xeecd).contains(&s.cpu.pc),
+                            || n.sprite_70_king_helmasaur_fireball(k));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        for (entry, last_slot) in [(0x1deed3, 0), (0x1deed3, 13), (0x1deed3, 15),
+            (0x1def3d, 0), (0x1def3d, 12), (0x1def3d, 15)] {
+            for random in [0, 1, 127, 255] {
+                let mut n = marker29_state();
+                for j in 0..16 {
+                    n.write_wram_byte(0xdd0+j, if j <= last_slot { 0 } else { 9 });
+                }
+                for (a, v) in [(0xe20, 0x70), (0xd10, 0x40), (0xd00, 0x40)] {
+                    n.write_wram_byte(a+k, v);
+                }
+                n.write_wram_byte(0xfa1, random); n.write_wram_byte(0xfa2, random ^ 0xff);
+                n.write_wram_byte(0xfa0, k as u8); n.sync_native_game_state_from_ram();
+                let machine = marker29_machine(&n, entry, k).expect("ROM");
+                crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+                    |s| s.cpu.k == 0x1d && if entry == 0x1deed3 {
+                        (0xeed3..0xef2d).contains(&s.cpu.pc)
+                    } else { (0xef3d..0xef76).contains(&s.cpu.pc) },
+                    || if entry == 0x1deed3 { n.helmasaur_fireball_tri_split(k); }
+                        else { n.helmasaur_fireball_quad_split(k); });
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("bypass6 caller70: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_bumper_scan_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for frame in 0..4 {
+            for pattern in 0..8 {
+                for (link_x, link_y, cape) in [(0x40u16, 0x40u16, 0),
+                    (0x180, 0x180, 0), (0x40, 0x40, 1)] {
+                    let mut n = marker29_state();
+                    for j in 0..16 {
+                        let (state, z, flags3, flags4, x, y) = match pattern {
+                            0 => (0, 0, 0, 0, 0x40u16, 0x40u16),
+                            1 => (9, 1, 0, 0, 0x40, 0x40),
+                            2 => (9, 0, 0x40, 0, 0x40, 0x40),
+                            3 => (9, 0, 0, 0x40, 0x40, 0x40),
+                            4 => (9, 0, 0, 0, 0x10, 0x40),
+                            5 => (9, 0, 0, 0, 0x40, 0x10),
+                            6 => (9, 0, 0, 0, 0x40, 0x40),
+                            _ => (9, 0, 0, 0, 0x140, 0x140),
+                        };
+                        for (a, v) in [(0xdd0, state), (0xf70, z), (0xe60, flags3),
+                            (0xf60, flags4), (0xd10, x as u8), (0xd30, (x>>8) as u8),
+                            (0xd00, y as u8), (0xd20, (y>>8) as u8)] { n.write_wram_byte(a+j, v); }
+                    }
+                    for (a, v) in [(0xdd0, 9), (0xe20, 0x93), (0xd10, 0x40),
+                        (0xd30, 0), (0xd00, 0x40), (0xd20, 0)] { n.write_wram_byte(a+k, v); }
+                    n.write_wram_byte(0xfa0, k as u8); n.write_wram_byte(0x1a, frame);
+                    n.write_wram_byte(0x55, cape); n.write_wram_word(0x20, link_y);
+                    n.write_wram_word(0x22, link_x); n.sync_native_game_state_from_ram();
+                    let machine = marker29_machine(&n, 0x1ea982, k).expect("ROM");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x1ea982, machine,
+                        |s| s.cpu.k == 0x1e && (0xa982..0xaa4b).contains(&s.cpu.pc),
+                        || n.sprite_93_bumper(k));
+                    assert_eq!(n.read_wram_byte(0xdf0+k), source.snes().ram[0xdf0+k]);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 bumper: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_ordered_dispatch_and_child_returns_match_rom() {
+    use std::cell::RefCell;
+    let mut evidence = Vec::new();
+    for (state, ty, owner, target) in [(6, 0x0c, 0x06f8a2, 0x06f8a2), (11, 0x0c, 0x06e2ba, 0x06dffa),
+        (9, 0x70, 0x1dede3, 0x05807f), (9, 0x93, 0x1ea982, 0x1ea982),
+        (9, 0x81, 0x1ecc89, 0x1ecc02)] {
+        let mut n = marker29_state();
+        for (a, v) in [(0xdd0, state), (0xe20, ty), (0xdf0, 8),
+            (0xd10, 0x40), (0xd00, 0x40), (0xd80, 1), (0xf10, 8)] {
+            n.write_wram_byte(a, v);
+        }
+        n.write_wram_word(0x20, 0x180); n.write_wram_word(0x22, 0x180);
+        n.sync_native_game_state_from_ram();
+        let machine = marker29_machine(&n, 0x0684e2, 0).expect("ROM");
+        let trace = RefCell::new(Vec::new());
+        crate::cycle_ledger::assert_rom_marker_work(owner, machine, |s| {
+            let pc = u32::from(s.cpu.k) << 16 | u32::from(s.cpu.pc);
+            trace.borrow_mut().push((pc, s.cpu.sp, s.cpu.db, s.cpu.pack_flags()));
+            match owner {
+                0x06f8a2 => (0x06f8a2..0x06f917).contains(&pc),
+                0x06e2ba => (0x06e2ba..0x06e341).contains(&pc),
+                0x1dede3 => (0x1dede3..0x1deecd).contains(&pc),
+                0x1ea982 => (0x1ea982..0x1eaa4b).contains(&pc),
+                _ => (0x1ecc89..0x1eccd3).contains(&pc),
+            }
+        }, || n.sprite_execute_single(0));
+        let trace = trace.into_inner();
+        let edges: Vec<_> = trace.windows(2).map(|w| (w[0].0, w[1].0)).collect();
+        if state != 9 {
+            assert!(edges.contains(&(0x0684f0, 0x008781)));
+            assert!(edges.iter().any(|e| e.0 == 0x008799));
+            let j = trace.iter().position(|r| r.0 == 0x008783).unwrap();
+            assert_eq!(trace[j+1].1, trace[j].1 + 1);
+            assert!(edges.contains(&(0x008799, target)));
+        } else {
+            let (dispatch, long) = if ty == 0x70 { (0x05b5e7, 0x05b5c3) }
+                else { (0x1e8b2d, 0x1e8b11) };
+            assert!(trace.iter().any(|r| r.0 == long));
+            assert!(edges.contains(&(dispatch, target)));
+        }
+        assert!(trace.iter().any(|r| r.0 == owner));
+        evidence.push((state, ty, trace));
+    }
+    eprintln!("bypass6 ordered source retirements: {evidence:x?}");
+}
+
+#[test]
+fn bypass6_new_handlers_preserve_default_and_muted_counters() {
+    for lagless in [false, true] {
+        let mut n = marker29_state(); n.set_lag_free(lagless);
+        n.write_wram_byte(0xdf0, 1); n.sync_native_game_state_from_ram();
+        let before = crate::cycle_ledger::master();
+        if lagless { crate::cycle_ledger::muted(|| n.hover_move(0)); }
+        else { n.hover_move(0); }
+        assert_eq!(crate::cycle_ledger::master(), before);
+    }
+}
+
+#[test]
+fn bypass6_active2_bluesain_body_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for state in [8, 9] {
+            for recoil in [0, 8] {
+                for frame in [0, 1, 15, 16] {
+                    for direction in 0..4 {
+                        for wall in [0, 1, 4, 15] {
+                            let mut n = marker29_state();
+                            for (a, v) in [(0xdd0, state), (0xe20, 0x44), (0xea0, recoil),
+                                (0xde0, direction), (0xe70, wall), (0xd10, 0x40),
+                                (0xd00, 0x40), (0xe80, 255), (0xed0, 16)] {
+                                n.write_wram_byte(a+k, v);
+                            }
+                            n.write_wram_byte(0xfa0, k as u8); n.write_wram_byte(0x1a, frame);
+                            n.write_wram_word(0x20, 0x180); n.write_wram_word(0x22, 0x180);
+                            n.sync_native_game_state_from_ram();
+                            let machine = marker29_machine(&n, 0x05cc65, k).expect("ROM");
+                            let source = crate::cycle_ledger::assert_rom_marker_work(0x05cc65, machine,
+                                |s| s.cpu.k == 5 && (0xcc65..0xccd5).contains(&s.cpu.pc),
+                                || n.sprite_44_bluesain_bolt(k));
+                            for a in [0xe80, 0xdc0, 0xde0, 0xeb0, 0xd40, 0xd50] {
+                                assert_eq!(n.read_wram_byte(a+k), source.snes().ram[a+k]);
+                            }
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 Active2 Bluesain: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_burn_bounce_and_far_body_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for delay in [1, 2, 8, 15, 16, 31] {
+            for ty in [0x0c, 0x13] {
+                for owner in [0x068543, 0x1dff5b] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 7), (0xe20, ty), (0xdf0, delay),
+                        (0xdc0, 0), (0xf50, 0x71), (0xe40, 8),
+                        (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a+k, v); }
+                    n.write_wram_byte(0xfa0, k as u8);
+                    n.write_wram_word(0x20, 0x180); n.write_wram_word(0x22, 0x180);
+                    n.sync_native_game_state_from_ram();
+                    let machine = marker29_machine(&n, 0x068543, k).expect("ROM");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(owner, machine,
+                        |s| if owner == 0x068543 { s.cpu.k == 6 && (0x8543..0x8548).contains(&s.cpu.pc) }
+                            else { s.cpu.k == 0x1d && (0xff5b..0xffbd).contains(&s.cpu.pc) },
+                        || n.sprite_module_burn(k));
+                    for a in [0xdc0, 0xf50, 0xe40, 0xef0] {
+                        assert_eq!(n.read_wram_byte(a+k), source.snes().ram[a+k]);
+                    }
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 burn: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_drown_handlers_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for ai in [0, 1] {
+            for a in [0, 6] {
+                for delay in [0, 1, 2, 15, 18, 21] {
+                    for z in [0u8, 1, 127, 255] {
+                        for (frame, sub, pause) in [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)] {
+                            let mut n = marker29_state();
+                            for (address, value) in [(0xdd0, 3), (0xe20, 0x0c), (0xd80, ai),
+                                (0xd90, a), (0xdf0, delay), (0xe80, 15), (0xf70, z),
+                                (0xf80, 255), (0xd10, 0x40), (0xd00, 0x40), (0xe60, 0x10)] {
+                                n.write_wram_byte(address+k, value);
+                            }
+                            for (address, value) in [(0xfa0, k as u8), (0x1a, frame),
+                                (0x11, sub), (0xfc1, pause)] { n.write_wram_byte(address, value); }
+                            n.sync_native_game_state_from_ram();
+                            let machine = marker29_machine(&n, 0x06859c, k).expect("ROM");
+                            let source = crate::cycle_ledger::assert_rom_marker_work(0x06859c, machine,
+                                |s| s.cpu.k == 6 && (0x859c..0x864d).contains(&s.cpu.pc),
+                                || n.sprite_module_drown(k));
+                            for address in [0xdd0, 0xdf0, 0xe60, 0xe80, 0xf70, 0xf80] {
+                                assert_eq!(n.read_wram_byte(address+k), source.snes().ram[address+k]);
+                            }
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 drown: {cases} ROM cases");
+}
+
+#[test]
+fn bypass6_stunned_entry_prefix_and_freeze_alias_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for owner in [0x06dffa, 0x06e2b6] {
+            for delay in [1, 31, 32, 96] {
+                for recoil in [0, 1, 128, 255] {
+                    for e in [0, 1] {
+                        for pause in [0, 1] {
+                            let mut n = marker29_state();
+                            for (a, v) in [(0xdd0, 11), (0xe20, 0x0c), (0xdf0, delay),
+                                (0xea0, recoil), (0xe90, e), (0xb58, 56), (0xf70, 16),
+                                (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a+k, v); }
+                            n.write_wram_byte(0xfa0, k as u8); n.write_wram_byte(0xfc1, pause);
+                            n.sync_native_game_state_from_ram();
+                            let machine = marker29_machine(&n, 0x06dffa, k).expect("ROM");
+                            crate::cycle_ledger::assert_rom_marker_work(owner, machine,
+                                |s| s.cpu.k == 6 && if owner == 0x06dffa {
+                                    (0xdffa..0xe02a).contains(&s.cpu.pc)
+                                } else { (0xe2b6..0xe2ba).contains(&s.cpu.pc) },
+                                || n.sprite_module_stunned(k));
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("bypass6 stunned prefix/alias: {cases} ROM cases");
+}

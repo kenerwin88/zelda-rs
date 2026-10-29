@@ -521,20 +521,37 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_93_Bumper(int k) {  // 9ea982
     pub(super) fn sprite_93_bumper(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ea982));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $1E:A982..AA4B: complete Bumper caller/16-slot scan. Child bodies
+        // keep their existing prices. AA45 SEP has the same cost at M8/M16.
+        b.block(0x1ea982);
         self.bumper_draw(k);
+        b.block(0x1ea985);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // ROM $1E:A988 -> $1E:8B2E -> $06:E496
+        b.block(0x1ea988);
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E);
-        if !self.game_state.player.follower_link.is_cape_active()
-            // ROM $1E:A98F
-            && self.sprite_check_damage_same_layer_long_marked(k)
+        b.block(0x1ea98b);
+        if self.game_state.player.follower_link.is_cape_active() { b.taken(0x1ea98d); }
+        let hit = if !self.game_state.player.follower_link.is_cape_active() {
+            b.block(0x1ea98f);
+            let hit = self.sprite_check_damage_same_layer_long_marked(k);
+            b.block(0x1ea993);
+            if !hit { b.taken(0x1ea993); }
+            hit
+        } else { false };
+        if hit
         {
+            b.block(0x1ea995);
             self.link_cancel_dash();
+            b.block(0x1ea999);
             let value = 32;
             self.sprite_slot_view_mut(k).set_delay_main(value);
             let pt = self.sprite_project_speed_towards_link(k, 0x30);
+            b.block(0x1ea9a4);
             let y_velocity = pt.y.wrapping_add(
                 SPRITE_93_BUMPER_VELOCITIES
                     [usize::from((self.game_state.player.follower_link.joypad1h_last() >> 2) & 3)]
@@ -549,21 +566,36 @@ impl ZeldaState {
                 .set_actual_velocity_xy(x_velocity, y_velocity);
             self.follower_link_state_mut().set_incapacitated_timer(20);
             self.link_reset_swimming_state();
+            b.block(0x1ea9c9);
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
         }
+        b.block(0x1ea9d0);
         for j in (0..16).rev() {
+            b.block(0x1ea9d2);
             if ((((j as u8) ^ self.game_state.frame.frame_counter) & 3)
                 | self.sprite_slot_view(j).z())
                 != 0
             {
+                b.taken(0x1ea9da);
+                b.block(0x1eaa45);
+                if j != 0 { b.taken(0x1eaa48); }
                 continue;
             }
-            if self.sprite_slot_view(j).state() < 9
-                || ((self.sprite_slot_view(j).flags3() | self.sprite_slot_view(j).flags4()) & 0x40)
-                    != 0
-            {
+            b.block(0x1ea9dc);
+            if self.sprite_slot_view(j).state() < 9 {
+                b.taken(0x1ea9e1);
+                b.block(0x1eaa45);
+                if j != 0 { b.taken(0x1eaa48); }
                 continue;
             }
+            b.block(0x1ea9e3);
+            if ((self.sprite_slot_view(j).flags3() | self.sprite_slot_view(j).flags4()) & 0x40) != 0 {
+                b.taken(0x1ea9eb);
+                b.block(0x1eaa45);
+                if j != 0 { b.taken(0x1eaa48); }
+                continue;
+            }
+            b.block(0x1ea9ed);
             let x = self.sprite_get_x(j);
             let y = self.sprite_get_y(j);
             let dx = self
@@ -580,11 +612,15 @@ impl ZeldaState {
                 .current_sprite_y()
                 .wrapping_sub(y)
                 .wrapping_add(16);
+            if dx >= 32 { b.taken(0x1eaa10); }
+            else { b.block(0x1eaa12); if dy >= 32 { b.taken(0x1eaa1f); } }
             if dx < 32 && dy < 32 {
+                b.block(0x1eaa21);
                 let value = 15;
                 self.sprite_slot_view_mut(j).set_f(value);
                 // ROM $1E:AA2B
                 let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 0x40);
+                b.block(0x1eaa2f);
                 let value = pt.y;
                 self.sprite_slot_view_mut(j).set_y_recoil(value);
                 let value = pt.x;
@@ -593,7 +629,10 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_delay_main(value);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
             }
+            b.block(0x1eaa45);
+            if j != 0 { b.taken(0x1eaa48); }
         }
+        b.block(0x1eaa4a);
     }
 
     // -----------------------------------------------------------------------

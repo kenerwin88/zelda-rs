@@ -1913,6 +1913,10 @@ impl ZeldaState {
     }
 
     fn sprite_70_king_helmasaur_fireball_body(&mut self, k: usize) {
+        // $1D:EDE3..EECE: complete body through its five state handlers.
+        // Split tails EED3/EF3D, inactive, movement and damage stay children.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dede3);
         let oam = self.game_state.oam.current_pointer_usize();
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let flags = SPRITE_70_KING_HELMASAUR_FIREBALL_FLAGS
@@ -1923,20 +1927,26 @@ impl ZeldaState {
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
         self.oam_state_mut().set_entry_x(oam, x);
         if x.wrapping_add(32) < 64 {
+            b.taken(0x1dee02);
+            b.block(0x1dee14);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             return;
         }
+        b.block(0x1dee04);
         let y = self
             .sprite_slot_view(k)
             .y_low()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
         self.oam_state_mut().set_entry_y(oam, y);
         if y.wrapping_add(16) < 32 {
+            b.block(0x1dee14);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             return;
         }
+        b.taken(0x1dee12);
+        b.block(0x1dee18);
         let charnum = SPRITE_70_KING_HELMASAUR_FIREBALL_CHARS
             [usize::from(self.sprite_slot_view(k).graphics())];
         self.oam_state_mut().set_entry_char(oam, charnum);
@@ -1948,29 +1958,31 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
-        if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0
-            && self
-                .game_state
-                .player
-                .follower_link
-                .x()
-                .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x())
-                .wrapping_add(8)
-                < 16
-            && self
-                .game_state
-                .player
-                .follower_link
-                .y()
-                .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
-                .wrapping_add(16)
-                < 16
-        {
+        b.block(0x1dee30);
+        let phased = (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0;
+        let x_hit = self.game_state.player.follower_link.x()
+            .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x()).wrapping_add(8) < 16;
+        let y_hit = self.game_state.player.follower_link.y()
+            .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y()).wrapping_add(16) < 16;
+        if !phased { b.taken(0x1dee35); }
+        else {
+            b.block(0x1dee37);
+            if !x_hit { b.taken(0x1dee46); }
+            else { b.block(0x1dee48); if !y_hit { b.taken(0x1dee55); } }
+        }
+        if phased && x_hit && y_hit {
+            b.block(0x1dee57);
             self.sprite_attempt_damage_to_link_plus_recoil(k);
         }
+        // EE5D SEP normalizes M; its instruction cost is independent of
+        // the incoming M8/M16 branch. No extra wide-operand work is inferred.
+        b.block(0x1dee5d);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x1dee66); b.block(0x1dee69); b.block(0x1dee6c); b.block(0x1dee6f);
+                b.block(0x1dee72);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1dee77);
                     let value = 18;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let value = 1;
@@ -1978,35 +1990,58 @@ impl ZeldaState {
                     let value = 36;
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
                 }
+                else { b.taken(0x1dee75); }
+                b.block(0x1dee84);
             }
             1 => {
+                b.block(0x1dee66); b.taken(0x1dee67); b.block(0x1dee85);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1dee8a);
                     let value = 2;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     let value = 31;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 }
+                else { b.taken(0x1dee88); }
+                b.block(0x1dee92);
                 self.sprite_slot_view_mut(k).subtract_y_velocity(2);
                 self.sprite_move_axis(k, false, SpriteMoveEntry::Rom1DE95D);
+                b.block(0x1dee9b);
             }
             2 => {
+                b.block(0x1dee66); b.block(0x1dee69); b.taken(0x1dee6a);
+                b.block(0x1deea0);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1deea5);
                     self.helmasaur_fireball_tri_split(k);
                 } else {
+                    b.taken(0x1deea3); b.block(0x1deea8);
                     let value = SPRITE_70_KING_HELMASAUR_FIREBALL_LOCAL_GRAPHICS
                         [usize::from(self.sprite_slot_view(k).delay_main() >> 3)];
                     self.sprite_slot_view_mut(k).set_graphics(value);
                 }
             }
             3 => {
+                b.block(0x1dee66); b.block(0x1dee69); b.block(0x1dee6c); b.taken(0x1dee6d);
+                b.block(0x1deeb3);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1deeb8);
                     self.helmasaur_fireball_quad_split(k);
-                } else if self.sprite_slot_view(k).head_direction() < 20 {
-                    self.sprite_slot_view_mut(k).add_head_direction(1);
-                    self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
+                } else {
+                    b.taken(0x1deeb6); b.block(0x1deebb);
+                    if self.sprite_slot_view(k).head_direction() < 20 {
+                        b.block(0x1deec2);
+                        self.sprite_slot_view_mut(k).add_head_direction(1);
+                        self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
+                    } else { b.taken(0x1deec0); }
+                    b.block(0x1deec8);
                 }
             }
-            4 => self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D),
+            4 => {
+                b.taken(0x1dee64); b.block(0x1deec9);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom1DE95D);
+                b.block(0x1deecc);
+            }
             _ => {}
         }
     }
