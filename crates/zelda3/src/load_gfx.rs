@@ -1837,22 +1837,32 @@ impl ZeldaState {
 
     pub(super) fn dungeon_load_palettes_before_cache(&mut self) {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02_c630));
-        if self.lag_free {
-            // $02:C630..C68B: caller stores, eleven JSLs and shared backup
-            // setup. $C769's cache loop and every palette child own their work.
-            crate::cycle_ledger::charge(1192);
-        }
+        // $02:C630..C65E: replace the caller part of the 1,192-clock scalar.
+        // The disjoint C65F shared tail retires below, once; all children
+        // (including C769's cache copy) retain their own work.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02c630);
         self.clear_overworld_aux_or_main_offset();
         self.palette_bg_and_fixed_color_black();
+        b.block(0x02c637);
         self.palette_load_sp0l();
+        b.block(0x02c63b);
         self.palette_load_sprite_main();
+        b.block(0x02c63f);
         self.palette_load_sp5l();
+        b.block(0x02c643);
         self.palette_load_sp6l();
+        b.block(0x02c647);
         self.palette_load_sword();
+        b.block(0x02c64b);
         self.palette_load_shield();
+        b.block(0x02c64f);
         self.palette_load_sprite_environment();
+        b.block(0x02c653);
         self.palette_load_link_armor_and_gloves();
+        b.block(0x02c657);
         self.palette_load_hud();
+        b.block(0x02c65b);
         self.palette_load_dungeon_set();
         self.overworld_load_palettes_before_cache();
     }
@@ -1864,6 +1874,9 @@ impl ZeldaState {
     }
 
     fn overworld_load_palettes_before_cache(&mut self) {
+        // $02:C65F..C68D: shared backups, fade controls and JMP C769.
+        // Dungeon's former aggregate scalar has been removed above.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x02c65f);
         let main_indoors = self
             .game_state
             .display
@@ -1906,6 +1919,9 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sp5l(&mut self) {
+        // $1B:ECC5: complete self entry; EF30 copy remains a child.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1becc5);
         let src = PALETTE_SPRITE_AUX1_SNES_ADDR
             + self
                 .game_state
@@ -1915,9 +1931,13 @@ impl ZeldaState {
                 * 7
                 * 2;
         self.palette_load_single(src, 0x1a2, 6);
+        b.block(0x1bece1);
     }
 
     pub(super) fn palette_load_sp6l(&mut self) {
+        // $1B:ECE4: complete self entry; EF30 copy remains a child.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bece4);
         let src = PALETTE_SPRITE_AUX1_SNES_ADDR
             + self
                 .game_state
@@ -1927,6 +1947,7 @@ impl ZeldaState {
                 * 7
                 * 2;
         self.palette_load_single(src, 0x1c2, 6);
+        b.block(0x1bed00);
     }
 
     /// ROM: `Palette_Load_Sword`
@@ -2024,6 +2045,9 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sprite_environment_dungeon(&mut self) {
+        // $1B:ED72..ED90: complete indoor self body; EF30 owns its copy.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bed72);
         let src = PALETTE_MISC_SPRITE_INDOORS_SNES_ADDR
             + self
                 .game_state
@@ -2033,30 +2057,45 @@ impl ZeldaState {
                 * 7
                 * 2;
         self.palette_load_single(src, 0x1d2, 6);
+        b.block(0x1bed8e);
     }
 
     pub(super) fn palette_load_sprite_environment(&mut self) {
+        // $1B:ED6E..ED70: the selected tail stays in this source frame.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bed6e);
         if self.game_state.world.location.is_indoors() {
             self.palette_load_sprite_environment_dungeon();
         } else {
+            b.taken(0x1bed70);
             self.palette_misc_sprite_outdoors();
         }
     }
 
     pub(super) fn palette_misc_sprite_outdoors(&mut self) {
+        // $1B:ED91..EDDC: both copy calls retain their separate EF30 work.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bed91);
         let t = if self.game_state.world.location.overworld_screen_index() & 0x40 != 0 {
             9
         } else {
             7
         };
+        if t == 7 { b.taken(0x1bed9a); } else { b.block(0x1bed9c); }
+        b.block(0x1bed9e);
         let src = PALETTE_MISC_SPRITE_INDOORS_SNES_ADDR + t * 7 * 2;
         let dst = if self.palette_swap_enabled() {
             0x1f2
         } else {
             0x112
         };
+        if self.palette_swap_enabled() { b.block(0x1bedb5); }
+        else { b.taken(0x1bedb3); }
+        b.block(0x1bedb8);
         self.palette_load_single(src, dst, 6);
+        b.block(0x1bedbe);
         self.palette_load_single(src - 7 * 2, 0x1d2, 6);
+        b.block(0x1bedda);
     }
 
     /// ROM: `Palette_Load_HUD`
@@ -2073,12 +2112,14 @@ impl ZeldaState {
         x_ents: usize,
     ) {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ef7b));
-        if self.lag_free {
-            // $1B:EF7B..EF95, M16/X16: setup, paired palette stores,
-            // actual DEY/BPL passes, RTS. This entry has no callees.
-            crate::cycle_ledger::charge(84 + (x_ents as u64 + 1) * 318
-                + x_ents as u64 * 6 + 42);
+        // $1B:EF7B..EF95, M16/X16: replace the complete legacy self scalar.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bef7b);
+        for i in 0..=x_ents {
+            b.block(0x1bef82);
+            if i < x_ents { b.taken(0x1bef93); }
         }
+        b.block(0x1bef95);
         let dst_index = dst >> 1;
         for i in 0..=x_ents {
             let Some(color) = self.rom_or_asset_word_snes(src + i as u32 * 2) else {
@@ -6840,5 +6881,138 @@ fn m3b_low_conversion_entries_and_widths_match_rom() {
                 assert_eq!(crate::cycle_ledger::master()-before,32+u64::from(num)*3736+u64::from(num-1)*6+42);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod system1_palette_tests {
+    use super::*;
+
+    fn native() -> ZeldaState {
+        let mut n = ZeldaState::new();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        n.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+        n.set_lag_free(true);
+        n
+    }
+
+    fn source(n: &ZeldaState, pc: u16, rtl: bool) -> snes::Snes {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &std::fs::read(root.join("saves/zelda3.sfc")).unwrap(), 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.cpu.e = false; s.cpu.unpack_flags(if rtl { 0x30 } else { 0 });
+        s.cpu.k = 0x1b; s.cpu.db = 0x1b; s.cpu.pc = pc;
+        s.cpu.sp = if rtl { 0x1fc } else { 0x1fd };
+        s.ram[0x1fd..0x200].copy_from_slice(if rtl { &[0xff, 0x7f, 0x1b] } else { &[0, 0xff, 0x7f] });
+        s
+    }
+
+    #[test]
+    fn system1_environment_palette_entries_match_complete_rom_self_paths() {
+        for entry in [0xed6e, 0xed72, 0xed91] {
+            for indoors in [0, 1] {
+                for screen in [0, 0x40] {
+                    for swap in [0, 1] {
+                        for palette in [0, 5, 10, 15] {
+                            let mut n = native();
+                            for (a, v) in [(0x1b, indoors), (0x8a, screen), (0xabd, swap), (0xab1, palette)] {
+                                n.write_wram_byte(a, v);
+                            }
+                            n.sync_native_game_state_from_ram();
+                            let routine = 0x1b0000 | u32::from(entry);
+                            let s = source(&n, entry, true);
+                            crate::cycle_ledger::assert_rom_marker_work(routine, s,
+                                |s| s.cpu.k == 0x1b && (0xed6e..0xeddd).contains(&s.cpu.pc), || {
+                                    let _scope = crate::cycle_ledger::routine(routine);
+                                    match entry {
+                                        0xed6e => n.palette_load_sprite_environment(),
+                                        0xed72 => n.palette_load_sprite_environment_dungeon(),
+                                        _ => n.palette_misc_sprite_outdoors(),
+                                    }
+                                });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn system1_dungeon_palette_caller_replaces_scalar_and_shared_tail_once() {
+        for indoors in [0, 1] {
+            let mut n = native();
+            n.write_wram_byte(0x1b, indoors); n.sync_native_game_state_from_ram();
+            let mut s = source(&n, 0xc630, false);
+            s.cpu.k = 2; s.cpu.db = 2; s.cpu.unpack_flags(0x30);
+            // The native caller inherits the environment tail's markers;
+            // select those disjoint source opcodes as well. Copy children
+            // and all other palette bodies remain outside this self group.
+            crate::cycle_ledger::assert_rom_marker_work(0x02c630, s,
+                |s| (s.cpu.k == 2 && (0xc630..0xc68e).contains(&s.cpu.pc))
+                    || (s.cpu.k == 0x1b && ((0xecc5..0xed03).contains(&s.cpu.pc)
+                        || (0xed6e..0xeddd).contains(&s.cpu.pc))),
+                || n.dungeon_load_palettes_before_cache());
+        }
+    }
+
+    #[test]
+    fn system1_aux_palette_callers_match_rom() {
+        for entry in [0xecc5, 0xece4] {
+            for palette in [0, 1, 3, 7, 15, 31] {
+                let mut n = native();
+                n.write_wram_byte(0xaad, palette); n.write_wram_byte(0xaae, palette);
+                n.sync_native_game_state_from_ram();
+                let routine = 0x1b0000 | u32::from(entry);
+                let s = source(&n, entry, true);
+                crate::cycle_ledger::assert_rom_marker_work(routine, s,
+                    |s| s.cpu.k == 0x1b && (entry..entry + 0x1f).contains(&s.cpu.pc), || {
+                        let _scope = crate::cycle_ledger::routine(routine);
+                        if entry == 0xecc5 { n.palette_load_sp5l(); } else { n.palette_load_sp6l(); }
+                    });
+            }
+        }
+    }
+
+    #[test]
+    fn system1_arbitrary_palette_scalar_replacement_matches_rom() {
+        for count in [0, 1, 6, 15, 23, 31] {
+            for dst in [0, 0x162, 0x1c2] {
+                let mut n = native();
+                let mut s = source(&n, 0xef7b, false);
+                let src = PALETTE_SPRITE_AUX1_SNES_ADDR;
+                s.ram[0..2].copy_from_slice(&(src as u16).to_le_bytes());
+                s.cpu.a = dst as u16; s.cpu.x = count as u16;
+                let before = crate::cycle_ledger::master();
+                crate::cycle_ledger::assert_rom_marker_work(0x1bef7b, s,
+                    |s| s.cpu.k == 0x1b && (0xef7b..0xef96).contains(&s.cpu.pc),
+                    || n.palette_load_multiple_arbitrary_snes(src, dst, count));
+                assert_eq!(crate::cycle_ledger::master() - before, 84 + (count as u64 + 1) * 318 + count as u64 * 6 + 42);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn system1_palette_shared_backup_tail_matches_rom() {
+    for values in [[0u8, 0, 0], [1, 3, 5], [0xff, 0x80, 0x7f]] {
+        let mut n = ZeldaState::new(); n.set_lag_free(true);
+        for (a, v) in [0xab6, 0xab8, 0xab7].into_iter().zip(values) { n.write_wram_byte(a, v); }
+        n.sync_native_game_state_from_ram();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &std::fs::read(root.join("saves/zelda3.sfc")).unwrap(), 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2; s.cpu.db = 2; s.cpu.pc = 0xc65f; s.cpu.sp = 0x1fd;
+        s.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+        let before = crate::cycle_ledger::master();
+        crate::cycle_ledger::assert_rom_marker_work(0x02c65f, s,
+            |s| s.cpu.k == 2 && (0xc65f..0xc68e).contains(&s.cpu.pc), || {
+                let _scope = crate::cycle_ledger::routine(0x02c65f);
+                n.overworld_load_palettes_before_cache();
+            });
+        assert_eq!(crate::cycle_ledger::master() - before, 478);
     }
 }

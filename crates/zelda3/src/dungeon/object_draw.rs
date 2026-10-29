@@ -220,6 +220,17 @@ impl ZeldaState {
     pub(super) fn object_table_helper_observed(&mut self, src: usize, dsto: u16, width: u16, _entry: u32) {
         #[cfg(feature = "rom-shadow-audit")]
         let _scope = crate::rom_shadow_audit::local_scope(_entry,Some(width));
+        let _work = self.lag_free.then(|| crate::cycle_ledger::routine(_entry));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $01:93F7..9428, M16/X16, DP=0: only the caller's actual JSR
+        // entries. The final shared fallthrough remains caller-owned.
+        b.block(_entry);
+        if _entry == 0x0193f7 { b.block(0x0193ff); }
+        for segment in 0..width {
+            b.block(0x019408);
+            if segment + 1 < width { b.taken(0x019418); }
+        }
+        b.block(0x01941a);
         self.object_table_helper(src, dsto, width);
     }
 
@@ -1386,11 +1397,9 @@ impl ZeldaState {
     /// ROM: `DrawObjects_PushableBlock`
     pub(super) fn draw_objects_pushable_block(&mut self, dsto_x2: u16, slot: u16) {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_b4d6));
-        if self.lag_free {
-            // $01:B4D6..B506: save block/replacement records, tail JMP only.
-            // RoomDraw_Rightwards2x2 prices its body and RTS separately.
-            crate::cycle_ledger::charge(842);
-        }
+        // $01:B4D6..B508: replace the legacy self scalar; the JMP target
+        // RoomDraw_Rightwards2x2 retains its separate body and RTS.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x01b4d6);
         let x = self.game_state.dungeon.object_tracking.misc_object_index() as usize >> 1;
         let next = self
             .game_state

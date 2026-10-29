@@ -15427,3 +15427,133 @@ proof matrices bind this stop. Evidence remains below **3 GB**. No GPU run,
 `--video`, cached-av, Snes9x execution, protected-cache/shared-ledger write,
 cargo fmt, commit, push or one-off repository script was used. Remaining route
 pricing and continuous live ending acceptance remain unfinished.
+
+## System pricing 1
+
+**Verified partial CPU-only stop on `codex/system1`, base `8aee379c`**
+(main `408a95a9` plus the M3a/M3b auditor and equal-cost conversions).
+Evidence: `target/system1/`. The single final unsharded ROM census uses
+read-only **full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate
+**PASSes all 1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,773 | **2,769** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 454 | **454** |
+| 461,989..1,473,122 | 2,193 | **2,189** |
+
+Missing holds fall **2,773 → 2,769**: **4 restored**,
+**0 lost**, with no newly missing iteration. Every runtime hold equals P2.
+The exact-base Route 7 predictor and native profiles are reused from the
+adjacent worktree; its frozen runtime source hashes verify, and M3a/M3b
+preserve those instruction totals. The local M3b census is older (**2,801**)
+and is explicitly excluded as a main control. Sparse probes against that old
+binary also drift in context; they remain rejected diagnostics. No duplicate
+full main census or seeded live census was run.
+
+`owner-ranking.json` recomputes the non-sprite worklist on all **2,740**
+canonical missing iterations. It uses the existing exact multi-hold inverses,
+checked against retained controls, and prefers earlier route iterations on ties.
+Raw leaders include module routing **296**, Link control **87**, mirror routing
+**85**, velocity **82**, iris **81**, vertical collision **66**, song upload
+**63**, and room objects **46**. Their parent, alias, scalar, instruction-model
+and continuation gaps are not additive prices. The higher map/decompression,
+door, text and drawing aliases retain their existing work. Module09 retirement
+remains unestablished. `admission-notes.json` records exclusions; remaining
+non-sprite owners are not claimed exhausted.
+
+**34 new blocks / 163 instructions** come from
+`scripts/rom_block_costs.py`; all **3,102 prior rows are byte-identical**.
+Markers are lagless-only and cite source addresses. No classifier, pacing
+rule, scene threshold, scene multiplier, scene table, SPC/APU behavior or game-state
+operation changed. Protected sprite/ancilla files are untouched.
+
+| Admitted self owner / entry | Work and scalar partition |
+| --- | --- |
+| Object_Table_Helper `$01:93FF/$01:93F7` | Only the admitted observed wrapper at real JSR calls; final caller fallthrough remains free. |
+| Aux1 / Aux2 `$1B:ECC5/$1B:ECE4` | Complete 378-clock callers around separately priced EF30 copies; zero former self scalar. |
+| Environment `$1B:ED6E/$1B:ED72/$1B:ED91` | Complete selector and indoor/outdoor tails, actual screen/swap branches; EF30 children remain separate. |
+| Dungeon/shared backup `$02:C630/$02:C65F` | Replace 1,192 scalar clocks with 714 caller clocks + 478 shared-tail clocks; direct shared entries gain only 478. C769 remains separate. |
+| Arbitrary palette `$1B:EF7B` | Replace the complete loop scalar exactly; zero net work. |
+| Push block `$01:B4D6` | Replace the 842-clock scalar exactly; 9895 body/RTS remains separate. |
+
+The auditor worklist reproduces **24 calls / 832 source opcodes / 27,104 clocks**,
+**13,552 each at 43,838 and 45,521**. Source ordinals are disjoint. Both entries
+retain M16/X16, DP=0, widths 1..4, the synchronous tile-read/store boundary
+and the inherited DD caller contract. Neither of those two audited rows reaches
+its inverse. Native complete entries are priced generally; no route-ID filter
+or successful-path-only exception is introduced.
+
+On all **2,740 frozen misses**, executed new markers minus retired scalars
+equal the signed main-counter increase: **405,180 clocks**,
+from **525,612 new marker clocks − 120,432 retired scalar clocks**,
+with **0 work mismatches**. Independent executed-marker
+recoveries overlap and must not be summed:
+
+- helper: **0** frames; **175,504** net clocks.
+- environment: **3** frames; **71,262** net clocks.
+- aux1: **3** frames; **73,710** net clocks.
+- aux2: **3** frames; **73,710** net clocks.
+- palette_tail: **0** frames; **10,994** net clocks.
+- arbitrary: **0** frames; **0** net clocks.
+- pushable: **0** frames; **0** net clocks.
+
+The unchanged fixed inverse predicts **4** joint recoveries;
+observed recovery is **4**, with **0 prediction exceptions**.
+`work-proof.json` and compressed `frame-flips.json.gz` retain every row.
+The retained original instruction subset covers **1,974** current misses
+but executes none of these new helper/palette paths. Its zero subset score
+is not a whole-route prediction. Complete ROM fixtures and the separate
+call-validated auditor worklist establish the prices; no full-cohort source
+instruction-equivalence proof is claimed.
+
+Separately, complete source routine receipts plus the fixture-verified self
+partitions are compared against actual marker work on all frozen rows:
+**0 source-routine work mismatches**. The C65F
+JMP/cache alias is normalized to 478 per actual shared entry; C630 retains
+its zero-net 1,192-clock replacement. This is an aggregate executed-work
+comparison, not instruction-order, physical CPU/NMI or exact A/V proof.
+
+The single cold continuous live replay uses **full-v2**, `--report 0
+--live-apu-reads --frames 900000`, **no `--seed-every`**, and no post-initial
+reseeding. It is intentionally stopped after the first difference; the
+predictor retains **497,611 complete records**, through
+index **497,610**. This is not a completed
+900,000-iteration summary gate or source EOF receipt.
+Its first classified state difference is **462,626**,
+**`song-end-poll`**, room **`$0006`**;
+last clean index **462,625**. The supplied main frontier is **881,733**.
+**The live frontier regresses against that supplied baseline.** No fresh
+main live control was repeated, and no price or classifier was adjusted
+to recover its earlier poll behavior.
+No completed live summary gate is claimed. This first-divergence receipt
+does not establish full-route live,
+ending or exact A/V acceptance. Post-divergence observations do not extend
+the clean prefix. Classifications are compressed directly through a FIFO.
+The interrupted bytes are retained; `live-intentional-stop.json` binds their
+SHA-256 and the **64 complete classification records** validated and
+normalized into a tested zstd stream. The remaining interrupted bytes are
+retained without a source/decoder EOF or frame-footer claim. A partial last
+predictor row is explicitly excluded.
+
+All **seven new marker fixtures / 239 assert_rom_marker_work cases per feature
+configuration** pass, plus the retained **16 DD caller/shared-tail source cases**.
+Touched-area checks pass **31 graphics/loader, three object-drawing and five
+dungeon fixture tests**; the added auxiliary paths and updated caller grouping
+receive fresh final fixtures and the palette-cache resume regression. The
+**nine Python generator/worklist tests**, exact table regeneration and
+`git diff --check` pass. Both production builds are **warning-free**;
+existing lib-test warnings remain **24 default / one reduced**. Production
+builds use `CARGO_INCREMENTAL=0` after an anonymous-symbol link failure
+in incremental output; the failed build is retained separately. The
+**default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio. Default/ROM-timing accounting is preserved.
+
+All **1,512 protected ledger/cache files** retain their file set, sizes
+and nanosecond mtimes. Source/binary hashes, commands, complete gate logs,
+proof matrices and final patch bind this stop. Evidence remains below **3 GB**.
+No GPU run, `--video`, cached-av, Snes9x execution, protected-cache/shared-ledger
+write, cargo fmt, commit, push or one-off repository script was used.
+Remaining system pricing and continuous live ending acceptance are unfinished.
