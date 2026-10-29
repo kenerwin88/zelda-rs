@@ -4620,3 +4620,135 @@ fn route9_guard_shoot_selector_matches_rom() {
     }
     eprintln!("route9 guard shoot selector: {cases} ROM cases");
 }
+
+#[test]
+fn route10_blind_robes_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for direction in [2u8, 3] {
+            for subtype in [0u8, 7, 8, 15, 16, 24, 31, 255] {
+                let mut n = prefix3_moldorm_state(k, 0x40);
+                n.write_wram_byte(0xde0+k, direction);
+                n.write_wram_byte(0xe80+k, subtype);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n, 0x1da729, k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x1da729, s,
+                    |s| s.cpu.k == 0x1d && (0xa729..0xa745).contains(&s.cpu.pc),
+                    || n.blind_animate_robes(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route10 Blind robes: {cases} ROM cases");
+}
+
+#[test]
+fn route10_blind_flurry_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for input in [0u8, 1, 7, 15, 255] {
+            for e in [0u8, 1, 127, 128, 129, 255] {
+                for (subtype, counter) in [(4u8,0u8), (5,0), (4,1), (5,31)] {
+                    let mut n = prefix3_moldorm_state(k, 0x40);
+                    for j in 0..16 { n.write_wram_byte(0xdd0+j,9); }
+                    for (a,v) in [(0xde0,2), (0xeb0,15), (0xe90,e),
+                        (0xe30,subtype), (0xe80,counter), (0xe70,0)] {
+                        n.write_wram_byte(a+k,v);
+                    }
+                    n.sync_native_game_state_from_ram();
+                    let mut s = marker29_machine(&n, 0x1da465, k).expect("ROM fixture");
+                    s.cpu.a = u16::from(input);
+                    crate::cycle_ledger::assert_rom_marker_work(0x1da465, s,
+                        |s| s.cpu.k == 0x1d && (0xa465..0xa49d).contains(&s.cpu.pc),
+                        || n.blind_fireball_flurry(k,input));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route10 Blind flurry: {cases} ROM cases");
+}
+
+#[test]
+fn route10_vitreous_drawing_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for ai in [0u8, 1, 2, 3] {
+            for state in [8u8, 9] {
+                for graphics in 0..6 {
+                    for xy in [0x40u16, 0xfff8, 0x400] {
+                        let mut n = prefix3_moldorm_state(k, xy);
+                        for (a,v) in [(0xd80,ai), (0xdd0,state), (0xdc0,graphics),
+                            (0xe20,0xbd), (0xb89,0x3e)] { n.write_wram_byte(a+k,v); }
+                        n.sync_native_game_state_from_ram();
+                        let s = marker29_machine(&n, 0x1de716, k).expect("ROM fixture");
+                        crate::cycle_ledger::assert_rom_marker_work(0x1de716, s,
+                            |s| s.cpu.k == 0x1d && (0xe716..0xe763).contains(&s.cpu.pc),
+                            || n.vitreous_draw(k));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("route10 Vitreous draw: {cases} ROM cases");
+}
+
+#[test]
+fn route10_ancilla_projection_and_coordinate_children_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 5, 6, 9] {
+        for (dx,dy) in [(0u16,0u16),(1,2),(2,1),(127,128),(128,255),
+            (255,128),(0xffff,1),(1,0xffff),(0xff80,0xff7f),(0x8000,0x7fff)] {
+            for speed in [0u8, 1, 16, 127, 255] {
+                for entry in [0x088eedu32, 0x088f5c, 0x088f6f] {
+                    let mut n = marker29_state();
+                    n.ancilla_set_xy(k, 0x200, 0x200);
+                    n.follower_link_state_mut().set_x(0x200u16.wrapping_add(dx));
+                    n.follower_link_state_mut().set_y(0x200u16.wrapping_add(dy));
+                    let mut machine = marker29_machine(&n,entry,k).expect("ROM fixture");
+                    machine.cpu.a = u16::from(speed);
+                    let (lo,hi) = match entry {
+                        0x088eed => (0x8eed,0x8f5c),
+                        0x088f5c => (0x8f5c,0x8f6f),
+                        _ => (0x8f6f,0x8f82),
+                    };
+                    crate::cycle_ledger::assert_rom_marker_work(entry,machine,
+                        |s| s.cpu.k == 8 && (lo..hi).contains(&s.cpu.pc), || {
+                            let _scope = crate::cycle_ledger::routine(entry);
+                            // All three complete owners are observed through the real caller;
+                            // child profiles remain disjoint from projection self work.
+                            let result = n.ancilla_project_speed_towards_player(k,speed);
+                            let below = crate::types::PairU8 { a:u8::from((dy as i16)<0), b:dy as u8 };
+                            let right = crate::types::PairU8 { a:u8::from((dx as i16)<0), b:dx as u8 };
+                            assert_eq!(result,crate::types::project_speed_from_differences(speed,below,right));
+                        });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route10 ancilla projection: {cases} ROM cases");
+}
+
+#[test]
+fn route10_beamos_laser_hit_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize,15] {
+        for delay in [0u8,1,16,255] {
+            for y in [0u16, 0x40, 0xf8, 0xfff8, 0x400] {
+                let mut n = prefix3_moldorm_state(k,y);
+                n.write_wram_byte(0xdf0+k,delay);
+                n.write_wram_byte(0xe20+k,0x61);
+                n.write_wram_byte(0xc50+k,0xf0);
+                n.sync_native_game_state_from_ram();
+                let s = marker29_machine(&n,0x0592da,k).expect("ROM fixture");
+                crate::cycle_ledger::assert_rom_marker_work(0x0592da,s,
+                    |s| s.cpu.k == 5 && (0x92da..0x9333).contains(&s.cpu.pc),
+                    || n.sprite_beamos_laser_hit(k));
+                cases += 1;
+            }
+        }
+    }
+    eprintln!("route10 Beamos hit: {cases} ROM cases");
+}

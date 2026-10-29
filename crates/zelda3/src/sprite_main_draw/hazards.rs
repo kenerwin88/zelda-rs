@@ -391,15 +391,29 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_Beamos_LaserHit(int k) {  // 8592da
     pub(super) fn sprite_beamos_laser_hit(&mut self, k: usize) {
+        // $05:92DA..9332: complete four-entry writer; the coordinate
+        // child owns its double return and receives no completed suffix.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0592da));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0592da);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x0592df);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
         }
+        else { b.taken(0x0592dd); }
+        b.block(0x0592e2);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x0592e5);
         let mut oam = self.game_state.oam.current_pointer_usize();
         for i in (0..4).rev() {
+            b.block(0x0592e8);
+            let y = info_y.wrapping_add(SPRITE_BEAMOS_LASER_HIT_Y_OFFSETS[i] as i16 as u16);
+            if y.wrapping_add(16) < 256 { b.taken(0x05930d); }
+            else { b.block(0x05930f); }
+            b.block(0x059313);
             self.set_oam_helper0_at(
                 oam,
                 info_x.wrapping_add(SPRITE_BEAMOS_LASER_HIT_X_OFFSETS[i] as i16 as u16),
@@ -409,7 +423,9 @@ impl ZeldaState {
                 0,
             );
             oam += 4;
+            if i != 0 { b.taken(0x05932f); }
         }
+        b.block(0x059331);
     }
 
     // -----------------------------------------------------------------------

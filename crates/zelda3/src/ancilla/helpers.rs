@@ -8,7 +8,7 @@ const ANCILLA_SPRITE_COLLISION_DEFLECTED_DIRECTIONS: [u8; 4] = [2, 3, 0, 1];
 const ANCILLA_SPRITE_COLLISION_RECOIL_X: [u8; 4] = [0, 0, 0xc0, 0x40];
 const ANCILLA_SPRITE_COLLISION_RECOIL_Y: [u8; 4] = [0xc0, 0x40, 0, 0];
 use crate::tile_definition::{EntityCollision, NativeTile};
-use crate::types::{abs16, project_speed_from_differences, sign8, AncillaRadialProjection, PairU8, Point16U, ProjectSpeedRet, SpriteHitBox};
+use crate::types::{abs16, sign8, AncillaRadialProjection, PairU8, Point16U, ProjectSpeedRet, SpriteHitBox};
 
 impl ZeldaState {
     pub(in crate::zelda_rtl) fn ancilla_check_sprite_collision_marked(&mut self, k: usize) -> Option<usize> {
@@ -450,12 +450,60 @@ impl ZeldaState {
 
     /// ROM: `Ancilla_ProjectSpeedTowardsPlayer`
     pub(in crate::zelda_rtl) fn ancilla_project_speed_towards_player(&self, k: usize, vel: u8) -> ProjectSpeedRet {
-        if vel == 0 {
-            return ProjectSpeedRet::ZERO;
-        }
+        // $08:8EED..8F5B: full self algorithm, excluding the two coordinate
+        // children. The ROM's byte counter executes 256 passes for speed zero.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x088eed));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x088eed);
         let below = self.ancilla_is_below_link(k);
+        b.block(0x088ef4);
+        let mut minor = below.b;
+        if sign8(minor) { b.block(0x088efa); minor = 0u8.wrapping_sub(minor); }
+        else { b.taken(0x088ef8); }
+        b.block(0x088efd);
         let right = self.ancilla_is_right_of_link(k);
-        project_speed_from_differences(vel, below, right)
+        b.block(0x088f02);
+        let mut major = right.b;
+        if sign8(major) { b.block(0x088f08); major = 0u8.wrapping_sub(major); }
+        else { b.taken(0x088f06); }
+        b.block(0x088f0b);
+        let swapped = major < minor;
+        if swapped {
+            b.block(0x088f15);
+            std::mem::swap(&mut minor, &mut major);
+        } else { b.taken(0x088f13); }
+        b.block(0x088f1e);
+        let mut speed = vel;
+        let mut accumulator = 0u8;
+        let mut y_velocity = 0u8;
+        let mut x_velocity = vel;
+        loop {
+            b.block(0x088f24);
+            accumulator = accumulator.wrapping_add(minor);
+            if accumulator >= major {
+                b.block(0x088f2d);
+                accumulator = accumulator.wrapping_sub(major);
+                y_velocity = y_velocity.wrapping_add(1);
+            } else { b.taken(0x088f2b); }
+            b.block(0x088f31);
+            speed = speed.wrapping_sub(1);
+            if speed == 0 { break; }
+            b.taken(0x088f34);
+        }
+        b.block(0x088f36);
+        if swapped {
+            b.block(0x088f39);
+            std::mem::swap(&mut x_velocity, &mut y_velocity);
+        } else { b.taken(0x088f37); }
+        b.block(0x088f43);
+        if below.a != 0 { b.block(0x088f49); y_velocity = 0u8.wrapping_sub(y_velocity); }
+        else { b.taken(0x088f47); }
+        b.block(0x088f4e);
+        if right.a != 0 { b.block(0x088f54); x_velocity = 0u8.wrapping_sub(x_velocity); }
+        else { b.taken(0x088f52); }
+        b.block(0x088f59);
+        if vel == 0 { ProjectSpeedRet::ZERO }
+        else { ProjectSpeedRet { x: x_velocity, y: y_velocity, xdiff: right.b, ydiff: below.b } }
     }
 
     pub(super) fn ancilla_get_radial_projection(&self, a: u8, r8: u8) -> AncillaRadialProjection {
@@ -502,12 +550,19 @@ impl ZeldaState {
     }
 
     fn ancilla_is_right_of_link(&self, k: usize) -> PairU8 {
+        // $08:8F5C..8F6E: own coordinate instructions.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x088f5c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x088f5c);
         let x = self
             .game_state
             .player
             .follower_link
             .x()
             .wrapping_sub(self.ancilla_get_x(k));
+        if (x as i16).is_negative() { b.block(0x088f6d); }
+        else { b.taken(0x088f6b); }
+        b.block(0x088f6e);
         PairU8 {
             a: u8::from((x as i16).is_negative()),
             b: x as u8,
@@ -515,12 +570,21 @@ impl ZeldaState {
     }
 
     fn ancilla_is_below_link(&self, k: usize) -> PairU8 {
+        // $08:8F6F..8F81: own coordinate instructions.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x088f6f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x088f6f);
+        // $8F74 reads $0BFA,X; only that low-byte read crosses $0C00.
+        if k >= 6 { b.crossing(0x088f74); }
         let y = self
             .game_state
             .player
             .follower_link
             .y()
             .wrapping_sub(self.ancilla_get_y(k));
+        if (y as i16).is_negative() { b.block(0x088f80); }
+        else { b.taken(0x088f7e); }
+        b.block(0x088f81);
         PairU8 {
             a: u8::from((y as i16).is_negative()),
             b: y as u8,

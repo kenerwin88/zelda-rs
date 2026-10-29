@@ -537,6 +537,10 @@ impl ZeldaState {
     //   sprite_graphics[k] = kBlind_Gfx_Animate[(sprite_subtype2[k] >> 3 & 3) + ((sprite_D[k] - 2) << 2)];
     // }
     pub(super) fn blind_animate_robes(&mut self, k: usize) {
+        // $1D:A729..A744: complete self body; no callees or legacy scalar.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1da729));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1da729);
         let sprite = self.sprite_slot_view(k);
         let s2 = (sprite.subtype2() >> 3) & 3;
         let d_minus_2 = (sprite.direction() as i8).wrapping_sub(2);
@@ -558,6 +562,13 @@ impl ZeldaState {
     //   Blind_SpitFireball(k, 0xf);
     // }
     pub(super) fn blind_fireball_flurry(&mut self, k: usize, a: u8) {
+        // $1D:A465..A49C: self prefix, falling through to the separately
+        // priced A49D fireball caller. Robe animation remains a child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1da465));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1da465);
+        if a != 0 { b.taken(0x1da471); }
+        b.block(0x1da473);
         let new_e = {
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.decrement_wall_collision();
@@ -565,16 +576,27 @@ impl ZeldaState {
             sprite.decrement_e()
         };
         if (new_e as i8) < 0 {
+            b.block(0x1da478);
             let subtype = self.sprite_slot_view(k).subtype();
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_e(subtype);
             sprite.increment_head_direction_mod16();
         }
+        else { b.taken(0x1da476); }
+        b.block(0x1da487);
         let sprite = self.sprite_slot_view(k);
-        if (sprite.subtype2() & 31) == 0 && sprite.subtype() != 5 {
-            self.sprite_slot_view_mut(k).increment_subtype();
+        if (sprite.subtype2() & 31) != 0 { b.taken(0x1da48c); }
+        else {
+            b.block(0x1da48e);
+            if sprite.subtype() == 5 { b.taken(0x1da493); }
+            else {
+                b.block(0x1da495);
+                self.sprite_slot_view_mut(k).increment_subtype();
+            }
         }
+        b.block(0x1da498);
         self.blind_animate_robes(k);
+        b.block(0x1da49b);
         let _ = self.blind_spit_fireball(k, 0xf);
     }
 

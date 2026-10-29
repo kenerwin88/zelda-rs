@@ -15329,3 +15329,101 @@ gates and matrices bind this stop. Retained evidence is below **3 GB**.
 No GPU run, `--video`, cached-av, Snes9x execution, protected-cache/shared-ledger
 write, cargo fmt, commit, push or one-off repository script was used.
 Remaining pricing and continuous live ending acceptance remain unfinished.
+
+
+## Route pricing 10
+
+**Verified partial CPU-only stop on `codex/route10`, base `1f37cbcc`.**
+Evidence: `target/route10/`. The single final unsharded ROM census uses read-only
+**full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate **PASSes all
+1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**, with every runtime
+hold equal to P2. Missing holds fall **2,748 → 2,745**;
+**3 restored, 0 lost**, no new missing iteration or changed source context.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,748 | **2,745** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 38 | **38** |
+| 142,087..461,988 | 453 | **453** |
+| 461,989..1,473,122 | 2,170 | **2,167** |
+
+The whole-route raw owner ranking is recomputed on all **2,715 baseline missing
+iterations** using retained Route 9 source/binary identities and predictor/profile
+receipts, with unchanged exact multi-hold inverses checked before reuse.
+`baseline-identity.json` binds those receipts to this base. Parent/alias scores
+remain ownership worklists, not additive prices; ties prefer earlier route
+iterations. No duplicate main census or seeded live census was run.
+
+Seven complete self bodies add **49 blocks / 210 instructions** from
+`scripts/rom_block_costs.py`; all **3,164 existing generated rows remain
+byte-identical**. Markers are lagless-only and cite source addresses. The selected
+self bodies contained **zero legacy `charge(N)` scalars**, and retain none.
+Existing child prices and default/ROM-timing accounting remain unchanged.
+
+| Self body | Entry | Ownership |
+| --- | --- | --- |
+| Ancilla projection | `$08:8EED` | Exact wrapping accumulator, comparison/subtraction and byte-counter loop; coordinate children excluded. |
+| Ancilla horizontal coordinate | `$08:8F5C` | Complete subtraction/sign body. |
+| Ancilla vertical coordinate | `$08:8F6F` | Complete subtraction/sign body, including actual `$0BFA+X` page crossing. |
+| Beamos laser-hit writer | `$05:92DA` | Four entries, clipping, deletion and loop branches; coordinate preparation excluded. |
+| Blind fireball flurry | `$1D:A465` | Self prefix through `$A49C`; existing `$A49D` fallthrough and robe child stay separate. |
+| Blind robe animation | `$1D:A729` | Complete selector for source directions 2/3. |
+| Vitreous drawing | `$1D:E716` | Self caller; drawing wrapper and large-shadow body excluded. |
+
+Projection retains the previous native result, checked against the shared
+algorithm across zero speed, signs, magnitude order and byte overflow. The ROM's
+zero-speed counter executes 256 passes; no zero-speed work is skipped. Vitreous
+selects the existing `$1D:8549/854D` wrapper exactly at its actual `$E74C` JSR.
+`pricing-audit.json` checks the cartridge call bindings. No parent-plus-child
+charge is added.
+
+The source instruction subset initially attributes other routines' shared
+`$08:8F81` RTS tails to the coordinate child. `source-return-partition.json`
+removes **79,716 clocks** from those other tails using exactly one return per real
+`$8F6F` entry; they receive no runtime price. No lag-based selection is used.
+**387,264 new marker clocks = 387,264 signed main-counter clocks**
+on every frozen miss, with **0 work mismatches**.
+Normalized original self instructions and the separately selected wrapper agree
+on **1,951 covered iterations**, with **0 source mismatches**.
+The unchanged full-cohort inverse predicts **3** recoveries;
+actual recovery is **3**, with **0 prediction exceptions**.
+Independent owner scores overlap. `source-predictions.json`, `work-proof.json`
+and `frame-flips.json.gz` retain the matrices. These are instruction-work and
+logical-scheduling receipts, not physical CPU/NMI or exact A/V proof.
+
+Module09 remains untouched: Route pricing 2's all-entry partition is not
+established. The three auditor-reviewed candidates were already priced by
+Route 8 and are skipped, as are Route 3–9 bodies. Higher collision, velocity,
+drawing and dispatcher aliases retain their prior scalar/model/child ownership.
+Bari's shared control is excluded because native checks state two before the
+split-recoil gate, unlike ROM `$A28C`; no behavior repair or partial successful-path
+price is installed. Earlier dynamic-MVN, behavior and continuation exclusions
+remain. The separate non-sprite lane is untouched. Remaining owners are not
+claimed exhausted. No classifier, pacing rule, scene threshold/multiplier/table
+or SPC/APU behavior changes.
+
+The single cold continuous live replay uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, with zero actual
+post-initial reseeds. It completes **500,000 tested iterations**; first classified
+state divergence is **142,087**, against base **142,087**.
+The unchanged strict gate reports `census gate: FAIL (unexplained=37467, complete=True)`.
+This bounded receipt is not full-route continuous live or ending acceptance;
+observations after divergence do not extend the clean prefix.
+`live-classification-summary.json` and the directly compressed complete
+classification stream retain the boundary.
+
+All **five new `assert_rom_marker_work` fixtures / 1,200 ROM cases per feature
+configuration** pass. Touched-area tests pass **191 drawing, 28 ancilla,
+6 Blind and 14 small-boss tests**. Nine Python generator/worklist tests,
+exact regeneration and `git diff --check` pass. Both production builds are
+warning-free; existing lib-test warnings remain separate. Full library suites,
+GPU tests and seeded live censuses were not run. The **default 200k ledger
+matches every record and EOF**, including state, display, SRAM and audio.
+
+All **1,512 protected ledger/cache files** retain their file set, sizes and
+nanosecond mtimes. Frozen source/binary hashes, commands, complete gates and
+proof matrices bind this stop. Evidence remains below **3 GB**. No GPU run,
+`--video`, cached-av, Snes9x execution, protected-cache/shared-ledger write,
+cargo fmt, commit, push or one-off repository script was used. Remaining route
+pricing and continuous live ending acceptance remain unfinished.

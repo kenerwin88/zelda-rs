@@ -1886,18 +1886,33 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn vitreous_draw(&mut self, k: usize) {
+        // $1D:E716..E762: complete self caller. DrawMultiple's bank wrapper
+        // and the large-shadow writer retain separate child ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1de716));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1de716);
+        if self.sprite_slot_view(k).ai_state() != 2 { b.taken(0x1de731); }
+        else {
+            b.block(0x1de733);
+            if self.sprite_slot_view(k).state() != 9 { b.taken(0x1de73c); }
+            else { b.block(0x1de73e); }
+        }
         if self.sprite_slot_view(k).ai_state() == 2 && self.sprite_slot_view(k).state() == 9 {
             self.oam_state_mut().set_current_pointer(0x800);
             self.oam_state_mut().set_current_extended_pointer(0xa20);
         }
+        b.block(0x1de748);
         let g = self.sprite_slot_view(k).graphics() as usize;
         let frames = VITREOUS_DRAW_FRAMES.get(g * 4..g * 4 + 4).unwrap_or(&[]);
-        self.sprite_draw_multiple(k, frames);
+        self.sprite_draw_multiple_bank1d(k, frames);
+        b.block(0x1de74f);
         if self.sprite_slot_view(k).ai_state() == 2 {
+            b.block(0x1de756);
             self.sprite_slot_view_mut(k)
                 .clear_object_priority_bits(0x0e);
             self.sprite_draw_large_shadow2(k);
-        }
+        } else { b.taken(0x1de754); }
+        b.block(0x1de762);
     }
 
     // void Sprite_BF_Lightning(int k) {  // 9de3ed
