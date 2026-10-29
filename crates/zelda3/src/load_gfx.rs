@@ -1919,6 +1919,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sp5l(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ecc5));
         // $1B:ECC5: complete self entry; EF30 copy remains a child.
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x1becc5);
@@ -1935,6 +1936,7 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sp6l(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ece4));
         // $1B:ECE4: complete self entry; EF30 copy remains a child.
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x1bece4);
@@ -2045,6 +2047,11 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sprite_environment_dungeon(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ed72));
+        self.palette_load_sprite_environment_dungeon_body();
+    }
+
+    fn palette_load_sprite_environment_dungeon_body(&mut self) {
         // $1B:ED72..ED90: complete indoor self body; EF30 owns its copy.
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x1bed72);
@@ -2061,18 +2068,24 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_load_sprite_environment(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ed6e));
         // $1B:ED6E..ED70: the selected tail stays in this source frame.
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x1bed6e);
         if self.game_state.world.location.is_indoors() {
-            self.palette_load_sprite_environment_dungeon();
+            self.palette_load_sprite_environment_dungeon_body();
         } else {
             b.taken(0x1bed70);
-            self.palette_misc_sprite_outdoors();
+            self.palette_misc_sprite_outdoors_body();
         }
     }
 
     pub(super) fn palette_misc_sprite_outdoors(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1b_ed91));
+        self.palette_misc_sprite_outdoors_body();
+    }
+
+    fn palette_misc_sprite_outdoors_body(&mut self) {
         // $1B:ED91..EDDC: both copy calls retain their separate EF30 work.
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x1bed91);
@@ -6945,13 +6958,11 @@ mod system1_palette_tests {
             n.write_wram_byte(0x1b, indoors); n.sync_native_game_state_from_ram();
             let mut s = source(&n, 0xc630, false);
             s.cpu.k = 2; s.cpu.db = 2; s.cpu.unpack_flags(0x30);
-            // The native caller inherits the environment tail's markers;
-            // select those disjoint source opcodes as well. Copy children
-            // and all other palette bodies remain outside this self group.
+            // Only C630..C68D is this caller's self work: the aux and
+            // environment palette callers open their own routine scopes, and
+            // copy children keep their own work.
             crate::cycle_ledger::assert_rom_marker_work(0x02c630, s,
-                |s| (s.cpu.k == 2 && (0xc630..0xc68e).contains(&s.cpu.pc))
-                    || (s.cpu.k == 0x1b && ((0xecc5..0xed03).contains(&s.cpu.pc)
-                        || (0xed6e..0xeddd).contains(&s.cpu.pc))),
+                |s| s.cpu.k == 2 && (0xc630..0xc68e).contains(&s.cpu.pc),
                 || n.dungeon_load_palettes_before_cache());
         }
     }
