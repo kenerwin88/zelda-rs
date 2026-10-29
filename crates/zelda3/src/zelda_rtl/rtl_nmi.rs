@@ -433,6 +433,7 @@ impl ZeldaState {
                             self.complete_module09_link_oam_caller_return(
                                 Module09ItemReceiptCallerReturn {
                                     link_oam: None,
+                                    link_oam_prefix_retired: false,
                                     scroll: module09,
                                     rain_already_published: false,
                                     after_sprite_main: Module09AfterSpriteMain::Ordinary,

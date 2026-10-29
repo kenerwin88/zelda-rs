@@ -1203,6 +1203,8 @@ impl ZeldaState {
             self.run_native_intro_clear_until_boundary();
             return;
         }
+        // $02:A475..A47D: selector and JSR only; the selected body is separate.
+        self.retire_module09_caller_block(0x02a475);
         let entry_frame = (
             self.game_state.frame.main_module,
             self.game_state.frame.submodule,
@@ -1423,6 +1425,7 @@ impl ZeldaState {
             self.active_module09_sprite_main_return
                 .replace(Module09ItemReceiptCallerReturn {
                     link_oam: None,
+                    link_oam_prefix_retired: false,
                     scroll,
                     rain_already_published,
                     after_sprite_main: Module09AfterSpriteMain::Ordinary,
@@ -1456,6 +1459,8 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module09_final_scroll_pair(&mut self) {
+        // $02:A4AA..A4B4: the pending vertical stores, SEP and Sprite_Main JSL.
+        self.retire_module09_caller_block(0x02a4aa);
         let saved = self
             .active_module09_sprite_main_return
             .as_ref()
@@ -1467,10 +1472,20 @@ impl ZeldaState {
         );
     }
 
+    /// Each fragment owns caller instructions only, including call opcodes.
+    /// Native OverworldCaller/OverworldModule bypass these translated sites;
+    /// preview muting is enforced by BlockMarkers, including this scope.
+    fn retire_module09_caller_block(&self, pc: u32) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02a475));
+        crate::cycle_ledger::blocks(self.lag_free).block(pc);
+    }
+
     fn begin_module09_sprite_main_scroll_prefix(
         &mut self,
         final_pair_pending: bool,
     ) -> Module09SpriteMainReturn {
+        // $02:A47E..A4A9: REP, four stack saves and offset arithmetic.
+        self.retire_module09_caller_block(0x02a47e);
         let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
@@ -1486,6 +1501,7 @@ impl ZeldaState {
         self.set_bg2_v_live_and_copy(bg2y_off);
         self.set_bg1_h_live_and_copy(bg1x_off);
         if !final_pair_pending {
+            self.retire_module09_caller_block(0x02a4aa);
             self.set_bg1_v_live_and_copy(bg1y_off);
         }
 
@@ -1499,6 +1515,7 @@ impl ZeldaState {
     }
 
     fn publish_module09_link_oam_prefix(&mut self, caller: &mut Module09ItemReceiptCallerReturn) {
+        self.retire_module09_link_oam_prefix(caller);
         // These stores precede every LinkOam_Main entry, including ordinary
         // callers which have no more specific Link/OAM progress receipt.
         self.set_bg2_x(caller.scroll.bg2_x);
@@ -1539,7 +1556,18 @@ impl ZeldaState {
         });
     }
 
-    fn complete_module09_after_sprite_main(&mut self, caller: Module09ItemReceiptCallerReturn) {
+    fn retire_module09_link_oam_prefix(&self, caller: &mut Module09ItemReceiptCallerReturn) {
+        if !caller.link_oam_prefix_retired {
+            // $02:A4B5..A4C8: restore four scroll locals, SEP and LinkOam JSL.
+            // Generic LinkOam suspension retains no equipment continuation;
+            // its retirement bit must therefore be independent of link_oam.
+            self.retire_module09_caller_block(0x02a4b5);
+            caller.link_oam_prefix_retired = true;
+        }
+    }
+
+    fn complete_module09_after_sprite_main(&mut self, mut caller: Module09ItemReceiptCallerReturn) {
+        self.retire_module09_link_oam_prefix(&mut caller);
         self.replay_trace_ram_watch("module09-after-sprite-main");
 
         self.set_bg2_x(caller.scroll.bg2_x);
@@ -1576,6 +1604,8 @@ impl ZeldaState {
             self.link_oam_main();
         }
         self.replay_trace_ram_watch("module09-after-link-oam");
+        // $02:A4C9..A4CC: HUD call only, after LinkOam actually returns.
+        self.retire_module09_caller_block(0x02a4c9);
         self.hud_refill_logic();
         self.replay_trace_ram_watch("module09-after-refill");
     }
@@ -9201,6 +9231,109 @@ mod prefix4_tests {
                         |s| s.cpu.k == 14 && (0xf581..0xf652).contains(&s.cpu.pc),
                         || n.overworld_dw_death_mountain_palette_animation());
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod bypass2_tests {
+    use super::*;
+
+    fn base() -> ZeldaState {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut n = ZeldaState::new();
+        n.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+        n.set_lag_free(true);
+        n.set_main_module(9);
+        n.set_submodule(47); // $02:B521 RTS: no child body work.
+        n.set_overworld_area_index(0x70);
+        n.write_wram_byte(0xf2f0, 0x20); // no rain body
+        n.set_bg2_x(0xfffe); n.set_bg2_y(0x1234);
+        n.set_bg1_x(0x8000); n.set_bg1_y(0xffff);
+        n.set_bg1_x_offset(7); n.set_bg1_y_offset(9);
+        n
+    }
+
+    fn machine(n: &ZeldaState) -> snes::Snes {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut s = snes::Snes::new();
+        s.cart.load(snes::CartType::LoRom, &std::fs::read(root.join("saves/zelda3.sfc")).unwrap(), 0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+        s.cpu.k = 2; s.cpu.db = 0; s.cpu.pc = 0xa475; s.cpu.sp = 0x1fc;
+        s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+        s
+    }
+
+    fn owns(s: &snes::Snes) -> bool {
+        s.cpu.k == 2 && (0xa475..0xa4cd).contains(&s.cpu.pc)
+    }
+
+    #[test]
+    fn bypass2_module09_ordinary_caller_matches_rom() {
+        let mut n = base();
+        let s = machine(&n);
+        crate::cycle_ledger::assert_rom_marker_work(0x02a475, s, owns, || n.module09_overworld());
+    }
+
+    #[test]
+    fn bypass2_module09_resumed_caller_retires_once_matches_rom() {
+        for pending in [false, true] {
+            for published in [false, true] {
+                for stair in [None, Some(crate::LinkOamStairProgress::PoseSelected),
+                    Some(crate::LinkOamStairProgress::EquipmentSelection),
+                    Some(crate::LinkOamStairProgress::BodySelection),
+                    Some(crate::LinkOamStairProgress::ShadowSelection)] {
+                    let mut n = base();
+                    let s = machine(&n);
+                    crate::cycle_ledger::assert_rom_marker_work(0x02a475, s, owns, || {
+                        n.retire_module09_caller_block(0x02a475);
+                        n.retain_module09_sprite_main_caller(pending, false);
+                        if pending {
+                            let before = crate::cycle_ledger::master();
+                            n.complete_module09_final_scroll_pair();
+                            assert_eq!(crate::cycle_ledger::master() - before, 156);
+                        }
+                        let mut caller = n.active_module09_sprite_main_return.take().unwrap();
+                        if published {
+                            if let Some(stage) = stair {
+                                n.set_submodule(18);
+                                n.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+                                    0, 0, vec![crate::OriginalTimingSemanticReceipt::LinkOamStairProgress(stage)]));
+                            }
+                            let before = crate::cycle_ledger::master();
+                            n.publish_module09_link_oam_prefix(&mut caller);
+                            assert!(caller.link_oam_prefix_retired);
+                            // Re-publication may repeat stores but owns zero caller instructions.
+                            n.retire_module09_link_oam_prefix(&mut caller);
+                            assert!(crate::cycle_ledger::master() - before >= 378);
+                        }
+                        n.complete_module09_after_sprite_main(caller);
+                    });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bypass2_module09_markers_preserve_default_and_muted_previews() {
+        for lagless in [false, true] {
+            let mut n = base(); n.set_lag_free(lagless);
+            let before = crate::cycle_ledger::master();
+            crate::cycle_ledger::muted(|| n.module09_overworld());
+            assert_eq!(crate::cycle_ledger::master(), before);
+            if !lagless {
+                let before = crate::cycle_ledger::master();
+                n.retire_module09_caller_block(0x02a475);
+                let scroll = n.begin_module09_sprite_main_scroll_prefix(false);
+                let mut caller = Module09ItemReceiptCallerReturn {
+                    link_oam: None, link_oam_prefix_retired: false, scroll,
+                    rain_already_published: false, after_sprite_main: Module09AfterSpriteMain::Ordinary,
+                };
+                n.retire_module09_link_oam_prefix(&mut caller);
+                n.retire_module09_caller_block(0x02a4c9);
+                assert_eq!(crate::cycle_ledger::master(), before);
             }
         }
     }

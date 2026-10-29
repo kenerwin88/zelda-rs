@@ -357,6 +357,7 @@ fn cucco_native_budget_suspends_sprite_main_and_preserves_module09_return() {
         let caller = SpriteMainCpuCaller::Module09 { boundary: OriginalTimingBoundary::NmiAccepted };
         let module_return = Module09ItemReceiptCallerReturn {
             link_oam: None,
+            link_oam_prefix_retired: false,
             scroll: Module09SpriteMainReturn { bg2_x: 0, bg2_y: 0, bg1_x: 0, bg1_y: 0 },
             rain_already_published: false,
             after_sprite_main: Module09AfterSpriteMain::Ordinary,

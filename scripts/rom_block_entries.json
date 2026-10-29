@@ -1,4 +1,9 @@
 [
+  {"entry": "02a475", "end": "02a47e"},
+  {"entry": "02a47e", "end": "02a4aa"},
+  {"entry": "02a4aa", "end": "02a4b5", "m8": false},
+  {"entry": "02a4b5", "end": "02a4c9"},
+  {"entry": "02a4c9", "end": "02a4cd"},
   {"entry": "069bc4", "end": "069c20"},
   {"entry": "059510", "end": "059513"},
   {"entry": "059513", "end": "05956d"},

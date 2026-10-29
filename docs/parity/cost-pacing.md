@@ -16971,3 +16971,134 @@ hashes are retained; an unobserved absolute peak is not claimed. Final
 Snes9x process, continuous live replay, cargo GPU test, full library suite,
 protected-cache/shared-ledger write, cargo fmt, commit or push was performed.
 Scratch orchestration stayed in `/tmp`.
+
+
+## Bypass pricing 2
+
+**Verified partial CPU-only stop on `codex/bypass2`, base `7619df0b`.**
+Evidence: `target/bypass2/`. The final unsharded **full-v2 ROM-answer census**
+uses `--report 0 --seed-every 2000`, completes **1,473,123 ordered iterations
+and EOF**, and its unchanged census gate **PASSes, unexplained 0**. ROM
+excess/zero-lag FP remain **0/0**; every runtime hold equals P2. Missing holds
+fall **2,643 → 2,508**: **135 restored, 0 lost,
+0 newly missing iterations**.
+
+| Inclusive iteration window | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,643 | **2,508** |
+| 0..94,852 | 82 | **80** |
+| 94,853..142,086 | 37 | **37** |
+| 142,087..461,988 | 424 | **380** |
+| 461,989..1,473,122 | 2,100 | **2,011** |
+
+The before column reuses Bypass 1's retained final full-ROM predictor, rather
+than claiming a fresh control census. Diagnostic 2's 461,776-row reproduction
+is byte-identical to that baseline and `7619df0b` adds observer-only metadata.
+`counts.json` binds both complete predictor hashes; the new prefix proof also
+checks the baseline main counter against Diagnostic 2's independent native
+counter on every ordinary source row. The retained source prefix remains
+**0..461,775**. This census does not extend source execution, certify the
+unverified source suffix/EOF, repair the suspended-CPU handoff STOP, or establish
+exact A/V acceptance.
+
+### Module09 caller ownership and retirement
+
+Five generated fragments replace the caller's absent self work. All
+**3,434 old table rows are unchanged**; all **3,439 rows** regenerate exactly.
+The source-derived **43 instructions / 1,420 clocks** split at actual translated
+retirements:
+
+| Source range, end exclusive | Clocks | Retirement |
+| --- | ---: | --- |
+| `$02:A475..A47E` | 136 | Dispatch/JSR, before the selected submodule. |
+| `$02:A47E..A4AA` | 688 | REP, four stack saves and offset arithmetic, before final vertical stores. |
+| `$02:A4AA..A4B5` | 156 | Final vertical stores, SEP and Sprite_Main JSL; deferred intact for the pending pair. |
+| `$02:A4B5..A4C9` | 378 | Four restores, SEP and LinkOam JSL, after Sprite_Main returns. |
+| `$02:A4C9..A4CD` | 62 | HUD JSL, after LinkOam returns. |
+
+Calls own only their call opcodes. Sprite_Main, LinkOam and HUD bodies/returns,
+the existing 240-clock main-routing selector and the rain/return work from
+`$02:A4CD` remain separate. No caller legacy scalar exists for these newly
+priced ranges. Each fragment opens its own lagless `routine(0x02a475)` scope,
+so an enclosing priced caller's self-work fixture excludes it. Native
+`OverworldModule`/`OverworldCaller` return through their existing model path
+before the new translated selector site, and retain their own instruction work.
+Their existing 5,120 source-step fixtures pass.
+
+`Module09ItemReceiptCallerReturn::link_oam_prefix_retired` retains retirement
+independently of equipment publication. A generic LinkOam suspension can keep
+`link_oam=None` after already restoring scroll; the new bit prevents a second
+price when completion republishes those stores. It is a native caller field,
+not serialized product state or WRAM. The pending final vertical pair retains
+its existing scheduler boundary; its 156 clocks retire at completion instead
+of at the earlier partial prefix. Native LinkBody/LinkOam/HUD model suffixes
+are ROM-timing work and receive no lagless markers. Muted previews remain
+muted; provisional sprite/suffix publication does not enter the new caller
+fragments. `outside-charge-certificate.json` records the reviewed boundary and
+its limits; it is not a renewed M3b auditor admission certificate.
+
+The ordinary whole-caller ROM fixture and **20 resumed/publication cases**
+cover both final-pair states, unpublished and generic published restoration,
+and pose/equipment/body/shadow stair progress. Each compares the generated
+caller work against unmodified-ROM execution, excluding child instructions.
+Repeated restoration retirement contributes zero additional caller clocks.
+The separate muted/default test and existing continuation/display fixtures pass.
+
+### Ancilla indexed-read correction
+
+`ancilla_check_tile_collision_class2_inner` now emits the existing generated
+**+6** indexed-read extra at `$08:8CAC LDA $8ABF,Y` when the **actual cartridge
+tile identity is >= $41**. The `$BF` base plus that 8-bit Y crosses a page.
+The `$08:8C46` access remains separate. The generated 62-clock base, branch
+markers, existing entry scopes, marked/Unpriced gates and children are unchanged;
+there is no new scalar or table. A ROM fixture covers all **256 identities**,
+including `$40/$41/$FF`, both source entry forms, slots 0/9 and both layers:
+**2,048 complete source comparisons**. Existing class-2 caller fixtures pass.
+
+### Verified-prefix accounting and unfinished candidates
+
+On all **393,848 ordinary source-entry rows** within the retained prefix,
+new marker clocks equal actual main-counter growth, and observer path totals
+reconcile with the independent ledger and separate VWF: **zero mismatches**.
+New ordinary work is **174,481,080 Module09 clocks +
+12,570 indexed-page clocks = 174,493,650 clocks**.
+The signed ordinary instruction deficit falls **4,073,918,968 →
+3,899,425,318 clocks**. This is the same population/domain as Diagnostic 2,
+not a complete source/native instruction pairing claim. Page-extra work also
+matches the independent source crossing contribution in every retained context
+with equal old block/branch counts; unmatched contexts remain unresolved.
+`prefix-proof.json`, compressed per-row additions, the compact observer summary
+and complete hold-change matrix retain the evidence.
+
+Collision responses are **unfinished and unpriced in this batch**. The exact
+82-clock stationary return, existing indoor/outdoor setup scalars, child prices,
+classifier and models are unchanged. Completing this family still requires
+actual instruction markers for BAF4/C59E and BEF8/C92F, the full slope/doorway/
+carrying/hurt/layer/chest/pit/deep-water/direction matrix, and disjoint shared
+returns. In particular, `finish_native_vertical_response` and
+`finish_native_vertical_surface` enter the same translated helpers after
+already retired native prefixes (slope, chest, rupee, surface, bonk and pushblock
+handoffs); helper names alone cannot determine the uncovered instruction set.
+No 2,046/1,916 mean or partial response surcharge is installed. BNC body/flail
+and Arrghus orbit were not priced. No candidate needed withdrawal in this batch.
+
+### Final checks and boundaries
+
+Four new tests pass, including the three ROM marker fixtures above. Targeted
+existing/touched checks pass: **49 overworld, five ancilla-helper, 16 Module09,
+one native caller, 198 drawing and 119 sprite tests**, plus **52 runtime-item,
+46 runtime-overworld and 69 runtime-display tests**. These filtered groups overlap;
+they are not a unique-test count. The product's default, no-default-feature and
+observer builds are **warning-free**. Lib-test compilation retains the same
+**24 pre-existing dead-code warnings**. Nine Python generator/worklist tests,
+exact table regeneration and `git diff --check` pass.
+
+The default **200,000-frame state ledger matches every record and EOF**,
+including state/display/SRAM/audio. Every **3,261 protected input file** retains
+its file set, size and nanosecond mtime. The maximum retained-output sample is
+**410,386,794 bytes**, below 3 GB; samples do not claim an unobserved
+absolute peak. Commands, logs, source/binary/input hashes and full gate output
+bind this uncommitted stop. No GPU execution, video, cached-av, external
+Snes9x process, continuous live replay, seeded live census, full library suite,
+protected cache/shared-ledger write, cargo fmt, commit or push was performed.
+Scratch orchestration stayed in `/tmp`.

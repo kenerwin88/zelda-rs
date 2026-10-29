@@ -1040,6 +1040,9 @@ impl ZeldaState {
             b.taken(0x088ca9); b.block(0x088cd3); return false;
         }
         b.block(0x088cab);
+        // $08:8CAC LDA $8ABF,Y: Y is the actual cartridge tile identity.
+        // The $BF table base crosses at $41 with the source's 8-bit index.
+        if tile.cartridge_attribute() >= 0x41 { b.crossing(0x088cac); }
         match tile.ancilla_collision() {
             EntityCollision::Passable => { b.taken(0x088caf); b.block(0x088cd3); false },
             EntityCollision::Solid => { b.block(0x088cb1); b.taken(0x088cb3); b.block(0x088cba); b.taken(0x088cbc); b.block(0x088cca); b.taken(0x088ccc); b.block(0x088cd5); true },
@@ -1745,5 +1748,34 @@ fn marker39_class2_inner_matches_rom() {
                 let _scope=crate::cycle_ledger::routine(0x088c43);
                 native.ancilla_check_tile_collision_class2_inner(slot,true);
             });
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn bypass2_class2_indexed_read_matches_rom_both_entries() {
+    // All table identities include every collision category and $40/$41/$FF.
+    // Both source entry forms, both source slot-page outcomes and layers.
+    for tile in 0..=255u8 {
+        for (slot, floor) in [(0, 0), (9, 0), (0, 1), (9, 1)] {
+            for entry in [0x8bcf, 0x8c43] {
+                let mut n = ZeldaState::new();
+                n.write_wram_byte(0x1b, 1);
+                n.write_wram_byte(0x028a + slot, floor);
+                for a in 0x12000..0x14000 { n.write_wram_byte(a, tile); }
+                n.ancilla_set_xy(slot, 0x40, 0x40);
+                n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                let s = marker39_ancilla_machine(&n, entry, slot);
+                crate::cycle_ledger::assert_rom_marker_work(0x080000 | u32::from(entry), s,
+                    |s| s.cpu.k == 8 && (entry..0x8cd9).contains(&s.cpu.pc), || {
+                        if entry == 0x8bcf {
+                            n.ancilla_check_tile_collision_class2(slot, AncillaClass2Entry::Rom088BCF);
+                        } else {
+                            let _scope = crate::cycle_ledger::routine(0x088c43);
+                            n.ancilla_check_tile_collision_class2_inner(slot, true);
+                        }
+                    });
+            }
+        }
     }
 }

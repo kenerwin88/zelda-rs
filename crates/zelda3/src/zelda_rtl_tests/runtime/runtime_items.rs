@@ -1949,6 +1949,7 @@ fn bottle_vendor_suffix_waits_for_the_live_source_call_return_receipt() {
     state.original_timing_owner = OriginalTimingOwnerState::Live;
     state.active_module09_sprite_main_return = Some(Module09ItemReceiptCallerReturn {
         link_oam: None,
+        link_oam_prefix_retired: false,
         scroll: Module09SpriteMainReturn {
             bg2_x: 0x1111,
             bg2_y: 0x2222,
@@ -2025,6 +2026,7 @@ fn bottle_vendor_suffix_waits_for_the_live_source_call_return_receipt() {
                 module09,
                 Module09ItemReceiptCallerReturn {
                     link_oam: None,
+                    link_oam_prefix_retired: false,
                     scroll: Module09SpriteMainReturn {
                         bg2_x: 0x1111,
                         bg2_y: 0x2222,

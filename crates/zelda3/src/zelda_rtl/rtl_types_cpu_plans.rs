@@ -999,6 +999,8 @@ pub(crate) struct Module09SpriteMainReturn {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Module09ItemReceiptCallerReturn {
+    /// Monotonic retirement, independent of optional equipment publication.
+    pub(crate) link_oam_prefix_retired: bool,
     pub(crate) link_oam: Option<player_oam::LinkOamEquipmentContinuation>,
     pub(crate) scroll: Module09SpriteMainReturn,
     /// Some Module09 loaders publish the rain overlay before their suspended

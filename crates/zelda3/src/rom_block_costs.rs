@@ -732,6 +732,16 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x02a2a0, 0x02a2a4, true, true, 62, 0x000000, &[]),
     // $02:A2A4: fixed cost
     (0x02a2a4, 0x02a2a5, true, true, 42, 0x000000, &[]),
+    // $02:A475: fixed cost
+    (0x02a475, 0x02a47e, true, true, 136, 0x000000, &[]),
+    // $02:A47E: fixed cost
+    (0x02a47e, 0x02a4aa, true, true, 688, 0x000000, &[]),
+    // $02:A4AA: fixed cost
+    (0x02a4aa, 0x02a4b5, false, true, 156, 0x000000, &[]),
+    // $02:A4B5: fixed cost
+    (0x02a4b5, 0x02a4c9, true, true, 378, 0x000000, &[]),
+    // $02:A4C9: fixed cost
+    (0x02a4c9, 0x02a4cd, true, true, 62, 0x000000, &[]),
     // $02:A9C4: 02a9c7 taken +6
     (0x02a9c4, 0x02a9c9, true, true, 48, 0x02a9c7, &[]),
     // $02:A9C9: fixed cost
