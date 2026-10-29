@@ -1057,6 +1057,7 @@ impl ZeldaState {
             }
             VerticalResponseTail::Slope => {
                 self.flag_moving_into_slopes_y();
+                self.indoor_slope_return_markers(true);
                 if self
                     .game_state
                     .player
@@ -1074,10 +1075,7 @@ impl ZeldaState {
                     self.game_state.player.tile_detection.tile_type() as u8,
                     &mut chest_position,
                 );
-                self.tile_detect_position_mut().clear_tile_type();
-                self.tile_detect_position_mut()
-                    .set_collision_bits(collision);
-                self.finish_indoor_collision_common(true);
+                self.finish_indoor_y_collision_after_chest(collision);
             }
             VerticalResponseTail::Rupee { tile_deleted } => {
                 if !tile_deleted {
@@ -1480,8 +1478,10 @@ impl ZeldaState {
         if self.game_state.player.tile_detection.collision_bits() & 2 == 0
             && self.game_state.player.tile_detection.slope_collision_bits() & 5 != 0
         {
+            self.indoor_slope_call_markers(false);
             self.follower_link_state_mut().clear_conveyor_belt_state();
             self.flag_moving_into_slopes_x();
+            self.indoor_slope_return_markers(false);
             if self
                 .game_state
                 .player
@@ -2129,6 +2129,48 @@ impl ZeldaState {
         }
     }
 
+    /// $07:BB00..BB06 / C5AA..C5B0: clear conveyor and call opcode only.
+    /// Native Slope handoffs have already retired this range.
+    fn indoor_slope_call_markers(&self, y_axis: bool) {
+        if !self.lag_free { return; }
+        let pc = if y_axis { 0x07bb00 } else { 0x07c5aa };
+        let _scope = crate::cycle_ledger::routine(pc);
+        crate::cycle_ledger::blocks(true).block(pc);
+    }
+
+    /// $07:BB06..BB0D / C5B0..C5B7: test the child's result, including
+    /// only the slope-blocked RTS. No slope child instructions are charged.
+    fn indoor_slope_return_markers(&self, y_axis: bool) {
+        if !self.lag_free { return; }
+        let pc = if y_axis { 0x07bb06 } else { 0x07c5b0 };
+        let _scope = crate::cycle_ledger::routine(pc);
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(pc);
+        if self.game_state.player.follower_link.moving_against_diag_tile() & 15 == 0 {
+            b.taken(pc + 4);
+        } else { b.block(pc + 6); }
+    }
+
+    /// $07:BB23..BB2C: restore both saved collision bytes after OpenChest.
+    /// Both translated and native Chest handoffs retire these five opcodes.
+    fn indoor_chest_restore_markers(&self) {
+        if !self.lag_free { return; }
+        let _scope = crate::cycle_ledger::routine(0x07bb23);
+        crate::cycle_ledger::blocks(true).block(0x07bb23);
+    }
+
+    /// $07:BB0D..BB23: clear diagonal state, chest predicate and the
+    /// save/call prefix. OpenChest and its post-call restoration are separate.
+    fn indoor_chest_guard_markers(&self) {
+        if !self.lag_free { return; }
+        let _scope = crate::cycle_ledger::routine(0x07bb0d);
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(0x07bb0d);
+        if self.game_state.player.tile_detection.key_lock_gravestones() & 0x20 == 0 {
+            b.taken(0x07bb14);
+        } else { b.block(0x07bb16); }
+    }
+
     /// $07:BB2C..BB72 / C5B9..C5FF: layer selection and rupee guard,
     /// excluding chest restoration and the rupee body and its child calls.
     fn indoor_layer_markers(&self, y_axis: bool) {
@@ -2243,8 +2285,10 @@ impl ZeldaState {
         if self.game_state.player.tile_detection.collision_bits() & 7 == 0
             && self.game_state.player.tile_detection.slope_collision_bits() & 5 != 0
         {
+            self.indoor_slope_call_markers(true);
             self.follower_link_state_mut().clear_conveyor_belt_state();
             self.flag_moving_into_slopes_y();
+            self.indoor_slope_return_markers(true);
             if self
                 .game_state
                 .player
@@ -2261,6 +2305,7 @@ impl ZeldaState {
     }
 
     fn finish_indoor_y_collision_after_slope(&mut self) {
+        self.indoor_chest_guard_markers();
         self.follower_link_state_mut()
             .clear_moving_against_diag_tile();
         if self.game_state.player.tile_detection.key_lock_gravestones() & 0x20 != 0 {
@@ -2270,10 +2315,17 @@ impl ZeldaState {
                 self.game_state.player.tile_detection.tile_type() as u8,
                 &mut chest_position,
             );
-            self.tile_detect_position_mut().clear_tile_type();
-            self.tile_detect_position_mut().set_collision_bits(bak);
+            self.finish_indoor_y_collision_after_chest(bak);
+            return;
         }
 
+        self.finish_indoor_collision_common(true);
+    }
+
+    fn finish_indoor_y_collision_after_chest(&mut self, collision: u16) {
+        self.indoor_chest_restore_markers();
+        self.tile_detect_position_mut().clear_tile_type();
+        self.tile_detect_position_mut().set_collision_bits(collision);
         self.finish_indoor_collision_common(true);
     }
 
@@ -2574,12 +2626,48 @@ impl ZeldaState {
     }
 
     fn finish_indoor_collision_shared_tail_after_damage(&mut self, y_axis: bool) {
+        self.indoor_pushblock_guard_markers(y_axis);
         if self.game_state.dungeon.room_load.header_collision() == 0
             || self.game_state.dungeon.room_load.header_collision() == 4
             || !self.game_state.player.follower_link.is_on_lower_level()
         {
             self.handle_indoor_pushblock_timeout(y_axis);
         }
+    }
+
+    /// $07:BD49..BD65 / C786..C7A2, plus BDAD/C7EA only for a
+    /// skipped loop. The post-cache entry has its own scope and DEC ownership.
+    fn indoor_pushblock_guard_markers(&self, y_axis: bool) {
+        if !self.lag_free { return; }
+        let pc = if y_axis { 0x07bd49 } else { 0x07c786 };
+        let _scope = crate::cycle_ledger::routine(pc);
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(pc);
+        let header = self.game_state.dungeon.room_load.header_collision();
+        if header == 0 { b.taken(pc + 3); }
+        else {
+            b.block(pc + 5);
+            if header == 4 { b.taken(pc + 7); }
+            else {
+                b.block(pc + 9);
+                if self.game_state.player.follower_link.is_on_lower_level() {
+                    b.taken(pc + 11);
+                    return;
+                }
+            }
+        }
+        b.block(pc + 13);
+        if self.game_state.player.tile_detection.block_flags() == 0 {
+            b.taken(pc + 17);
+        } else {
+            b.block(pc + 19);
+            if self.game_state.player.follower_link.num_orthogonal_directions() == 0 {
+                b.block(pc + 23);
+                return;
+            }
+            b.taken(pc + 21);
+        }
+        b.block(if y_axis { 0x07bdad } else { 0x07c7ea });
     }
 
     fn handle_indoor_pushblock_timeout(&mut self, y_axis: bool) {
@@ -2602,6 +2690,12 @@ impl ZeldaState {
     }
 
     fn handle_indoor_pushblock_timeout_after_cache(&mut self, y_axis: bool, block_flags: u16) {
+        // $07:BD65..BDB1 / C7A2..C7EE: actual timeout and 16-bit scan.
+        // Each child owns its body; these markers include only call opcodes.
+        let pc = if y_axis { 0x07bd65 } else { 0x07c7a2 };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(pc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(pc);
         self.follower_link_state_mut()
             .decrement_gravestone_push_timeout();
         if !(self
@@ -2611,18 +2705,28 @@ impl ZeldaState {
             .gravestone_push_timeout() as i8)
             .is_negative()
         {
+            b.taken(pc + 2);
             return;
         }
+        b.block(pc + 4);
         let mut bits = block_flags;
         for i in (0..=15).rev() {
+            b.block(pc + 10);
             if bits & 0x8000 != 0 {
+                b.block(pc + 13);
                 let idx = self.find_free_moving_block_slot(i);
+                b.block(pc + 20);
                 if idx != 0xff {
+                    b.block(pc + 22);
                     let slot = idx as usize;
                     self.tile_detect_position_mut()
                         .set_collision_bits(idx as u16);
-                    if !self.initialize_push_block(idx, i * 2) {
+                    let blocked = self.initialize_push_block(idx, i * 2);
+                    b.block(pc + 30);
+                    if !blocked {
+                        b.block(pc + 32);
                         self.sprite_dungeon_draw_single_push_block(slot * 2);
+                        b.block(pc + 39);
                         self.tile_detect_position_mut().set_collision_bits(4);
                         let facing = self
                             .game_state
@@ -2652,11 +2756,30 @@ impl ZeldaState {
                             ))
                         } & 0x0f;
                         self.pushed_block_mut().set_target_low(slot, target);
+                        let unchanged = if y_axis {
+                            self.game_state.player.follower_link.last_direction_moved_towards() != 1
+                        } else {
+                            self.game_state.player.follower_link.last_direction_moved_towards() == 2
+                        };
+                        if unchanged { b.taken(pc + 55); }
+                        else { b.block(pc + 57); }
+                        b.block(pc + 58);
+                    } else {
+                        b.taken(pc + 30);
                     }
+                } else {
+                    b.taken(pc + 20);
                 }
+                b.block(pc + 63);
+            } else {
+                b.taken(pc + 11);
             }
             bits <<= 1;
+            b.block(pc + 67);
+            if i != 0 { b.taken(pc + 68); }
         }
+        b.block(pc + 70);
+        b.block(pc + 72);
         self.follower_link_state_mut()
             .set_gravestone_push_timeout(21);
     }
@@ -3379,6 +3502,215 @@ impl ZeldaState {
 #[cfg(test)]
 mod response_price_tests {
     use super::*;
+
+    fn bypass4_machine(rom: &[u8], image: &[u8], entry: u32) -> snes::Snes {
+        let mut machine = snes::Snes::new();
+        machine.cart.load(snes::CartType::LoRom, rom, 0x2000);
+        machine.ram.copy_from_slice(image);
+        machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+        machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = 7; machine.cpu.db = 7;
+        machine.cpu.pc = entry as u16; machine.cpu.sp = 0x1fc;
+        machine
+    }
+
+    #[test]
+    fn bypass4_slope_and_chest_retirements_match_rom() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        let mut base = ZeldaState::new(); base.set_assets(&assets).unwrap();
+        for y_axis in [true, false] {
+            for variant in 0..128u8 {
+                let mut native = base.clone();
+                let mut image = base.wram_image().into_owned();
+                image[0x1b] = 1; image[0x20] = 0x40; image[0x22] = 0x40;
+                image[0x66] = variant & 3; image[0xee] = (variant >> 2) & 1;
+                image[0x6b] = variant & 31;
+                image[0x46] = (variant >> 3) & 1;
+                image[0x308] = if variant & 16 != 0 { 0x80 } else { 0 };
+                image[0x6c] = (variant >> 4) % 3;
+                image[0x46c] = (variant >> 3) % 5;
+                native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let entry = if y_axis { 0x07bb06 } else { 0x07c5b0 };
+                crate::cycle_ledger::assert_rom_marker_work(entry,
+                    bypass4_machine(&rom, &image, entry),
+                    |s| s.cpu.k == 7 && (entry as u16..entry as u16 + 7).contains(&s.cpu.pc),
+                    ||native.indoor_slope_return_markers(y_axis));
+
+                // Enter at the actual call prefix on each axis, rather than
+                // assigning the vertical call/return shape to horizontal.
+                let entry = if y_axis { 0x07bb00 } else { 0x07c5aa };
+                image[0xc] = if variant & 1 == 0 { 1 } else { 4 };
+                image[0x62] = (variant >> 1) & 6;
+                native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+                crate::cycle_ledger::assert_rom_marker_work(entry,
+                    bypass4_machine(&rom, &image, entry),
+                    |s| s.cpu.k == 7 && (entry as u16..entry as u16 + 6).contains(&s.cpu.pc),
+                    || {
+                        native.indoor_slope_call_markers(y_axis);
+                        native.follower_link_state_mut().clear_conveyor_belt_state();
+                        if y_axis { native.flag_moving_into_slopes_y(); }
+                        else { native.flag_moving_into_slopes_x(); }
+                    });
+            }
+        }
+        for chest in [0, 0x20] {
+            for direction in 0..4 {
+                let mut native = base.clone();
+                let mut image = base.wram_image().into_owned();
+                image[0x1b] = 1; image[0x66] = direction; image[0x2e7] = chest;
+                native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                crate::cycle_ledger::assert_rom_marker_work(0x07bb0d,
+                    bypass4_machine(&rom, &image, 0x07bb0d),
+                    |s| s.cpu.k == 7 && (0xbb0d..0xbb23).contains(&s.cpu.pc),
+                    ||native.finish_indoor_y_collision_after_slope());
+            }
+        }
+        for collision in [0, 1, 2, 5, 7, 0x2200, 0xffffu16] {
+            for lower in [0, 1] {
+                let mut native = base.clone();
+                let mut image = base.wram_image().into_owned();
+                image[0x1b] = 1; image[0xee] = lower; image[0x2ea] = 0x58;
+                native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let mut machine = bypass4_machine(&rom, &image, 0x07bb23);
+                machine.cpu.sp = 0x1fa;
+                machine.ram[0x1fb] = (collision >> 8) as u8;
+                machine.ram[0x1fc] = collision as u8;
+                crate::cycle_ledger::assert_rom_marker_work(0x07bb23, machine,
+                    |s| s.cpu.k == 7 && (0xbb23..0xbb2c).contains(&s.cpu.pc),
+                    ||native.finish_indoor_y_collision_after_chest(collision));
+                assert_eq!(native.game_state.player.tile_detection.tile_type(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn bypass4_pushblock_scan_matches_both_rom_axes() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        let mut base = ZeldaState::new(); base.set_assets(&assets).unwrap();
+        for y_axis in [true, false] {
+            for flags in [0, 1, 2, 0x80, 0x100, 0x8000, 0xaaaa, 0xffffu16] {
+                for timeout in [0, 1, 21, 128, 129, 255] {
+                    for slots in [0, 1, 2] {
+                        for direction in 0..4 {
+                            let mut native = base.clone();
+                            let mut image = base.wram_image().into_owned();
+                            image[0x1b] = 1; image[0x20] = 0x40; image[0x22] = 0x40;
+                            image[0x5f..0x61].copy_from_slice(&flags.to_le_bytes());
+                            image[0x61] = timeout; image[0x66] = direction;
+                            // Full slots, an empty slot, and successful/rejected initialization.
+                            image[0x5fd] = u8::from(slots == 2);
+                            image[0x5fc] = u8::from(slots != 0);
+                            image[0xae] = if slots == 1 { 38 } else { 0 };
+                            native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+                            native.set_lag_free(true);
+                            let entry = if y_axis { 0x07bd65 } else { 0x07c7a2 };
+                            let end = if y_axis { 0xbdb1 } else { 0xc7ee };
+                            eprintln!("bypass4 push axis={y_axis} flags={flags:x} timeout={timeout} slots={slots} dir={direction}");
+                            let source = crate::cycle_ledger::assert_rom_marker_work(entry,
+                                bypass4_machine(&rom, &image, entry),
+                                |s| s.cpu.k == 7 && (entry as u16..end).contains(&s.cpu.pc),
+                                ||native.handle_indoor_pushblock_timeout_after_cache(y_axis, flags));
+                            let actual = native.wram_image();
+                            for address in [0x61, 0x5fc, 0x5fd] {
+                                assert_eq!(actual[address], source.snes().ram[address], "{address:x}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bypass4_pushblock_guards_match_rom() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        for y_axis in [true, false] {
+            for header in 0..5 {
+                for lower in [0, 1] {
+                    for flags in [0u16, 1, 0x100, 0x8000] {
+                        for diagonal in [0, 1, 2] {
+                            let mut native = ZeldaState::new();
+                            let mut image = native.wram_image().into_owned();
+                            image[0x1b] = 1; image[0x46c] = header; image[0xee] = lower;
+                            image[0x5f..0x61].copy_from_slice(&flags.to_le_bytes());
+                            image[0x6a] = diagonal; image[0x61] = 21;
+                            native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+                            native.set_lag_free(true);
+                            let entry = if y_axis { 0x07bd49 } else { 0x07c786 };
+                            let end = if y_axis { 0xbd65 } else { 0xc7a2 };
+                            let reset = if y_axis { 0xbdad..0xbdb1 } else { 0xc7ea..0xc7ee };
+                            crate::cycle_ledger::assert_rom_marker_work(entry,
+                                bypass4_machine(&rom, &image, entry),
+                                |s| s.cpu.k == 7 && ((entry as u16..end).contains(&s.cpu.pc)
+                                    || reset.contains(&s.cpu.pc)),
+                                ||native.finish_indoor_collision_shared_tail_after_damage(y_axis));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bypass4_native_vertical_handoffs_retire_only_the_remainder() {
+        use crate::cycle_models::vertical_collision_response::VerticalResponseTail;
+        use crate::cycle_models::vertical_surface_response::VerticalSurfaceTail;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        let mut base = ZeldaState::new(); base.set_assets(&assets).unwrap();
+        for variant in 0..64u8 {
+            let mut native = base.clone();
+            let mut image = base.wram_image().into_owned();
+            image[0x1b] = 1; image[0x20] = 0x40; image[0x22] = 0x40 | (variant & 7);
+            image[0xc] = if variant & 8 == 0 { 1 } else { 4 };
+            image[0x62] = (variant >> 2) & 6; image[0x66] = (variant >> 5) & 1;
+            native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+            native.set_lag_free(true);
+            let mut machine = bypass4_machine(&rom, &image, 0x07e076);
+            machine.cpu.sp = 0x1fa;
+            machine.ram[0x1fb..0x1fd].copy_from_slice(&[0x05, 0xbb]);
+            crate::cycle_ledger::assert_rom_marker_work(0x07bb06, machine,
+                |s| s.cpu.k == 7 && (0xbb06..0xbb0d).contains(&s.cpu.pc),
+                ||native.finish_native_vertical_response(VerticalResponseTail::Slope));
+
+            let flags = 1u16 << (variant & 15);
+            image[0x5f..0x61].copy_from_slice(&flags.to_le_bytes());
+            image[0x61] = if variant & 16 == 0 { 21 } else { 0 };
+            image[0xae] = 38;
+            native.import_wram_image(&image); native.sync_native_game_state_from_ram();
+            crate::cycle_ledger::assert_rom_marker_work(0x07bd65,
+                bypass4_machine(&rom, &image, 0x07bd65),
+                |s| s.cpu.k == 7 && (0xbd65..0xbdb1).contains(&s.cpu.pc),
+                ||native.finish_native_vertical_surface(VerticalSurfaceTail::PushBlock));
+        }
+    }
+
+    #[test]
+    fn bypass4_markers_preserve_default_and_muting() {
+        for lagless in [false, true] {
+            let mut native = ZeldaState::new(); native.set_lag_free(lagless);
+            let before = crate::cycle_ledger::master();
+            let emit = || {
+                for y_axis in [true, false] {
+                    native.indoor_slope_call_markers(y_axis);
+                    native.indoor_slope_return_markers(y_axis);
+                    native.indoor_pushblock_guard_markers(y_axis);
+                }
+                native.indoor_chest_guard_markers(); native.indoor_chest_restore_markers();
+            };
+            if lagless { crate::cycle_ledger::muted(emit); } else { emit(); }
+            assert_eq!(crate::cycle_ledger::master(), before);
+        }
+    }
 
     #[test]
     fn bypass3_horizontal_clear_handoff_matches_rom() {

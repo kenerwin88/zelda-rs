@@ -17245,3 +17245,125 @@ Scratch programs stayed in `/tmp`. No GPU execution, video, cached-av,
 external Snes9x, continuous or seeded live census, full library suite,
 protected-cache/shared-ledger write, cargo fmt, commit or push was performed.
 These are CPU accounting and regression checks, not exact A/V acceptance.
+
+
+## Bypass pricing 4
+
+**Verified partial CPU-only stop on `codex/bypass4`, base `69963983`.**
+Evidence: `target/bypass4/`. One final unsharded **full-v2 ROM-answer census**
+uses `--report 0 --seed-every 2000`, completes **1,473,123 ordered iterations
+and EOF**, and the unchanged census gate **PASSes, unexplained 0**.
+ROM excess/zero-lag FP remain **0/0**; every runtime hold equals P2.
+Missing holds fall **2,437 → 2,421**:
+**16 restored, 0 lost,
+0 newly missing iterations**.
+
+| Inclusive iteration window | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,437 | **2,421** |
+| 0..94,852 | 79 | **79** |
+| 94,853..142,086 | 37 | **37** |
+| 142,087..461,988 | 378 | **378** |
+| 461,989..1,473,122 | 1,943 | **1,927** |
+
+The before column is Bypass 3's retained complete predictor, not a fresh
+control replay. `baseline-source-identity.json` verifies its runtime/table
+bindings against this batch's clean main base. `counts.json` binds both full
+predictor hashes. The independent source prefix still ends at **461,775**;
+the reporting window ending 461,988 does not extend it. Missing holds in
+**0..461,775** remain **494**.
+On Diagnostic 2's same **393,848 ordinary source-entry rows**, the signed
+main-instruction deficit falls **3,614,618,534 → 3,577,781,098
+master clocks**, with **36,837,436** added native instruction clocks.
+This is a counter comparison with retained independent source work, not a
+claim of full opcode pairing, source suffix/EOF or exact A/V acceptance.
+
+### Collision retirements and disjoint instruction ownership
+
+**51 generated blocks / 137 source instructions** come only from
+`scripts/rom_block_costs.py`; all **3,496 previous rows are byte-unchanged**
+and all **3,547 rows** regenerate exactly. Every new marker family opens its
+own lagless `cycle_ledger::routine(entry)` scope. The newly priced helpers
+have no legacy `charge(N)` scalar. Existing stationary, setup, outdoor setup
+and child prices remain disjoint and unchanged; no parent/child surcharge,
+fitted hold count, classifier change, exception or timing rule is introduced.
+
+| Source range, end exclusive | Retirement |
+| --- | --- |
+| `$07:BB00..BB06` / `$C5AA..C5B0` | Clear conveyor and slope JSR opcode; child excluded. |
+| `$07:BB06..BB0D` / `$C5B0..C5B7` | Actual child-result test and conditional slope-blocked RTS. |
+| `$07:BB0D..BB23` | Vertical diagonal clear, chest predicate, two saved collision bytes and chest JSL opcode. |
+| `$07:BB23..BB2C` | Five post-chest clear/PLA/store instructions. |
+| `$07:BD49..BD65` / `$C786..C7A2` | Header/layer/flags/direction guards and cache stores. |
+| `$07:BD65..BDB1` / `$C7A2..C7EE` | Timeout DEC, actual 16-bit bit scan, call opcodes, branch-dependent block assignment, restores and timeout reset. |
+
+A skipped scan's BDAD/C7EA reset belongs only to the guard scope; a completed
+scan's reset belongs only to the scan scope. The sixteen iterations follow the
+real native bit loop, with actual slot-allocation and initialization results.
+REP/SEP, stack saves/restores and conditional branches are explicit. The indexed
+read at BD97/C7D4 cannot cross for actual two-slot X values 0/2. Find-slot,
+initialization and drawing children retain their own bodies and returns.
+
+The native vertical Slope handoff has already retired BB00/BB03, so its bridge
+adds only the post-child BB06 test before any newly reached BB0D chest work.
+The Chest handoff has already retired through BB1F JSL; its shared restoration
+starts at BB23 and cannot repeat the save/call prefix. The PushBlock handoff
+stops before BD65 DEC after its cache stores; `after_cache` starts a separate
+scope at exactly that instruction and never rebooks the preceding guards.
+Doorway entries may reach the fresh setup suffix once; DoorSnap does not enter
+these new ranges. Rupee/SurfaceTail enter after the new chest/slope work.
+SurfaceEffect/StairDash can subsequently reach the pushblock guards; Damage
+exits before them, and ResetSwim/Bonk/Nudge enter after the pushblock range.
+`outside-charge-certificate.json` records this local retirement review and
+source hashes; it is not a renewed M3b auditor admission certificate.
+
+Horizontal evidence comes from **independent unmodified-ROM entries** at
+C5AA, C5B0, C786 and C7A2, with their own branches and return boundaries.
+No horizontal event price or continuation model is inferred from vertical.
+The checkout still has no standalone horizontal native response/surface model.
+
+| Added ordinary-prefix work | Master clocks |
+| --- | ---: |
+| chest_guard | 8,234,110 |
+| pushblock_guard_and_scan | 28,480,390 |
+| chest_restore | 136 |
+| slope_call | 61,698 |
+| slope_return | 61,102 |
+
+On every ordinary prefix row, new marker work equals main-counter growth,
+and observed path totals plus separate VWF reconcile with the predictor:
+**zero counter/marker mismatches**. `prefix-proof.json`, compressed per-row
+additions and the complete hold-change matrix retain the comparison. Full
+source call signatures remain retained, including unresolved call mappings.
+
+### Verification and remaining scope
+
+All **five new tests** pass, including **2,054 unmodified-ROM comparisons**:
+534 slope/chest cases, 1,152 scan cases, 240 guard cases and 128 native
+slope/pushblock handoff cases. These cover both axes, slope result/early return,
+direction, layers, carrying/hurt/doorway inputs, chest save/restoration,
+individual bits and mixed masks, busy/available slots, initialization rejection,
+and timeout sign/wrap cases. Existing fixtures pass: all **12 collision-file
+tests** (including the five new ones), **13 runtime collision tests**, both
+vertical response/surface model fixtures, and the existing slope-wrapper caller
+fixture. Existing Bypass-3 and model fixtures preserve their separate
+pit/deep-water/doorway/carrying/hurt/layer/direction event coverage; the new
+bounded fragment checks do not claim a complete event-family certificate.
+
+Default, no-default-feature and observer-enabled product builds are
+**warning-free**. The lib-test build retains the same **24 pre-existing
+dead-code warnings**. Nine Python generator/worklist tests, exact table
+regeneration and final `git diff --check` pass. The default **200,000-frame
+state ledger matches all records and EOF**. Protected input file sets, sizes
+and nanosecond mtimes remain unchanged. Frozen runtime hashes, binary identities,
+commands, logs and disk samples bind this stop; `target/bypass4` stays below
+**3 GB**, without claiming an unobserved absolute transient peak.
+
+This is a partial stop within priority 1. Slope child bodies, rupee body/suffix,
+doorway/door-snap remaining handoffs, eventful surfaces, blocked/bonk/nudge
+continuations and outdoor bodies remain unpriced. Later priorities 1E:8B19,
+05:B5D3/caller-70, remaining B956 bindings, BNC body, 00:8781 ownership,
+Arrghus orbit and BNC flail were not priced. No candidate needed an exception
+or withdrawal. No GPU, video, cached-av, external Snes9x, continuous live or
+seeded live census, full library suite, protected-cache/shared-ledger write,
+cargo fmt, commit or push was performed. Scratch drivers stayed in `/tmp`.
