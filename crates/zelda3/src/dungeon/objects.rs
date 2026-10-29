@@ -40,16 +40,17 @@ impl ZeldaState {
             }
             0x03 | 0x04 => {
                 let count = size_1to16(width, height);
-                if self.lag_free {
-                    // $01:8B0D..8B73: register setup, size child $B0AC,
-                    // eight load/two-background-store triples per pass, RTS.
-                    // The native both-background tile helper has no price.
-                    crate::cycle_ledger::charge(88 + 286 + 1262 * u64::from(count)
-                        + 6 * u64::from(count - 1) + 42);
-                }
+                // $01:8B0D..8B73, M16/X16: caller, inline stores and RTS.
+                // $B0AC owns the size child; the native tile helper is unpriced.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x018b0d);
+                self.price_room_draw_size_1to16();
                 for i in 0..count {
+                    b.block(0x018b13);
                     self.room_data_draw_object_nx4_both_bgs(src, dsto + i * 2, 2);
+                    if i + 1 != count { b.taken(0x018b71); }
                 }
+                b.block(0x018b73);
             }
             0x05 | 0x06 => {
                 let count = size_1to16(width, height);
@@ -266,10 +267,13 @@ impl ZeldaState {
             }
             0x34 => {
                 let count = size_a_to_a_plus_15(width, height, 4);
-                let tile = self.tile_word(src, 0);
-                for i in 0..count {
-                    self.room_write_current(dsto + i, tile);
-                }
+                // $01:9136..913E, M16/X16: size call and JMP $B2CE.
+                // Both real children already have their own marker partitions.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x019136);
+                self.price_room_draw_size_ato_aplus15();
+                b.block(0x01913c);
+                self.room_object_fill_row_width(count, src, dsto);
             }
             0x36 | 0x37 => {
                 let count = size_1to16(width, height);

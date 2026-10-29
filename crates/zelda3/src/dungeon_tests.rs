@@ -32,7 +32,7 @@ fn object_tail_prices_match_executed_rom_paths() {
     let mut template = ZeldaState::new();
     template.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
     template.set_lag_free(true);
-    let ids = [0x03u8, 0x04, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    let ids = [0x03u8, 0x04, 0x34, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
         0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
         0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x33, 0x36, 0x37,
         0x38, 0x39, 0x3a, 0x3b, 0x3d, 0x5e, 0x75, 0x7f, 0x80, 0x81,
@@ -4083,6 +4083,50 @@ fn load6_inline_door_priority_markers_match_rom() {
                     let _caller = crate::cycle_ledger::routine(entry);
                     n.door_prioritize_cur_door_at(entry);
                 });
+        }
+    }
+}
+
+#[test]
+fn system2_object_callers_match_rom_markers() {
+    let rom = dungeon_render_test_rom().expect("system2 fixture requires ROM");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut base = ZeldaState::new();
+    base.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    base.set_lag_free(true);
+    for idx in [3u8, 4, 0x34] {
+        for width in 0..4 {
+            for height in 0..4 {
+                for plane in [0x2000u16, 0x4000] {
+                    let mut state = base.clone();
+                    let dsto = 0x40u16;
+                    let src = objects::object_subtype1_param(idx).unwrap() as u16;
+                    for row in 0..11 {
+                        let offset = crate::rom_cpu_timing::lorom_offset(0x018719 + row * 3).unwrap();
+                        let pointer = u16::from_le_bytes([rom[offset], rom[offset+1]]) - 0x4000 + plane;
+                        let a = 0xbf + row as usize * 3;
+                        state.write_wram_word(a, pointer); state.write_wram_byte(a+2, 0x7e);
+                    }
+                    for (a,v) in [(0xb2,u16::from(width)), (0xb4,u16::from(height)), (8,dsto*2)] {
+                        state.write_wram_word(a,v);
+                    }
+                    state.sync_native_game_state_from_ram();
+                    let mut machine = snes::Snes::new();
+                    machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    machine.ram.copy_from_slice(&state.wram_image());
+                    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                    machine.cpu.e=false; machine.cpu.unpack_flags(0);
+                    machine.cpu.k=1; machine.cpu.db=0; machine.cpu.sp=0x1fc;
+                    machine.cpu.pc=if idx==0x34 {0x9136} else {0x8b0d};
+                    machine.cpu.a=dsto*2; machine.cpu.x=src; machine.cpu.y=dsto*2;
+                    crate::cycle_ledger::assert_rom_marker_work(0x01893c, machine,
+                        |s| s.cpu.k==1 && if idx==0x34 {(0x9136..0x913f).contains(&s.cpu.pc)}
+                            else {(0x8b0d..0x8b74).contains(&s.cpu.pc)}, || {
+                            let _scope=crate::cycle_ledger::routine(0x01893c);
+                            state.LoadType1ObjectSubtype1(idx,width,height,dsto);
+                        });
+                }
+            }
         }
     }
 }

@@ -10,6 +10,35 @@ mod control_price_tests {
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
 
     #[test]
+    fn system2_control_markers_match_rom() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        for damage in [0u8, 1, 16, 255] {
+            for cape in [0u8, 1] {
+                for disabled in [0u8, 1] {
+                    let mut native = ZeldaState::new();
+                    native.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+                    for (a,v) in [(0x373,damage),(0x55,cape),(0x37b,disabled),
+                        (0x5d,22),(0xf36d,16),(0x1b,1),(0x10,7)] {
+                        native.write_wram_byte(a,v);
+                    }
+                    native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+                    let mut machine=Snes::new(); machine.cart.load(CartType::LoRom,&rom,0x2000);
+                    machine.ram.copy_from_slice(&native.wram_image());
+                    machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                    machine.cpu.e=false; machine.cpu.unpack_flags(0x30);
+                    machine.cpu.k=7; machine.cpu.db=7; machine.cpu.pc=0x807f; machine.cpu.sp=0x1fc;
+                    crate::cycle_ledger::assert_rom_marker_work(0x07807f,machine,
+                        |s| s.cpu.k==7 && (0x807f..0x8109).contains(&s.cpu.pc), || {
+                            let _scope=crate::cycle_ledger::routine(0x07807f);
+                            native.price_link_control_self();
+                        });
+                }
+            }
+        }
+    }
+
+    #[test]
     fn default_handler_prices_match_executed_rom_paths() {
         let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../saves/zelda3.sfc")).unwrap();
@@ -170,7 +199,10 @@ mod control_price_tests {
                 if pc == 0x078106 { dispatched = true; break; }
             }
             assert!(dispatched);
-            assert_eq!(native.link_control_self_master(), measured, "operands={changes:?}");
+            let before = crate::cycle_ledger::master();
+            native.set_lag_free(true);
+            native.price_link_control_self();
+            assert_eq!(crate::cycle_ledger::master() - before, measured, "operands={changes:?}");
         }
     }
 }
@@ -599,7 +631,7 @@ impl ZeldaState {
 
     pub(super) fn link_control_handler(&mut self) {
         let _scope = crate::cycle_ledger::routine(0x07_807f);
-        if self.lag_free { crate::cycle_ledger::charge(self.link_control_self_master()); }
+        self.price_link_control_self();
         if self.game_state.player.follower_link.given_damage() != 0 {
             if self.game_state.player.follower_link.is_cape_active() {
                 self.follower_link_state_mut().clear_given_damage();
@@ -694,34 +726,49 @@ impl ZeldaState {
     /// $07:807F..8106: damage/cape/health branches and handler dispatch.
     /// The SFX call instruction is included; its body and the selected
     /// player's tail handler retain their own owners.
-    fn link_control_self_master(&self) -> u64 {
+    fn price_link_control_self(&self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         let p = &self.game_state.player.follower_link;
-        let mut clocks = 48;
-        if p.given_damage() == 0 { clocks += 6; }
+        b.block(0x07807f);
+        if p.given_damage() == 0 { b.taken(0x078082); }
         else {
-            clocks += 40;
-            if p.is_cape_active() { clocks += 102; }
+            b.block(0x078084);
+            if p.is_cape_active() { b.block(0x078088); }
             else {
-                clocks += 6 + 48;
-                if p.sprite_damage_disable_timer() != 0 { clocks += 6; }
+                b.taken(0x078086); b.block(0x078091);
+                if p.sprite_damage_disable_timer() != 0 { b.taken(0x078094); }
                 else {
-                    clocks += 152;
-                    if self.ancilla_slot_view(0).ancilla_type() != 5 { clocks += 6; }
+                    b.block(0x078096);
+                    if self.ancilla_slot_view(0).ancilla_type() != 5 { b.taken(0x0780a3); }
                     else {
-                        clocks += 48;
-                        if p.action_handler_timer() != 0 { clocks += 6; }
-                        else { clocks += 40 + if p.spin_attack_delay_timer() == 0 { 6 } else { 64 }; }
+                        b.block(0x0780a5);
+                        if p.action_handler_timer() != 0 { b.taken(0x0780a8); }
+                        else {
+                            b.block(0x0780aa);
+                            if p.spin_attack_delay_timer() == 0 { b.taken(0x0780ac); }
+                            else { b.block(0x0780ae); }
+                        }
                     }
-                    clocks += 48 + if p.blink_countdown() != 0 { 6 } else { 48 };
+                    b.block(0x0780b4);
+                    if p.blink_countdown() != 0 { b.taken(0x0780b7); }
+                    else { b.block(0x0780b9); }
+                    b.block(0x0780be); b.block(0x0780c3);
                     let health = self.game_state.inventory.player_resources.current_health()
                         .wrapping_sub(p.given_damage());
-                    clocks += 218 + if health == 0 { 6 + 352 } else {
-                        32 + if health < 0xa8 { 6 } else { 352 }
-                    } + 40;
+                    if health == 0 { b.taken(0x0780cf); }
+                    else {
+                        b.block(0x0780d1);
+                        if health < 0xa8 { b.taken(0x0780d3); }
+                    }
+                    if health == 0 || health >= 0xa8 { b.block(0x0780d5); }
+                    b.block(0x0780f7);
                 }
             }
         }
-        clocks + 40 + if p.handler_state() == 0 { 6 } else { 46 } + 98
+        b.block(0x0780fb);
+        if p.handler_state() == 0 { b.taken(0x0780fd); }
+        else { b.block(0x0780ff); }
+        b.block(0x078102);
     }
 
     pub(in crate::zelda_rtl) fn link_state_default(&mut self) {

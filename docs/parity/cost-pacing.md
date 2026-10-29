@@ -15729,3 +15729,160 @@ matrices bind this uncommitted stop. Evidence remains below **3 GB**. No GPU
 run, `--video`, cached-av, Snes9x execution, protected-cache/shared-ledger write,
 cargo fmt, commit, push or one-off repository script was used. Remaining
 pricing and continuous live ending acceptance remain unfinished.
+
+## System pricing 2
+
+**Verified partial CPU-only stop on `codex/system2`, base `58e7cb36`**
+(main `8aee379c` plus System pricing 1). Evidence: `target/system2/`.
+The single final unsharded ROM census uses read-only **full-v2**,
+`--report 0 --seed-every 2000`. Its unchanged gate **PASSes all
+1,473,123 iterations**, unexplained **0**, ROM excess/FP **0/0**.
+Every runtime hold equals P2. The retained System 1 predictor, both binary
+hashes and all six final source hashes verify against this exact base;
+no duplicate full before control or seeded live census was run.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,769 | **2,769** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 39 | **39** |
+| 142,087..461,988 | 454 | **454** |
+| 461,989..1,473,122 | 2,189 | **2,189** |
+
+The whole predictor comparison restores **0 holds**, loses **0**,
+and has **0 newly missing iterations**. This is a
+logical-state/count receipt, not physical CPU/NMI or exact A/V acceptance.
+
+### Audit of existing scalar/model claims
+
+`scalar-audit.json` reports **all 61 audited fragments** separately, with
+source ranges, entry M/X, data bank, old charge, exact static ROM cost and
+signed delta. Its bounded opcode listings come from
+`scripts/rom_block_costs.py`; DP is zero. **60 fragments match; one
+six-clock overcount is identified. No undercount is established in this
+selected audit.** This does not exhaust the large raw owner gaps or prove
+all entries/continuations equivalent. No aggregate parent difference is priced.
+
+Representative fixed claims (the full per-site table is in the JSON):
+Base costs are shown below; each executing conditional branch and indexed
+read retains its actual six-clock taken/page-crossing addition.
+
+| Claimed instructions | Entry widths / bank | Old | Exact ROM | Delta |
+| --- | --- | ---: | ---: | ---: |
+| Link velocity selector `$07:E245..E24C` | M8/X8, DB7 | 128 | 128 | 0 |
+| Velocity saved-coordinate/BRL `$07:E259..E271` | M8/X8, DB7 | 318 | 318 | 0 |
+| Velocity/sand return `$07:E3E0..E405` | M8/X8, actual REP/SEP, DB7 | 546 | 546 | 0 |
+| Vertical idle entry `$07:BA0A..BA0E` | M8/X8, DB7 | 82 | 82 | 0 |
+| Horizontal idle entry `$07:C4D4..C4D8` | M8/X8, DB7 | 82 | 82 | 0 |
+| Iris prologue `$00:F312..F34C` | M8/X8, REP to M16/X16, DB0 | 816 | 816 | 0 |
+| Iris lower clamp `$00:F34E..F351` | M16/X16, DB0 | 56 | 56 | 0 |
+| Iris upper cursor `$00:F353..F35F` | M16/X16, DB0 | 220 | 220 | 0 |
+| Iris final counter poll `$00:F3A3..F3B2` | M16/X16, DB0 | 172 | 172 | 0 |
+| Iris copy setup `$00:F3B4` | M16/X16, DB0 | 24 | 24 | 0 |
+| Iris copy pass `$00:F3B7..F3C3` | M16/X16, DB0 | 162 + taken 6 | 162 + taken 6 | 0 |
+| Iris radius/goal `$00:F3C5..F3D5` | M16/X16, DB0 | 242 + taken 6 | 242 + taken 6 | 0 |
+| Iris circle head `$00:F4CC..F508` | M16/X16, actual REP/SEP, DB0 | 738 + crossing/taken 6 | 738 + crossing/taken 6 | 0 |
+| Iris force blank `$00:F3DE..F3E5` | M8/X16, DB0 | 98 | **92** | **-6** |
+| Dual-BG object setup `$01:8B0D..8B10` | M16/X16, DB0 | 88 | 88 | 0 |
+| Dual-BG object pass `$01:8B13..8B71` | M16/X16, DB0 | 1,262 + taken 6 | 1,262 + taken 6 | 0 |
+| Dual-BG object RTS `$01:8B73` | M16/X16, DB0 | 42 | 42 | 0 |
+| Size helper `$01:B0AC..B0BD` | M16/X16, DB0 | 286 | 286 | 0 |
+
+The **45 velocity-selector fragments** retain their actual branch
+and table-page costs; `$E319` is unreachable after `AND #0` and is outside the
+model claim. Fresh executed-ROM checks cover **145 control paths**,
+**232 velocity-selection paths** and **1,440 indoor/outdoor collision-setup
+paths**. The existing object-tail ROM/state checks also pass. The control
+idle selector is **198 old / 198 ROM**, zero delta; its nonzero handler,
+damage, cape, blink, health and boomerang branches retain their own paths.
+`model-path-audit.json` names the exact tests and claim boundaries.
+
+The force-blank scalar charged BRA as 28 rather than 22 clocks:
+`16 + 24 + 30 + 22 = 92`. **Its 98-clock charge is left unchanged.**
+A new complete/split goal-transition fixture contract was not established
+in this batch, so this static finding is not used to reduce a shared charge.
+The iris raster barrier, pending row/store/projection entries, instruction
+models and default/ROM-timing consumers remain unchanged. Module09 is untouched.
+
+### Admitted work and replacement partitions
+
+**23 new blocks / 95 instructions** are generated; all **3,136 prior rows
+remain byte-identical**. Markers are lagless-only and cite source addresses.
+No newly priced self body retains its legacy scalar.
+
+- **Link control `$07:807F..8106`:** replace the entire path-selected self
+  scalar with the exact blocks and branch outcomes at equal cost. SFX,
+  cape and selected-state bodies retain their existing owners. The old
+  before-operation placement is preserved.
+- **Object 03/04 `$01:8B0D..8B73`:** replace
+  `88 + 286 + 1262*n + 6*(n-1) + 42` exactly. The existing B0AC size
+  child owns 286; the inline dual-BG stores and RTS remain in the caller.
+  No tile-helper price is added.
+- **Object 34 `$01:9136..913E`:** previously unpriced complete self body.
+  Its caller costs **94**, its actual JSR B0AF size child costs **262**,
+  and its JMP B2CE fill tail costs **192 + 160*n**, with
+  `n=(width<<2 | height)+4`. Total new work is **548 + 160*n**.
+  The fill's existing native helper scope represents an inherited JMP tail;
+  no fictitious source JSR or second caller/child price is charged.
+  The unchanged 880-clock decoder ends at `$01:8980` and excludes these PCs.
+  `DungeonObjectTiles` covers those PCs in the separate native ROM-timing
+  lane. This logical path constructs `load_romless_play_state` with ROM
+  startup timing off; that native room model is not a second clock owner
+  on the semantic call. Default/ROM-timing paths keep their existing model
+  and receive no new marker work. `admission-notes.json` binds this
+  lane-specific exclusion and source hashes.
+  All sizes and both background planes are fixture-covered; there is no
+  successful-path, scene or route-iteration exception.
+
+On all **2,736 frozen missing iterations**, the equal-cost conversions
+remain neutral, and actual row-fill marker work minus old zero self work
+equals every signed main-counter increase: **87,568 clocks**
+from **36 calls / 424 fill passes**.
+There are **0 counter-work mismatches** and
+**0 other-object work changes**. The unchanged
+fixed inverse predicts **0** recoveries, with
+**0 prediction exceptions**; all rows are retained
+in `work-rows.json.gz`. This is executed native work with ROM-fixture-proven
+formulas, not a whole-route source call-order or physical interruption proof.
+
+### Continuous live and final checks
+
+The single cold continuous live replay uses **full-v2**, `--report 0
+--live-apu-reads --frames 900000`, **no `--seed-every`**. It is intentionally
+stopped after the first classified state difference: **462,626**,
+**`song-end-poll`**, room **`$0006`**;
+last clean index **462,625**. System pricing 1's retained first difference
+is **462,626**; supplied main `408a95a9` is **881,733**. This receipt does
+not establish a completed 900k summary, full-route live, ending or exact A/V
+acceptance. Relative to the retained exact-branch frontier this is
+**unchanged**;
+relative to supplied main it is **earlier**.
+No fresh main live control was repeated. No price or classifier is adjusted to repair the live poll.
+`live-first-classification.json`, `live-stop.json` and the directly compressed
+classification prefix bind the stop; an interrupted incomplete final record,
+if present, is excluded and retained separately. The predictor retains
+**462,577 complete records**, through
+**462,576**, and excludes its 9-byte partial
+last row. The independently validated classification stream retains
+**35 complete records** through **462,660**;
+its 127-byte interrupted tail is preserved separately.
+Those classification records establish the first state boundary; the
+predictor does not claim to cover that later boundary or source EOF.
+
+Both new **`assert_rom_marker_work` fixtures / 128 cases per feature
+configuration** pass. Targeted control, velocity, collision, object-tail and
+seven inherited System 1 palette/helper fixtures pass. The **nine Python
+generator/worklist tests**, exact table regeneration and `git diff --check`
+pass. Both production builds are **warning-free**; lib-test compilation retains
+its existing **24 default / one reduced warnings**. Full library suites and
+seeded live censuses were not run.
+
+The **default 200k ledger matches every record and EOF**, including state,
+display, SRAM and audio. Default/ROM-timing accounting remains unchanged.
+All **1,512 protected ledger/cache files** retain their file set, sizes
+and nanosecond mtimes. Source/binary hashes, commands, complete ROM gate,
+work proofs and final patch bind this stop. Retained output is below **3 GB**.
+No GPU run, `--video`, cached-av, Snes9x execution, cargo GPU test,
+protected-cache/shared-ledger write, cargo fmt, commit, push or one-off
+repository script was used. Remaining system-owner auditing/pricing and
+continuous live ending acceptance are unfinished.
