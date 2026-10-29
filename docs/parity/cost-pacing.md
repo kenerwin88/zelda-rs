@@ -15557,3 +15557,175 @@ proof matrices and final patch bind this stop. Evidence remains below **3 GB**.
 No GPU run, `--video`, cached-av, Snes9x execution, protected-cache/shared-ledger
 write, cargo fmt, commit, push or one-off repository script was used.
 Remaining system pricing and continuous live ending acceptance are unfinished.
+
+
+## Route pricing 11
+
+**Verified partial CPU-only stop on `codex/route11`, base `e362b435`.**
+Evidence: `target/route11/`. The single final unsharded ROM census uses read-only
+**full-v2**, `--report 0 --seed-every 2000`. Its unchanged gate **PASSes all
+1,473,123 iterations**, unexplained **0**, with ROM excess/FP **0/0** and every
+runtime hold equal to P2.
+
+| ROM scope, inclusive | Before missing | After missing |
+| --- | ---: | ---: |
+| Whole route | 2,745 | **2,740** |
+| 0..94,852 | 87 | **87** |
+| 94,853..142,086 | 38 | **38** |
+| 142,087..461,988 | 453 | **453** |
+| 461,989..1,473,122 | 2,167 | **2,162** |
+
+**5 holds restored, 0 lost**;
+newly missing iterations: **0**. Source contexts are unchanged.
+`baseline-identity.json` binds the retained final Route 10 predictor, profile,
+source and binary hashes to this base. The whole-route worklist is recomputed
+on all **2,712 baseline missing iterations**;
+unchanged exact multi-hold inverses are checked before reuse. Raw exclusive
+parent/alias scores are ownership worklists, not additive prices. Ties prefer
+earlier route iterations. No duplicate main census or seeded live census ran.
+`remaining-owner-ranking.json` retains the recomputed post-change worklist on
+all 2,707 remaining missing iterations.
+
+### Existing scalar/model instruction audit
+
+The requested large raw owners were audited before admitting further self work.
+`scripts/rom_block_costs.py` derives the instruction prices at their actual entry
+widths, including REP/SEP, call-only ownership, taken branches and indexed reads.
+**No own-instruction undercount was established in the audited sets.** No
+zero-net replacement is shipped or counted as a recovery. `scalar-audit.json`
+retains all 22 sets; each row below excludes called child bodies. Arrays list
+successive ROM basic-block base costs, including generator splits at calls.
+Actual branch, loop and page-cross additions remain the existing expressions.
+Entry is M8/X8 except the OAM visibility children, which enter M8/X16.
+
+| Site | Claimed instruction set, inclusive | Old clocks / terms | Exact ROM clocks / terms | Delta |
+| --- | --- | ---: | ---: | ---: |
+| active dispatch | `$069271..069282` | 260 | 260 | 0 |
+| active2 dispatch | `$05b5d3..05b5e7` | 290 | 290 | 0 |
+| active3 dispatch | `$1e8b19..1e8b2d` | 290 | 290 | 0 |
+| ancilla X entry | `$089080..08908a` | 134 | 134 | 0 |
+| ancilla X shared return | `$08a752..08a755` | 74 | 74 | 0 |
+| ancilla axis prefix | `$08908b..0890a5` | 342 | 342 | 0 |
+| ancilla axis negative | `$0890a6..0890a8` | 30 | 30 | 0 |
+| ancilla axis suffix | `$0890a9..0890b6` | 196 | 196 | 0 |
+| ancilla coordinates | `$08f671..08f6a3` | 674 | 674 | 0 |
+| ancilla adjusted coordinates | `$08f6a4..08f6d8` | 690 | 690 | 0 |
+| collision2 entry | `$06e4ab..06e4b2` | 86 | 86 | 0 |
+| collision2 selector | `$06e4b3..06e4b7` | 48 | 48 | 0 |
+| collision2 upper layer/call | `$06e4b8..06e4cc` | 228 | 228 | 0 |
+| collision2 lower layer/call | `$06e4cd..06e4da` | 198 | 198 | 0 |
+| collision2 restore | `$06e4a1..06e4a7` | 112 | 112 | 0 |
+| collision2 tail jump | `$06e4a8..06e4aa` | 24 | 24 | 0 |
+| slot entry | `$0684e2..0684e6` | 48 | 48 | 0 |
+| slot timer/cmp | `$0684e7..0684ef` | 128 | 128 | 0 |
+| OAM visibility child | `$06ff49..06ff55` | 188 | 188 | 0 |
+| OAM visibility child | `$06ff56..06ff6c` | 356 | 356 | 0 |
+| projection | `$06e98e..06ea03` | [66, 56, 90, 64, 30, 70, 64, 30, 104, 136, 72, 102, 62, 54, 30, 146, 64, 54, 64, 54, 98] | [66, 56, 90, 64, 30, 70, 64, 30, 104, 136, 72, 102, 62, 54, 30, 146, 64, 54, 64, 54, 98] | 0 |
+| Swamola drawing | `$1d9f64..1da03b` | [220, 264, 554, 24, 320, 642, 200, 178, 84, 110, 42] | [220, 264, 554, 24, 320, 642, 200, 178, 84, 110, 42] | 0 |
+
+For collision2, the complete one-layer/sign, one-layer/header-zero,
+header-four and ordinary two-layer self paths remain **116 / 164 / 480 / 560**
+clocks. Ancilla axis work remains **544 positive / 568 negative**, plus **6**
+only when `$0BFA+axis` crosses a page; X's own wrapper remains **208**.
+Ancilla coordinate preparation remains **674 / 690**, plus its real slot-six
+page crossing. Projection's byte-counter and actual subtraction count remain
+separate from its two predicates. Swamola's scalar terms match its ROM blocks;
+its broader partial-entry ownership remains unresolved.
+
+The `$06:DC13` drawing, `$06:E41E` preparation and `$06:DC66` shadow models
+also retain their prices. `model-instruction-audit.json` records **35 / 58 / 75
+emitted instruction price sites**, **168 total**, with each source PC, M/X,
+old price set, ROM price set and zero delta. Canonical sprite slot reads are
+in-page; the byte-indexed character tables and shadow indirect read retain
+explicit crossing prices. This checks emitted instruction prices, not a new
+proof of all branch selection, call sequences or continuation retirement.
+The larger raw owner residuals therefore receive no parent tax.
+
+### Admitted self work
+
+Three complete self bodies add
+**43 blocks / 140 instructions**. All **3,213 existing generated
+rows remain byte-identical**. Every marker is lagless-only and cites source
+addresses. The priced self bodies had **zero legacy `charge(N)` scalars**;
+none retains a self scalar. Existing child prices and default/ROM-timing
+accounting remain unchanged.
+
+| Family | Entry | Ownership |
+| --- | --- | --- |
+| Talking Tree mouth caller | `$1D:F956` | Drawing/inactive calls, flags reset and actual local-dispatch caller; state bodies remain separate. |
+| Fairy movement | `$1E:FD1C` | Complete animation, collision-response, facing, destination, averaging and Z-clamp caller; collision, XY/Z, RNG and projection children excluded. |
+| Sprite transformation | `$06:EDCB` | Properties/garnish/sound caller and its real `$EEC1..EEC7` reset tail; children excluded. |
+
+Talking Tree's new caller inherits `$1D:F94B`'s RTS-selected frame. Its
+JumpTableLocal STY/PLY head owns **52** clocks in the child; the pulled-frame
+**362** retire in the caller once, separately from the outer F94B dispatch.
+The earlier caller fixture now includes these newly owned F956 instructions;
+its pre-update failure is retained. No classifier or runtime exception changes.
+
+`source-call-partition.json` selects the shared `EEC1` tail once per actual
+EDCB entry. Eleven real ROM transfers
+are checked in `pricing-audit.json`. The retained original instruction subset
+covers **1,948** current misses and predicts **5** joint recoveries;
+independent family scores overlap.
+
+**189,942 new marker clocks = 189,942 signed main-counter clocks**
+on every frozen miss, with **0 work mismatches**.
+Normalized original instructions agree on all **1,948 covered rows**,
+with **0 source mismatches**. The unchanged whole-cohort
+inverse predicts **5** recoveries; actual cohort recovery is
+**5**, with **0 prediction exceptions**.
+`work-proof.json`, compressed source instruction work and `frame-flips.json.gz`
+retain the matrices and independent executed-marker scores. These are
+instruction-work/logical-scheduling receipts, not physical CPU/NMI or exact A/V proof.
+No price is fitted to lag counts.
+
+Module09 remains untouched: Route pricing 2's all-entry partition is still
+unestablished. All three auditor-reviewed candidates were already priced by
+Route 8 and are skipped. Prior priced bodies, behavior disagreements, dynamic
+MVN and Cucco/Swamola/Trinexx continuation exclusions remain. Other unpriced
+callers, including Fairy's separate FD14 bank wrapper, remain work; the route
+worklist is not exhausted. The non-sprite lane is untouched. No classifier,
+pacing rule, scene threshold/multiplier/table or SPC/APU behavior changes.
+
+### Withdrawn Guard candidate
+
+The complete `$05:C542` collision-velocity candidate and its four predicate
+wrappers pass their standalone ROM checks. The native source-work join then
+finds extra calls under Hog Spear (`$45`) entries, including initialization:
+at least **515,192 / 522,327**
+contain **one / two** native no-collision executions (**198 / 396 clocks**),
+under slot states **9 / 8**, with no corresponding retained ROM C542 entry.
+The call-origin partition is
+unestablished. The entire candidate, generated rows and fixture are withdrawn;
+no state/type/frame-based admission or behavior repair is installed.
+`withdrawn-guard/` retains the candidate patch, source witnesses, binary and
+interrupted census through approximately 752k iterations. That diagnostic is
+not a completed census gate. Final verification below uses only the three
+remaining bodies; the caller discrepancy is not normalized away.
+
+### Final verification
+
+The single cold live replay uses read-only **full-v2**, `--report 0
+--live-apu-reads --frames 500000`, **no `--seed-every`**, and zero actual
+post-initial reseeds. It completes **500,000 tested iterations**; first classified
+state divergence is **142,087**, against base **142,087**.
+The unchanged strict gate reports `census gate: FAIL (unexplained=37467, complete=True)`.
+This bounded receipt is not full-route continuous live or ending acceptance;
+post-divergence observations do not extend the clean prefix.
+`live-classification-summary.json` and the directly compressed classification
+stream retain the boundary.
+
+All **three new `assert_rom_marker_work` fixtures / 244 ROM ownership checks
+per feature configuration** pass. Touched-area tests pass **194 drawing,
+119 sprite, 9 Guard and 17 world tests**. Nine Python generator/worklist tests,
+exact table regeneration and `git diff --check` pass. Both production builds
+are warning-free; pre-existing lib-test warnings remain separate. Full library
+suites, GPU tests and seeded live censuses were not run. The **default 200k
+ledger matches every record and EOF**, including state, display, SRAM and audio.
+
+All **1,512 protected ledger/cache files** retain their file set, sizes and
+nanosecond mtimes. Source/binary hashes, commands, complete gates and proof
+matrices bind this uncommitted stop. Evidence remains below **3 GB**. No GPU
+run, `--video`, cached-av, Snes9x execution, protected-cache/shared-ledger write,
+cargo fmt, commit, push or one-off repository script was used. Remaining
+pricing and continuous live ending acceptance remain unfinished.

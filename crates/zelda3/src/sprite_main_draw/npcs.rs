@@ -2042,12 +2042,24 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TalkingTree_Mouth(int k) {  // 9df956
     pub(super) fn talking_tree_mouth(&mut self, k: usize) {
+        // $1D:F956..F965: caller only; drawing, inactive and state bodies
+        // retain their own prices. JumpTableLocal pulls its frame at PLY.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df956);
         self.talking_tree_draw(k);
+        b.block(0x1df959);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1df95c);
         let value = 0;
         self.sprite_slot_view_mut(k).set_flags4(value);
+        {
+            let _entry = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        b.block(0x008784);
+        b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => self.talking_tree_idle_with_bomb(k),
             1 => self.talking_tree_delay_bomb(k),

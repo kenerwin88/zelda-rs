@@ -651,12 +651,20 @@ impl ZeldaState {
     //   sprite_give_damage[k] = 0;
     // }
     pub(in crate::zelda_rtl) fn sprite_func18(&mut self, k: usize, new_type: u8) {
+        // $06:EDCB..EDE1 and its JMP tail $EEC1..EEC7; children excluded.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06edcb));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06edcb);
         let value = new_type;
         self.sprite_slot_view_mut(k).set_sprite_type(value);
         self.sprite_prep_load_properties(k);
+        b.block(0x06edd2);
         self.sprite_spawn_poof_garnish(k);
+        b.block(0x06edd6);
         self.set_sound_effect_2(0);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
+        b.block(0x06eddf);
+        b.block(0x06eec1);
         let value = 0;
         self.sprite_slot_view_mut(k).set_hit_timer(value);
         let value = 0;

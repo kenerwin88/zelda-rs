@@ -3305,7 +3305,9 @@ fn route1_talking_tree_callers_match_rom_without_body_double_charge() {
                     |s| match owner {
                         0x06c0d5 => s.cpu.k == 6 && (0xc0d5..0xc0da).contains(&s.cpu.pc),
                         0x1df943 => s.cpu.k == 0x1d && (0xf943..0xf94b).contains(&s.cpu.pc),
-                        _ => (s.cpu.k == 0x1d && (0xf94b..0xf952).contains(&s.cpu.pc))
+                        // Mouth's newly priced caller inherits this RTS-selected frame.
+                        _ => (s.cpu.k == 0x1d && ((0xf94b..0xf952).contains(&s.cpu.pc)
+                            || (0xf956..0xf966).contains(&s.cpu.pc)))
                             || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)),
                     }, || {
                         let _bounce = n.lag_free.then(|| crate::cycle_ledger::routine(0x06c0d5));
@@ -4751,4 +4753,89 @@ fn route10_beamos_laser_hit_matches_rom() {
         }
     }
     eprintln!("route10 Beamos hit: {cases} ROM cases");
+}
+
+#[test]
+fn route11_talking_tree_mouth_caller_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for state in [8, 9] {
+            for submodule in [0, 1] {
+                for ai in 0..3 {
+                    let mut n = prefix3_moldorm_state(k, 0x40);
+                    for (a, v) in [(0xe20, 0x25), (0xdd0, state), (0xd80, ai),
+                        (0xdf0, 1), (0xde0, 0), (0xdc0, 0), (0xf60, 0)] {
+                        n.write_wram_byte(a+k, v);
+                    }
+                    n.write_wram_byte(0x11, submodule);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x1df956, k).expect("ROM fixture");
+                    crate::cycle_ledger::assert_rom_marker_work(0x1df94b, s,
+                        |s| (s.cpu.k == 0x1d && (0xf956..0xf966).contains(&s.cpu.pc))
+                            || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)), || {
+                            let _parent = crate::cycle_ledger::routine(0x1df94b);
+                            n.talking_tree_mouth(k);
+                        });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("route11 mouth caller: {cases} ROM cases");
+}
+
+#[test]
+fn route11_faerie_movement_matches_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for frame in [1, 16, 64] {
+            for (indoors, delay) in [(0, 0), (1, 1), (1, 0)] {
+                for velocity in [0u8, 2, 0xfe] {
+                    for z in [0u8, 8, 23, 24] {
+                        let mut n = prefix3_moldorm_state(k, 0x40);
+                        for (a, v) in [(0xe20, 0xe3), (0xdd0, 9), (0xd40, velocity),
+                            (0xd50, velocity), (0xd90, 2), (0xde0, 0xfe),
+                            (0xe00, delay), (0xf70, z), (0xf80, 0)] {
+                            n.write_wram_byte(a+k, v);
+                        }
+                        for (a,v) in [(0x1a,frame),(0x1b,indoors),(0x46c,0)] { n.write_wram_byte(a,v); }
+                        n.sync_native_game_state_from_ram();
+                        let s = marker29_machine(&n, 0x1efd1c, k).expect("ROM fixture");
+                        let random = std::cell::RefCell::new(Vec::new());
+                        crate::cycle_ledger::assert_rom_marker_work(0x1efd1c, s,
+                            |s| {
+                                if s.cpu.k == 0x1e && [0xfd8e,0xfd98,0xfe03].contains(&s.cpu.pc) {
+                                    random.borrow_mut().push(crate::RomRandomSample::with_carry(
+                                        0, s.cpu.a as u8, s.cpu.c));
+                                }
+                                s.cpu.k == 0x1e && (0xfd1c..0xfe33).contains(&s.cpu.pc)
+                            }, || {
+                                n.install_rom_random_replay(random.borrow().clone(), 0);
+                                n.rom_random_replay.begin_frame();
+                                n.faerie_handle_movement(k);
+                            });
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("route11 faerie movement: {cases} ROM cases");
+}
+
+#[test]
+fn route11_sprite_transform_caller_matches_rom() {
+    for k in [0usize, 15] {
+        for kind in [0x8f, 0xe3] {
+            let mut n = prefix3_moldorm_state(k, 0x40);
+            n.write_wram_byte(0xfa0, k as u8);
+            n.sync_native_game_state_from_ram();
+            let mut s = marker29_machine(&n, 0x06edcb, k).expect("ROM fixture");
+            s.cpu.a = kind as u16;
+            crate::cycle_ledger::assert_rom_marker_work(0x06edcb, s,
+                |s| s.cpu.k == 6 && ((0xedcb..0xede2).contains(&s.cpu.pc)
+                    || (0xeec1..0xeec8).contains(&s.cpu.pc)),
+                || n.sprite_func18(k,kind));
+        }
+    }
 }
