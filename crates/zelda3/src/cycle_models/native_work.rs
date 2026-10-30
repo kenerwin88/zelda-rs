@@ -470,6 +470,13 @@ pub(super) struct Work<'a, B> {
 }
 impl<B: WorkBus> Work<'_, B> {
     pub(super) fn fetch(&mut self) {
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing_continuations() {
+            let c=&self.cpu;
+            crate::rom_shadow_audit::continuation("native_work::Work::fetch/before_opcode",
+                Some((u32::from(c.bank)<<16)|u32::from(c.pc)),
+                Some((c.a,c.x,c.y,c.sp,c.d,c.db,c.p)));
+        }
         self.cycles += 8;
         self.clock.advance_synchronous_pcbase_opcode_fetch(8);
     }

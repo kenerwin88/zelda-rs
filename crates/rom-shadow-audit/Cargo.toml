@@ -14,6 +14,21 @@ name = "rom-shadow-audit"
 path = "src/main.rs"
 required-features = ["rom-shadow-audit"]
 
+[[bin]]
+name = "rom-retirement-match"
+path = "src/matcher_main.rs"
+required-features = ["rom-shadow-audit"]
+
+[[bin]]
+name = "rom-route-match"
+path = "src/route_main.rs"
+required-features = ["rom-shadow-audit"]
+
+[[bin]]
+name = "rom-audit-stream"
+path = "src/stream_main.rs"
+required-features = ["rom-shadow-audit"]
+
 [dependencies]
 snes = { path = "../snes", default-features = false }
 serde = { version = "1", features = ["derive"] }

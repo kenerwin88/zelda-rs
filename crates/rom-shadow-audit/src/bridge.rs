@@ -5,6 +5,8 @@ use crate::{ordered::{self, Event, Key}, Conservation, Identity, Manifest, Resul
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::{BTreeMap, BTreeSet}, fs::{self, File}, io::{BufRead, BufReader, Write}, path::Path};
+#[path = "route.rs"]
+pub mod route;
 
 #[path = "graphics_widths.rs"]
 mod graphics_widths;
@@ -105,13 +107,15 @@ struct Block { call:u64, pc:u32, end:u32, m:bool, x:bool, clocks:u64, ordinals:V
 fn blocks(rom:&[u8],rows:&[Instruction],calls:&Calls)->Result<Vec<Block>> {
     let mut by_call:BTreeMap<u64,Vec<usize>>=BTreeMap::new();
     for (i,&call) in calls.owners.iter().enumerate() {by_call.entry(call).or_default().push(i);}
-    let table:BTreeMap<_,_>=generated::BLOCKS.iter().map(|b|(b.0,b)).collect();
+    static TABLE:std::sync::OnceLock<std::collections::HashMap<u32,usize>>=std::sync::OnceLock::new();
+    let table=TABLE.get_or_init(||generated::BLOCKS.iter().enumerate().map(|(i,b)|(b.0,i)).collect());
     let mut result=Vec::new();
     for (call,indices) in by_call {
         let mut at=0;let mut occurrences:BTreeMap<u32,u64>=BTreeMap::new();
         while at<indices.len() {
             let first=&rows[indices[at]];
-            let Some(b)=table.get(&first.pc) else {at+=1;continue;};
+            let Some(&index)=table.get(&first.pc) else {at+=1;continue;};
+            let b=&generated::BLOCKS[index];
             let mut pc=b.0;let (mut m,mut x)=(b.2,b.3);let mut owned=Vec::new();let mut extras=Vec::new();let mut clocks=0;let mut valid=true;
             while pc<b.1 {
                 let Some(&idx)=indices.get(at+owned.len()) else {valid=false;break;};

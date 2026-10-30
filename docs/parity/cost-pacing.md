@@ -17699,3 +17699,26 @@ Only the explicitly allowed paired seeded live census was run, before pricing.
 No continuous live replay, GPU execution, video, cached-av, external Snes9x,
 full library suite, protected cache/shared-ledger write, cargo fmt, commit or
 push was used. Scratch programs stayed in `/tmp`.
+
+
+## Matcher 1
+
+See [M4 result](rom-shadow-auditor.md#m4-result) and `target/matcher1/final-report.json`.
+The planned **800,000-host** source run exited zero, verifying **742,248
+iterations (0..742,247)**. Host 799,000 was the last progress sample; the
+742,248 suffix row and source EOF remain unverified. Completed source stages
+were retained without rerun or extension.
+
+The ordered audit retains **14,312,264,806 generated-marker** and
+**11,270,045,190 instruction-model source clocks**, with exact per-iteration
+signed conservation and named unmatched work. The native prefix predictor is
+byte-identical to Bypass 6. Diagnostic 2's complete **2,218,400,738-clock**
+unallocated population is enumerated by named sites/context ambiguities.
+
+**Pricing STOP:** no class-c ranges are proved; the live resumed-handoff sample
+pairs **0/616 cuts**. `worklist.json` ranks blocked
+translated sites with source ranges, counts, completed-model inverse estimates
+and zero-lag FP risks; `route-wide-ambiguities.json` covers the remaining
+source ambiguities. Missing cursor/call identity, scalar instruction sets and
+outside-charge exclusion must be resolved before using those exposures as prices.
+No pricing, pacing, classifier, P2, marker or table changed. No commit or push.

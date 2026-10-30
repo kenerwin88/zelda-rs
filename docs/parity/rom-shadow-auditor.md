@@ -1550,3 +1550,176 @@ was pruned first as requested. Scratch drivers stayed in `/tmp`.
 No GPU execution, video, cached-av, external Snes9x process, full library suite,
 protected-cache/shared-ledger write, cargo fmt, commit or push was used. These
 are CPU accounting/regression checks, not exact A/V acceptance.
+
+
+## M4 result
+
+**Partial auditor checkpoint; pricing admission remains STOP.** Work stays
+uncommitted on `codex/matcher1`, base `d6eb23658b3f`. Evidence is under
+`target/matcher1/`; `final-report.json` binds the result and `worklist.json`
+is the pricing handoff. No price, pacing rule, classifier, P2, marker, generated
+table, seeding decision or runtime continuation behavior changed.
+
+### Verified boundary and planned source stop
+
+The retained ordered source executed **800,000 original hosts / 9,937,514,328
+opcodes**, verifying **742,248 full-v2 iterations, 0..742,247**. The command
+explicitly requested 800,000 hosts and exited zero. **Host 799,000 was the
+last periodic progress log, not a failure or source-data EOF.** The summary
+contains one additional returned main at host 799,999, iteration 742,248,
+with 3,468 instructions / 92,900 clocks; its next host verification never ran.
+That row is excluded from the ordered stream, join, estimates and worklist.
+Source EOF and **742,248..1,473,122 (730,875 iterations)** remain unverified.
+The lane was not extended or rerun after operator interruption.
+
+Coverage includes **555,127 ordinary-admitted, 175,363 ordinary-unadmitted,
+and 11,758 resumed entry classifications**, plus **84,073 physical resume
+cuts** within verified iterations. Entry eligibility is not a native-seeded
+handoff proof. One continuous source preserves instruction order across these
+cuts without importing a native image. The source command took 2,879.694 s;
+its progress/resource receipts are retained rather than rerun.
+
+The final join checks each decoded row against independent source opcode
+count, main clocks and PC/opcode path digest, verifies source manifests and
+input identities, and consumes exactly the bounded native rows and chunk EOF.
+The derived source inventory reproduces all **601,112** previously verified
+control rows exactly. Its last unverified suffix is never admitted.
+
+### Ordered ownership and signed conservation
+
+Every retained source opcode receives exactly one class: generated marker
+(a), named instruction-model site (b), or an explicit named ambiguity (d).
+**Class (c), proved uncharged, is empty.** Native scopes are mapped through
+actual source call/return reconstruction; marker occurrence, site, width,
+branch/page extras and retirement order must agree. A model stream requires
+one unique contiguous PC/width/DP/child/call match between marker anchors.
+Numeric costs never select an occurrence. Signed cost errors are preserved
+per pair; a zero net error cannot erase unequal pairs or unmatched zero events.
+
+| Master clocks | Verified prefix |
+| --- | ---: |
+| S | 138,486,365,038 |
+| N | 130,370,911,150 |
+| P | 25,582,309,996 |
+| Q | 25,582,309,996 |
+| U | 112,904,055,042 |
+| O | 104,788,601,154 |
+| E = P-Q | 0 |
+| Generated-marker source work (a) | 14,312,264,806 |
+| Instruction-model source work (b) | 11,270,045,190 |
+| Proved uncharged work (c) | 0 |
+
+Unequal paired rows: **0**. Source/native frame failures:
+`{}`. Every iteration satisfies
+`S=P+U`, `N=Q+O`, and `S-N=U-O+E`; `signed-conservation-check.json`
+independently reproduces native unmatched work and paired signed errors.
+`ownership.bin.zst` retains exact source ordinal ranges and owner/site labels;
+`signed-residuals.jsonl.zst` retains named native residuals, including zero
+charges and separate VWF. Remaining marker occurrence, width, branch/page,
+call/site/order, scalar instruction-set, aggregate-child-order and model
+PC/call/width ambiguities are explicit. Unknown work is never called free.
+
+Diagnostic 2's historical **2,218,400,738** unallocated native clocks are
+fully enumerated, without cost-based source allocation: **156 named scalar
+sites / 1,484,611,744 clocks**, plus **1,127 named call-context groups /
+733,788,994 clocks**. Of those context groups, 1,047 have one candidate site;
+none has a negative residual. Instruction sets/source occurrences remain
+unproved. `diag2-named-ambiguities.json` and
+`historical-allocation-check.json` retain this historical population separately
+from the extended current-prefix totals.
+
+### Resumed handoff result
+
+Feature-only observations expose continuation stage, next PC/registers when
+available, native ledger-scope stack and charge-event cursor. They do not
+invent a retired-source-opcode cursor. M1's real witness remains iteration
+**1,916**, host **2,294**, **$0D:A95B**, M16/X16, DP=0, SP=$01F6,
+after **10,555 main opcodes**. Its native resume mapping remains unproved.
+
+The sample covers iterations **0..5,999**, with **616
+physical source resume cuts** and **591 resumed entry classifications**.
+Resumed entries pair **0/591 (0%)**; physical cuts pair **0/616
+(0%)**. Failure classes are `native_continuation_not_observed`: 402; `native_resume_pc_not_observed`: 214. `resumed-handoff.json` retains each source
+cut, observed native candidates and the M1 witness. A matching PC or publication
+stage alone is insufficient: the source retirement cursor and source/native
+call identity must agree. The synthetic resumed-handoff fixture rejects wrong
+cursor, PC, stage and scope; it is not presented as a successful live handoff.
+No successful fraction is inferred for unsampled cuts. Ordered continuous-source
+accounting remains useful despite this separate handoff STOP.
+
+### Worklist and fixed-context estimates
+
+**Immediately priceable ranges: zero; admitted clocks and estimated admitted
+holds: zero.** `worklist.json` contains the empty class-c list and the following
+blocked, source-reviewed translated sites. Source entry visits and native scope
+entries are reported separately, not asserted to be paired call counts.
+Instruction membership is retained at PC/M-X granularity. The reported clocks
+are candidate exposure, not proved missing prices.
+
+| Translated retirement site | Source clocks | Source entry visits / native scope entries | Estimated holds / zero-lag FP risk | Blocker |
+| --- | ---: | ---: | ---: | --- |
+| `crates/zelda3/src/sprite_main_draw/soldiers.rs::sprite_draw_bnc_body:56` | 43,185,878 | 11,422 / 11,422 | 1 / 0 | `B3CB_alias_and_all_loop_clip_ROM_fixtures_required` |
+| `crates/zelda3/src/sprite_main_prep.rs::arrghus_handle_puffs:4864` | 176,197,812 | 4,684 / 4,684 | 0 / 0 | `complete_arithmetic_and_all_entry_ROM_fixtures_required` |
+| `crates/zelda3/src/sprite_main_draw/soldiers.rs::sprite_draw_bnc_flail:99` | 29,098,594 | 3,870 / 3,870 | 0 / 0 | `child_math_and_all_entry_ROM_fixtures_required` |
+| `crates/zelda3/src/load_gfx.rs::AdjustWaterHDMAWindow:5015` | 190,080 | 594 / 594 | 0 / 0 | `water_X_radius_saturating_vs_wrapping_behavior_unproved` |
+| `crates/zelda3/src/load_gfx.rs::adjust_water_hdma_window_x:5031` | 103,640,484 | 856 / 856 | 0 / 0 | `water_radius_saturating_vs_wrapping_behavior_unproved` |
+
+All rows also require a dynamic call/retirement mapping and complete outside-charge
+exclusion. Estimates use the completed-model inverse with the current worker,
+raster and bus context fixed; individual scores overlap and must not be added.
+`route-wide-ambiguities.json` ranks every remaining named source ambiguity by
+that same hypothetical exposure score, with clocks, opcode/range counts and
+specific blockers. Unknown call counts remain null. This is a route-wide
+investigation list to the verified boundary, **not a completed exact uncharged
+instruction worklist**. Later pricing must establish the missing certificates;
+no generic owner difference or scalar-exclusion waiver is authorized.
+
+### Verification and retention
+
+The new ordered join's pilot reproduces retained ownership, conservation and
+signed residual outputs **byte for byte** after owner-label interning.
+Its sampled peak RSS is about **1.14 GB**, versus the retained pilot's
+1.755 GB whole-process maximum. Chunk input is closed atomically, sequence/count
+checked, hashed in compressed and decoded form, then pruned with an explicit
+receipt; producer backpressure limits raw backlog. Final process measurements
+are in `resumed-processes.json`; disk samples stay separately identified as
+samples, not an absolute peak guarantee.
+
+The fresh bounded native ROM-answer full-v2 predictor over **742,248 rows** is
+**byte-identical to retained Bypass 6 `after.csv`**; its unchanged census gate
+passes. No source work feeds scheduling. The six 6,000-iteration configurations
+(default, no-default-features, feature observers off, compact on, raw on and
+chunked on) have byte-identical predictors and logs. Routine/block/object/sprite
+profiles match across the five configurations supporting parity-debug. The
+no-default-features build rejects routine profiling; that failed invocation
+was retained, and its predictor/log sample was rerun without profiling. `prefix-equality.json` and `noninterference.json` bind these checks.
+
+**43 enabled auditor tests**, retained **eight disabled-feature tests** and
+**eight filtered native observer tests** pass. Tests include exact signed
+missing/duplicate/wrong-owner residuals, resumed metadata rejection,
+non-cost-selected model occurrences, native zero charges and chunk sealing.
+Default, no-default-feature and feature product build receipts are warning-free;
+only the auditor package was rebuilt for the unfinished join on resume.
+Retained product and source-run binaries were reused. The retained default binary
+is byte-identical to its earlier successful build: a later interrupted build
+had overwritten `default.log`, so `initial-verification/default.log` supplies
+the successful receipt. `retained-build-check.json` records this distinction
+and feature exclusion. Existing native lib-test dead-code warnings are separate.
+
+All **1,512 protected files** retain their file set, sizes and nanosecond
+mtimes. Retained output at report creation is **2,383,263,920 bytes**; maximum disk
+sample is **2,650,966,368 bytes**, below 3 GB. `git diff --check` passes.
+No GPU, video, cached-av, external Snes9x, continuous live replay, seeded live
+census, full library suite, protected cache/shared-ledger write, cargo fmt,
+commit or push was performed. Scratch orchestration stayed in `/tmp`.
+These are CPU accounting/regression receipts, not full-route source EOF,
+source/native CPU equivalence or exact A/V acceptance.
+
+The first unfinished join was stopped at 144,000 logged rows when JSON
+ownership growth projected beyond the disk budget. Its partial files were
+hash-recorded and pruned, and only the unfinished native/join stage was
+restarted. The compact `ownership.bin.zst` plus `ownership-names.json`
+retains every ordinal, owner and clock; `rom-audit-stream ownership-json`
+decodes the canonical rows, byte-identical to the retained pilot. The final
+full join uses this bounded representation. No completed source or product
+build stage was repeated.

@@ -301,6 +301,10 @@ impl ZeldaState {
         started_after_leading_nmi: bool,
         typed_main_loop_return: bool,
     ) {
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing_continuations() {
+            crate::rom_shadow_audit::continuation(&format!("complete_post_trailing_nmi_continuation/{continuation:?}"),None,None);
+        }
         assert!(
             !typed_main_loop_return
                 || continuation == GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn

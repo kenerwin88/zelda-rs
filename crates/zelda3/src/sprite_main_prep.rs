@@ -4862,6 +4862,8 @@ impl ZeldaState {
     }
 
     pub(super) fn arrghus_handle_puffs(&mut self, k: usize) {
+        #[cfg(feature = "rom-shadow-audit")]
+        let _audit = crate::rom_shadow_audit::local_scope(0x1eb6e9,None);
         // The orbit-phase accumulator is a 16-bit value at OVERLORD_X_LO that the C
         // reads/writes raw, spanning overlord slots 0 and 1's x_low bytes (NOT slot 0's
         // packed x_low|x_high). Use the adjacent-x-low-word accessor, exactly like

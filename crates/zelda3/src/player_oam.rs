@@ -2325,6 +2325,8 @@ impl ZeldaState {
         // from the dungeon stair lanes) still charges its blocks but records
         // no routine entry of its own.
         let _scope = crate::cycle_ledger::routine(0x0d_a18e);
+        #[cfg(feature = "rom-shadow-audit")]
+        crate::rom_shadow_audit::continuation("player_oam::link_oam_main/entry",Some(0x0da18e),None);
         let continuation = self.link_oam_before_equipment();
         self.link_oam_after_equipment(continuation);
     }
@@ -3721,6 +3723,10 @@ impl ZeldaState {
     }
 
     pub(super) fn link_oam_after_equipment(&mut self, continuation: LinkOamEquipmentContinuation) {
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing_continuations() {
+            crate::rom_shadow_audit::continuation(&format!("player_oam::link_oam_after_equipment/{continuation:?}"),None,None);
+        }
         let body = self.link_oam_before_lower_body(continuation, 0);
         self.link_oam_after_lower_body(body);
     }
@@ -3835,6 +3841,10 @@ impl ZeldaState {
     }
 
     pub(super) fn link_oam_after_lower_body(&mut self, body: LinkOamBodyContinuation) {
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing_continuations() {
+            crate::rom_shadow_audit::continuation(&format!("player_oam::link_oam_after_lower_body/{body:?}"),None,None);
+        }
         if let Some((oam_pos, flags, x, y)) = body.lower {
             // $a9ed..$aa15: the four ASLs precede every lower-body store.
             // Resume their unexecuted CPU work and publish this entry once.

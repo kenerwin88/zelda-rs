@@ -2289,6 +2289,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         });
     }
     println!("logical replay: {clean} clean iteration(s); first WRAM divergence {first_divergence:?}");
+    #[cfg(feature = "rom-shadow-audit")]
+    zelda3::rom_shadow_audit::finish_chunks();
     if let Some(poly_uploads) = poly_uploads.as_mut() {
         poly_uploads.finish();
         println!(

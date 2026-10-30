@@ -33,6 +33,9 @@ fn freeze(rom: &Path,sram: &Path,input: &Path,ledger: &Path) -> Result<Manifest>
         ("continuous_bridge",Path::new("crates/rom-shadow-audit/src/bridge.rs")),
         ("diagnostic_domains",Path::new("crates/rom-shadow-audit/src/diagnostic.rs")),
         ("local_exclusion",Path::new("crates/rom-shadow-audit/src/local_exclusion.rs")),
+        ("retirement_inventory",Path::new("crates/rom-shadow-audit/src/inventory.rs")),
+        ("ordered_source_stream",Path::new("crates/rom-shadow-audit/src/inventory_ordered.rs")),
+        ("ordered_route_bridge",Path::new("crates/rom-shadow-audit/src/route.rs")),
         ("source_executor",Path::new("crates/snes/src/cpu_synchronous_executor/source_cpu.rs"))] {
         identities.insert(name.into(),Identity::bind(path)?);
     }
@@ -163,7 +166,7 @@ fn tree_bytes(root:&Path)->Result<u64> {
     }Ok(total)
 }
 
-fn source(args:&[String])->Result<()> {
+fn source(args:&[String], inventory_mode:bool, ordered_mode:bool)->Result<()> {
     if !(6..=10).contains(&args.len()) { return Err("source ROM SRAM INPUT FULL_V2 HOSTS FRESH_OUT [NATIVE_ENTRIES|- [WITNESS_HOSTS|- [PREDICTOR|- [BLOCK_MAP]]]]".into()); }
     let (rom,sram,input,ledger)=(Path::new(&args[0]),Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]));
     let hosts:usize=args[4].parse()?; if hosts==0 { return Err("zero hosts".into()); }
@@ -222,6 +225,11 @@ fn source(args:&[String])->Result<()> {
     let mut diagnostic_rows=Vec::new();let mut diagnostic_active=false;
     let mut diagnostic_bus=[0u64;3*3*256];
     let mut diagnostic_pc_work=BTreeMap::new();
+    let mut inventory=if ordered_mode {inventory::Inventory::ordered()}else{inventory::Inventory::default()};
+    let mut inventory_out=zstd::Encoder::new(File::create(out.join("retirement-inventory.jsonl.zst"))?,3)?;
+    let mut ordered_out=zstd::Encoder::new(File::create(out.join("ordered-retirements.bin.zst"))?,3)?;
+    if ordered_mode {ordered_out.write_all(b"Z3M4OP01")?;}
+    let mut resume_out=zstd::Encoder::new(File::create(out.join("resume-cuts.jsonl.zst"))?,3)?;
     let mut buttons=vec![0u16;hosts]; let mut assigned=vec![false;hosts];
     for line in fs::read_to_string(input)?.lines().filter(|l|!l.is_empty()&&!l.starts_with('#')) {
         let (range,value)=line.split_once(' ').ok_or("invalid input")?;
@@ -310,13 +318,24 @@ fn source(args:&[String])->Result<()> {
             }
             if step.origin_pc==0x008038 {
                 main_active=true;main_depth=0;master=0;count=0;path=Sha256::new();
-                diagnostic_rows.clear();diagnostic_active=ordinary && matches!(module,7|9);
+                diagnostic_rows.clear();diagnostic_active=!inventory_mode && ordinary && matches!(module,7|9);
                 diagnostic_bus.fill(0);
             }
             if main_active && main_depth==0 && previous_sp>>8==1 {
                 let end=match step.accepted_interrupt {Some(Interrupt::Nmi{started_at,..}|Interrupt::Irq{started_at,..})=>started_at,None=>step.ended_at};
                 let clocks:u64=step.transactions.iter().filter(|t|t.started_at<end).map(|t|u64::from(t.duration_master_cycles)).sum();
                 master+=clocks;count+=1; path.update(step.origin_pc.to_le_bytes());path.update([step.opcode]);
+                if inventory_mode && current.is_some() {
+                    if ordered_mode {
+                        inventory.retire_instruction(&bridge::Instruction {iteration:current.as_ref().unwrap().index,
+                            ordinal:count-1,pc:step.origin_pc,opcode:step.opcode,master:clocks,
+                            m8:previous_registers.mf,x8:previous_registers.xf,dp:previous_registers.dp,db:previous_registers.db,
+                            sp:previous_sp,x:Some(previous_registers.x),y:Some(previous_registers.y),emulation:previous_registers.e,
+                            retired_next_pc:Some(match step.accepted_interrupt {
+                                Some(Interrupt::Nmi{interrupted_pc,..}|Interrupt::Irq{interrupted_pc,..})=>interrupted_pc,None=>pc(exec)}),
+                            next_pc:pc(exec),next_sp:snes.cpu.sp,interrupt_after:step.accepted_interrupt.is_some()})?;
+                    }else{inventory.retire(step.origin_pc,previous_registers.mf,previous_registers.xf,clocks);}
+                }
                 if diagnostic_active {
                     for access in step.accesses.iter().filter(|a|a.timestamp<end) {
                         let address=access.address&0xffffff;
@@ -373,6 +392,13 @@ fn source(args:&[String])->Result<()> {
                 main_active=false;
             }
             if step.opcode==0x40 {main_depth=main_depth.saturating_sub(1);}
+            if inventory_mode && step.opcode==0x40 && main_active && main_depth==0 && previous_sp>>8==1 {
+                writeln!(resume_out,"{}",json!({"iteration":current.as_ref().map(|r|r.index),
+                    "host":host,"next_pc":pc(exec),"retired_main_opcodes":count,
+                    "m8":snes.cpu.mf,"x8":snes.cpu.xf,"dp":snes.cpu.dp,"sp":snes.cpu.sp,
+                    "module":module,"submodule":snes.ram[0x11],
+                    "status":"source_retirement_cut_native_pair_required"}))?;
+            }
             if step.accepted_interrupt.is_some() {main_depth+=1;}
             previous_sp=snes.cpu.sp;
             previous_registers=snes.cpu.clone();
@@ -389,6 +415,8 @@ fn source(args:&[String])->Result<()> {
                         let expected:Iteration=serde_json::from_str(&rows.next().ok_or("absent ledger row")??)?;
                         if expected.index!=checked {return Err("absent/duplicate/out-of-order ledger iteration".into());}
                         if let Some(w)=row_check(&finished,&expected) {failure=Some(w);return Err("source alignment stop".into());}
+                        if ordered_mode {inventory.verify_ordered_row(finished.index,&mut ordered_out)?;}
+                        else if inventory_mode {inventory.verify_row(finished.index,&mut inventory_out)?;}
                         checked+=1;
                     }
                     current=opening.take();
@@ -471,6 +499,10 @@ fn source(args:&[String])->Result<()> {
     writeln!(blocks,"{}",json!({"status":"unpaired","reason":reason,"source_master":null,"native_master":null}))?;
     residuals.finish()?;summaries.finish()?;entries.finish()?;blocks.finish()?;witness.finish()?;census.finish()?;partitions.finish()?;
     diagnostic_calls.finish()?;diagnostic_domains.finish()?;
+    inventory_out.finish()?;ordered_out.finish()?;resume_out.finish()?;
+    if inventory_mode {
+        write_json(&out.join("instruction-ownership.json"),&inventory.rows())?;
+    }
     let mut pc_out=zstd::Encoder::new(File::create(out.join("diagnostic-pc-work.json.zst"))?,3)?;
     serde_json::to_writer(&mut pc_out,&diagnostic_pc_work.into_iter().collect::<Vec<_>>())?;
     pc_out.finish()?;
@@ -576,7 +608,9 @@ fn census(args:&[String])->Result<()> {
 fn main()->Result<()> {
     let args:Vec<_>=std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("source")=>source(&args[1..]),Some("receipts")=>receipts(&args[1..]),Some("census")=>census(&args[1..]),
+        Some("source")=>source(&args[1..],false,false),Some("inventory-source")=>source(&args[1..],true,false),
+        Some("ordered-source")=>source(&args[1..],true,true),
+        Some("receipts")=>receipts(&args[1..]),Some("census")=>census(&args[1..]),
         Some("account") if args.len()==5=>accounting::reconcile(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4])),
         Some("account") if args.len()==7=>accounting::reconcile_window(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4]),args[5].parse()?,args[6].parse()?),
         Some("bridge") if args.len()==6=>bridge::run(Path::new(&args[1]),Path::new(&args[2]),Path::new(&args[3]),Path::new(&args[4]),Path::new(&args[5])),

@@ -5013,6 +5013,8 @@ impl ZeldaState {
     }
 
     pub(super) fn AdjustWaterHDMAWindow(&mut self) {
+        #[cfg(feature = "rom-shadow-audit")]
+        let _audit = crate::rom_shadow_audit::local_scope(0x00f649,None);
         let r10 = self
             .game_state
             .display
@@ -5027,6 +5029,8 @@ impl ZeldaState {
 
     /// ROM: `AdjustWaterHDMAWindow_X`
     pub(super) fn adjust_water_hdma_window_x(&mut self, r10: u16) {
+        #[cfg(feature = "rom-shadow-audit")]
+        let _audit = crate::rom_shadow_audit::local_scope(0x00f660,None);
         let window_x_center = self
             .game_state
             .display

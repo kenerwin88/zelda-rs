@@ -59,6 +59,8 @@ impl ZeldaState {
         info: &PrepOamCoordsRet,
         spr_offs: i32,
     ) {
+        #[cfg(feature = "rom-shadow-audit")]
+        let _audit = crate::rom_shadow_audit::local_scope(0x05b3cd,None);
         let g = self.sprite_slot_view(k).graphics() as usize;
         let spr_offs = spr_offs + ((FLAIL_TROOPER_BODY_SPRITE_OFFSETS[g] >> 2) as i32);
         let mut oam = ((self.game_state.oam.current_pointer() as i32) + spr_offs * 4) as usize;
@@ -95,6 +97,8 @@ impl ZeldaState {
     //   See sprite_main.c:3962 — chain-ball flail with sin-wave segments.
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_bnc_flail(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        #[cfg(feature = "rom-shadow-audit")]
+        let _audit = crate::rom_shadow_audit::local_scope(0x05b468,None);
         let oam = self.game_state.oam.current_pointer_usize();
 
         self.draw_scratch_position_mut()

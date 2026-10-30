@@ -2321,6 +2321,14 @@ impl ZeldaState {
     }
 
     pub(super) fn step_sprite_preparation_work(&mut self, work: &mut SpritePreparationWork) -> Option<u32> {
+        #[cfg(feature = "rom-shadow-audit")]
+        let audit_pc = match work {
+            SpritePreparationWork::Packing(child) => Some(child.next_pc()),
+            SpritePreparationWork::Sources(child) => Some(child.next_pc()),
+            SpritePreparationWork::Animations(child) => Some(child.next_pc()),
+            SpritePreparationWork::Pointers(child) => Some(child.next_pc()),
+            SpritePreparationWork::Complete => None,
+        };
         let cycles = match work {
             SpritePreparationWork::Packing(child) => {
                 let instruction = child.step(|index| self.game_state.oam.extended_byte(index)).expect("active OAM packing");
@@ -2374,6 +2382,10 @@ impl ZeldaState {
             }
             SpritePreparationWork::Complete => return None,
         };
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing() {
+            crate::rom_shadow_audit::model(vec![(audit_pc,cycles,false)]);
+        }
         crate::cycle_ledger::charge(u64::from(cycles));
         self.advance_native_dialogue_caller_clock(cycles);
         Some(cycles)
