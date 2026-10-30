@@ -208,6 +208,9 @@ impl ModernAudioCommandQueueV7 {
 
     fn into_current(self) -> ModernAudioCommandQueue {
         ModernAudioCommandQueue {
+            music_request_history: [false; 16],
+            music_request_pending: false,
+            music_request_input: false,
             write_history: self.write_history,
             vwf_glyph_tone_crossed_vblank_history: [0; 16],
             pending_write: self.pending_write,

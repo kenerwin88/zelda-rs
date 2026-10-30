@@ -1369,3 +1369,213 @@ beginning and completes with exit zero and all compressor exits zero.
 Final evidence occupies **2.954 GB**, below the 3 GB cap. `git diff --check`
 passes; the only tracked change is this report. This is a verified measurement
 stopping point, not completed strict sound-equivalence proof.
+
+## Sound fix 1
+
+This is a CPU-only ROM-answer run against the same immutable cache and
+`full-v2` ledger as sound proof 1. Evidence is under `target/sound2/`;
+`target/sound1/` remains read-only. The delivered-event matcher,
+`scripts/lagless_audio_timing.py`, is unchanged (SHA-256
+`7734b9387c35c2d2ddf94a56ec4b9ceef64959d23a3304a59525380232c2052d`).
+No census or mismatch classifier was changed.
+
+### Observation boundary and repairs
+
+`ZELDA3_DEBUG_SOUND_OWNERS=lo-hi`, read through `crate::debug_env`, records
+the producer call site and host callback on each retained request, its
+publication slot and actual opening/held/closing/upload-return NMI owner,
+the sampled latches and acknowledgements, and queue push/pop batches.
+The existing SPC delivery trace records the downstream stores. Join these
+by callback and queue order: the engine's `frame_ctr_dbg` and the SPC
+callback index are different coordinates, not interchangeable event IDs.
+
+`SongBankHostTransfer` now observes every header, payload and terminal-clear
+store, with the execution SPC cycle, scheduled CPU master deadline, bank,
+cursor and protocol phase. Header/payload stores remain separate from the
+runtime command stream. The four real terminal clears at
+`$00:88F3..88FC` now reach the existing port observer, so its unchanged
+zero/transition normalizer can see the same rearm boundary as the source.
+Upload-return previews silence their cloned observers: hypothetical future
+stores must not appear among actual deliveries. Neither change alters the
+transfer algorithm or teaches the matcher to ignore a difference.
+
+Three runtime repairs follow those boundaries:
+
+* **VWF producer phase:** `render_text_draw_message_characters` used to
+  charge the entire loop only on return. Thus every `begin_vwf_glyph`
+  request in a long line saw the same producer time. It now exposes the
+  already-modelled loop prefix and click prefix at the actual
+  `$0E:CAC9 STA $012F` publication, without changing the loop's total cost.
+  The first fixture uses the decoded line preceding iteration 3,333. Its
+  1,107,330 master clocks still predict three holds; new glyph requests
+  occupy the crossed callbacks without an invented intervening clear.
+* **Accepted music identity:** the pond writes `$1B` to `$012C` and clears
+  `$0133` at `$06:C621..C626` (also `$06:C847..C84C`). The NMI comparison at
+  `$00:80EE` therefore accepts the repeated request. The queue now retains
+  that acceptance once, and rearms `HostPortTransport` when that batch is
+  consumed. Previously the transport's retained requested value suppressed
+  the accepted repeat. This flag is lagless-only and transient; snapshot
+  wire layouts are unchanged.
+* **Upload-return publication:** at the first ambient loss, iteration
+  48,556, the return NMI sampled `$05` while the real SPC transfer had not
+  yet completed in that audio callback. Ordinary transport publication was
+  suppressed, then the next NMI sampled the cleared latch. Retain the
+  sampled return batch at the receiver-derived return deadline, using the
+  existing timed-return scheduler. The `$00:88F3..88FC` clears precede the
+  return NMI's `$00:8115` ambient store. The shared return suffix retains
+  `$02:8566`'s remaining bus cycle, `$8569 RTS`, and hardware NMI entry;
+  it does not add a route-specific delay or change an instruction price.
+
+Clear-and-repeat requests and pan bits remain intact. None of these repairs
+uses scene/iteration tables. Iteration numbers below identify evidence and
+test fixtures only.
+
+### Delivered identity: before / after
+
+The unchanged matcher consumes the same **67,643** normalized source
+commands. The final run has **67,611** native transitions and **67,598**
+matches. The following are unmatched transitions, not raw writes or audible
+sound counts. The zero target is achieved for `$1B` music and `$10` SFX2;
+the VWF and ambient repairs are partial at the whole-class level.
+
+| Port:value | Source-only before | Source-only after | Native-only before | Native-only after |
+|---|---:|---:|---:|---:|
+| 0:`$1B` | 4 | **0** | 0 | **0** |
+| 1:`$05` | 109 | 20 | 3 | 3 |
+| 2:`$0E` | 1 | 1 | 1 | 1 |
+| 2:`$1E` | 2 | 2 | 0 | 0 |
+| 2:`$2A` | 1 | 1 | 1 | 1 |
+| 3:`$02` | 4 | 4 | 0 | 0 |
+| 3:`$0C` | 3 | 9 | 634 | 3 |
+| 3:`$10` | 1 | **0** | 0 | **0** |
+| 3:`$1E` | 1 | 1 | 0 | 0 |
+| 3:`$24` | 2 | 2 | 2 | 2 |
+| 3:`$42` | 2 | 2 | 0 | 0 |
+| 3:`$59` | 1 | 1 | 1 | 1 |
+| 3:`$66` | 1 | 1 | 1 | 1 |
+| 3:`$A6` | 1 | 1 | 1 | 1 |
+| **Total** | **133** | **45** | **644** | **13** |
+
+Strict same-iteration order-only rows remain **39 → 39**. Their final
+multisets are `(1:$05,2:$19)` ×28, `(1:$05,2:$59)` ×7,
+`(1:$05,2:$99)` ×2, `(1:$03,2:$59)` ×1 and `(1:$05,3:$59)` ×1.
+At the first, iteration 12,404, the globally aligned ambient request belongs
+to native iteration 12,403; the next ambient request belongs to native
+12,404. Grouping by iteration reverses the displayed pair even though those
+matched requests preserve global order. This is not permission to subtract
+39 from the reported count, or to dismiss mixed reorder/edit cases.
+
+The remaining owners are retained in `seeded-return/first-owner-windows.json`
+and `owner-summary.log`:
+
+* **VWF `$0C`:** still `begin_vwf_glyph` and the P2 publication/clear
+  boundary. At the first remaining source-only edge, 162,302, the preceding
+  iteration has three native holds versus four source holds; adjacent
+  lines therefore lack the same clear boundary. The first remaining
+  native-only edge, 282,911, has equal hold counts but a different clear
+  phase. Nine source-only versus three previously is a real reported
+  regression in this metric; removing hundreds of duplicate edges does not
+  establish correct line-boundary timing. No compensating click was added.
+* **Ambient `$05`:** the remaining first source-only edge is 354,615;
+  native-only is 370,546. These are HUD ambient publications (`hud.rs:460`)
+  around dungeon P2 held/closing boundaries, rather than the repaired first
+  upload-return loss. Their clear/repeat timing remains unresolved.
+* **`$24`:** `dungeon_play_blip_and_cache_quadrant_visits`, first source
+  434,088/native 434,087. Native publishes the blip in a held NMI before
+  the HUD ambient publication; the source pair orders ambient before blip.
+  Both values exist, but this mixed reorder remains an unmatched pair. Its
+  producer phase was not repaired by changing within-NMI port order.
+* **`$02/$42`:** `mothula_flap_wings` (`$1E:BF9F`) and its panned SFX3
+  queue. At 624,607/624,667 the source has a hold where native has none;
+  repeated flap values lack the same intervening clear. The missing P2
+  work remains the owner; adding a synthetic zero would hide it.
+* **SFX1 `$0E/$2A/$1E`:** `ancilla_sfx2_near`, `ancilla_sfx2_pan`, and
+  `sprite_sfx_queue_sfx2_with_pan`, respectively. The first two values are
+  delivered, but remain paired edits in the Mothula sequence (625,275 and
+  625,286); `$1E` first repeats at 878,130. These retain their producer
+  publication/clear boundaries; this patch does not repair those routines.
+* **SFX2 `$1E`:** the raven producer in `sprite_main_draw/wildlife.rs`
+  (`$1D:DDD2..DDE2`). Native publishes the panned `$9E` in held slot 14 at
+  961,738, which matches the source `$9E`; no separate native `$1E`
+  publication follows for source 961,739. This is an unresolved producer
+  request, not grounds to mask pan bits or equate `$9E` with `$1E`.
+* **`$59/$66/$A6`:** laser-eye beam spawn (`sprite_main_prep.rs:2116`)
+  and beam collision (`$1E:A47D..A486`). The first unmatched source values
+  are 1,257,884/1,257,903/1,257,910; the native owner trace retains their
+  held/closing publication slots. The sequence includes earlier same-valued
+  native requests; a repeated value alone cannot identify which one is the
+  missing source request. Their phase remains unresolved.
+
+The upload-return repair also removes the source-only `$10` at 1,443,256;
+it shares that publication owner, requiring no SFX-specific exception.
+This is a verified partial repair, **not completion of the requested
+zero-difference delivered-identity target**.
+
+### Verification and evidence
+
+| Check | Before | After |
+|---|---:|---:|
+| ROM missing / excess / FP | 2,398 / 0 / 0 | **2,398 / 0 / 0** |
+| Native accepted holds | 100,279 | **100,279** |
+| Native masked upload callbacks | 5,138 | **5,154** |
+| Seeded recorded ROM gate | — | **PASS, unexplained 0** |
+| Continuous recorded ROM gate | — | **PASS, unexplained 0** |
+
+Both final runs cover **1,473,123** iterations, finish with exit zero and
+all compressor exits zero, and report no WRAM divergence. The seeded run
+uses `--seed-every 2000`; it actually reseeds zero times. The continuous
+recorded run omits that option. Their decompressed audio maps and predictor
+CSVs are byte-identical (`recorded-run-comparison.json`). No live replay,
+Snes9x process, GPU run, full library suite, or protected-cache write was
+performed.
+
+No iteration changes its accepted-hold count, main work, VWF total, or
+P0/P1/P2 hold prediction. There are 80 changed upload episode lengths:
+48 increase by one masked callback and 32 decrease by one, net **+16**.
+The repaired inputs change the SPC state and receiver acknowledgement
+phase; the unchanged transfer coroutine consequently reaches completion
+in different callbacks. `masked-changes.json` retains every before/after
+row. NMI branch costs change in 167 rows, elapsed P2 costs in 163,
+preceding-NMI costs in 98, raster-wait costs in 11 and main-HDMA costs in
+three. These are observed downstream branch/phase changes, not new cost
+constants or added holds (`seeded-return-predictor-comparison.json`).
+
+All **228** native bank transfers finish with four ordered zero clears.
+Their complete ordered header/payload hashes and multiplicities equal the
+source inventory: dungeon 113, overworld 114, ending one
+(`bank-comparison.json`, `seeded-return/banks.json`). This proves payload
+identity, not equal transfer timing. One port-log timestamp inversion is
+retained at callback 638,158: the nominal cycle events are logged when
+scheduled, before an earlier pending instruction-return delivery is logged.
+Both batches contain the same ambient `$05` and zero SFX values, so this
+does not change the normalized identity sequence. The matcher was not
+sorted or altered to hide it; the raw trace and `clock_reversals` report
+preserve the observation limitation.
+
+Default and `--no-default-features` parity builds are warning-free. Six new
+focused `sound_fix1` tests pass in both configurations: first VWF line,
+accepted music queue ownership and repeat delivery, upload clear/rearm,
+timed return publication, and NMI ordering with clear/repeat and pan bits.
+The focused transport (42), native pacing (26), audio (118),
+ROM NMI (one), and Python matcher (eight) tests pass. Default library-test
+compilation retains the pre-existing 24 warnings; this is distinct from
+the warning-free ordinary builds.
+
+A 200,000-frame CPU-only default state-ledger comparison against the
+proof-1 binary matches every record and EOF, including PCM; the default
+build includes `rom-timing`. This is a bounded default/rom-timing regression
+check, not a new full-route live gate. Observer-on/off PCM, maps and census
+logs match both at cold startup and across the seeded first upload-return
+window (`transparency/result.json`).
+
+`source-binding.json` verifies the reused proof-1 artifacts and `full-v2`
+ledger; `provenance.json` binds the source and binaries. The final default
+binary is retained as `zelda3.zst` (uncompressed SHA-256
+`92ee91fc16145a6051972ca44a3157e96c62279b57bdf18f90cae5ee778782b7`).
+`seeded-return/command.json` and `continuous/command.json` retain exact
+invocations; their `gate.log` and `result.json` retain acceptance and exits.
+`seeded/` is an explicitly intermediate capture, before the upload-return
+repair, and is not the final result. Scratch analysis remains in `/tmp`;
+`verification.json` binds its hashes and the retained final artifacts.
+Evidence occupies approximately **0.41 GB**, below the 3 GB cap.
+`git diff --check` passes. No commit, push, or `cargo fmt` was performed.

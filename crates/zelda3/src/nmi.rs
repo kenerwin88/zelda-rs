@@ -1440,7 +1440,18 @@ impl ZeldaState {
     }
 
     pub(super) fn interrupt_nmi_audio_parts(&mut self) {
+        let owner = self.native_audio_nmi_owner();
         self.native_publish_apu_requests();
+        if let Some(master) = self.native_take_upload_return_audio() {
+            self.queue_lagless_song_upload_return_nmi(master);
+        }
+        if crate::spc_driver_clock::sound_owner_trace_selected(u64::from(self.frame_ctr_dbg)) {
+            let s = &self.game_state.system_signals;
+            eprintln!("apu_nmi_sample host={} owner={owner} latches={:02x?} last={:02x?} acknowledgements={:02x?}",
+                self.frame_ctr_dbg,
+                [s.music_control(), s.ambient_sound_effect(), s.sound_effect_1(), s.sound_effect_2()],
+                [s.last_music_control(), s.last_ambient_sound_effect()], self.zelda_audio_apu_output_ports());
+        }
         self.trace_nmi_audio_inputs();
         let music_control = self.game_state.system_signals.music_control();
         // Cycle ledger, Interrupt_NMI music port ($00:80C9-$00:8100):
@@ -1477,6 +1488,7 @@ impl ZeldaState {
             372 + 48 + 100 + 32
         };
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
+            self.retain_accepted_music_request();
             self.set_last_music_control(music_control);
             self.zelda_play_msu_audio_track(music_control);
             if music_control < 0xf2 {

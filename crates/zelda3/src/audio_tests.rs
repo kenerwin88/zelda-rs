@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn sound_fix1_pond_1b_rearm_survives_queue_once() {
+    // Iteration 167310: $06:C621..C626 (also $06:C847..C84C)
+    // writes $012C=$1B and clears $0133. $00:80EE must accept it again.
+    let mut state = ZeldaState::new();
+    state.set_lag_free(true);
+    state.set_current_music_control(0x1b);
+    state.set_last_music_control(0x1b);
+    state.set_music_control(0x1b);
+    state.interrupt_nmi_audio_parts();
+    state.zelda_push_apu_state();
+    state.zelda_pop_apu_state();
+    assert!(!state.audio.modern.queue.music_request_input);
+
+    state.set_last_music_control(0);
+    state.interrupt_nmi_audio_parts();
+    assert_eq!(state.game_state.system_signals.last_music_control(), 0x1b);
+    state.zelda_push_apu_state();
+    state.zelda_pop_apu_state();
+    assert!(state.audio.modern.queue.music_request_input);
+    assert_eq!(state.zelda_engine_audio_commands().legacy_ports()[0], 0x1b);
+    state.zelda_push_apu_state();
+    state.zelda_pop_apu_state();
+    assert!(!state.audio.modern.queue.music_request_input);
+}
+
+#[test]
 fn vwf_click_boundary_marker_stays_aligned_two_batches_after_the_glyph() {
     let mut queue = ModernAudioCommandQueue::default();
     queue.vwf_glyph_tone_crossed_vblank_deferred[2] = 1;

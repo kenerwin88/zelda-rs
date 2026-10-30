@@ -15,6 +15,15 @@ fn nmi_handler_wall(work: u64) -> u64 {
     work + pauses * 40
 }
 
+#[derive(Clone, Copy, Debug)]
+struct ApuRequest {
+    slot: u32,
+    port: usize,
+    value: u8,
+    producer_host: u32,
+    producer: &'static std::panic::Location<'static>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativePacing {
     pending: u32,
@@ -23,6 +32,7 @@ pub(crate) struct NativePacing {
     positioned_upload: bool,
     upload_prefix_holds: u32,
     upload_return_latch: Option<bool>,
+    upload_return_audio: Option<u64>,
     masked_callback: bool,
     accounting: bool,
     entry_handler: u64,
@@ -42,7 +52,7 @@ pub(crate) struct NativePacing {
     wait_wall: [u64; 3],
     predictions: [u32; 3],
     apu_entry: [u8; 4],
-    apu_writes: Vec<(u32, usize, u8)>,
+    apu_writes: Vec<ApuRequest>,
     apu_callback: Option<u32>,
     finished_main: u64,
     finished_lag_worker: u64,
@@ -105,7 +115,7 @@ impl ZeldaState {
         // Preserve any stores whose P2 deadline lies beyond this iteration.
         let consumed = self.native_pacing.apu_callback.take().unwrap_or(0);
         for write in &mut self.native_pacing.apu_writes {
-            write.0 = write.0.saturating_sub(consumed);
+            write.slot = write.slot.saturating_sub(consumed);
         }
     }
 
@@ -299,6 +309,7 @@ impl ZeldaState {
 
     /// Capture the producer's elapsed P2 clock, before semantic main runs on.
     /// Equality belongs to the callback after the NMI boundary just crossed.
+    #[track_caller]
     pub(crate) fn native_time_apu_request(&mut self, port: usize, value: u8) {
         if !self.native_main_cost_active() { return; }
         let main = self.native_main_work();
@@ -306,10 +317,26 @@ impl ZeldaState {
             self.native_pacing_worker_share(self.native_pacing.entry_lag_handler));
         let elapsed = elapsed[2];
         if crate::debug_env::var_os!("ZELDA3_DEBUG_LAGLESS_APU_REQUEST").is_some() {
-            eprintln!("lagless-apu-request host={} port={port} value={value:02x} main={main} wall={elapsed} hdma={bus} lease={} slot={}",
-                self.frame_ctr_dbg, self.native_bus_lease_valid(), elapsed / (1364 * 262));
+            eprintln!("lagless-apu-request host={} port={port} value={value:02x} main={main} wall={elapsed} hdma={bus} lease={} slot={} producer={}",
+                self.frame_ctr_dbg, self.native_bus_lease_valid(), elapsed / (1364 * 262), std::panic::Location::caller());
         }
-        self.native_pacing.apu_writes.push(((elapsed / (1364 * 262)) as u32, port, value));
+        self.native_pacing.apu_writes.push(ApuRequest {
+            slot: (elapsed / (1364 * 262)) as u32, port, value,
+            producer_host: self.frame_ctr_dbg, producer: std::panic::Location::caller(),
+        });
+    }
+
+    pub(crate) fn native_audio_nmi_owner(&self) -> &'static str {
+        if self.native_pacing.upload_return_audio.is_some() { return "upload-return"; }
+        match self.native_pacing.apu_callback {
+            None => "opening",
+            Some(callback) if callback < self.native_pacing.predictions[2] => "held",
+            Some(_) => "closing",
+        }
+    }
+
+    pub(crate) fn native_take_upload_return_audio(&mut self) -> Option<u64> {
+        self.native_pacing.upload_return_audio.take()
     }
 
     /// Replay latch stores once, immediately before the matching NMI samples
@@ -317,8 +344,18 @@ impl ZeldaState {
     pub(crate) fn native_publish_apu_requests(&mut self) {
         let Some(callback) = self.native_pacing.apu_callback else { return; };
         let mut values = self.native_apu_latches();
-        self.native_pacing.apu_writes.retain(|&(at, port, value)| {
-            if at <= callback { values[port] = value; false } else { true }
+        let host = self.frame_ctr_dbg;
+        let owner = self.native_audio_nmi_owner();
+        let trace = crate::spc_driver_clock::sound_owner_trace_selected(u64::from(host));
+        self.native_pacing.apu_writes.retain(|request| {
+            if request.slot <= callback {
+                values[request.port] = request.value;
+                if trace {
+                    eprintln!("apu_request_publish host={host} owner={owner} callback={callback} slot={} port={} value={} producer_host={} producer={}",
+                        request.slot, request.port, request.value, request.producer_host, request.producer);
+                }
+                false
+            } else { true }
         });
         self.native_restore_apu_latches(values);
         self.native_pacing.apu_callback = Some(callback + 1);
@@ -332,7 +369,7 @@ impl ZeldaState {
         if crossed == 0 { return; }
         for port in 2..4 {
             let authored = self.native_pacing.apu_writes.iter().rev()
-                .find(|write| write.1 == port).map_or(0, |write| write.0);
+                .find(|write| write.port == port).map_or(0, |write| write.slot);
             if authored < crossed {
                 if port == 2 { self.set_sound_effect_1(0); } else { self.set_sound_effect_2(0); }
             }
@@ -476,13 +513,14 @@ impl ZeldaState {
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.capture_display_snapshot();
         self.native_start_deferred_song();
-        let transferring = self.native_lagless_song_upload_return().is_none();
-        if transferring {
+        let returned = self.native_lagless_song_upload_return();
+        if returned.is_none() {
             self.native_pacing.masked_callback = true;
         } else {
             // The retained receiver has acknowledged the final block and
             // cleared the ports. Restore the closing NMI, exactly once.
             self.native_pacing.song_upload = false;
+            self.native_pacing.upload_return_audio = returned;
             if let Some(latched) = self.native_pacing.upload_return_latch.take() {
                 if latched { self.latch_nmi_update(); }
                 else { self.clear_nmi_update_latch(); }

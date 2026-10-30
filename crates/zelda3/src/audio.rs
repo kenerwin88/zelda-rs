@@ -189,6 +189,14 @@ impl ApuWriteEnt {
 /// are projected only by legacy snapshot and oracle adapters.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct ModernAudioCommandQueue {
+    // Lagless NMI decisions are transient, like NativePacing's request queue.
+    // A repeated accepted music request is distinct from a retained value.
+    #[serde(skip)]
+    music_request_history: [bool; 16],
+    #[serde(skip)]
+    music_request_pending: bool,
+    #[serde(skip)]
+    music_request_input: bool,
     write_history: [EngineAudioCommandBatch; 16],
     // The VWF boundary marker is packed into one byte so version-8 audio
     // snapshots retain their wire layout: 0 = absent, 1/2 = legacy
@@ -227,6 +235,9 @@ impl ModernAudioCommandQueue {
         output_ports: [u8; 4],
     ) -> Self {
         Self {
+            music_request_history: [false; 16],
+            music_request_pending: false,
+            music_request_input: false,
             write_history: write_history.map(ApuWriteEnt::decoded_commands),
             vwf_glyph_tone_crossed_vblank_history: [0; 16],
             pending_write: pending_write.decoded_commands(),
@@ -304,6 +315,7 @@ impl ModernAudioCommandQueue {
     fn push(&mut self, current_vwf_glyph_completed: bool) -> (bool, bool, u8, u8) {
         let pos = (self.write_position & 0xf) as usize;
         self.write_history[pos] = self.pending_write;
+        self.music_request_history[pos] = std::mem::take(&mut self.music_request_pending);
         let mut deferred_marker = self.vwf_glyph_tone_crossed_vblank_deferred[0];
         if deferred_marker == Self::VWF_BOUNDARY_COMPLETE {
             // A zero-valued click candidate means the glyph performed no new
@@ -362,9 +374,11 @@ impl ModernAudioCommandQueue {
     }
 
     fn pop(&mut self) {
+        self.music_request_input = false;
         if self.write_count != 0 {
             let pos = self.write_position.wrapping_sub(self.write_count) & 0xf;
             self.input_commands = self.write_history[pos as usize];
+            self.music_request_input = self.music_request_history[pos as usize];
             self.vwf_glyph_tone_crossed_vblank_input =
                 self.vwf_glyph_tone_crossed_vblank_history[pos as usize];
             self.write_count -= 1;
@@ -380,6 +394,9 @@ impl ModernAudioCommandQueue {
     }
 
     fn reset(&mut self) {
+        self.music_request_history.fill(false);
+        self.music_request_pending = false;
+        self.music_request_input = false;
         self.write_position = 0;
         self.total_writes = 0;
         self.write_count = 0;
@@ -521,6 +538,10 @@ impl ZeldaState {
 
     pub fn zelda_emit_audio_command(&mut self, command: EngineAudioCommand) {
         self.audio.modern.queue.emit(command);
+    }
+
+    pub(crate) fn retain_accepted_music_request(&mut self) {
+        if self.lag_free { self.audio.modern.queue.music_request_pending = true; }
     }
 
     #[cfg(test)]
@@ -832,6 +853,11 @@ impl ZeldaState {
     }
 
     pub fn zelda_push_apu_state(&mut self) {
+        if crate::spc_driver_clock::sound_owner_trace_selected(u64::from(self.frame_ctr_dbg)) {
+            eprintln!("apu_queue_push host={} position={} count={} ports={:02x?}", self.frame_ctr_dbg,
+                self.audio.modern.queue.write_position, self.audio.modern.queue.write_count,
+                self.audio.modern.queue.pending_write.legacy_ports());
+        }
         let current_vwf_glyph_completed = self.dialogue_vwf_glyph_cpu_phase.is_ready();
         let deferred_before = self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_deferred;
         let (owned_marker, legacy_marker, pending_effect2, input_effect2) =
@@ -875,6 +901,12 @@ impl ZeldaState {
 
     fn zelda_pop_apu_state(&mut self) {
         self.audio.modern.queue.pop();
+        if crate::spc_driver_clock::sound_owner_trace_selected(u64::from(self.frame_ctr_dbg)) {
+            eprintln!("apu_queue_pop host={} position={} count={} ports={:02x?} marker={}", self.frame_ctr_dbg,
+                self.audio.modern.queue.write_position, self.audio.modern.queue.write_count,
+                self.audio.modern.queue.input_commands.legacy_ports(),
+                self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input);
+        }
     }
 
     pub fn zelda_discard_unused_audio_frames(&mut self) {
@@ -1038,6 +1070,11 @@ impl ZeldaState {
         // Only NMI-sampled commands reach the SPC driver. A live gameplay
         // latch authored after that sample belongs to a later audio batch.
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            if self.lag_free && self.audio.modern.queue.music_request_input {
+                // $00:80EE compares against live $0133. Main may have rearmed
+                // it since the last command (the pond's repeated $1B).
+                clock.rearm_accepted_music_request();
+            }
             let debug_spc_polls =
                 crate::debug_env::var_os!("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
             let frame_start_apu_cycle = clock.absolute_dsp_cycle() * 32;
@@ -1364,6 +1401,15 @@ impl ZeldaState {
         self.audio.modern.driver_clock.as_mut()
             .expect("native song upload lost its SPC receiver")
             .queue_upload_return_nmi(position, latches, last);
+    }
+
+    pub(crate) fn queue_lagless_song_upload_return_nmi(&mut self, master: u64) {
+        let s = &self.game_state.system_signals;
+        let latches = [s.music_control(), s.ambient_sound_effect(), s.sound_effect_1(), s.sound_effect_2()];
+        let last = [s.last_music_control(), s.last_ambient_sound_effect()];
+        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            clock.queue_upload_return_nmi_at_master(master, latches, last);
+        }
     }
 
     #[cfg(test)]

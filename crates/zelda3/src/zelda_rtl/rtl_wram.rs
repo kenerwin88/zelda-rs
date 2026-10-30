@@ -154,6 +154,7 @@ impl ZeldaState {
         self.game_state.frame.owned_byte(address).or_else(|| self.game_state.system_signals.owned_byte(address)).or_else(|| self.game_state.inventory.owned_byte(address)).unwrap_or_else(|| self.ram[address])
     }
 
+    #[track_caller]
     pub(crate) fn write_wram_byte(&mut self, address: usize, value: u8) {
         if (0x12c..=0x12f).contains(&address) {
             self.native_time_apu_request(address - 0x12c, value);
@@ -161,6 +162,7 @@ impl ZeldaState {
         if !self.game_state.frame.write_owned_byte(address, value) && !self.game_state.system_signals.write_owned_byte(address, value) && !self.game_state.inventory.write_owned_byte(address, value) { self.ram[address] = value; }
     }
 
+    #[track_caller]
     pub(crate) fn write_wram_word(&mut self, address: usize, value: u16) {
         for (byte, value) in value.to_le_bytes().into_iter().enumerate() {
             self.write_wram_byte(address + byte, value);

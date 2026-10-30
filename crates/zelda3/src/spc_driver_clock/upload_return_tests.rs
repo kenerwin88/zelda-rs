@@ -145,7 +145,46 @@ fn clock_at_first_host_boundary() -> AbsoluteDspEventClock {
         completed_song_bank_port_clear_master_clock: None,
         host_frame_index: 1,
         host_transport: HostPortTransport::default(),
+        observation_silent: false,
     }
+}
+
+#[test]
+fn sound_fix1_accepted_pond_music_reaches_port_after_clear() {
+    let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+    let song = EngineAudioCommandBatch::from_legacy_ports([0x1b,0,0,0]);
+    clock.advance_lagless(song, 534, 0);
+    assert_eq!(clock.apu.in_ports[0], 0x1b);
+    clock.apu.out_ports[0] = 0x1b;
+    clock.advance_lagless(song, 534, 0);
+    assert_eq!(clock.apu.in_ports[0], 0);
+    clock.rearm_accepted_music_request();
+    clock.advance_lagless(song, 534, 0);
+    assert_eq!(clock.apu.in_ports[0], 0x1b);
+    clock.advance_lagless(song, 534, 0);
+    assert_eq!(clock.apu.in_ports[0], 0);
+}
+
+#[test]
+fn sound_fix1_first_upload_return_publishes_ambient_after_terminal_clears() {
+    // Iteration 48556: a closing NMI was sampled while the output callback
+    // still owned the receiver's final clear sequence. It must run after
+    // $00:88FC / $02:8566, even though nominal NMI transport is suppressed.
+    let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+    let mut transfer = SongBankHostTransfer::new(0, &[0,0]);
+    transfer.command_pending = false;
+    transfer.phase = SongBankHostTransferPhase::ClearPort { port: 0 };
+    transfer.next_host_access_master_clock = Some(1000);
+    clock.song_bank_transfer = Some(transfer);
+    clock.apu.in_ports[..4].copy_from_slice(&[0xff,5,0,0x42]);
+    clock.queue_upload_return_nmi_at_master(1300, [0,5,0,0x42], [0xf1,5]);
+    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0xf1,5,0,0x42]),64,0);
+    assert!(clock.song_bank_transfer.is_none());
+    assert!(clock.pending_upload_return_nmi_master_clock.is_none());
+    assert_eq!(&clock.apu.in_ports[..4], &[0,5,0,0x42]);
+    clock.apu.out_ports[1] = 5;
+    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0xf1,0,0,0]),64,0);
+    assert_eq!(&clock.apu.in_ports[1..4], &[0,0,0]);
 }
 
 #[test]

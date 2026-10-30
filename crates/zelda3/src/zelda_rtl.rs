@@ -12104,6 +12104,7 @@ impl ZeldaState {
         magic.consumption_level()
     }
 
+    #[track_caller]
     pub(crate) fn set_ambient_sound_effect(&mut self, value: u8) {
         self.native_time_apu_request(1, value);
         self.system_signals_mut().set_ambient_sound_effect(value);
@@ -12141,28 +12142,33 @@ impl ZeldaState {
         self.system_signals_mut().set_msu_volume(value);
     }
 
+    #[track_caller]
     pub(crate) fn set_sound_effect_1_word(&mut self, value: u16) {
         self.native_time_apu_request(2, value as u8);
         self.native_time_apu_request(3, (value >> 8) as u8);
         self.system_signals_mut().set_sound_effect_1_word(value);
     }
 
+    #[track_caller]
     pub(crate) fn set_ambient_sound_effect_word(&mut self, value: u16) {
         self.native_time_apu_request(1, value as u8);
         self.native_time_apu_request(2, (value >> 8) as u8);
         self.system_signals_mut().set_ambient_sound_effect_word(value);
     }
 
+    #[track_caller]
     pub(crate) fn clear_sound_effect_1(&mut self) {
         self.native_time_apu_request(2, 0);
         self.system_signals_mut().clear_sound_effect_1();
     }
 
+    #[track_caller]
     pub(crate) fn clear_sound_effect_2(&mut self) {
         self.native_time_apu_request(3, 0);
         self.system_signals_mut().clear_sound_effect_2();
     }
 
+    #[track_caller]
     pub(crate) fn clear_ambient_sound_effect(&mut self) {
         self.native_time_apu_request(1, 0);
         self.system_signals_mut().clear_ambient_sound_effect();

@@ -462,14 +462,14 @@ mod tests {
         assert!(lo + lo.div_ceil(1324) * 40 < FIELD);
         crate::cycle_ledger::charge(lo - 1);
         game.set_music_control(0x11);
-        assert_eq!(game.native_pacing.apu_writes.last(), Some(&(0, 0, 0x11)));
+        assert_eq!(game.native_pacing.apu_writes.last().map(|w| (w.slot, w.port, w.value)), Some((0, 0, 0x11)));
         crate::cycle_ledger::charge(1);
         let prefix_wall = game.native_cost_elapsed(lo)[2];
         game.set_music_control(0x12);
-        assert_eq!(game.native_pacing.apu_writes.last(), Some(&(1, 0, 0x12)));
+        assert_eq!(game.native_pacing.apu_writes.last().map(|w| (w.slot, w.port, w.value)), Some((1, 0, 0x12)));
         crate::cycle_ledger::charge(1);
         game.set_ambient_sound_effect(0x05);
-        assert_eq!(game.native_pacing.apu_writes.last(), Some(&(1, 1, 0x05)));
+        assert_eq!(game.native_pacing.apu_writes.last().map(|w| (w.slot, w.port, w.value)), Some((1, 1, 0x05)));
         game.native_finish_main_cost();
         assert_eq!(game.native_cost_elapsed(lo)[2], prefix_wall);
         assert!(game.native_cost_main_hdma().0 > 0);

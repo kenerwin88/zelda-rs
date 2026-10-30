@@ -69,6 +69,22 @@ impl LaglessSampleClock {
 }
 
 const SMP_CPU_LOOKAHEAD_CYCLES: u64 = 19;
+
+pub(crate) fn sound_owner_trace_selected(host: u64) -> bool {
+    crate::debug_env::var!("ZELDA3_DEBUG_SOUND_OWNERS").ok().is_some_and(|selection| {
+        let (lo, hi) = selection.split_once('-').unwrap_or((&selection, &selection));
+        lo.parse::<u64>().ok().zip(hi.parse::<u64>().ok())
+            .is_some_and(|(lo, hi)| (lo..=hi).contains(&host))
+    })
+}
+
+fn port_trace_selected(host: u64) -> bool {
+    crate::debug_env::var!("ZELDA3_DEBUG_SPC_PORT_TRACE_FRAMES").ok().is_some_and(|selection| {
+        let (lo, hi) = selection.split_once('-').unwrap_or((&selection, &selection));
+        lo.parse::<u64>().ok().zip(hi.parse::<u64>().ok())
+            .is_some_and(|(lo, hi)| (lo..=hi).contains(&host))
+    })
+}
 // Main-CPU instruction paths through the ROM's $80:8888 LoadSongBank
 // routine, expressed in SNES master clocks. These are protocol timings, not
 // route coordinates: every runtime song-bank upload executes these paths.
@@ -211,6 +227,10 @@ struct SongBankHostTransfer {
     timed_command: bool,
     #[serde(skip)]
     interleave_host_cpu: bool,
+    #[serde(skip)]
+    observation_host: Option<u64>,
+    #[serde(skip)]
+    observation_cycle: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
@@ -272,6 +292,8 @@ impl SongBankHostTransfer {
             completed_port_clear_master_clock: None,
             timed_command: false,
             interleave_host_cpu: false,
+            observation_host: None,
+            observation_cycle: None,
         }
     }
 
@@ -311,6 +333,7 @@ impl SongBankHostTransfer {
         in_ports: &mut [u8; 6],
         out_ports: [u8; 4],
     ) -> bool {
+        self.observation_cycle = Some(execution_apu_cycle);
         while self
             .next_host_access_apu_cycle()
             .is_some_and(|cycle| cycle <= execution_apu_cycle)
@@ -343,7 +366,7 @@ impl SongBankHostTransfer {
                 length,
                 target,
             } => {
-                Self::write_input_port(in_ports, 2, target as u8);
+                self.write_input_port(in_ports, 2, target as u8);
                 self.phase = SongBankHostTransferPhase::WriteBlockTargetHigh {
                     token,
                     length,
@@ -356,17 +379,17 @@ impl SongBankHostTransfer {
                 length,
                 target,
             } => {
-                Self::write_input_port(in_ports, 3, (target >> 8) as u8);
+                self.write_input_port(in_ports, 3, (target >> 8) as u8);
                 self.phase = SongBankHostTransferPhase::WriteBlockFlag { token, length };
                 self.schedule_after(SONG_BANK_HEADER_TARGET_HIGH_TO_FLAG_MASTER_CLOCKS);
             }
             SongBankHostTransferPhase::WriteBlockFlag { token, length } => {
-                Self::write_input_port(in_ports, 1, u8::from(length != 0));
+                self.write_input_port(in_ports, 1, u8::from(length != 0));
                 self.phase = SongBankHostTransferPhase::WriteBlockToken { token, length };
                 self.schedule_after(SONG_BANK_HEADER_FLAG_TO_TOKEN_MASTER_CLOCKS);
             }
             SongBankHostTransferPhase::WriteBlockToken { token, length } => {
-                Self::write_input_port(in_ports, 0, token);
+                self.write_input_port(in_ports, 0, token);
                 self.phase = SongBankHostTransferPhase::AwaitBlockAck { token, length };
                 self.schedule_after(SONG_BANK_HEADER_TOKEN_TO_ACK_POLL_MASTER_CLOCKS);
             }
@@ -385,7 +408,7 @@ impl SongBankHostTransfer {
                 value,
                 bytes_remaining,
             } => {
-                Self::write_input_port(in_ports, 0, counter);
+                self.write_input_port(in_ports, 0, counter);
                 self.phase = SongBankHostTransferPhase::WriteByteValue {
                     counter,
                     value,
@@ -398,7 +421,7 @@ impl SongBankHostTransfer {
                 value,
                 bytes_remaining,
             } => {
-                Self::write_input_port(in_ports, 1, value);
+                self.write_input_port(in_ports, 1, value);
                 self.phase = SongBankHostTransferPhase::AwaitByteAck {
                     counter,
                     bytes_remaining,
@@ -432,7 +455,7 @@ impl SongBankHostTransfer {
                 }
             }
             SongBankHostTransferPhase::ClearPort { port } => {
-                Self::write_input_port(in_ports, port, 0);
+                self.write_input_port(in_ports, port, 0);
                 if port == 3 {
                     self.completed_port_clear_master_clock = self.next_host_access_master_clock;
                     self.next_host_access_master_clock = None;
@@ -490,8 +513,23 @@ impl SongBankHostTransfer {
             .map(snes_master_clock_to_apu_cycle)
     }
 
-    fn write_input_port(in_ports: &mut [u8; 6], port: u8, value: u8) {
+    fn write_input_port(&self, in_ports: &mut [u8; 6], port: u8, value: u8) {
         in_ports[usize::from(port)] = value;
+        if let Some(host) = self.observation_host {
+            let master = self.next_host_access_master_clock.unwrap();
+            let cycle = self.observation_cycle.expect("observed transfer has an execution clock");
+            if sound_owner_trace_selected(host) {
+                eprintln!("spc_bank_write host={host} cycle={cycle} deadline_master={master} bank={} cursor={} port={port} value={value} phase={:?}",
+                    self.bank_id, self.cursor, self.phase);
+            }
+            // The command normalizer excludes IPL headers/payload, but the
+            // receiver's $00:88F3..88FC clears are runtime rearm stores.
+            if matches!(self.phase, SongBankHostTransferPhase::ClearPort { .. })
+                && port_trace_selected(host)
+            {
+                eprintln!("spc_port_write host={host} cycle={cycle} port={port} value={value} delivery=bank-clear");
+            }
+        }
     }
 
     fn read_stream_word(&mut self) -> u16 {
@@ -540,9 +578,15 @@ pub(crate) struct AbsoluteDspEventClock {
     host_frame_index: u64,
     #[serde(default)]
     host_transport: HostPortTransport,
+    #[serde(skip)]
+    observation_silent: bool,
 }
 
 impl AbsoluteDspEventClock {
+    pub(crate) fn rearm_accepted_music_request(&mut self) {
+        self.host_transport.requested_music = 0;
+    }
+
     pub(crate) fn new(driver: &[u8], intro_bank: &[u8]) -> Result<Self, String> {
         if driver.len() != SPC_DRIVER_LENGTH {
             return Err(format!(
@@ -581,6 +625,7 @@ impl AbsoluteDspEventClock {
             completed_song_bank_port_clear_master_clock: None,
             host_frame_index: 0,
             host_transport: HostPortTransport::default(),
+            observation_silent: false,
         };
         clock.synchronize_after_driver_initialization()?;
         Ok(clock)
@@ -644,6 +689,9 @@ impl AbsoluteDspEventClock {
         vwf_glyph_tone_boundary_policy: u8,
         lagless: bool,
     ) -> DspClockWindow {
+        if let Some(transfer) = self.song_bank_transfer.as_mut() {
+            transfer.observation_host = (!self.observation_silent).then_some(self.host_frame_index);
+        }
         self.resume_cpu_ports_for_audio_window(
             self.absolute_apu_cycle + u64::from(samples_per_channel) * APU_CYCLES_PER_DSP_SAMPLE
                 + SMP_CPU_LOOKAHEAD_CYCLES);
@@ -968,13 +1016,7 @@ impl AbsoluteDspEventClock {
     // Observation only: cycles name the SPC delivery boundary, not the nominal
     // CPU deadline. Song-bank handshakes use their separate transfer owner.
     fn debug_host_port_write(&self, cycle: u64, port: u8, value: u8, delivery: &str) {
-        let selected = crate::debug_env::var!("ZELDA3_DEBUG_SPC_PORT_TRACE_FRAMES")
-            .ok().is_some_and(|selection| {
-                let (lo, hi) = selection.split_once('-').unwrap_or((&selection, &selection));
-                lo.parse::<u64>().ok().zip(hi.parse::<u64>().ok())
-                    .is_some_and(|(lo, hi)| (lo..=hi).contains(&self.host_frame_index))
-            });
-        if selected {
+        if !self.observation_silent && port_trace_selected(self.host_frame_index) {
             eprintln!("spc_port_write host={} cycle={cycle} port={port} value={value} delivery={delivery}",
                 self.host_frame_index);
         }
@@ -1113,6 +1155,7 @@ impl AbsoluteDspEventClock {
     pub(crate) fn preview_lagless_song_upload_return(&self, samples: u32) -> Option<u64> {
         let end = self.absolute_apu_cycle + u64::from(samples) * APU_CYCLES_PER_DSP_SAMPLE;
         let mut preview = self.clone();
+        preview.observation_silent = true;
         preview.advance_lagless(Default::default(), samples, 0);
         let clear = preview.completed_song_bank_port_clear_master_clock?;
         // $00:88FF PLP/RTS, $8923 CLI/RTL and caller LDA/STA $4200.
@@ -1158,6 +1201,7 @@ impl AbsoluteDspEventClock {
         let end = snes_frame_start_master_clock(self.host_frame_index)
             + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE;
         let mut preview = self.clone();
+        preview.observation_silent = true;
         let cycles = snes_master_clock_to_apu_cycle(end).saturating_sub(self.absolute_apu_cycle);
         if preview.song_bank_transfer.is_some() && cycles != 0 {
             let samples = u32::try_from(cycles.div_ceil(APU_CYCLES_PER_DSP_SAMPLE))
@@ -1175,9 +1219,14 @@ impl AbsoluteDspEventClock {
 
     pub(crate) fn queue_upload_return_nmi(&mut self, restored: snes::CpuRasterPosition,
         latches: [u8; 4], last: [u8; 2]) {
-        assert!(self.pending_upload_return_nmi_master_clock.is_none());
         let field = self.host_frame_index.saturating_sub(1);
         let master = CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(field, restored);
+        self.queue_upload_return_nmi_at_master(master, latches, last);
+    }
+
+    pub(crate) fn queue_upload_return_nmi_at_master(&mut self, master: u64,
+        latches: [u8; 4], last: [u8; 2]) {
+        assert!(self.pending_upload_return_nmi_master_clock.is_none());
         // $02:8566 STA $4200's remaining bus cycle6, $8569 RTS42,
         // then the slow-ROM hardware NMI entry62. Snes9x accepts NMI
         // after that RTS, not in the middle of the just-enabled instruction.
@@ -1519,6 +1568,46 @@ fn upload_song_bank_to_ram(ram: &mut [u8], data: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sound_fix1_upload_clear_rearms_ambient_05() {
+        // Iteration 48556: $00:88F3..88FC clear all ports before the
+        // return NMI's $00:8115 ambient store. The observer must retain this
+        // zero even though it excludes IPL payload from command identity.
+        let mut transfer = SongBankHostTransfer::new(0, &[0, 0]);
+        transfer.phase = SongBankHostTransferPhase::ClearPort { port: 0 };
+        transfer.next_host_access_master_clock = Some(1000);
+        let mut input = [0xff, 5, 0, 12, 0, 0];
+        for port in 0..4 {
+            assert_eq!(transfer.perform_host_access(&mut input, [0; 4]), port == 3);
+            assert_eq!(input[port], 0);
+        }
+        let mut transport = HostPortTransport::default();
+        let writes = transport.nmi_latch_writes([0, 5, 0, 0], [0xf1, 5], [0; 4]);
+        assert_eq!(writes.writes[1], Some(5));
+        assert_ne!(input[1], writes.writes[1].unwrap());
+    }
+
+    #[test]
+    fn sound_fix1_nmi_order_and_panned_sfx_survive_clear_repeat() {
+        // First order-only row 12404: ambient belongs to the opening NMI;
+        // SFX1=$19 belongs to a held NMI. Preserve each NMI's port order.
+        let mut transport = HostPortTransport::default();
+        let opening = transport.nmi_latch_writes([0,5,0,0], [0x10,5], [0;4]);
+        let held = transport.nmi_latch_writes([0,0,0x19,0], [0x10,5], [0;4]);
+        let nonzero: Vec<_> = [opening,held].into_iter().flat_map(|w|
+            w.writes.into_iter().enumerate().filter_map(|(p,v)| v.filter(|v| *v != 0).map(|v| (p,v))))
+            .collect();
+        assert_eq!(nonzero, [(1,5),(2,0x19)]);
+        // Proof-1 singleton values, including their unmasked pan bits.
+        for (port,value) in [(2,0x0e),(2,0x1e),(2,0x2a),(3,2),(3,0x10),
+            (3,0x1e),(3,0x24),(3,0x42),(3,0x59),(3,0x66),(3,0xa6)] {
+            for expected in [value,0,value] {
+                let mut latches = [0;4]; latches[port] = expected;
+                assert_eq!(transport.nmi_latch_writes(latches,[0;2],[0;4]).writes[port], Some(expected));
+            }
+        }
+    }
 
     #[test]
     fn song_bank_upload_materializes_blocks_and_wraps_address_space() {

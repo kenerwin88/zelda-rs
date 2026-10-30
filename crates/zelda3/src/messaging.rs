@@ -936,6 +936,42 @@ mod fast_forward_cycle_tests {
     }
 
     #[test]
+    fn sound_fix1_first_vwf_line_delivers_clicks_across_held_nmis() {
+        // Proof-1 first extra edge, iteration 3333: preceding line at 3332.
+        // These are the decoded bytes at the $0E:C984 loop entry, not a
+        // runtime route table. $59 spaces perform no $0E:CAC9 store.
+        let (assets, _) = character_decoder_fixture().expect("sound fixture assets");
+        let mut state = crate::zelda_rtl::ZeldaState::new();
+        state.set_assets(&assets).unwrap();
+        state.set_lag_free(true);
+        state.ram[0x10] = 14;
+        state.ram[0x11] = 2;
+        state.ram[0x1cd0..0x1cf0].copy_from_slice(&[
+            37,99,68,98,3,0,0,0,1,0,0,0,57,0,0,0,
+            0,0,254,57,0,0,0,0,0,28,4,0,0,0,0,0,
+        ]);
+        state.sync_native_game_state_from_ram();
+        state.messaging_text_mut().load_decoded_dialogue(&[
+            10,30,39,66,89,8,81,38,89,32,40,34,39,32,89,40,46,45,89,31,40,43,89,26,117,127,
+        ]);
+        state.lag_free_frame_master_start = crate::cycle_ledger::master();
+        state.native_begin_main_cost();
+        crate::cycle_ledger::charge(68_750);
+        state.render_text_draw_message_characters();
+        assert_eq!(state.lag_free_vwf_master, 1_107_330);
+        state.native_finish_main_cost();
+        assert_eq!(state.native_cost_predictions()[2], 3);
+        for _ in 0..4 {
+            state.native_publish_apu_requests();
+            assert_eq!(state.game_state.system_signals.sound_effect_2(), 12,
+                "each crossed NMI has a newly authored glyph, without an inserted clear");
+            state.clear_sound_effect_2();
+        }
+        state.native_publish_apu_requests();
+        assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
+    }
+
+    #[test]
     fn character_decoder_native_instructions_and_publications_match_all_rom_messages() {
         use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
         let Some((assets, rom)) = character_decoder_fixture() else { return };
@@ -8123,6 +8159,7 @@ impl ZeldaState {
             cycles_left = u32::MAX;
         }
         let mut loop_budget = cycles_left;
+        let lagless_work_at_entry = self.lag_free_vwf_master;
         if !resuming {
             self.dialogue_vwf_deferred_handler_exits = 0;
         }
@@ -8131,6 +8168,9 @@ impl ZeldaState {
         let mut authority_boundary_reached = false;
         let mut retain_incomplete_click = false;
         loop {
+            if self.lag_free {
+                self.lag_free_vwf_master = lagless_work_at_entry + u64::from(loop_budget - cycles_left);
+            }
             if self.dialogue_vwf_transition_remaining_master_cycles != 0 {
                 if self.native_vwf_glyph_clock.is_some() {
                     let (consumed,boundary) = self.advance_native_vwf_transition();
@@ -8271,7 +8311,15 @@ impl ZeldaState {
                                         handler_entry_glyph_phase,
                                         retention_costs,
                                     );
-                                if !clocked_glyph { self.begin_vwf_glyph(param, read_pos as u16); }
+                                if !clocked_glyph {
+                                    if self.lag_free {
+                                        // $0E:CAC9 STA $012F belongs to the click prefix,
+                                        // not the start (or return) of the entire text loop.
+                                        self.lag_free_vwf_master = lagless_work_at_entry
+                                            + u64::from(loop_budget - cycles_before_advance + glyph_costs.click);
+                                    }
+                                    self.begin_vwf_glyph(param, read_pos as u16);
+                                }
                             }
                             if clocked_glyph {
                                 drawing_setup_published = advance.next_phase.is_ready()
@@ -8328,6 +8376,10 @@ impl ZeldaState {
                             self.set_dialogue_vwf_dispatch_cursor(glyph_dispatch_cursor);
                             exact_command_master_cycles = u64::from(glyph_costs.total())
                                 + crate::cycle_models::vwf::RENDER_SINGLE_EPILOGUE_MASTER_CYCLES;
+                            if self.lag_free {
+                                self.lag_free_vwf_master = lagless_work_at_entry
+                                    + u64::from(loop_budget - cycles_left + glyph_costs.click);
+                            }
                             self.begin_vwf_glyph(param, read_pos as u16);
                         }
                         frame_advance = frame_advance.saturating_add(u16::from(width));
@@ -8624,7 +8676,7 @@ impl ZeldaState {
             );
         }
         if self.lag_free {
-            self.lag_free_vwf_master += u64::from(loop_budget - cycles_left);
+            self.lag_free_vwf_master = lagless_work_at_entry + u64::from(loop_budget - cycles_left);
         }
         if midline_yield {
             VwfCpuSliceOutcome::InterruptedMidGlyph {
