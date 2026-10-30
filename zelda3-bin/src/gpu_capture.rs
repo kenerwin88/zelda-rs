@@ -447,13 +447,15 @@ impl LiveGpuFrameCapture {
             comparison_frame,
             #[cfg(feature = "rom-timing")]
             host_frame: game.frame_ctr_dbg,
-            hardware_startup_transient: snes9x_boot_material(
+            // The host-timed boot material is not a logical-iteration
+            // surface. Lag-free bootstrap and NMI own its actual VRAM/OAM.
+            hardware_startup_transient: (!game.lag_free()).then(|| snes9x_boot_material(
                 game.frame_ctr_dbg,
                 game.wram_image()[MAIN_MODULE_INDEX],
                 game.wram_image()[MAIN_MODULE_INDEX + 1],
                 game.wram_image()[MAIN_MODULE_INDEX + 2],
                 game.ppu.brightness,
-            ),
+            )).flatten(),
             ppu,
             cgram,
             raw_scanlines,
@@ -2387,6 +2389,20 @@ mod tests {
     const SUBMODULE_INDEX: usize = 0x11;
     const SAVED_MODULE_FOR_MENU: usize = 0x010c;
     const MESSAGING_MODULE: usize = 0x1cd8;
+
+    #[test]
+    fn lag_free_capture_uses_ppu_without_host_boot_material() {
+        let mut game = ZeldaState::new();
+        game.frame_ctr_dbg = 83;
+        let host_capture = LiveGpuFrameCapture::from_game_at_comparison_frame(&mut game, 16);
+        assert!(host_capture.hardware_startup_transient.is_some());
+        game.set_lag_free(true);
+        let logical_capture = LiveGpuFrameCapture::from_game_at_comparison_frame(&mut game, 16);
+        assert!(logical_capture.hardware_startup_transient.is_none());
+        assert_eq!(logical_capture.ppu.vram, host_capture.ppu.vram);
+        assert_eq!(logical_capture.ppu.oam, host_capture.ppu.oam);
+        assert_eq!(logical_capture.ppu.cgram, host_capture.ppu.cgram);
+    }
 
     #[test]
     fn validation_cache_key_distinguishes_obj_latch_only_publication() {

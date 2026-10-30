@@ -318,3 +318,115 @@ ZELDA3_SAVE_DIR="$PWD/target/poly2/gpu-saves" target/poly2/zelda3-default \
   --start 1466000 --video "$C" --video-misses --report 0 \
   > target/poly2/ending-confirm-gpu.txt 2>&1
 ```
+
+## Lagless intro picture
+
+Investigation on `codex/intro1`, base `e38a8be3`; CPU receipts are in
+`target/intro1/`. **Partial repair: the opening VRAM generation and one
+visible picture are repaired. The late pictures remain unresolved.** The
+cache, `full-v2`, and `target/poly1/` were read-only.
+
+The 218-byte difference at iteration 16 / cache host 172 belongs to the
+**opening NMI at host 81**, before the first main iteration. It is not
+decompression or polygon content. Native logical bootstrap initialized WRAM
+but omitted this handler, then main disabled core updates, preserving the
+missing uploads throughout the boot card. The source's DMA register trace
+(`source.log`) identifies all destinations; VRAM addresses below are bytes:
+
+| Source instruction starting DMA | A-bus source | Differing destination bytes |
+| --- | --- | --- |
+| `$00:8A35`, `$00:8A59` | Six Link body/head/hand transfers from `$10:0000`, the low-WRAM mirror | 24 in `$8000..$829F` |
+| `$00:8A9F`, `$00:8AD8` | Ten equipment/auxiliary transfers from `$7E:0000` | 40 in `$80A0..$83BF` |
+| `$00:8AFE`, `$00:8B22` | Four pointer transfers from `$7E:0000`, plus expanded planes from `$7E:BD40` / `$7E:BD80` | 16 in `$8400..$867F`, plus 128 at `$8480..$84BF` / `$8680..$86BF` |
+| `$00:8B64` | Animated BG transfer, `$7E:0000`, length `$0400` | 10 in `$0000..$01FE` |
+
+The repeated low-WRAM bytes are `$0001=80`, `$0012=01`, `$0013=80`,
+`$0015=01`. The last transfer additionally sees six nonzero live handler
+stack bytes; the expanded-plane bytes retain the reset `$55` fill. Native
+had zero at every one of the 218 differing destinations. The repair runs
+the existing native reset/upload, memory, wait and NMI owners through the
+opening handler before logical main starts. No ROM executor, recorded stack,
+host-number threshold or copied oracle bytes enter production. The bootstrap
+does not consume an intro work-schedule entry or logical iteration. The
+existing synchronous logical audio bank remains its playback owner; the
+temporary reset CPU/APU clock and scanline history retire at this handoff.
+
+An unmodified-ROM CPU test independently executes reset through the first
+NMI return and compares **all VRAM, CGRAM and OAM** with native bootstrap.
+The final native VRAM also equals the source at hosts **172 and 966**.
+At host 180, the source has already begun the following main's graphics
+reload, so its scanout-time VRAM differs from native iteration 24's closing
+state by 19,037 bytes; this is not reported as equality.
+
+The original 218-byte discrepancy was **not the visible host-172 miss**.
+After repairing it, the modern picture still had eight magenta pixels absent
+from both the ROM scanout and native static line-renderer image. Its owner
+was `snes9x_boot_material`: the host-timed overlay inserts stack-corner
+pixels when `frame_ctr_dbg == 83`. Lagless iteration 16 happens to reach
+that callback number. Lag-free capture now uses its actual PPU surface
+without that host-timed overlay. The final host-172 picture is byte-exact,
+RGB SHA-256 `8481fbad99d28b079d4260ec1e0223f0dc9c3e4c1965e4c2a6fd8b056b776834`.
+`--dump-wram` alongside `ZELDA3_LOGICAL_CPU_PICTURES` now saves the selected
+software picture as `engine-<iteration>.cpu.ppm` for pixel-level evidence.
+
+All **2,320** fresh ROM-side CPU scanouts equal their same-host cache hashes
+(`census-source/host-pictures.txt`). On iterations **0..1,999**, the modern
+CPU baseline is **1,628 exact / 364 previous-iteration matches / 8 other**;
+the final build is **1,629 / 364 / 7**. These are literal CPU hash counts,
+not a rerun of the older GPU result **1,627 / 365 / 8**. No GPU-count
+equivalence is claimed.
+
+The reproduced late population has two owners (`late-causes.json`):
+
+* **359 file-name scroll pictures**, first iteration **798 / host 1,094**.
+  Native and ROM closing WRAM agree on `$0630=$01F0`. The *following*
+  iteration's `$0C:DA98` writes `$01EF` in the preceding vblank (line 254),
+  and `$00:82FB/$00:8301` consume it into BG3HOFS at the line-128 V-IRQ.
+  The ROM picture therefore already contains next-main state; the logical
+  capture still uses `$01F0`. Source witnesses retain every `$0630/$0631`
+  write. A pre-main Link-DMA operand trial changed no picture hashes and
+  was removed; the incidental 20-byte OBJ difference was not this cause.
+* **Five screen-clear transitions**, first iteration **762 / host 1,057**,
+  then hosts **1,579, 1,652, 1,761 and 2,215**. The following main reaches
+  `$00:893F` (`STA $2100`, forced blank) / `$00:8942` (`STA $13`) before
+  visible rendering. Host 1,652 reaches the store on line 1. The current
+  logical closing image still shows the preceding menu. The same next-main
+  blanking explains the remaining early misses at hosts **180 and 966**.
+
+These are event-order/publication differences, not demonstrated missing
+instruction prices. Replacing scroll with a one-step prediction, shifting
+every capture, or fitting a scene cost would hide that ownership boundary.
+No such change, new price, scene table or classifier change is retained.
+The seven remaining non-exact/non-previous CPU pictures are iterations
+24, 728, 765, 1118, 1186, 1465 and 1885. Full intro picture acceptance and
+the exact reconciliation with the older GPU census remain open.
+
+Verification of the retained changes: five targeted CPU unit tests pass
+(opening-NMI surface equality, two reset-memory tests, NMI entry bus cost,
+and logical capture's boot-overlay exclusion). Default and
+`--no-default-features` product builds are warning-free; the library-test
+build retains unrelated dead-code warnings. The full seeded ROM census
+(`--seed-every 2000`) passes **1,473,123 iterations**, unexplained **0**.
+Its missing/excess/false-positive counts remain **2,393 / 0 / 0**;
+all pacing rows equal the retained `target/poly2/dma-census.csv` baseline,
+and runtime held counts agree with `cost_p2` on every row. Receipts:
+`rom-gate.log`, `final-pacing-comparison.json`, the `test-*.log` files and
+`build-final-*.log` under `target/intro1/`. `source-identity.json` binds
+the production sources, binaries and picture receipts to this verification.
+The continuous recorded ROM run also passes all **1,473,123 iterations**
+with unexplained **0** (`continuous-gate.log`). `git diff --check` passes;
+task evidence occupies approximately **210 MB**. No GPU, live replay, full
+library suite, protected-directory write, formatting, commit or push was
+performed. This is a verified partial repair, not intro picture acceptance.
+
+GPU confirmation from cold (not executed):
+
+```sh
+C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+L=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
+mkdir -p target/intro1/gpu-saves
+ZELDA3_SAVE_DIR="$PWD/target/intro1/gpu-saves" target/intro1/zelda3-default \
+  --logical-replay "$L" "$C/initial.srm" --frames 2000 \
+  --video "$C" --video-misses --report 0 \
+  > target/intro1/intro-confirm-gpu.txt 2>&1
+```

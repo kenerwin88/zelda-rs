@@ -2000,6 +2000,12 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(&mut game, iteration.index as u32);
             // This compositor is entirely software; no renderer/device is created.
             let pixels = renderer::modern_extract::render_modern_frame_full_from_vram(&capture.gpu_frame());
+            if let Some((target, dir)) = dump_wram.as_ref().filter(|(target, _)| *target == iteration.index) {
+                fs::create_dir_all(dir).expect("create CPU picture directory");
+                let mut ppm = b"P6\n256 224\n255\n".to_vec();
+                for pixel in pixels.chunks_exact(4) { ppm.extend_from_slice(&pixel[..3]); }
+                fs::write(dir.join(format!("engine-{target}.cpu.ppm")), ppm).expect("write CPU picture");
+            }
             let mut hash = parity::hash::Sha256Digest::new();
             hash.update_rgb_from_rgba([pixels.as_slice()]);
             let mut file = fs::OpenOptions::new().create(true).append(true).open(path)

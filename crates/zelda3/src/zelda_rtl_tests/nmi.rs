@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn lag_free_bootstrap_uploads_match_first_rom_nmi() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut native = ZeldaState::new();
+    native.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    native.set_lag_free(true);
+    let mut source = snes::Snes9xColdCpuExecutor::from_lorom_reset_with_sram(
+        &rom, Some(&native.sram)).unwrap();
+    let mut accepted = false;
+    let mut first_ppu = None;
+    for _ in 0..100 {
+        source.run_until_main_loop_return_with_quiescent_step_hook(|step, exec| {
+            if matches!(step.accepted_interrupt, Some(snes::SourceCpuAcceptedInterrupt::Nmi { .. })) {
+                accepted = true;
+            }
+            if accepted && step.opcode == 0x40 && first_ppu.is_none() {
+                first_ppu = Some(exec.machine().snes().ppu.clone());
+            }
+            Ok::<(), snes::SourceCpuError>(())
+        }).unwrap();
+        if first_ppu.is_some() { break; }
+    }
+    let source = first_ppu.expect("reset reaches its opening NMI");
+    let frame = native.frame_ctr_dbg;
+    native.zelda_initialization_code();
+    assert_eq!(native.frame_ctr_dbg, frame, "bootstrap is not a logical iteration");
+    assert_eq!(native.ppu.vram, source.vram, "all reset DMA destinations, including live stack bytes");
+    assert_eq!(native.ppu.cgram, source.cgram);
+    assert_eq!(native.ppu.oam, source.oam);
+    assert!(native.native_startup_cpu.is_none());
+    assert!(native.native_bg3_scroll_scanout.is_none());
+}
+
+#[test]
 #[cfg(feature = "rom-timing")]
 fn link_dma_reads_live_wram_in_both_source_banks() {
     let mut state = ZeldaState::new();
