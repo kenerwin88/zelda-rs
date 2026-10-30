@@ -10,6 +10,7 @@
 //! Usage: zelda3 --logical-replay LEDGER_DIR SRAM [--frames N] [--image pre|post]
 //!        [--offset K] [--report N] [--ignore lo-hi,...] [--histogram PATH]
 //!        [--seed-every N] [--video CACHE_DIR [--video-host-offset D] [--video-misses]]
+//!        [--cpu-video CACHE_DIR] (same picture checks, software compositor only)
 //!        [--apu-trace lo-hi] [--start K] [--dump-wram K:DIR] [--live-apu-reads]
 //!        [--poly-uploads] [--single-seed] [--outcome-trace PATH]
 //!        [--windows LO-HI,...] (inclusive uninterrupted seeded probes)
@@ -632,7 +633,8 @@ impl Segment {
 struct PendingVideo {
     iteration_index: usize,
     oracle_frame: usize,
-    queued: QueuedGpuVideoDigest,
+    queued: Option<QueuedGpuVideoDigest>,
+    cpu_queued: Option<std::sync::mpsc::Receiver<(VideoDigest, Vec<u8>)>>,
     capture: LiveGpuFrameCapture,
     /// When this iteration re-pointed HDMA channel 6/7: its line registers
     /// with the new channel setup reading the previous iteration's tables.
@@ -645,7 +647,10 @@ struct PendingVideo {
 /// Renders engine frames and checks them against the oracle cache's frame
 /// hashes, keeping the GPU readback pipeline full like the cached A/V replay.
 struct VideoCheck {
-    renderer: NativeWindowOracleRenderer,
+    renderer: Option<NativeWindowOracleRenderer>,
+    cpu_renderer: Option<CpuPictureRenderer>,
+    cpu_hashes: Option<BufWriter<fs::File>>,
+    cpu_dump: Option<(u64, PathBuf)>,
     oracle: Vec<Option<VideoDigest>>,
     host_offset: i64,
     pending: VecDeque<PendingVideo>,
@@ -661,6 +666,69 @@ struct VideoCheck {
     /// The last queued iteration's WRAM, HDMA channel 6/7 setup and enable
     /// mask.
     last_hdma: Option<(usize, Vec<u8>, [snes::dma::DmaChannel; 2], u8)>,
+}
+
+/// Bounded software rendering, with results retired in submission order by
+/// VideoCheck. Workers own immutable captures, never the running game.
+struct CpuPictureRenderer {
+    sender: Option<std::sync::mpsc::SyncSender<(LiveGpuFrameCapture, std::sync::mpsc::Sender<(VideoDigest, Vec<u8>)>)>>,
+    workers: Vec<std::thread::JoinHandle<()>>,
+}
+
+impl CpuPictureRenderer {
+    fn new() -> Self {
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<(LiveGpuFrameCapture, std::sync::mpsc::Sender<(VideoDigest, Vec<u8>)>)>(3);
+        let receiver = std::sync::Arc::new(std::sync::Mutex::new(receiver));
+        let workers = (0..3).map(|_| {
+            let receiver = receiver.clone();
+            std::thread::spawn(move || loop {
+                let request = receiver.lock().expect("CPU picture queue").recv();
+                let Ok((capture, reply)) = request else { break; };
+                if reply.send(VideoCheck::render_cpu(&capture)).is_err() { break; }
+            })
+        }).collect();
+        Self { sender: Some(sender), workers }
+    }
+
+    fn queue(&self, capture: LiveGpuFrameCapture) -> std::sync::mpsc::Receiver<(VideoDigest, Vec<u8>)> {
+        let (reply, result) = std::sync::mpsc::channel();
+        self.sender.as_ref().expect("CPU picture sender").send((capture, reply)).expect("CPU picture submission");
+        result
+    }
+}
+
+impl Drop for CpuPictureRenderer {
+    fn drop(&mut self) {
+        self.sender.take();
+        for worker in self.workers.drain(..) { worker.join().expect("CPU picture worker"); }
+    }
+}
+
+#[cfg(test)]
+mod cpu_picture_tests {
+    use super::*;
+
+    #[test]
+    fn software_queue_preserves_capture_and_submission_order() {
+        let renderer = CpuPictureRenderer::new();
+        let mut game = ZeldaState::new();
+        game.set_lag_free(true);
+        game.ppu.forced_blank = false;
+        game.ppu.brightness = 15;
+        game.ppu.screen_enabled = [0, 0];
+        let mut pending = Vec::new();
+        for color in [0x001f, 0x03e0, 0x7c00] {
+            game.ppu.cgram[0] = color;
+            let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(&mut game, 0);
+            let expected = VideoCheck::render_cpu(&capture);
+            pending.push((renderer.queue(capture), expected));
+        }
+        assert_ne!(pending[0].1.0, pending[1].1.0);
+        assert_ne!(pending[1].1.0, pending[2].1.0);
+        for (result, expected) in pending {
+            assert_eq!(result.recv().unwrap(), expected);
+        }
+    }
 }
 
 struct HeldVideo {
@@ -736,7 +804,7 @@ fn torn_three_way_matches(top: &[u8], middle: &[u8], bottom: &[u8], width: u32, 
 }
 
 impl VideoCheck {
-    fn load(cache: &Path, host_offset: i64, print_misses: bool) -> Self {
+    fn load(cache: &Path, host_offset: i64, print_misses: bool, cpu: bool, dump: Option<(u64, PathBuf)>) -> Self {
         #[derive(serde::Deserialize)]
         struct Record {
             video: Option<VideoDigest>,
@@ -753,12 +821,17 @@ impl VideoCheck {
                     .video
             })
             .collect();
-        let renderer = NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
+        let renderer = (!cpu).then(|| NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
             eprintln!("failed to initialize GPU renderer: {error}");
             process::exit(1);
-        });
+        }));
         Self {
             renderer,
+            cpu_renderer: cpu.then(CpuPictureRenderer::new),
+            cpu_dump: cpu.then_some(dump).flatten(),
+            cpu_hashes: cpu.then(|| zelda3::debug_env::var_os!("ZELDA3_LOGICAL_CPU_PICTURES"))
+                .flatten().map(|path| BufWriter::new(fs::OpenOptions::new()
+                    .create(true).append(true).open(path).expect("open CPU picture evidence"))),
             oracle,
             host_offset,
             pending: VecDeque::new(),
@@ -788,10 +861,10 @@ impl VideoCheck {
             return;
         };
         let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(game, oracle_frame as u32);
-        let queued = self.renderer.queue_capture_video_digest(capture.clone()).unwrap_or_else(|error| {
+        let queued = self.renderer.as_mut().map(|renderer| renderer.queue_capture_video_digest(capture.clone()).unwrap_or_else(|error| {
             eprintln!("video submission failed: {error}");
             process::exit(1);
-        });
+        }));
         let channels = [game.dma.channel[6], game.dma.channel[7]];
         let mask = game.hdma_enable_mask();
         let setup = |channel: &snes::dma::DmaChannel| {
@@ -823,6 +896,7 @@ impl VideoCheck {
             iteration_index: index,
             oracle_frame,
             queued,
+            cpu_queued: self.cpu_renderer.as_ref().map(|renderer| renderer.queue(capture.clone())),
             capture,
             repointed_over_previous_tables,
             previous_setup_over_tables,
@@ -850,11 +924,25 @@ impl VideoCheck {
 
     fn finish_one(&mut self, iterations: &[Iteration], segment: &mut Segment) {
         let pending = self.pending.pop_front().expect("pending video frame");
-        let (actual, rgba) = self.renderer.finish_game_video_digest_with_rgba(pending.queued).unwrap_or_else(|error| {
-            eprintln!("video readback failed: {error}");
-            process::exit(1);
-        });
+        let (actual, rgba) = match pending.queued {
+            Some(queued) => self.renderer.as_mut().expect("GPU queue owner")
+                .finish_game_video_digest_with_rgba(queued).unwrap_or_else(|error| {
+                    eprintln!("video readback failed: {error}");
+                    process::exit(1);
+                }),
+            None => pending.cpu_queued.expect("CPU queue owner").recv().expect("CPU picture completion"),
+        };
         let index = pending.iteration_index;
+        if let Some((target, dir)) = self.cpu_dump.as_ref().filter(|(target, _)| *target == iterations[index].index) {
+            fs::create_dir_all(dir).expect("create CPU picture directory");
+            let mut ppm = b"P6\n256 224\n255\n".to_vec();
+            for pixel in rgba.chunks_exact(4) { ppm.extend_from_slice(&pixel[..3]); }
+            fs::write(dir.join(format!("engine-{target}.cpu.ppm")), ppm).expect("write CPU picture");
+        }
+        if let Some(file) = self.cpu_hashes.as_mut() {
+            use std::io::Write;
+            writeln!(file, "{} {}", iterations[index].index, actual.sha256).expect("write CPU picture evidence");
+        }
         if let Some(held) = self.held.take() {
             let next = (held.index + 1 == index).then_some((rgba.as_slice(), &pending.capture));
             let repointed = next.and(pending.repointed_over_previous_tables.as_deref());
@@ -1016,14 +1104,24 @@ impl VideoCheck {
     /// Render one capture outside the pipeline (a readback slot is free
     /// whenever a held frame is classified).
     fn render_now(&mut self, capture: LiveGpuFrameCapture) -> (VideoDigest, Vec<u8>) {
-        let queued = self.renderer.queue_capture_video_digest(capture).unwrap_or_else(|error| {
+        let Some(renderer) = self.renderer.as_mut() else {
+            return Self::render_cpu(&capture);
+        };
+        let queued = renderer.queue_capture_video_digest(capture).unwrap_or_else(|error| {
             eprintln!("video submission failed: {error}");
             process::exit(1);
         });
-        self.renderer.finish_game_video_digest_with_rgba(queued).unwrap_or_else(|error| {
+        renderer.finish_game_video_digest_with_rgba(queued).unwrap_or_else(|error| {
             eprintln!("video readback failed: {error}");
             process::exit(1);
         })
+    }
+
+    fn render_cpu(capture: &LiveGpuFrameCapture) -> (VideoDigest, Vec<u8>) {
+        let pixels = renderer::modern_extract::render_modern_frame_full_from_vram(&capture.gpu_frame());
+        let mut hash = parity::hash::Sha256Digest::new();
+        hash.update_rgb_from_rgba([pixels.as_slice()]);
+        (VideoDigest { width: 256, height: 224, sha256: hash.finish() }, pixels)
     }
 
     fn record(
@@ -1150,6 +1248,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         PORT_REPRESENTATION.iter().map(|&(lo, hi, _)| (lo, hi)).collect();
     let mut histogram_path: Option<PathBuf> = None;
     let mut video_cache: Option<PathBuf> = None;
+    let mut cpu_video = false;
     // Cache frame N is the picture of engine host N + 1.
     let mut video_host_offset = -1i64;
     let mut video_misses = false;
@@ -1299,6 +1398,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             "--start" => start_at = value(index).parse().expect("--start"),
             "--seed-every" => seed_every = Some(value(index).parse().expect("--seed-every")),
             "--video" => video_cache = Some(PathBuf::from(value(index))),
+            "--cpu-video" => {
+                cpu_video = true;
+                video_cache = Some(PathBuf::from(value(index)));
+            }
             "--video-host-offset" => {
                 video_host_offset = value(index).parse().expect("--video-host-offset")
             }
@@ -1381,10 +1484,10 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     game.take_song_end_poll_observations();
     apply_sram_to_game_or_exit(&mut game, Path::new(sram_path), &sram);
 
-    let _compare_lock = video_cache.is_some().then(|| acquire_snes9x_compare_lock_mode(true));
+    let _compare_lock = (video_cache.is_some() && !cpu_video).then(|| acquire_snes9x_compare_lock_mode(true));
     let mut video = video_cache
         .as_deref()
-        .map(|cache| VideoCheck::load(cache, video_host_offset, video_misses));
+        .map(|cache| VideoCheck::load(cache, video_host_offset, video_misses, cpu_video, dump_wram.clone()));
     // Per address: iterations diverged, first diverging iteration.
     let mut histogram = vec![(0u64, 0u64); WRAM_LEN];
     // Bytes that began to differ in an iteration with lag NMIs and have not
@@ -1995,7 +2098,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         if !images.advance() {
             break;
         }
-        if let Some(path) = zelda3::debug_env::var_os!("ZELDA3_LOGICAL_CPU_PICTURES") {
+        if let Some(path) = zelda3::debug_env::var_os!("ZELDA3_LOGICAL_CPU_PICTURES").filter(|_| !cpu_video) {
             use std::io::Write;
             let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(&mut game, iteration.index as u32);
             // This compositor is entirely software; no renderer/device is created.

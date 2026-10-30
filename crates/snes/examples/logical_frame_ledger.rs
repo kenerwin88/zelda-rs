@@ -1,6 +1,11 @@
 //! Record the ROM's logical-frame ledger for lag-free parity checks.
 //!
 //! Usage: cargo run -p snes --example logical_frame_ledger -- ROM SRAM INPUT HOST_CALLS OUT_DIR
+//! Optional `--picture-events HOSTS_FILE` accepts one decimal host per line,
+//! renders those hosts (hashes only), and records their display-affecting CPU
+//! stores in `picture-events.jsonl.zst`. `at` is the source bus-access timestamp;
+//! line/cycle are its physical beam position; retirement is recorded separately.
+//! This does not alter execution.
 //!
 //! Runs the cartridge from reset on the in-repo source CPU (the owner whose
 //! presented OAM matches the pinned Snes9x cache) and cuts the route into main
@@ -383,6 +388,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input = fs::read_to_string(args.next().ok_or("missing input path")?)?;
     let host_calls: usize = args.next().ok_or("missing host call count")?.parse()?;
     let out_dir = PathBuf::from(args.next().ok_or("missing output directory")?);
+    let mut picture_hosts = std::collections::BTreeSet::new();
+    if let Some(option) = args.next() {
+        if option != "--picture-events" { return Err("unknown ledger option".into()); }
+        for line in fs::read_to_string(args.next().ok_or("missing picture hosts file")?)?.lines() {
+            picture_hosts.insert(line.parse::<usize>()?);
+        }
+    }
     if args.next().is_some() {
         return Err("too many arguments".into());
     }
@@ -401,6 +413,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     fs::create_dir_all(&out_dir)?;
+    let mut picture_events = if picture_hosts.is_empty() { None } else {
+        Some(zstd::stream::write::Encoder::new(
+            BufWriter::new(fs::File::create(out_dir.join("picture-events.jsonl.zst"))?), 3)?)
+    };
     let mut records = BufWriter::new(fs::File::create(if env::var_os("ZELDA3_LEDGER_PROFILE_ONLY").is_some() {
         PathBuf::from("/dev/null")
     } else { out_dir.join("iterations.jsonl") })?);
@@ -530,12 +546,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         .transpose()?;
     let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram))?;
     let render_every = env::var_os("ZELDA3_LEDGER_PICTURES").is_some();
-    let render_pictures = !frame_hosts.is_empty() || render_every;
+    let render_pictures = !frame_hosts.is_empty() || !picture_hosts.is_empty() || render_every;
     // `ZELDA3_LEDGER_FRAMES` alone draws only from a few hosts before each
     // window to its end: the line renderer needs no earlier pictures, and
     // drawing every frame from reset makes a deep window take hours.
     let rendering_at = |host: usize| {
         render_every || frame_hosts.iter().any(|&(lo, hi)| (lo.saturating_sub(3)..=hi + 1).contains(&host))
+            || picture_hosts.range(host.saturating_sub(1)..=host.saturating_add(3)).next().is_some()
     };
     let mut rendering = rendering_at(0);
     cpu.enable_frame_capture(rendering);
@@ -596,11 +613,89 @@ fn main() -> Result<(), Box<dyn Error>> {
             cpu.enable_frame_capture(rendering);
         }
         cpu.set_libretro_joypad_words(host_buttons, 0);
+        let observe_picture_host = picture_hosts.contains(&host);
+        let mut picture_wram = observe_picture_host.then(|| cpu.machine().snes().ram.to_vec());
+        let mut picture_inidisp = u16::from(cpu.machine().snes().ppu.brightness)
+            | if cpu.machine().snes().ppu.forced_blank { 0x80 } else { 0 };
+        if observe_picture_host {
+            let setup = serde_json::json!({
+                "kind": "host_setup", "host": host,
+                "at": cpu.machine().timeline().timestamp().master_cycles(),
+                "field": cpu.machine().timeline().field_index(),
+                "dma": cpu.machine().snes().dma,
+                "thread_active": cpu.machine().snes().ram[NMI_THREAD_ACTIVE],
+                "module": &cpu.machine().snes().ram[MAIN_MODULE..MAIN_MODULE + 2],
+            });
+            let output = picture_events.as_mut().expect("picture event stream");
+            serde_json::to_writer(&mut *output, &setup)?;
+            writeln!(output)?;
+        }
         let mut failure: Option<Box<dyn Error>> = None;
         let result = cpu.run_until_main_loop_return_with_quiescent_step_hook(
             |step, exec| -> Result<(), snes::SourceCpuError> {
                 if failure.is_some() {
                     return Ok(());
+                }
+                // Bus stores precede the interrupt accepted at retirement.
+                // Observe before handler_returned and the opening-NMI early return.
+                if observe_picture_host && let Some(iteration) = opening.as_ref().or(current.as_ref()) {
+                    let in_open_handler = opening.is_some();
+                    for access in &step.accesses {
+                        if let SourceCpuBusAccessKind::Write { value, width } = access.kind
+                        {
+                            let register = access.address & 0xffff;
+                            let display_register = system_bank(access.address)
+                                && ((0x2100..=0x2133).contains(&register)
+                                    || matches!(register, 0x4200 | 0x420b | 0x420c)
+                                    || (0x4300..=0x437f).contains(&register));
+                            let table_or_scroll = wram_offset(access.address).is_some_and(|offset|
+                                (0x1b00..0x1d00).contains(&offset)
+                                    || (0xe0..0xea).contains(&offset)
+                                    || (0x630..0x634).contains(&offset));
+                            if display_register || table_or_scroll {
+                                let previous = if let Some(offset) = wram_offset(access.address) {
+                                    let ram = picture_wram.as_mut().expect("picture WRAM observer");
+                                    let offset = offset as usize;
+                                    let mut previous = 0u16;
+                                    for byte in 0..usize::from(width) {
+                                        previous |= u16::from(ram[offset + byte]) << (byte * 8);
+                                        ram[offset + byte] = (value >> (byte * 8)) as u8;
+                                    }
+                                    Some(previous)
+                                } else if register == 0x2100 {
+                                    Some(std::mem::replace(&mut picture_inidisp, value))
+                                } else { None };
+                                let raster = exec.machine().timeline().raster_position();
+                                let access_clock = snes::CpuMasterTimeline::new(
+                                    access.timestamp.master_cycles(), snes::CpuBusWorkload::default(),
+                                    exec.machine().timeline().field_timing());
+                                let at_raster = access_clock.raster_position();
+                                let row = serde_json::json!({
+                                    "kind": "store",
+                                    "host": host, "iteration": iteration.index,
+                                    "opening_handler": in_open_handler, "lag_handler": in_lag_handler,
+                                    "interrupt_depth": interrupt_depth,
+                                    "accepted_after_store": match step.accepted_interrupt {
+                                        Some(SourceCpuAcceptedInterrupt::Nmi { .. }) => Some("nmi"),
+                                        Some(SourceCpuAcceptedInterrupt::Irq { .. }) => Some("irq"),
+                                        None => None,
+                                    },
+                                    "pc": step.origin_pc, "address": access.address,
+                                    "value": value, "width": width,
+                                    "previous": previous,
+                                    "at": access.timestamp.master_cycles(),
+                                    "field": access_clock.field_index(),
+                                    "line": at_raster.scanline(), "cycle": at_raster.coordinates().1,
+                                    "retired_line": raster.scanline(), "retired_cycle": raster.coordinates().1,
+                                    "retired_at": exec.machine().timeline().timestamp().master_cycles(),
+                                });
+                                let output = picture_events.as_mut().expect("picture event stream");
+                                if let Err(error) = serde_json::to_writer(&mut *output, &row)
+                                    .map_err(std::io::Error::other).and_then(|()| writeln!(output))
+                                { failure = Some(error.into()); }
+                            }
+                        }
+                    }
                 }
                 let mut refresh_events = 0u64;
                 exec.machine().timeline().observe_processed_synchronous_events(&mut bus_observer, |event| {
@@ -1165,6 +1260,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         for (index, total) in totals { writeln!(writer, "{index},total,1,{total},{total}")?; }
         writer.flush()?;
     }
+    if let Some(events) = picture_events { events.finish()?.flush()?; }
     println!("logical ledger wrote {emitted} complete iterations over {host_calls} host calls");
     Ok(())
 }

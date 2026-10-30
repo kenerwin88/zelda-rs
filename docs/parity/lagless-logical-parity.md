@@ -430,3 +430,156 @@ ZELDA3_SAVE_DIR="$PWD/target/intro1/gpu-saves" target/intro1/zelda3-default \
   --video "$C" --video-misses --report 0 \
   > target/intro1/intro-confirm-gpu.txt 2>&1
 ```
+
+## Lagless picture publication
+
+CPU-only audit on `codex/picture2`, based on `9c155031`. The retained changes
+add diagnostic coverage; they do **not** repair production publication order.
+The authoritative cache and `full-v2` ledger were read only. All new evidence
+is under `target/picture2/`.
+
+`--logical-replay --cpu-video CACHE_DIR` now runs the existing picture
+comparison with the software compositor. Three bounded workers render
+immutable captures; results retire in submission order. It creates no GPU
+renderer or Snes9x process. `ZELDA3_LOGICAL_CPU_PICTURES` retains the hashes,
+and `--dump-wram` can retain a selected CPU PPM. The neighbor, held-picture,
+and torn-picture classifiers are unchanged (`matcher-identity.json`).
+
+Two complete seeded runs (`--seed-every 2000`) produce these identical counts:
+
+| Picture class | Before diagnostics finalized | Final binary |
+| --- | ---: | ---: |
+| Exact | 1,462,997 | 1,462,997 |
+| Late | 3,952 | 3,952 |
+| Early | 563 | 563 |
+| Torn | 4,702 | 4,702 |
+| Polygon | 905 | 905 |
+| During lag | 4 | 4 |
+| Other content | 0 | 0 |
+| Total | 1,473,123 | 1,473,123 |
+
+Every picture hash and every pacing row is byte-identical between the two
+runs (`before-after-verification.json`). These are before/after **diagnostic
+changes**, not an improved after-repair result.
+
+The supplied `d6eb2365` GPU census reconciles exactly in its named categories
+(`gpu-cpu-reconciliation.json`). Retained ending fixes add 2,150 exact,
+add 685 late, and remove 2,835 polygon pictures. The retained intro fix adds
+one exact and removes one polygon picture. CPU rendering adds one further
+exact and removes one late picture at iteration 1,355 / host 1,653: CPU and
+the authoritative cache show the black frame, while the retained GPU result
+matches host 1,652. Early and torn counts are unchanged. The supplied buckets
+leave four pictures unassigned; the current CPU census classifies four as
+during-lag. Their original GPU classification is not established by the
+supplied totals. No new GPU run was performed.
+
+The ledger example accepts `--picture-events HOSTS_FILE`, a list of decimal
+host indices. It retains selected software scanout hashes and compressed
+store events, including PC, register, old/new value where available, absolute
+bus-access time, beam position, and interrupt context. The observer runs
+before interrupt-acceptance bookkeeping: a store belongs to the instruction
+that executed it, even when an NMI or IRQ is accepted at retirement.
+`source-full/` follows the full ROM route and observes every missed picture
+host plus its neighbors. Source scanout hashes are diagnostic; the pinned
+cache remains the picture authority.
+
+The following exhaustive partition covers all 9,217 late/early/torn misses.
+Only the two intro rows have an isolated causal owner. The remaining rows
+state observed conditions, with precedence: polygon phase, active-display
+NMI return, P2 deficit, candidate writes, unresolved. They must not be read
+as 9,217 causally explained pictures. `picture-owners.jsonl.zst` retains
+each miss, its current/next P2 rows, and source store witnesses;
+`publication-audit.json` contains first examples for every row/class.
+
+| Owner or observed condition | Late | Early | Torn | First relevant iteration / host |
+| --- | ---: | ---: | ---: | --- |
+| Confirmed next-main file-name scroll | 359 | 0 | 0 | 798 / 1,094 |
+| Confirmed next-main screen clear | 5 | 0 | 0 | 762 / 1,057 |
+| Other: polygon phase | 829 | 2 | 0 | 1,453,021 / 1,558,056 (early) |
+| Closing NMI returns during active display | 88 | 409 | 114 | 765 / 1,061 (torn) |
+| Current/next P2 missing-hold deficit | 12 | 1 | 14 | 147,082 / 160,470 (late) |
+| Other: next-main write candidates | 2,643 | 141 | 4,557 | 1,118 / 1,414 (torn) |
+| Other: unresolved | 16 | 10 | 17 | 192,069 / 210,154 (torn) |
+| Total | 3,952 | 563 | 4,702 | |
+
+Including overlaps with other rows, only 61 late/early/torn pictures have a
+current or next-iteration P2 deficit (33 late, 7 early, 21 torn). No extra
+holds are observed. A P2 deficit establishes a pacing discrepancy, not its
+causal responsibility for the picture.
+
+Changed next-main HDMA-table stores are the largest candidate population:
+7,163 missed pictures (2,672 late, 142 early, 4,345 torn, 4 during-lag).
+This count overlaps the partition above. The mirror shift PCs each occur on
+3,045 missed pictures; wave insertion PCs each on 2,327; dewaving PCs each
+on 1,824; spotlight `$00:F3BB` on 1,738. The same picture can contain several
+of these writers. Forced-blank transitions appear on 233 misses, HDMA setup
+stores on 170, file-name scroll stores on 360, and other PPU stores on 1,855.
+These are observed writer counts, not a demonstrated dominant causal owner.
+
+The source renderer matches the authoritative cache on 10,121 of the 10,126
+missed hosts. Exceptions are 5,934, 27,888, 28,215, 775,619, and 776,210;
+they remain explicit in the audit. Source execution/WRAM equality does not
+make these five software pictures authoritative.
+
+Source witnesses distinguish several mechanisms:
+
+* File-name scroll: iteration 798 / host 1,094 is the first of 359 previously
+  isolated late pictures. Next main writes `$0630` at `$0C:DA98` in vblank;
+  `$00:82FB/$00:8301` consume it into `$2111` at the line-128 IRQ.
+* Screen clear: iteration 762 / host 1,057 is the first of five isolated
+  late pictures. Next-main `$00:893F` writes forced blank to `$2100` before
+  scanout. The retained intro CPU hashes preserve both regression groups.
+* Spotlight/window transitions: the first gameplay torn picture, iteration 4,280 /
+  host 4,804, has next-main `$00:F3BB` stores to the dynamic HDMA table.
+  Channel 7 consumes this table into `$2126/$2127` (window bounds).
+* Raster publication: the first early picture, iteration 5,077 / host 5,722,
+  has closing-NMI register publication on lines 0–1. A mid-display forced
+  blank also occurs at iteration 5,289 / host 5,934, from `$00:893F` on
+  line 49. The source software picture at host 5,934 differs from the cache;
+  its store witness alone does not establish pixel equivalence.
+* HDMA setup: iteration 5,394 / host 6,044 has next-main
+  `$0A:BAF5/$0A:BAF8` stores to `$4362/$4372` during vblank.
+* Mirror waves: iteration 191,996 / host 210,035 has table-shift stores at
+  `$00:FE82/FE85/FE88/FE8B` and new entries at `$00:FF20/FF23/FF26/FF29`;
+  dewaving uses `$00:FF4D/FF50/FF53/FF56`. Channels 6/7 consume these tables
+  into BG1HOFS/BG2HOFS (`$210D/$210F`).
+
+These store inventories are not counterfactual pixel proofs. In particular,
+the native mirror routines currently perform four stores and then price a
+shared ROM block. That aggregate P2 price is not an individual store time.
+A faithful general repair still needs a native clock for individual stores
+across main-iteration boundaries, plus timed HDMA/IRQ consumption. Feeding
+recorded ROM writes into native execution, predicting the next table, or
+globally shifting capture would not provide that model. No such change is
+retained. The causal ownership and publication repair remain incomplete.
+
+Verification: twelve focused CPU tests pass, including file-name input/scroll,
+the screen-clear and forced-blank suffix cases, opening NMI, capture, the
+software queue, and ledger boundary tests. Default and
+`--no-default-features` builds and the ledger-example build are warning-free.
+The final binary's seeded ROM census and continuous **recorded** ROM run each
+pass all 1,473,123 iterations with unexplained 0. Seeded missing/excess/false
+positive counts remain **2,393 / 0 / 0**; every pacing row equals the retained
+intro baseline and every native held count equals P2. The first 2,000 CPU
+picture hashes also equal the retained intro result. Receipts include
+`test-results.json`, `build-results.json`, `after-seeded-gate.log`,
+`final-continuous-gate.log`, `intro-regression.json`, and
+`source-identity.json`. All 1,473,123 source ledger records match `full-v2`
+after excluding optional picture hashes, and both compressed WRAM streams
+are byte-identical (`source-full-identity.json`). No GPU run, live replay,
+full library suite, protected-directory write, formatting, commit or push
+was performed. `git diff --check` passes. Evidence occupies approximately
+1.8 GB, below the 3 GB cap. This is a verified audit stop, not a completed
+publication repair or full causal classification.
+
+Full-route GPU confirmation, seeded with misses (not executed):
+
+```sh
+C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+L=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
+mkdir -p target/picture2/gpu-saves
+ZELDA3_SAVE_DIR="$PWD/target/picture2/gpu-saves" target/picture2/zelda3-default \
+  --logical-replay "$L" "$C/initial.srm" --seed-every 2000 \
+  --video "$C" --video-misses --report 0 \
+  > target/picture2/full-confirm-gpu.log 2>&1
+```
