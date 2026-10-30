@@ -124,7 +124,7 @@ impl ZeldaState {
             if self.lag_free {
                 self.lag_free_thread_activation_master = Some(
                     crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-                        + self.lag_free_vwf_master,
+                        + self.lag_free_vwf_master + self.native_cost_main_dma(),
                 );
             }
         }

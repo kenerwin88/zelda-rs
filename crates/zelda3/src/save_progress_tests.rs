@@ -3,6 +3,41 @@ use crate::game_state::save_format::{write_sram_checksum, LiveSave};
 use crate::game_state::EquipmentItem;
 use sha2::{Digest, Sha256};
 
+#[test]
+fn save_game_markers_match_rom_across_checksum_continuations() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for slot in [2, 4, 6] {
+        for prefix in [0, 1, 127, 638, 639] {
+            let mut native = ZeldaState::new();
+            native.set_lag_free(true);
+            native.set_selected_save_slot_x2(slot);
+            let save: Vec<u8> = (0..0x500).map(|i| (i * 37 + i / 251) as u8).collect();
+            native.replace_live_save(&save);
+            let mut source = snes::Snes::new();
+            source.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+            source.cart.ram.copy_from_slice(&native.sram);
+            source.ram.copy_from_slice(&native.wram_image());
+            source.cpu.e = false;
+            source.cpu.unpack_flags(0x30);
+            source.cpu.pc = 0x894a;
+            source.cpu.k = 0;
+            source.cpu.db = 0x0e;
+            source.cpu.sp = 0x1f9;
+            source.ram[0x1fa..0x1fd].copy_from_slice(&[0xff, 0x7f, 0]);
+            let before = crate::cycle_ledger::master();
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x00894a, source,
+                |s| s.cpu.k == 0 && (0x894a..0x89c2).contains(&s.cpu.pc), || {
+                    let sum = native.save_game_file_copy_blocks_and_sum_prefix(prefix);
+                    native.save_game_file_finish_checksum(prefix, sum);
+                });
+            assert_eq!(crate::cycle_ledger::master() - before, 190242);
+            assert_eq!(&native.wram_image()[0xf000..0xf500], &source.snes().ram[0xf000..0xf500]);
+            assert_eq!(native.sram, source.snes().cart.ram);
+        }
+    }
+}
+
 // Captured from the pre-refactor 38a9515b implementation. Each case hashes
 // the complete WRAM after interleaved owner writes, save import, and reset.
 #[test]

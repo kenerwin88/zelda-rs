@@ -213,3 +213,108 @@ ZELDA3_SAVE_DIR="$PWD/target/poly1/gpu-saves" target/poly1/zelda3-default \
   --video "$C" --video-misses --report 0 \
   > target/poly1/intro-confirm-gpu.txt 2>&1
 ```
+
+## Ending polygon phase
+
+Follow-up on `codex/poly2`, base `1e7e6a81`. Evidence is under
+`target/poly2/`; the cache, `full-v2`, and `target/poly1/` were read-only.
+**This is a partial repair. Per-NMI upload equality and complete ending
+picture acceptance remain open.** The supplied GPU confirmation is retained
+at `target/ending-confirm-gpu-1e7e6a81.txt`; no GPU confirmation was run here.
+
+Two missing main-work prices are now generated ROM block markers:
+
+* `SaveGameFile`, `$00:894A..89C1`: **190,242 instruction clocks**, including
+  128 paired SRAM-copy passes and 639 checksum words. Its continuation helpers
+  partition those same blocks without replaying the prefix.
+* `TransferFontToVRAM`, `$00:E556..E582`: **483,682 instruction clocks** for
+  setup, 2,048 CPU word stores, and return. This is not DMA. File select's
+  separately priced inline `$00:E52B..E535` copy mutes the shared helper so
+  that it retains its own source price.
+
+The worker scheduler also omitted main's recorded `$420B` DMA work from its
+activation/GO positions and total work. It now includes that bus work. Before
+activation, only the opening NMI uses the ordinary handler; later unfinished-main
+NMIs use the retained lag handler (`$00:813A` skips updates and joypads).
+Previously the worker scheduler deducted the ordinary handler on every such
+frame. No polygon instruction price, `POLY_THREAD_*` constant, classifier,
+scene table, or fitted threshold was changed.
+
+These changes restore the initializer's **41** main holds (previously 39) and
+its missing initial worker slice. The fresh cold CPU ROM trace shows NMI host
+**1,577,170**, interrupting `$00:899D` in the checksum, returning into the worker,
+then IRQ interrupting it at `$09:FB47`; main finishes on line 208. The original
+native worker phase plan contained zero lag slices for that initializer.
+`source/iterations.jsonl` and `source/wram-pre-nmi.xor.zst` are byte-identical
+to their authoritative `full-v2` counterparts, SHA-256 respectively:
+
+```text
+9227f21db6148389146db7871447af6ab09f5a1771b15b87810b60073574a47d
+b69d8c8851a1320dbf5e507045132c9054bd4db4237258c2c2a0157a084a365e
+```
+
+The residual owner is still the worker's NMI-to-IRQ scheduling and publication
+phase, not its ordered raster output. The whole-worker ROM witness checks all
+256 angle pairs instruction by instruction, including bus costs, divider,
+workspace, bitmap, and completion flag. All **1,917** resulting native uploads
+equal the first 1,917 of **1,918** ROM uploads, including `$1F00..$1F09` and
+`$1F3F..$1FFF` (`dma-completed-worker-equality.json`). However, matching each
+worker phase to its ROM phase gives only **2,861 / 3,908** equal upload
+decisions, **828 / 3,908** equal workspaces, and **582 / 3,908** equal complete
+worker cursors. Stack-frame storage is reported separately from native retained
+registers; it is not silently discarded from the byte-difference receipts.
+
+`source.log`, `source-phases.json`, `dma-phase-comparison.json`, and
+`dma-workspace-comparison.json` retain the per-NMI comparisons. For example,
+the first threaded lag handler takes **3,238** source clocks versus the native
+constant **3,284**. An early upload handler takes **51,514** versus **51,534**.
+Source NMI acceptance and instruction-boundary IRQ retirement also vary;
+the native phase window still uses raster cycle 86. These observations do not
+justify replacing a constant with an averaged or fitted value. At the first
+remaining picture miss, source and native already disagree about whether the
+previous worker slice published a bitmap.
+
+For iterations **1,466,000..1,473,122**, `ZELDA3_LOGICAL_CPU_PICTURES` produces
+**5,401 exact cache hashes**, **1,133 within three cache hosts**, and **589
+absent** from cache hosts after 1,560,000. The first non-exact picture is
+iteration **1,470,865**, cache host **1,578,821**. This improves the baseline
+3,269 / 1,486 / 2,368 but does not meet full picture acceptance. Callback-host
+offsets for corresponding uploads are -1/0/+1/+2 on 406/641/602/268 uploads;
+callbacks can contain zero or two accepted NMIs, so this is not a physical
+per-NMI equality proof. Pre-NMI stream image `j` closes iteration `j-1`.
+
+A broader shared-wall-clock trial was rejected and removed: despite the same
+picture improvement, its full census regressed to **2,859 missing / 437 excess /
+75 false-positive iterations** by shifting crystal-cutscene work. Its patch
+and logs remain labeled `shared-clock-trial.patch` / `clock-*`; its continuous
+diagnostic was interrupted. They are not evidence for the retained candidate.
+
+Verification: the retained candidate's full seeded ROM census
+(`--seed-every 2000`) and continuous recorded replay each complete
+**1,473,123 iterations**, **PASS**, **unexplained 0**. Final ROM missing / excess /
+FP is **2,393 / 0 / 0**, with missing holds in 2,363 iterations; every runtime
+hold equals P2. Predictions are identical to the pricing-only intermediate,
+so the narrow worker correction adds no census regression. See `dma-counts.json`,
+`dma-census-gate.log`, and `dma-continuous-gate.log`.
+
+All **14 targeted Rust tests** and **7 block-generator Python tests** pass;
+default and `--no-default-features` parity builds are warning-free. Existing
+library-test dead-code warnings remain separate. The final rebuilt default
+binary reproduces all 7,123 candidate CPU picture hashes byte-for-byte
+(`verified-pictures.txt` versus `dma-pictures.txt`). Full gates used `dma-trial`;
+the final rebuild adds only the DMA regression test and a corrected source-address
+comment. `git diff --check` passes. Evidence occupies approximately **1.8 GB**.
+No GPU, live replay, full library suite, protected-directory write, formatting,
+commit, or push was performed.
+
+GPU confirmation command (not executed):
+
+```sh
+C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+L=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
+mkdir -p target/poly2/gpu-saves
+ZELDA3_SAVE_DIR="$PWD/target/poly2/gpu-saves" target/poly2/zelda3-default \
+  --logical-replay "$L" "$C/initial.srm" --seed-every 2000 --single-seed \
+  --start 1466000 --video "$C" --video-misses --report 0 \
+  > target/poly2/ending-confirm-gpu.txt 2>&1
+```

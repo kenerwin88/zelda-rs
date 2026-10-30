@@ -269,7 +269,9 @@ impl ZeldaState {
             b.block(0x00e52b);
             if word + 1 != 0x800 { b.taken(0x00e535); }
         }
-        self.transfer_font_to_vram();
+        // This shared data copy is inline $E52B..E535, already marked above;
+        // it does not execute the separate $E556 entry/setup/return.
+        crate::cycle_ledger::muted(|| self.transfer_font_to_vram());
 
         b.block(0x00e537);
         let data = self

@@ -776,8 +776,10 @@ impl ZeldaState {
             let timed_intro_poly_worker = self.rom_startup_timing()
                 && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
             if !timed_intro_poly_worker {
+                let pending = self.game_state.display.has_pending_polyhedral_update();
                 self.nmi_update_irqgfx();
-                self.debug_poly_nmi_state("closing");
+                self.debug_poly_nmi_state("closing",
+                    pending && !self.game_state.display.has_pending_polyhedral_update());
             }
             let stack = self.game_state.display.nmi_thread_stack_pointer;
             self.set_nmi_thread_stack_pointer(if stack != 0x1f31 { 0x1f31 } else { 0x01f2 });

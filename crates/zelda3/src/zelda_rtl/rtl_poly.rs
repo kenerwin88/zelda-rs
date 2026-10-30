@@ -106,19 +106,63 @@ const POLY_THREAD_NMI_UPDATE_IRQ_GFX_UPLOAD_MASTER_CYCLES: u64 = 544;
 const POLY_THREAD_LAG_NMI_MASTER_CYCLES: u64 = 3_284;
 const POLY_THREAD_LAG_NMI_UPLOAD_MASTER_CYCLES: u64 = 20_622;
 
+#[cfg(test)]
+mod phase_tests {
+    use super::*;
+
+    #[test]
+    fn main_bus_work_preserves_worker_phase_across_dma_partition() {
+        // $420B stalls main while the CPU bus transfers the bytes. Splitting
+        // a fixed amount of main bus work between instructions and DMA must
+        // not move the $012A activation across a different NMI.
+        for prefix in [0, 900_000] {
+            for suffix in [400_000, 900_000] {
+                let run = |dma: bool| {
+                    let mut game = ZeldaState::new();
+                    game.set_lag_free(true);
+                    game.lag_free_frame_master_start = crate::cycle_ledger::master();
+                    game.native_begin_main_cost();
+                    let before_dma = if dma { prefix / 2 } else { 0 };
+                    crate::cycle_ledger::charge(prefix - before_dma);
+                    game.native_note_main_dma(before_dma);
+                    game.activate_nmi_thread();
+                    game.set_vertical_irq_trigger(144);
+                    let after_dma = if dma { suffix / 2 } else { 0 };
+                    crate::cycle_ledger::charge(suffix - after_dma);
+                    game.native_note_main_dma(after_dma);
+                    game.native_finish_main_cost();
+                    game.lag_free_poly_thread_lag_phases();
+                    assert_eq!(game.ram[0x1f0c], 0, "GO is clear; no publication");
+                    let thread = game.lag_free_poly_thread.unwrap();
+                    (thread.field, thread.context, thread.worker)
+                };
+                assert_eq!(run(false), run(true), "prefix={prefix}, suffix={suffix}");
+            }
+        }
+    }
+}
+
 impl ZeldaState {
     /// CPU-only display evidence at a polygon NMI, including the live upload
     /// destination rather than just the worker's possibly partial bitmap.
-    pub(crate) fn debug_poly_nmi_state(&self, kind: &str) {
+    pub(crate) fn debug_poly_nmi_state(&self, kind: &str, uploaded: bool) {
         let Some(path) = crate::debug_env::var_os!("ZELDA3_DEBUG_POLY_NMI_STATE") else { return };
         use std::io::Write;
         let ram = self.wram_image();
+        let cursor = self.lag_free_poly_thread.as_ref().map(|thread| {
+            let c = &thread.context;
+            [thread.field, u64::from(c.bank) << 16 | u64::from(c.pc),
+                u64::from(c.a), u64::from(c.x), u64::from(c.y), u64::from(c.sp),
+                u64::from(c.d), u64::from(c.db), u64::from(c.p)]
+        });
         let row = format!(
-            "{{\"host\":{},\"kind\":\"{}\",\"module\":{:?},\"work\":{:?},\"bitmap\":{:?},\"vram\":{:?},\"cgram\":{:?},\"oam\":{:?},\"mode\":{},\"brightness\":{},\"fixed_color\":{:?}}}",
+            "{{\"host\":{},\"kind\":\"{}\",\"module\":{:?},\"work\":{:?},\"bitmap\":{:?},\"vram\":{:?},\"cgram\":{:?},\"oam\":{:?},\"mode\":{},\"brightness\":{},\"fixed_color\":{:?},\"worker_cursor\":{},\"uploaded\":{}}}",
             self.frame_ctr_dbg, kind, &ram[0x10..0x14], &ram[0x1f00..0x2000],
             &ram[0xe800..0xf000], &self.ppu.vram[0x5800..0x5c00],
             self.ppu.cgram, self.ppu.oam, self.ppu.mode, self.ppu.brightness,
-            [self.ppu.fixed_color_r, self.ppu.fixed_color_g, self.ppu.fixed_color_b]);
+            [self.ppu.fixed_color_r, self.ppu.fixed_color_g, self.ppu.fixed_color_b],
+            cursor.map_or_else(|| "null".to_owned(), |c| format!("{c:?}")),
+            uploaded);
         let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)
             .expect("open polygon NMI evidence");
         writeln!(file, "{row}").expect("write polygon NMI evidence");
@@ -401,7 +445,7 @@ impl ZeldaState {
         {
             self.lag_free_go_master = Some(
                 crate::cycle_ledger::master().saturating_sub(self.lag_free_frame_master_start)
-                    + self.lag_free_vwf_master,
+                    + self.lag_free_vwf_master + self.native_cost_main_dma(),
             );
         }
         self.attract_scene_mut().mark_intro_did_run_step();
@@ -413,7 +457,9 @@ impl ZeldaState {
     /// NMIs after that return into the thread.
     pub(crate) fn lag_free_poly_thread_lag_phases(&mut self) {
         self.lag_free_lag_phases_run = true;
-        let cost = self.lag_free_main_master();
+        // Main's $420B transfers own the CPU bus too; their bytes were
+        // recorded by the existing DMA owner, outside instruction prices.
+        let cost = self.lag_free_main_master() + self.native_cost_main_dma();
         self.lag_free_last_main_master = cost;
         let threaded = self.poly_thread_main_master_cycles_per_frame().max(1);
         let activation = self.lag_free_thread_activation_master.take();
@@ -423,8 +469,16 @@ impl ZeldaState {
         let mut active = activation.is_none();
         loop {
             let field = self.lag_free_poly_thread.as_ref().map_or(0, |thread| thread.field);
-            let unthreaded = (POLY_THREAD_FRAME_MASTER_CYCLES
-                - self.poly_thread_nmi_wall_master_cycles(field, None))
+            // $00:813A skips NMI_DoUpdates while main is unfinished. Only
+            // the opening NMI runs the ordinary closing handler; following
+            // unthreaded lag NMIs use its latched, update-free path.
+            let handler = if done == 0 {
+                self.poly_thread_nmi_wall_master_cycles(field, None)
+            } else {
+                self.native_cost_lag_handler().saturating_sub(
+                    crate::zelda_rtl::nmi::NATIVE_NMI_ENTRY_MASTER_CYCLES)
+            };
+            let unthreaded = (POLY_THREAD_FRAME_MASTER_CYCLES - handler)
                 .saturating_sub(u64::from(snes::NMI_SCANLINE) * self.poly_thread_line_stall_master_cycles());
             done += if active { threaded } else { unthreaded };
             if activation.is_some_and(|at| done >= at) {
@@ -488,7 +542,7 @@ impl ZeldaState {
             self.ppu.vram[0x5800 + i] = u16::from_le_bytes([bitmap[i * 2], bitmap[i * 2 + 1]]);
         }
         self.clear_pending_polyhedral_update();
-        self.debug_poly_nmi_state("lag-upload");
+        self.debug_poly_nmi_state("lag-upload", true);
     }
 
     pub fn intro_poly_upload_delay(&self) -> u8 {

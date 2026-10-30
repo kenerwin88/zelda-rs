@@ -152,3 +152,53 @@ impl PolyWorker {
         WorkerInstruction { master_cycles, irq_masked: deferred_mask.unwrap_or(cpu.p & 4 != 0) }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complete_worker_preserves_rom_instruction_costs_and_upload_publication() {
+        use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition,
+            RomCpuTimingProbe, Snes, SourcePpuReadState};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for angle in 0..=255u8 {
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            // $09:F81D worker entry, with its own bootstrap stack and DP.
+            machine.ram[0x1f00..0x1f0a].copy_from_slice(&[
+                1, 1, 0, 1, angle, angle.wrapping_mul(3), 32, 32, 128, 0]);
+            let mut cpu = NativeNmiContext {
+                a: 0, x: 0, y: 0, d: 0x1f00, db: 9, bank: 9,
+                pc: 0xf81d, sp: 0x1f3e, p: 0x30,
+            };
+            machine.cpu.dp = cpu.d;
+            machine.cpu.db = cpu.db;
+            machine.cpu.k = cpu.bank;
+            machine.cpu.pc = cpu.pc;
+            machine.cpu.sp = cpu.sp;
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(cpu.p);
+            let mut ram = machine.ram.clone();
+            let mut ppu = machine.ppu.clone();
+            let mut clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(225, 86),
+                CpuBusWorkload::default(), CpuFieldTiming::NON_INTERLACE_EVEN);
+            let mut source = RomCpuTimingProbe::new(machine, clock.clone(),
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            clock.begin_synchronous_timeline().unwrap();
+            let mut worker = PolyWorker::default();
+            let mut divider = crate::cycle_models::poly_vertices::PolyDivider::default();
+            for _ in 0..100_000 {
+                let label = format!("angle={angle} pc={:04x}", cpu.pc);
+                crate::cycle_models::native_work::compare_instruction_with_devices(
+                    &label, &mut cpu, &mut clock, &mut source, &mut ram, &rom,
+                    Some(&mut ppu), |_, access| divider.access(access),
+                    |cpu, clock, bus| { worker.step(cpu, clock, bus); });
+                if cpu.pc == 0xf81d && ram[0x1f00] == 0 { break; }
+            }
+            assert_eq!((cpu.pc, ram[0x1f00], ram[0x1f0c]), (0xf81d, 0, 255));
+            assert_eq!(ram, source.snes().ram, "angle={angle}");
+        }
+    }
+}

@@ -2582,9 +2582,17 @@ impl ZeldaState {
             return;
         };
         let font = find_index_in_memblk(font_pack, 0).ptr.to_vec();
+        // $00:E556..E582: source pointer/register setup, 2048 CPU word
+        // stores (not DMA), and the return. Callers retain a system data bank.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00e556));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x00e556);
         for i in 0..0x800 {
             self.ppu.vram[0x7000 + i] = read_word_from_slice(&font, i * 2);
+            blocks.block(0x00e574);
+            if i != 0x7ff { blocks.taken(0x00e57e); }
         }
+        blocks.block(0x00e580);
     }
 
     pub(super) fn decompress_and_upload_2bpp(&mut self, dst: usize, pack: usize) {
@@ -5526,6 +5534,39 @@ impl ZeldaState {
 
     pub(super) fn asset_bytes(&self, asset: usize, index: usize) -> Option<&[u8]> {
         Some(self.asset_memblk(asset, index)?.ptr)
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn font_upload_markers_match_rom_cpu_stores() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for bank in [0, 0x0c, 0x0e, 0x0f] {
+        let mut native = ZeldaState::new();
+        native.set_assets(&assets).unwrap();
+        native.set_lag_free(true);
+        let mut source = snes::Snes::new();
+        source.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        source.ram.copy_from_slice(&native.wram_image());
+        source.cpu.e = false;
+        source.cpu.unpack_flags(0x30);
+        source.cpu.k = 0;
+        source.cpu.db = bank;
+        source.cpu.pc = 0xe556;
+        source.cpu.sp = 0x1f9;
+        source.ram[0x1fa..0x1fd].copy_from_slice(&[0xff, 0x7f, 0]);
+        let before = crate::cycle_ledger::master();
+        let source = crate::cycle_ledger::assert_rom_marker_work(0x00e556, source,
+            |s| s.cpu.k == 0 && (0xe556..0xe583).contains(&s.cpu.pc),
+            || native.transfer_font_to_vram());
+        assert_eq!(crate::cycle_ledger::master() - before, 483682);
+        assert_eq!(&native.ppu.vram[0x7000..0x7800], &source.snes().ppu.vram[0x7000..0x7800]);
+        native.set_lag_free(false);
+        let before = crate::cycle_ledger::master();
+        native.transfer_font_to_vram();
+        assert_eq!(crate::cycle_ledger::master(), before);
     }
 }
 

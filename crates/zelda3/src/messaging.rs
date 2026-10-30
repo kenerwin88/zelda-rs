@@ -3402,6 +3402,20 @@ impl ZeldaState {
         let image = self.wram_image().into_owned();
         let save = crate::game_state::save_format::LiveSave::from_wram(&image);
         save.copy_to_sram(&mut self.sram, offs);
+        // $00:894A..899B: setup, 128 paired SRAM word-copy passes, then
+        // checksum setup. The two continuation helpers partition one call.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00894a));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        blocks.block(0x00894a);
+        for word in 0..128 {
+            blocks.block(0x00895d);
+            if word != 127 { blocks.taken(0x008996); }
+        }
+        blocks.block(0x008998);
+        for word in 0..completed_checksum_words {
+            blocks.block(0x00899c);
+            if word != 638 { blocks.taken(0x0089a6); }
+        }
         save.sum_words(0..completed_checksum_words, 0)
     }
 
@@ -3426,6 +3440,14 @@ impl ZeldaState {
         let offs = self.selected_save_slot_offset();
         self.save_progress_mut().set_dungeon_info_checksum(checksum);
         crate::game_state::save_format::write_sram_checksum(&mut self.sram, offs, checksum);
+        // $00:899C..89C1: only the unretired checksum words and final stores.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00894a));
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        for word in completed_checksum_words..total_checksum_words {
+            blocks.block(0x00899c);
+            if word != 638 { blocks.taken(0x0089a6); }
+        }
+        blocks.block(0x0089a8);
         self.zelda_write_sram();
     }
 
