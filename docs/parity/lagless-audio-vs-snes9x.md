@@ -976,3 +976,396 @@ formatting, commits or pushes were performed. The 534-pair budget is unchanged.
 This removes nominal lagless port coalescing while preserving CPU-derived
 spacing; it does not repair the first command-history mismatch or establish
 source-equivalent chip input/audio.
+
+## Lagless sound proof 1
+
+Measurement at `3bd00a96`, branch `codex/sound1`, using `full-v2` and the
+read-only `ed0121e1...` cache named above. Runtime, prices, pacing, classifiers
+and tables are unchanged. All new evidence is under `target/sound1/`.
+No GPU, Snes9x process, live-APU census, continuous live replay, full library
+suite, formatting, commit or push is part of this batch.
+
+### The two native sample grids
+
+The older fixed-chip-budget description above does **not** describe this
+base. `audio.rs::zelda_render_audio` now advances
+`spc_driver_clock.rs::LaglessSampleClock` by 533 or 534 native samples, then
+`resample_lagless_callback` interpolates that output into the caller's buffer.
+The logical harness requests **534 returned pairs per callback**. Its PCM and
+mapping therefore describe resampled playback output, not raw chip samples.
+The current clock's cumulative generated-pair count after `C` callbacks is
+
+`F(C) = floor((C * 1364 * 262 - floor(C / 2) * 4) * 15664 / (328125 * 32))`.
+
+This distinction is necessary for both duration and waveform claims. A
+post-resampler mismatch cannot isolate an SPC or S-DSP defect. Nor does
+equality of port values in a short window establish equal chip state: RAM,
+timers, DSP phase, voice/envelope state and echo history must also agree.
+
+### Original authority and first-music chip boundary
+
+The fresh cache scan verifies **all 1,581,079 PCM hashes**, **842,907,927
+stereo pairs**, and both manifest-bound receipt/hash-ledger SHA-256 values.
+The route-relative origin remains host 81: **842,864,820 pairs** in
+**1,580,998 hosts**, with **43,107 bootstrap pairs** excluded explicitly.
+See `source-proof.json`.
+
+The retained `lagless-audio-notes3/original-full` DSP capture is supplementary
+source evidence, not a newly executed oracle. Its **1,581,079 audio hash rows**
+were independently rechecked against this cache. The fresh native first
+voice-1 key-on is callback **308**, logical iteration **199**, SPC clock
+**5,266,688**; the source key-on is host **398**, clock **6,796,814**. Native
+DSP event coordinates are corrected from the observer's 534-pair callback
+base to `F(callback)` before comparing clocks.
+
+After aligning those key-ons, **65 ordered DSP address/value writes match**.
+The first relative timing difference is write **7**, `$2D=$00`, **32 SPC
+cycles early** natively. Write **65** differs in identity/order: native
+`$6C=$00`, source `$5C=$00`. Current first-music port deliveries have relative
+SPC clocks **0/15/19/22**; the earlier source capture documented above has
+**0/15/21/23**. The source delivery clocks are prior capture evidence, not a
+fresh source-instruction trace. `chip-prefix.json` retains the exact boundary.
+This is an **unequal-input finding**, not an equal-input emulation failure.
+
+### Full-route length accounting
+
+The fresh ROM-answer run completes **1,473,123 iterations**, with **zero
+actual reseeds**, **100,279 held callbacks**, **5,138 masked callbacks**, and
+**1,578,540 total callbacks**. The ordinary census gate passes with zero
+unexplained differences; that gate's adjacent-iteration matching and
+classifications are not strict command-identity proof.
+
+| Sample domain | Native pairs | Native minus route-relative source |
+| --- | ---: | ---: |
+| Returned, resampled harness PCM | 842,940,360 | **+75,540** |
+| Generated chip samples, from the verified fractional clock | 841,554,405 | **−1,310,415** |
+
+Thus the old **−2,740,776-pair** result is not the result at this base.
+The chip-count deficit is **40.95046875 seconds at 32 kHz**. The returned
+stream is longer by 75,540 pairs because it expands every callback to 534
+pairs; its length is not the elapsed chip clock. The returned-minus-generated
+conversion contributes exactly **1,385,955 pairs**.
+
+Every returned pair is accounted for below. Each callback-count term uses
+the harness's actual 534 returned pairs. Elapsed episode labels are mapped
+source module/submodule contexts, not newly instruction-traced producer PCs.
+
+| Exact term / owner context | Source episode hosts | Native masked callbacks | Returned pair contribution |
+| --- | ---: | ---: | ---: |
+| Missing accepted holds: 102,677 − 100,279 = 2,398 | — | — | −1,280,532 |
+| Excess accepted holds | — | — | 0 |
+| `06/00`, pre-dungeon load/upload | 2,213 | 2,196 | −9,078 |
+| `08/00`, overworld load/upload | 2,567 | 2,498 | −36,846 |
+| `11/00`, falling dungeon entrance | 290 | 290 | 0 |
+| `15/00`, Agahnim mirror-warp setup | 22 | 24 | +1,068 |
+| `17/01`, save/quit reset and bank transfer | 71 | 68 | −1,602 |
+| `18/00`, Ganon-emergence setup | 24 | 24 | 0 |
+| `19/00`, Triforce-room setup | 16 | 15 | −534 |
+| `1B/02`, spawn-select rebuild | 22 | 23 | +534 |
+| Isolated handler cuts versus multiple acceptances: 393,668 − 393,640 | — | — | +14,952 |
+| One terminal source opening beyond completed iterations | — | — | −534 |
+| Returned 534-pair grid versus actual source host PCM lengths | — | — | +1,388,112 |
+| **Total native minus source** | **5,225** | **5,138** | **+75,540** |
+| **Unaccounted residual** | | | **0** |
+
+There are **228 complete elapsed episodes**, with **5,108 strict interiors**
+and **117 handler-completion edges**. The exact remaining elapsed-host balance
+is `5,225 − 5,138 − 28 + 1 = 60`, not an unnamed transport allowance.
+Together with 2,398 missing holds, there are **2,458 fewer native callbacks**.
+Boot and polygon/thread scenes are not extra allowances: boot is excluded
+explicitly, and the route's timing-defined contexts are already included in
+the hold and handler-boundary counts. Adding a second poly correction would
+double count them. `duration.json` retains every context and all 228 episodes;
+`source-boundaries.jsonl.zst` retains every source host's acceptance/completion
+counts.
+
+On the chip grid, `F(1,580,998) = 842,864,819`, exactly **one pair below** the
+source route's stored PCM. Therefore the independent chip-count identity is
+`−1,310,414` from the callback-count difference, plus **−1** from the source
+origin/fractional phase, yielding **−1,310,415**, with zero residual. Including
+the source's excluded bootstrap instead gives **+32,433 returned pairs** or
+**−1,353,522 generated pairs**. These are origin choices, not additional
+runtime losses.
+
+### Full-route command identity, order and iteration
+
+The delivery-observed ROM run also completes all 1,473,123 iterations. Removing
+only `spc_port_write` lines leaves census logs **byte-identical** to the PCM
+capture. It observes **5,826,128 actual native port stores**: 5,825,444 through
+`lagless-cycle`, 381 through `instruction-return`, and 303 through `scheduled`.
+These are stronger observations than queue snapshots, but the existing switch
+does **not** trace the complete bank-transfer handshake/payload path.
+
+The comparison retains zero clears, normalizes nonzero transitions per port,
+and uses the existing bounded monotone matcher unchanged. Source upload
+payloads are retained separately, using explicit IPL headers rather than a
+write-count cutoff. Its **67,643 source transitions** and **68,154 delivered
+native transitions** give:
+
+| Observation class | Count | First occurrence |
+| --- | ---: | --- |
+| Matched content/order under the bounded alignment | 67,510 | source/native iteration 0 |
+| Source-only normalized transition | **133** | iteration 33,678, port 3 `$0C` |
+| Native-only delivered normalized transition | **644** | iteration 3,333, port 3 `$0C` |
+| Same-iteration equal multisets with different order | **39 iterations** | iteration 12,404: source `(1,$05),(2,$19)`; native reversed |
+| Matched transition outside raw iteration deltas `{−1,0}` | **73** | source 34,318 / native 34,319, ambient `$05` |
+
+**The strict zero-difference target is not established.** These classes are
+different views of the observations, not disjoint audible-error counts.
+Repeated identical commands do not have unique event IDs. Mixed insertion,
+deletion, reordering and iteration shifts can produce the same alignment;
+the 39 order-only iterations do not prove that all other reordering is absent.
+
+All unmatched value classes and their first occurrences are retained below.
+Port/value includes the pan bits; no low-six-bit equivalence is substituted.
+“Owner” names the observed production boundary to investigate, not a proven
+individual source producer or an assertion that an audible sound was lost.
+
+| Port / value | Source only | Native only | First source / native iteration | Owner boundary |
+| --- | ---: | ---: | --- | --- |
+| 0 / `$1B` | 4 | 0 | 167310 / — | Music request / acknowledgement / rearm |
+| 1 / `$05` | 109 | 3 | 48556 / 370546 | Ambient request / acknowledgement / upload return |
+| 2 / `$0E` | 1 | 1 | 625275 / 625274 | Timed SFX1 request and NMI clear |
+| 2 / `$1E` | 2 | 0 | 878130 / — | Timed SFX1 request and NMI clear |
+| 2 / `$2A` | 1 | 1 | 625286 / 625285 | Timed SFX1 request and NMI clear |
+| 3 / `$02` | 4 | 0 | 624607 / — | Timed SFX2 request and NMI clear |
+| 3 / `$0C` | 3 | 634 | 33678 / 3333 | VWF glyph / retained marker / NMI clear |
+| 3 / `$10` | 1 | 0 | 1443256 / — | Timed SFX2 request and NMI clear |
+| 3 / `$1E` | 1 | 0 | 961739 / — | Timed SFX2 request and NMI clear |
+| 3 / `$24` | 2 | 2 | 434088 / 434087 | Timed SFX2 request and NMI clear |
+| 3 / `$42` | 2 | 0 | 624667 / — | Timed SFX2 request and NMI clear |
+| 3 / `$59` | 1 | 1 | 1257884 / 1257884 | Timed SFX2 request and NMI clear |
+| 3 / `$66` | 1 | 1 | 1257903 / 1257886 | Timed SFX2 request and NMI clear |
+| 3 / `$A6` | 1 | 1 | 1257910 / 1257893 | Timed SFX2 request and NMI clear |
+
+All source `$FF` upload-request edges find matches in the delivered inventory;
+there is no unmatched `$FF` row here. This does not establish equality of the
+unobserved native upload payload/handshake. Queue-publication observation alone
+reported **271 source-only / 644 native-only** transitions and 67,372 matches:
+the delivery observer resolves **138** additional source transitions. The
+publication-only result must not be used as a missing-hardware-command count.
+
+Raw iteration deltas below are **native minus source**. The common −1 is the
+documented semantic-main/closing-NMI versus source opening-NMI convention,
+not 63,982 independently proven scheduling bugs. A global +1 relabeling is
+also insufficient: held NMIs and within-iteration publication need their own
+owners. Exact source/native first examples remain in `delivered-identity.json`.
+
+| Delta | Matches | First source / native iteration |
+| ---: | ---: | --- |
+| −4 | 25 | 56238 / 56234 |
+| −1 | 63,982 | 194 / 193 |
+| 0 | 3,455 | 0 / 0 |
+| +1 | 3 | 34318 / 34319 |
+| +2 | 5 | 625234 / 625236 |
+| +3 | 1 | 354594 / 354597 |
+| +4 | 2 | 354595 / 354599 |
+| +5 | 9 | 354596 / 354601 |
+| +6 | 3 | 354602 / 354608 |
+| +7 | 1 | 354600 / 354607 |
+| +9 | 8 | 354606 / 354615 |
+| +10 | 12 | 354609 / 354619 |
+| +13 | 1 | 625221 / 625234 |
+| +16 | 2 | 1257886 / 1257902 |
+| +18 | 1 | 625322 / 625340 |
+
+Without any iteration relabeling, 117,522 event-bearing iterations have
+different content/multiplicity, with 62,778 source-only and 63,289 native-only
+same-index tokens; 4,456 event-bearing iterations have identical ordered
+lists. These intentionally strict raw-index totals retain the convention
+difference rather than hiding it. They are not counts of missing/extra sounds.
+`delivered-commands.jsonl.gz` retains every matched and unmatched event,
+including native delivery SPC clock and source timing bounds.
+
+Those source timing fields are the existing analyzer's **opening-host
+estimates**, not independently verified bus timestamps. In particular the
+first-music ledger anchor is host **391**, whereas the retained source bus
+capture places its store in host **392**. A handler can cross the host cut.
+Consequently even an initial NMI group's point estimate must not be treated
+as a source delivery-clock proof. No matching/classification rule was changed
+to conceal this limitation.
+
+### Command-anchored waveform windows
+
+The complete delivered-command alignment supplies **67,510 window attempts**,
+representing **64,441 distinct native/source window pairs**; commands in the
+same callback can share a window. Each native window contains **2,048 returned
+pairs**, beginning **4,096 returned pairs after the delivery callback's start**.
+The source search is centered the same number of pairs after its opening-host
+anchor, with a **±3,200-pair** integer-shift search. This is a 64 ms window
+after a nominal 128 ms delay on a 32 kHz grid, not an audible-span detector;
+it can miss an already-ended short SFX. Source delivery clocks remain absent.
+
+The unchanged correlation helper requires score ≥0.95, an interior winner,
+and no competing/plateau ambiguity. Equality is a separate byte comparison.
+Both complete PCM streams are consumed and hashed, without materializing an
+uncompressed full stream on disk. Native PCM SHA-256 is
+`a77981ad8401070ba555ee37a8fe3a6e6c6e5d8a1130c0608b4d7d5a5c96ece1`;
+source concatenated PCM SHA-256 is
+`ecca4f7d1d1fd533f9697a4ad9f8510516a3c95774b48946d42fa1b16680533c`.
+
+| Window outcome | Count |
+| --- | ---: |
+| Usable correspondence | **3,261 (4.83%)** |
+| Weak correlation | 63,958 |
+| Ambiguous or search-boundary match | 48 |
+| Flat native window, alignment unresolved | 243 |
+| **Byte-identical among usable windows** | **0 / 3,261** |
+
+Flat windows are not counted as proven equal sounds. The finite search and
+low resolved coverage prevent extrapolating the usable fraction to all
+sound events. Among usable windows, RMS i16 errors have minimum **0.1105**,
+5th percentile **58.37**, median **332.56**, 95th percentile **1,218.51**,
+and maximum **2,278.27**. No usable window is sample-exact. This compares
+resampled native output with source chip PCM, so it is not a raw-DSP fidelity
+score.
+
+| Source upload cohort | Attempts | Usable | Identical usable |
+| --- | ---: | ---: | ---: |
+| Boot, before first recorded transfer | 462 | 106 | 0 |
+| Dungeon payload `81b19e3a…` | 46,741 | 1,503 | 0 |
+| Overworld payload `4aca3a1b…` | 19,657 | 1,633 | 0 |
+| Ending payload `4b08fad4…` | 650 | 19 | 0 |
+
+Cohorts use the most recent **source transfer start**; they include transfer
+windows and do not certify native residency or bank-byte identity. By command
+kind, usable/attempted counts are music requests **286/526**, controls
+**98/801**, ambient **300/2,442**, SFX1 **1,483/38,041**, and SFX2
+**1,094/25,700**. These label the anchor command, not the voice responsible
+for every sample in the mixed output.
+
+The five largest usable residuals below have distinct window coordinates.
+They are not a ranking of audible defects, and no equal-input SPC instruction
+or DSP defect has been isolated at them.
+
+| Source / native iteration | Source module, room, music | RMS i16 error | Maximum sample error | Correlation |
+| --- | --- | ---: | ---: | ---: |
+| 1412271 / 1412270 | `07/00`, `$06C`, `$16` | 2,278.27 | 10,079 | 0.956251 |
+| 1449272 / 1449271 | `07/00`, `$000`, `$1F` | 2,093.97 | 12,720 | 0.962287 |
+| 138661 / 138660 | `07/00`, `$033`, `$15` | 2,071.73 | 8,317 | 0.960762 |
+| 402252 / 402251 | `09/00`, `$10F`, `$09` | 2,054.59 | 8,637 | 0.950721 |
+| 414064 / 414063 | `07/00`, `$038`, `$16` | 2,010.07 | 8,357 | 0.951792 |
+
+The first music request's window has correlation **0.967087**, RMS **214.66**,
+and maximum error **524**, but is **ambiguous** because a competing peak is
+within 0.001. Its independent first-key-on DSP diagnosis above is stronger
+evidence than selecting that waveform peak.
+
+The demonstrated differences to investigate are the command histories,
+delivery phase, 2,458 omitted callbacks, and the output resampling grid.
+Their individual shares of waveform error are **not identifiable from these
+observations**; inherited timer/voice/echo state is not controlled. Remaining
+residuals are explicitly unisolated, not assigned to emulation by elimination.
+`wave-summary.json` and `wave-windows.jsonl.gz` retain the complete distributions,
+all attempts, exact checks and worst windows.
+
+### Proof boundary and concrete next batches
+
+**Equal-input chip equivalence and full-span per-sound equality are not
+established by this batch.** The first-music window already has unequal DSP
+input. The other windows do not have paired, equal SPC/DSP starting states
+and complete source port-delivery clocks. Three source bank-transport payload
+identities cover 228 uploads: dungeon **113**, overworld **114**, and ending
+**1**, plus the initial boot segment. Their presence in a waveform cohort is
+not proof that native uploaded the same bytes at the same chip clocks.
+
+The fraction of sound events whose **entire audible span** is identical is
+therefore **unmeasured**, not zero. A command is not a labelled voice lifetime:
+music and SFX overlap, a channel can be stolen or retriggered, and a release
+can leave an echo tail. The cache's mixed PCM cannot uniquely recover those
+owners. A correlated window, or even an identical short window, cannot fill
+that missing denominator. No SPC/S-DSP arithmetic defect is inferred from an
+unaligned or differently driven window.
+
+The concrete follow-on work, in dependency order, is:
+
+1. **Close the command observation boundary.** Extend the existing diagnostic
+   observation of `spc_driver_clock.rs::SongBankHostTransfer` to retain bank
+   identity, every transfer/clear store and its delivery clock. Retain the
+   actual opening/held/closing-NMI owner with each native request, rather than
+   globally shifting every event by one iteration. Audit
+   `zelda_rtl/rtl_native_pacing.rs::{native_time_apu_request,
+   native_publish_apu_requests,native_checkpoint_sound_queue}` and
+   `nmi.rs::interrupt_nmi_audio_parts` at the reported first discrepancies.
+   Expected result: distinguish a genuinely lost/reordered request from an
+   upload-path omission or an iteration-coordinate mismatch, then repair the
+   responsible publication phase once. Do not change the census exclusions
+   to make the count zero.
+2. **Resolve dialogue and acknowledgement ownership at delivery.** The click
+   producer is `messaging.rs::begin_vwf_glyph`; the retained publication owners
+   are `audio.rs::ModernAudioCommandQueue::{push,pop}` and
+   `spc_driver_clock.rs::HostPortTransport::{frame_writes,nmi_latch_writes}`.
+   Follow each reported `$0C` edge through the producer, zero clear, queued
+   marker and actual SPC store before deciding whether it is an extra audible
+   click. Other SFX values go through the same timed request/NMI boundary;
+   the trace does not identify every individual sprite/ancilla producer.
+   Expected result: remove only demonstrated duplicate/lost/reordered
+   deliveries, preserving legitimate clear-and-repeat requests and pan bits.
+3. **Restore elapsed fields from source-owned work.** Continue the existing
+   missing-cost work through
+   `rtl_native_pacing.rs::{native_cost_components,native_finish_main_cost,
+   run_native_held_frame}`. Audit masked work through
+   `run_native_song_upload_frame`, `native_mask_song_upload_nmi`, the
+   `cycle_models/song_bank.rs` model and `SongBankHostTransfer`, using the
+   episode table above. Restoring all 2,398 missing holds would add exactly
+   **1,280,532 returned pairs**; closing the remaining net 60-field gap adds
+   **32,040 returned pairs**. On the fractional chip clock, restoring all
+   2,458 callbacks adds **1,310,414 generated pairs**, leaving only the
+   one-pair origin/phase difference. These are aggregate count consequences,
+   not permission to add a route/module-specific hold table.
+4. **Build equal-state, equal-input chip fixtures before an emulation fix.**
+   Observe native samples immediately before
+   `audio.rs::resample_lagless_callback`; retain SPC RAM, registers, timers,
+   pending deliveries, DSP phase/voices and echo state. Pair them with
+   independently cache-verified source instruction/state windows for first
+   music, the worst retained residuals, and each bank. Compare the first
+   differing instruction, DSP write and raw sample in that order.
+   `SpcDriverClock::advance_lagless`, its port scheduler, and
+   `modern_audio::ModernAudioEngine` are the corresponding owners. The current
+   source artifacts do not supply those equal-state fixtures. Fix delivery
+   phase if inputs differ; name an emulation repair only after equal state
+   and input produce a first divergent operation.
+5. **Then establish sound lifetimes.** Track command acceptance to voice
+   ownership, KON/KOFF, envelope release, steals and echo tails. Compare those
+   raw rendered spans under the controlled chip fixtures; compare playback
+   output only after applying the same resampling grid and history to both
+   sides. This is what would make the requested per-sound fraction meaningful.
+
+While lag holds remain absent, **whole-stream equality on the original chip
+clock is unreachable**: the measured streams have different lengths and
+inter-command spacing. A translation of each window cannot repair that
+spacing or the resulting overlap of music and effects. Logical command
+identity and conditional chip-emulation equality remain useful independent
+targets, but neither establishes the original continuous soundtrack.
+
+### Verification and retained evidence
+
+Default and `--no-default-features` parity builds are warning-free. The
+focused two-million-callback clock, resampling-history and audio-snapshot
+tests pass; their library-test compilation retains the existing 24 warnings.
+The existing timing/comparison Python suites pass **16 tests**, and six
+scratch measurement tests cover overlapping windows, truncation, ordering,
+complete-stream hashing and the accounting identities. No full library suite
+was run.
+
+The 420-iteration diagnostic-on/off comparison is byte-identical for **PCM,
+predictor CSV and census logs** (`observer-transparency.json`). The separate
+port observer also reproduces that prefix PCM. Source and binary identities
+are in `provenance.json`, the corrected ledger hash in `ledger-binding.json`,
+and the retained source-DSP manifest checks in `retained-source-binding.json`.
+The default capture binary is retained compressed as `zelda3.zst`.
+
+`run-command.json` and `ports-command.json` retain the exact ROM-only
+invocations. `pcm.zst`, `map.zst`, `predictor.zst`, `timing.jsonl.zst`, and the
+compressed delivery log retain the observations; derived reports retain
+their conventions separately. Scratch analysis stays in `/tmp/sound1-*.py`;
+no one-off script was added to the repository. An earlier capture stopped at
+the internal 2.85 GB guard near iteration 1.46 million. Its hashes and stop
+reason are in `interrupted.json`; its incomplete capture files were removed,
+and it is not counted as a completed run. The replacement starts from the
+beginning and completes with exit zero and all compressor exits zero.
+
+`verification.json` binds the retained artifacts, scratch analysis and report.
+Final evidence occupies **2.954 GB**, below the 3 GB cap. `git diff --check`
+passes; the only tracked change is this report. This is a verified measurement
+stopping point, not completed strict sound-equivalence proof.
