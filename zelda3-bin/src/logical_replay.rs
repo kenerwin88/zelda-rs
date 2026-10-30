@@ -1995,6 +1995,17 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         if !images.advance() {
             break;
         }
+        if let Some(path) = zelda3::debug_env::var_os!("ZELDA3_LOGICAL_CPU_PICTURES") {
+            use std::io::Write;
+            let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(&mut game, iteration.index as u32);
+            // This compositor is entirely software; no renderer/device is created.
+            let pixels = renderer::modern_extract::render_modern_frame_full_from_vram(&capture.gpu_frame());
+            let mut hash = parity::hash::Sha256Digest::new();
+            hash.update_rgb_from_rgba([pixels.as_slice()]);
+            let mut file = fs::OpenOptions::new().create(true).append(true).open(path)
+                .expect("open CPU picture evidence");
+            writeln!(file, "{} {}", iteration.index, hash.finish()).expect("write CPU picture evidence");
+        }
         // Export the immutable comparison image once, rather than rebuilding
         // all 128 KB for each byte of a divergent receipt.
         let engine_image = game.wram_image();
@@ -2071,6 +2082,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             fs::write(dir.join(format!("rom-{target}.bin")), &images.image).expect("write ROM WRAM");
             let vram: Vec<u8> = game.vram().iter().flat_map(|word| word.to_le_bytes()).collect();
             fs::write(dir.join(format!("engine-{target}.vram")), vram).expect("write engine VRAM");
+            // Keep the complete CPU-renderable display alongside the WRAM
+            // probe: bitmap equality alone cannot identify a wrong upload,
+            // palette, register, or retained presentation generation.
+            let mut ppu = game.ppu.clone();
+            ppu.render_buffer = None;
+            fs::write(dir.join(format!("engine-{target}.ppu.json")), serde_json::to_vec(&ppu).unwrap())
+                .expect("write engine PPU state");
         }
         for (written, &byte) in written.iter_mut().zip(&images.image) {
             *written |= byte != POWER_ON_FILL;

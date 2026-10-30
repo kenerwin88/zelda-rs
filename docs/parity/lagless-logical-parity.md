@@ -125,3 +125,91 @@ also writes `frames/host-<n>.ppm` and the fixed color and CGRAM, so a video
 miss can be inspected as an image diff against the engine's capture
 (`ZELDA3_CACHED_AV_CAPTURE_DIR` / `_FRAMES` with the replay). It is a
 diagnostic: the Snes9x cache remains the authority.
+
+## Lagless ending polygon picture
+
+Investigation on `codex/poly1`, base `7db31d92`; CPU evidence is in
+`target/poly1/`. **There are two independent effects, and the picture mismatch
+is not fully resolved.**
+
+The proven register bug is `EndSequence_32`: `$0E:BD21` loads `$12` and
+`$0E:BD23` stores it to BG2SC (`$2108`). The translated initializer stored
+`$13`, selecting a 64x64 tilemap instead of the cartridge's 32x64 tilemap.
+This is corrected at the store. The later `$0E:BDAB..BDB0` word load/store
+(`LDY #$1300; STY $2107`) really does change BG2 to 64x64; that transition
+remains intact. A unit test checks both transitions against the ROM bytes.
+
+At iteration 1,470,000, the corrected native PPU and the ledger seed agree
+in all VRAM, CGRAM, OAM, BG descriptors, mode, brightness, screen enables,
+color-math enable and fixed colors. Before the fix, BG2's width was their
+only differing BG descriptor. Static line-renderer snapshots become identical
+when that descriptor is corrected. Static snapshots omit HDMA and are **not**
+cache-validated scanouts. The native software compositor, which includes the
+scanline register capture, produces RGB SHA-256
+`2aec28b10801343d2e7ba6a0950d478eae51b9febc4cbba126eacfceedf06dfe`, equal to
+authoritative cache host 1,577,955 (one before the iteration's picture host).
+
+The baseline worker/upload investigation also finds real phase drift. From a
+single seed at iteration 1,466,000, all **1,915** distinct consecutive native VRAM
+uploads equal the first 1,915 of **1,918** completed cartridge uploads, in
+order, including their `$1F04/$1F05` angles. The 256 distinct bitmaps repeat
+through that sequence. At every one of those 1,915 corresponding uploads,
+the complete `$1F00..$1F09` inputs and `$1F3F..$1FFF` worker workspace also
+agree byte for byte, including rotation products, projected vertices and
+raster edges (`complete-worker-equality.json`). Comparing the logged NMI host numbers for corresponding
+uploads gives offsets -1/0/+1/+2/+3 on 406/517/547/404/41 uploads. No angle or
+pixel correction was applied. The native sequence ends three uploads before
+the ROM sequence; equal ordered bitmaps are **not per-NMI state equality**.
+The 42 initial native NMI records precede the first new bitmap and retain the
+previous VRAM image. See `upload-phase.json` and `nmi-bitmap-analysis.json`.
+
+After the width fix, the CPU compositor over iterations 1,466,000..1,473,122
+finds **3,269 exact**, **1,486 within three cache hosts**, and **2,368 absent**
+from cache hosts after 1,560,000. Thus a correct bitmap sequence alone does not
+establish correct composite pictures: the scrolling background/fade and the
+worker can occupy different phases. Full ending picture acceptance remains
+open. The intro does not execute the faulty ending store; its remaining
+picture misses do not share this BG2SC cause.
+
+The intro ROM-side slice (`intro-source/`) renders 29 hosts around 172/180
+and 966; **all 29 RGB hashes equal the cache at the same host**. At native
+iteration 16 / oracle host 172, `$012A` is zero, BG descriptors/CGRAM/OAM
+agree, and 218 VRAM bytes differ. Its failure is therefore not an active
+polygon rasterizer or the ending-only BG2SC store. That separate VRAM
+generation discrepancy is not repaired here.
+
+Diagnostic additions (all CPU-only): `ZELDA3_DEBUG_POLY_NMI_STATE=<jsonl>`
+records worker storage, bitmap, uploaded VRAM, palette, OAM, mode and brightness
+at polygon NMI callbacks; `ZELDA3_LOGICAL_CPU_PICTURES=<path>` records RGB hashes
+from the software compositor. These files append, so use fresh paths.
+`--dump-wram` also saves the complete PPU JSON. The ledger example's
+`--ppu-snapshot <json> <ppm>` draws a static snapshot, explicitly without CPU
+or HDMA execution. None of these diagnostics changes census classifications
+or the picture matcher.
+
+Verification: the targeted ROM-witness regression test passes; default and
+`--no-default-features` parity builds are warning-free. The library-test build
+reports existing unrelated dead-code warnings. Both the seeded ROM census
+(`--seed-every 2000`) and continuous recorded replay complete **1,473,123**
+iterations and pass the unchanged gate with **unexplained 0**. ROM-lane missing
+holds / excess / FP remain **2,398 / 0 / 0** (2,365 iterations have missing
+holds). `git diff --check` passes. Evidence occupies approximately 255 MB.
+No GPU, live replay, full library suite, protected-cache/shared-ledger write,
+formatting, commit or push was performed. This is a verified partial repair,
+not full ending picture acceptance.
+
+GPU confirmation (run these **serially**; not run during this investigation):
+
+```sh
+C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+L=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
+mkdir -p target/poly1/gpu-saves
+ZELDA3_SAVE_DIR="$PWD/target/poly1/gpu-saves" target/poly1/zelda3-default \
+  --logical-replay "$L" "$C/initial.srm" --seed-every 2000 --single-seed \
+  --start 1466000 --video "$C" --video-misses --report 0 \
+  > target/poly1/ending-confirm-gpu.txt 2>&1
+ZELDA3_SAVE_DIR="$PWD/target/poly1/gpu-saves" target/poly1/zelda3-default \
+  --logical-replay "$L" "$C/initial.srm" --frames 2000 \
+  --video "$C" --video-misses --report 0 \
+  > target/poly1/intro-confirm-gpu.txt 2>&1
+```

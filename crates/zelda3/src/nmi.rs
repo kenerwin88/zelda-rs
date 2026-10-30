@@ -777,6 +777,7 @@ impl ZeldaState {
                 && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
             if !timed_intro_poly_worker {
                 self.nmi_update_irqgfx();
+                self.debug_poly_nmi_state("closing");
             }
             let stack = self.game_state.display.nmi_thread_stack_pointer;
             self.set_nmi_thread_stack_pointer(if stack != 0x1f31 { 0x1f31 } else { 0x01f2 });

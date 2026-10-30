@@ -107,6 +107,23 @@ const POLY_THREAD_LAG_NMI_MASTER_CYCLES: u64 = 3_284;
 const POLY_THREAD_LAG_NMI_UPLOAD_MASTER_CYCLES: u64 = 20_622;
 
 impl ZeldaState {
+    /// CPU-only display evidence at a polygon NMI, including the live upload
+    /// destination rather than just the worker's possibly partial bitmap.
+    pub(crate) fn debug_poly_nmi_state(&self, kind: &str) {
+        let Some(path) = crate::debug_env::var_os!("ZELDA3_DEBUG_POLY_NMI_STATE") else { return };
+        use std::io::Write;
+        let ram = self.wram_image();
+        let row = format!(
+            "{{\"host\":{},\"kind\":\"{}\",\"module\":{:?},\"work\":{:?},\"bitmap\":{:?},\"vram\":{:?},\"cgram\":{:?},\"oam\":{:?},\"mode\":{},\"brightness\":{},\"fixed_color\":{:?}}}",
+            self.frame_ctr_dbg, kind, &ram[0x10..0x14], &ram[0x1f00..0x2000],
+            &ram[0xe800..0xf000], &self.ppu.vram[0x5800..0x5c00],
+            self.ppu.cgram, self.ppu.oam, self.ppu.mode, self.ppu.brightness,
+            [self.ppu.fixed_color_r, self.ppu.fixed_color_g, self.ppu.fixed_color_b]);
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)
+            .expect("open polygon NMI evidence");
+        writeln!(file, "{row}").expect("write polygon NMI evidence");
+    }
+
     /// Fixed logical work quanta for the one cold boot intro. No bus price or
     /// raster position participates in this scheduler.
     pub(super) fn lag_free_intro_poly_before_main(&mut self) {
@@ -471,6 +488,7 @@ impl ZeldaState {
             self.ppu.vram[0x5800 + i] = u16::from_le_bytes([bitmap[i * 2], bitmap[i * 2 + 1]]);
         }
         self.clear_pending_polyhedral_update();
+        self.debug_poly_nmi_state("lag-upload");
     }
 
     pub fn intro_poly_upload_delay(&self) -> u8 {

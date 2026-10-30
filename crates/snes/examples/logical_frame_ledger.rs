@@ -355,7 +355,30 @@ fn write_seed(path: PathBuf, snes: &snes::Snes) -> Result<(), Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args().skip(1);
-    let rom = fs::read(args.next().ok_or("missing ROM path")?)?;
+    let first = args.next().ok_or("missing ROM path")?;
+    // Static snapshot diagnostic, deliberately separate from the source's
+    // line-by-line capture: no CPU or HDMA is advanced by this mode.
+    if first == "--ppu-snapshot" {
+        let mut ppu: snes::PpuState = serde_json::from_slice(&fs::read(args.next().ok_or("missing PPU JSON")?)?)?;
+        let output = args.next().ok_or("missing output PPM")?;
+        if args.next().is_some() { return Err("too many snapshot arguments".into()); }
+        let margin = usize::from(ppu.extra_left_right);
+        let width = 256 + margin * 2;
+        ppu.begin_drawing(&mut vec![0; width * 224 * 4], width * 4, ppu.render_flags);
+        for line in 0..=224 { ppu.run_line(line); }
+        let mut rgb = Vec::with_capacity(256 * 224 * 3);
+        for row in ppu.render_buffer.as_ref().ok_or("missing rendered snapshot")?.chunks_exact(width * 4) {
+            for pixel in row[margin * 4..(margin + 256) * 4].chunks_exact(4) {
+                rgb.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
+            }
+        }
+        println!("{:x}", Sha256::digest(&rgb));
+        let mut ppm = b"P6\n256 224\n255\n".to_vec();
+        ppm.extend(rgb);
+        fs::write(output, ppm)?;
+        return Ok(());
+    }
+    let rom = fs::read(first)?;
     let sram = fs::read(args.next().ok_or("missing SRAM path")?)?;
     let input = fs::read_to_string(args.next().ok_or("missing input path")?)?;
     let host_calls: usize = args.next().ok_or("missing host call count")?.parse()?;

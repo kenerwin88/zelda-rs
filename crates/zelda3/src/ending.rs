@@ -2477,7 +2477,9 @@ impl ZeldaState {
         self.set_music_control(0x22);
         self.set_color_window_selection(0);
         self.set_color_math_control(162);
-        self.zelda_ppu_write(0x2108, 0x13);
+        // $0E:BD21 LDA #$12; $0E:BD23 STA $2108: BG2 is 32x64.
+        // The later 16-bit STY $2107 at $0E:BDAE changes it to 64x64.
+        self.zelda_ppu_write(0x2108, 0x12);
         self.set_fixed_color_red(0x3f);
         self.set_fixed_color_green(0x5f);
         self.set_fixed_color_blue(0x9f);
@@ -3608,5 +3610,31 @@ impl ZeldaState {
                 2,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod polygon_picture_tests {
+    use super::*;
+
+    #[test]
+    fn ending_bg2_uses_rom_vertical_map_until_horizontal_wrap() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        // Independent cartridge witnesses: byte STA at initialization, then
+        // word STY changes BG1SC and BG2SC together at the scroll threshold.
+        assert_eq!(&rom[0x73d21..0x73d26], &[0xa9, 0x12, 0x8d, 0x08, 0x21]);
+        assert_eq!(&rom[0x73dab..0x73db1], &[0xa0, 0x00, 0x13, 0x8c, 0x07, 0x21]);
+        let mut state = ZeldaState::new();
+        state.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+        state.end_sequence_32_after_save_game_file();
+        assert_eq!(state.ppu.bg_layer[1].tilemap_adr, 0x1000);
+        assert!(!state.ppu.bg_layer[1].tilemap_wider);
+        assert!(state.ppu.bg_layer[1].tilemap_higher);
+        state.set_bg2_x(0x0bff);
+        state.mark_poly_thread_go();
+        state.credits_fade_color_and_begin_animating();
+        assert!(state.ppu.bg_layer[1].tilemap_wider);
+        assert!(state.ppu.bg_layer[1].tilemap_higher);
     }
 }
