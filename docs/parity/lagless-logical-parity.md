@@ -583,3 +583,129 @@ ZELDA3_SAVE_DIR="$PWD/target/picture2/gpu-saves" target/picture2/zelda3-default 
   --video "$C" --video-misses --report 0 \
   > target/picture2/full-confirm-gpu.log 2>&1
 ```
+
+## Lagless HDMA store timing
+
+CPU investigation on `codex/picture3`, base `5d1ec663`. **HDMA table timing is
+confirmed for the dominant populations, but the native publication repair was
+withdrawn after exact-picture regressions.** Only diagnostic code is retained.
+All evidence is under `target/picture3/`; the oracle cache and `full-v2` were
+read-only.
+
+The audit reconstructs each table byte at its HDMA consumption deadline from
+the ROM lane's `--picture-events` stores, absolute bus timestamps and field
+coordinates. `$00:F2FB` supplies two contiguous 120-line runs; `$0A:BDDD`
+supplies two 112-line runs. Output row `y` consumes `$1B00 + 2*y` through the
+HDMA event due at physical V=`y`, H=1106, before rendering line `y+1`.
+The audit's `read_at` records this event deadline; the source drains the event
+after the current CPU transaction, so it is not a separately observed DMA
+bus timestamp. The source's direct WRAM
+word transaction commits both bytes before draining its 16 clocks. A store
+starting at the HDMA deadline is too late; none of the selected witnesses
+starts exactly there (`equality-boundary-audit.json`).
+
+Three software pictures are rendered over the same native capture: old table,
+timed table and new table. Every old-table control reproduces the native
+baseline, and all reconstructed old table bytes equal native bytes. A case is
+confirmed only when the timed picture equals the authoritative cache hash.
+Neither the recorded stores nor these diagnostic pictures enter the engine,
+publication queue or matcher. `ZELDA3_LOGICAL_HDMA_AUDIT=<directory>` enables
+the diagnostic with that directory's `witnesses.jsonl` input and `audit.jsonl`
+output. The input retains the source event fields, grouped by host, with the
+iteration, field, DMA setup and writer group.
+
+| Tagged population | Confirmed | Table-only explanation refuted | Total |
+| --- | ---: | ---: | ---: |
+| Spotlight | 1,737 | 1 | 1,738 |
+| Mirror waves, insertion and dewaving | 4,830 | 81 | 4,911 |
+
+These are exhaustive counts for both tagged populations. A failed table-only
+counterfactual does not establish that table timing contributes nothing.
+The spotlight exception is iteration **357,032 / host 388,747**, which also
+has `$00:F3E2` forced blanking on line 221. Two other cases, iterations
+**1,126,653 and 1,132,238**, require the later spotlight-reset stores as well
+as `$00:F3BB`; both confirm with that complete table-store sequence. Their
+supplemental probes reproduce the full-route baseline hashes exactly.
+
+At **iteration 4,280 / host 4,804**, only physical lines **222–224** consume
+changed next-main window bounds. The timed picture is
+`997743f9c48d1c071856ef53bb35e172f4fa6ee46e9decf81060a8a8a1dfdf13`, exactly
+the cache; both uniform generations fail. Mirror iteration **191,998 / host
+210,037** similarly requires mixed generations and matches
+`c5c3c52221e4a1f1903ea3063dd805a31baf78ad7f7fb62b4df159e1058e8219`.
+`hdma-causality.jsonl.zst` records every case and all 224 line reads;
+`spread-samples.json` retains **20 spotlight and 22 mirror examples** spread
+over the route. `table-only-counterexamples.json` lists all 82 failures.
+
+The withdrawn implementation split the spotlight and mirror ROM blocks at
+each store, retained native store clocks and deferred rendering until the
+next main's stores could be consumed. It gained seven exact pictures in the
+cold 6,000-iteration prefix. The longer trial lost previously exact pictures
+at iterations **48,550, 50,896, 59,220 and 101,022** in its first **108,702**
+iterations, so all native changes were removed. This trial was stopped and
+is not a full-route after result. Its patch, binary and receipts are retained
+as `withdrawn-native-publication.patch`, `zelda3-candidate`, `withdrawal.json`
+and `candidate-*`. The separate `invalid-zero-seed-*` run used a foreign seed
+at iteration zero and is excluded from regression evidence.
+
+The first regression has a fresh ROM-side witness. At host **54,177**, the
+source copy starts at **V195/H940**, while the native P2 trial places it at
+**V193/H820**, **2,848 clocks early**. Both have the same **39,884-clock
+first-to-last-store interval**. The source's timed table preserves the exact
+old picture; the early native stores damage it. All seven source scanout
+hashes around this probe equal the cache. See `regression-cause.json` and
+`regression-source/`. The unresolved owner is the wall phase before the copy;
+splitting its stores does not repair that phase. No fitted offset is retained.
+
+Both full-route seeded CPU censuses complete **1,473,123 iterations**:
+
+| Picture class | Before | Retained after |
+| --- | ---: | ---: |
+| Exact | 1,462,997 | 1,462,997 |
+| Late | 3,952 | 3,952 |
+| Early | 563 | 563 |
+| Torn | 4,702 | 4,702 |
+| Polygon | 905 | 905 |
+| During lag | 4 | 4 |
+| Other content | 0 | 0 |
+
+Every picture hash and pacing row is byte-identical. **Retained exact-picture
+regressions: none.** The original owner partition is retained; its class
+counts are identical before and after:
+
+| Owner row | Non-exact before | Non-exact after | Late | Early | Torn | Polygon | During lag |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| File-name scroll | 359 | 359 | 359 | 0 | 0 | 0 | 0 |
+| Screen clear | 5 | 5 | 5 | 0 | 0 | 0 | 0 |
+| Polygon phase | 1,736 | 1,736 | 829 | 2 | 0 | 905 | 0 |
+| Active-display NMI return | 611 | 611 | 88 | 409 | 114 | 0 | 0 |
+| P2 deficit | 27 | 27 | 12 | 1 | 14 | 0 | 0 |
+| Next-main candidates | 7,345 | 7,345 | 2,643 | 141 | 4,557 | 0 | 4 |
+| Unresolved | 43 | 43 | 16 | 10 | 17 | 0 | 0 |
+
+Verification: seeded ROM census (`--seed-every 2000`) and continuous recorded
+ROM replay both **PASS**, all **1,473,123 iterations**, **unexplained 0**.
+Missing/excess/false-positive counts remain **2,393 / 0 / 0**; native holds
+equal P2 on every row. All **14 focused Rust tests** and **7 block-generator
+tests** pass, including store boundaries, intro scroll, screen clear and
+forced-blank publication. Default and `--no-default-features` product builds
+are warning-free. The final diagnostic binary also reproduces all 2,000 intro
+hashes. Full gates used `zelda3-default`; subsequent audit-only equality/reset
+coverage is bound by zero equality witnesses and the two supplemental probes.
+`verification.json`, `test-results.json` and `build-results.json` retain the
+counts. `git diff --check` passes; evidence occupies approximately **1.2 GB**.
+No GPU, live replay, full library suite, protected-directory write, formatting,
+commit or push was performed. This is a verified causal audit and withdrawal,
+not a completed native publication repair.
+
+Exact full-route GPU confirmation command for the retained behavior (not run):
+
+```sh
+C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+L=/Users/missingno/Documents/zelda3-rs/target/logical-ledger/full-v2
+mkdir -p target/picture3/gpu-saves
+ZELDA3_SAVE_DIR="$PWD/target/picture3/gpu-saves" target/picture3/zelda3-default \
+  --logical-replay "$L" "$C/initial.srm" --seed-every 2000 \
+  --video "$C" --video-misses --report 0 \
+  > target/picture3/full-confirm-gpu.log 2>&1
+```

@@ -646,7 +646,11 @@ struct PendingVideo {
 
 /// Renders engine frames and checks them against the oracle cache's frame
 /// hashes, keeping the GPU readback pipeline full like the cached A/V replay.
+#[path = "logical_hdma_audit.rs"]
+mod hdma_audit;
+
 struct VideoCheck {
+    hdma_audit: Option<hdma_audit::Audit>,
     renderer: Option<NativeWindowOracleRenderer>,
     cpu_renderer: Option<CpuPictureRenderer>,
     cpu_hashes: Option<BufWriter<fs::File>>,
@@ -826,6 +830,7 @@ impl VideoCheck {
             process::exit(1);
         }));
         Self {
+            hdma_audit: cpu.then(hdma_audit::Audit::from_env).flatten(),
             renderer,
             cpu_renderer: cpu.then(CpuPictureRenderer::new),
             cpu_dump: cpu.then_some(dump).flatten(),
@@ -861,6 +866,10 @@ impl VideoCheck {
             return;
         };
         let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(game, oracle_frame as u32);
+        if let Some(audit) = self.hdma_audit.as_mut() {
+            audit.observe(game, &capture, iterations[index].index, oracle_frame,
+                self.oracle[oracle_frame].as_ref().expect("oracle picture"));
+        }
         let queued = self.renderer.as_mut().map(|renderer| renderer.queue_capture_video_digest(capture.clone()).unwrap_or_else(|error| {
             eprintln!("video submission failed: {error}");
             process::exit(1);
