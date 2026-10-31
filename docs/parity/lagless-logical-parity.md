@@ -2018,3 +2018,138 @@ baseline (`55aa75f5...`). `verification.json` binds the trial artifacts and
 restoration. Evidence is approximately **134 MiB**; `git diff --check` passes.
 No GPU, Snes9x process, continuous live replay, full library suite, protected
 cache/shared-ledger write, formatting, commit or push was performed.
+
+## Lagless live sound timing 5
+
+CPU-only continuation on `codex/live5`, base `fb0b2c0f`. **The complete
+ordinary queued-boundary candidate fails the revised full-live limits and
+is withdrawn whole. No runtime or pricing change is retained.** Dropping
+the fixed-two-poll requirement does not admit this candidate: its full
+carried history does not reproduce the successful second bounded window.
+Evidence is under `target/live5/`; cache and `full-v2` remained read-only.
+
+### Complete queue owner and focused verification
+
+The candidate schedules every ordinary queued NMI's nominal port stores
+after its output interval's closing boundary. This covers the no-hold
+closing/next-opening boundary, each held batch, and the final closing batch,
+without a hold-count condition or an added callback. ROM handler offsets
+and CPU-to-SPC fractional conversion remain unchanged. VWF's retained-value
+selection stays in `frame_writes`; upload-return deadlines and handled
+timed CPU accesses retain their existing branches. No producer, price,
+P2 rule, classifier, matcher, environment switch or driver phase changed.
+
+Tests exercise actual bus-queue publication before/after callback closure
+with zero, one and four holds, music single delivery, VWF/timed-access
+ownership, and all four latches' last-write-wins across held/closing slots.
+Three prior assertions were updated to inspect the handler's stores after
+the closing boundary as well as the unchanged latches before it. All
+**45 clock tests and 18 pacing tests pass**. The complete withdrawn source
+and tests are preserved in `rejected-candidate.patch`.
+
+Fresh live windows from 458,000 and 878,000 reproduce timing 4: 462,627 is
+early, while 881,734 agrees. The zero-start 94,901-iteration control has no
+song-poll mismatch and passes the unchanged gate with unexplained zero.
+`window-results.json` binds these bounded results; they do not establish
+the full route's carried SPC phase.
+
+### Full-route admission: rejected
+
+The supplied eight-chunk ROM census and **one single full seeded live
+census** each cover **1,473,123 iterations**. The live CSV is `live.csv`.
+Both logical gates PASS with unexplained zero; every runtime hold equals
+P2. The separate numerical admission check fails:
+
+| Lane | Missing | Excess | FP |
+| --- | ---: | ---: | ---: |
+| ROM baseline and candidate | 2,269 | 0 | 0 |
+| Live admission ceiling | 2,516 | 243 | 70 |
+| Full seeded live candidate | **2,660** | **386** | **84** |
+| Live regression | **+144** | **+143** | **+14** |
+
+The ROM candidate changes **zero accepted-hold rows** from lag6. The live
+poll origins and their subsequent hold differences against that ROM lane
+are retained in `live-origin-hold-differences.json`:
+
+| Poll origin | Native / source | Added missing | Added excess | Added FP |
+| --- | --- | ---: | ---: | ---: |
+| 229,035 | `$01` / zero | 9 | 9 | 2 |
+| 462,627 | zero / `$13` | 13 | 13 | 3 |
+| 627,256 | `$01` / zero | 27 | 27 | 5 |
+| 735,867 | `$01` / zero | 12 | 12 | 3 |
+| 881,733 | zero / `$13` | 234 | 230 | 67 |
+| 1,064,734 | `$01` / zero | 96 | 95 | 4 |
+
+Thus both original episodes survive the full run, and four additional
+episodes account for the regression. The 878,000-start success is sensitive
+to its shorter SPC history; it cannot be substituted for the full seeded
+result. These are observed episode groups, not new runtime classifications
+or a proof isolating each timer/driver-state cause.
+
+The candidate's first continuous-live divergence **implied by seeded polls
+is 229,035**, last clean song branch 229,034. No actual reseed precedes it;
+the first post-boot reseed is 464,000. No continuous live replay was run.
+Live gameplay paths do change at these polls. A ROM-lane picture census
+would not validate those live paths; no picture census was run.
+
+### Delivered sound proof
+
+A separate full seeded **ROM-answer** capture completes all 1,473,123
+iterations with zero actual reseeds, exit zero, both compressor exits zero,
+and logical gate PASS/unexplained zero. It uses the sound-proof delivery
+observer and the unchanged `scripts/lagless_audio_timing.py` matcher
+(SHA-256 `7734b9387c35c2d2ddf94a56ec4b9ceef64959d23a3304a59525380232c2052d`).
+The scratch adapter follows `/tmp/sound2-delivered.py` with only its output
+directory changed. Source commands are the retained proof-1 inventory.
+
+| Delivered transitions | Sound proof 1 | Sound fix 1 | Candidate |
+| --- | ---: | ---: | ---: |
+| Matched | 67,510 | 67,598 | **67,598** |
+| Native-only | 644 | 13 | **13** |
+| Source-only | 133 | 45 | **45** |
+| Same-iteration order-only rows | 39 | 39 | **39** |
+
+The candidate has 67,611 native and 67,643 source normalized commands.
+Its identity counters are no worse. `sound/delivered-identity.json` retains
+all classes and **116 raw observer timestamp inversions**: scheduled stores
+are logged before later-emitted receipts for earlier stores. The trace was
+not sorted or the matcher altered to hide these. Matching these counters
+does not establish equal delivery phase, chip state or waveform.
+
+The unchunked sound run has **100,408 holds, 5,147 masked callbacks and
+1,578,678 total callbacks**. Its fractional clock implies **841,627,976
+generated chip pairs**, versus the retained route-relative source's
+842,864,820: **−1,236,844 pairs**. Returned harness PCM is 843,014,052 pairs
+(+149,232); it is a different sample grid. `sound/sample-counts.json`
+records this length accounting only. Waveform and chip-content equality
+were not recaptured. The chunked ROM census has 5,153 masked callbacks;
+its independently seeded chunks are not the sound stream's phase history.
+
+### Prefix accounting and restored stop
+
+Before iteration **462,627**, the ROM lane lacks **486 holds across 469
+iterations**, with zero excess. At the average NTSC field duration this
+missing-hold term is
+`486 * (1364*262 - 2) * 15664 / 328125 = 8,291,113.38 SPC cycles`.
+It is an approximately **8.291-million-cycle deficit contribution**, not
+a measured net phase difference or a value to install in `$43`: masked
+uploads, callback cuts and inherited driver state remain separate terms.
+`rom-prefix-phase.json` and the empty `rom-held-changes.json` establish that
+the same count applies after restoring the baseline. No price was fitted
+to this number.
+
+Because transport admission failed, intro WRAM clear and Blind/SpikeBlock
+pricing were **not retried or retained**. Their retry was conditional on
+an admitted transport baseline. The original runtime is restored; the final
+default binary is byte-identical to lag6/timing-4's retained baseline,
+SHA-256 `55aa75f553f79101be1986442c940b72b7274773d44939b94bf3ce33abf8cfa1`.
+The restored baseline's earlier 462,627 frontier remains retained evidence,
+not a second freshly run full-live census.
+
+Candidate and restored default/reduced-feature product builds are
+warning-free. Restored **42 clock and 17 pacing tests pass**; library-test
+compilation retains the existing unrelated dead-code warnings. Only this
+documentation is changed. `verification.json` binds the candidate, proofs,
+tests and restoration; evidence remains below 3 GB and `git diff --check`
+passes. No GPU, Snes9x process, continuous live replay, full library suite,
+protected-cache/shared-ledger write, formatting, commit or push occurred.
