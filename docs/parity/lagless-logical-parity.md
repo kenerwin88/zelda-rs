@@ -2153,3 +2153,114 @@ documentation is changed. `verification.json` binds the candidate, proofs,
 tests and restoration; evidence remains below 3 GB and `git diff --check`
 passes. No GPU, Snes9x process, continuous live replay, full library suite,
 protected-cache/shared-ledger write, formatting, commit or push occurred.
+
+## Lagless missing-hold owners 7
+
+CPU investigation on `codex/lag7`, base `ab09182c`. Evidence is under
+`target/lag7/`. **The four-owner candidate is withdrawn whole: its full ROM
+census introduces seven excess holds and seven false-positive iterations.**
+No runtime, pricing, generated-table or fixture change is retained. The
+cache and shared `full-v2` ledger were read-only.
+
+The baseline prefix contains **486 missing holds in 469 iterations**, grouped
+earliest-first into **202 clusters** using the existing 120-iteration gap and
+module/submodule/room/area keys. `prefix-clusters-before.json` preserves every
+membership, the ownership leads and explicit unresolved cases. Signed source
+routine comparisons cover 230 ordinary-gameplay missing iterations in 56
+clusters; their native comparison is the retained historical lag1 baseline,
+not a claim that all those historical gaps remain unpriced on current main.
+Later admitted prices and unresolved call/scalar aliases are not erased.
+No matcher or classifier changed.
+
+The first clusters and source owners are:
+
+| Iterations | Baseline missing | Owner / remaining proof boundary |
+| --- | ---: | --- |
+| 0–7 | 8 | Whole untimed `Intro_Clear1kbBlocksOfWRAM`, `$0C:C1A0..C1F4` |
+| 617, 672–688 | 6 | Whole untimed sword/flash `$0C:FE56`, its setup `$FE45`, and backdrop `$0E:D60B`; intro animation/dispatcher self work remains separately unresolved |
+| 729 | 9 | Loader/decompression partition: `$00:E766`, `$00:E843`, `$02:FEBB/$FF5F`; the `$00:E6B7` positive and `$00:E583` negative alias balance cancels exactly |
+| 12,996; 16,237 | 1 each | Dungeon-map parent/model undercharge lead; no complete outside-child partition established |
+| 15,313; 31,095; 34,318 | 1 each | Room transition, spiral stairs and overworld loader partitions; no additive parent difference admitted |
+
+The early source profile identifies `Scene_AnimateEverySprite` `$0C:C412`,
+`Intro_RunStep` `$C448`, `Intro_HandleAllTriforceAnimations` `$C404`, and
+`Intro_AnimateTriforce` `$C435` as remaining self-work leads at 684/688.
+Their aggregate parent differences are not prices. The sheet-7 input extent
+remains the separately proved 1,705-byte source stream versus a 1,536-byte
+native window; the complete loader instruction partition is still open.
+Later ordinary-gameplay, loader and interrupt/raster-phase clusters remain
+in the ordered artifact, including cases without a unique routine attribution.
+
+Four complete bodies were trialled together, with generated ROM block markers
+and source-address comments: the WRAM clear, sword setup, all three periodic
+sword/flash phases, and the shared backdrop helper. The clear retires its
+actual word-column loop and branch; the sword body prices clipping, flash,
+landing and both sparkle phases, excluding the independently owned backdrop.
+The setup ends at its fallthrough into the periodic body. **739 executed-ROM
+fixtures** check instruction work and owned WRAM/OAM results, including all
+conditional paths, all eight clear ranges and short loop boundaries. No
+native behavior difference was exposed. The generator adds **45 blocks /
+199 instructions**, preserving all **3,980 blocks / 16,321 instructions**
+already present. No price is fitted to holds, and no scene exception, P2
+change, environment switch or sound-transport change was introduced.
+
+The seeded 0–2,000 trial passes the unchanged gate, unexplained zero, with
+missing/excess/FP **23/0/0 → 11/0/0**. It restores iterations 0–7, 617,
+672, 676 and 680; 684/688 and the loader gap remain. The full eight-slice
+seeded ROM census completes **1,473,123 iterations**, logical gate **PASS,
+unexplained 0**, but timing admission **FAILS: 2,248 / 7 / 7**. Every runtime
+hold equals P2. All seven excess holds are on source-unheld later-intro
+iterations **146,782, 146,784, 146,788, 146,792, 146,796, 146,800, 146,804**.
+Their opening-handler work changes **9,344 → 26,234** clocks and lag-handler
+work **3,210 → 20,140**, alongside the new sword instruction work. A fresh
+146,000-start ROM window has zero excess: the full-route failure depends on
+inherited execution/worker phase. That diagnostic does not waive the full
+ROM gate or justify selectively suppressing a valid body price.
+
+The supplied 71-hold first-window figure belongs to the previously withdrawn
+intro-clear result. Both retained lag6 and live5 restored ROM CSVs instead
+establish the following current-main baseline. The rejected trial is shown
+separately from the final restored result:
+
+| Before song-end window | Baseline missing | Rejected trial missing | Final restored missing |
+| --- | ---: | ---: | ---: |
+| 94,334–94,854 | 79 | 67 | 79 |
+| 141,568–142,088 | 115 | 103 | 115 |
+| 228,499–229,035 | 253 | 232 | 253 |
+| 380,243–380,881 | 407 | 386 | 407 |
+| 461,989–462,628 | 486 | 465 | 486 |
+
+The rejected trial also has seven cumulative excess/FP at each of the last
+three windows. Missing-hold reductions alone therefore do not qualify it.
+`candidate-prefix.json`, `rom-held-changes.json`, `rom-excess-discovered.json`
+and `rom-runner.log` retain these results.
+
+The single full seeded-live census completes **1,473,123 iterations**, logical
+gate **PASS, unexplained 0**, with **2,503 missing / 258 excess / 79 FP**.
+It therefore also fails the live **243/70** limits, by **15 excess holds /
+nine FP iterations**. Every runtime hold equals P2. This is the frozen rejected
+candidate's result, retained at `target/lag7/live.csv`, not a result of the
+restored baseline. `candidate-live-counts.json`, `live-held-changes.json` and
+`live-gate.log` bind it. No continuous live replay or second live census ran.
+
+The restored default binary is byte-identical to the retained main baseline,
+SHA-256 `55aa75f553f79101be1986442c940b72b7274773d44939b94bf3ce33abf8cfa1`.
+Its fresh seeded 0–2,000 ROM check is clean. The retained baseline full-route
+results remain ROM **2,269/0/0**, live **2,516/243/70**; these are reused,
+hash-bound full results, not new full censuses of the restored binary.
+Candidate verification passes **22 focused Rust tests and seven generator
+tests**. No behavior difference was exposed, so no CPU picture census was
+needed; the retained 1,462,997 exact-picture result is not claimed rerun.
+`rejected-candidate.patch` preserves the complete rejected implementation and
+fixtures. This is a verified withdrawal, not a missing-hold improvement or
+sound-phase proof. The next pricing attempt must account for the later intro's
+inherited worker/NMI phase without fitting prices or weakening admission.
+
+Candidate and restored default/reduced-feature builds are warning-free;
+library-test compilation retains the existing unrelated dead-code warnings.
+The active default binary is restored too. `verification.json` and
+`artifact-hashes.json` bind the source patch, binaries, reused evidence and
+completed results. Evidence occupies less than **0.5 GiB** and
+`git diff --check` passes. Only this documentation is changed. No GPU,
+Snes9x process, full library suite, protected-cache/shared-ledger write,
+formatting, commit or push occurred.
