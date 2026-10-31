@@ -141,6 +141,46 @@ mod sprite_decompression_cursor_tests {
     use super::*;
 
     #[test]
+    fn sheet_pricing_reaches_every_rom_stream_terminator() {
+        use crate::rom_cpu_timing::lorom_offset;
+        let Some((mut native, rom)) = loaded_graphics_test_inputs() else { return };
+        let mut truncated = Vec::new();
+        for (asset, entry, count, tables) in [
+            (64, DecompressEntry::Sprite, 108, [0xcff3, 0xd0d2, 0xd1b1]),
+            (65, DecompressEntry::BackgroundTables, 114, [0xcf80, 0xd05f, 0xd13e]),
+        ] {
+            for sheet in 0..count {
+                let byte = |table| rom[lorom_offset(table).unwrap() + sheet];
+                let address = u32::from(byte(tables[0])) << 16
+                    | u32::from(byte(tables[1])) << 8 | u32::from(byte(tables[2]));
+                let Some(start) = lorom_offset(address).filter(|&n| n < rom.len()) else { continue };
+                let original = native.asset_bytes(asset, sheet).unwrap();
+                let stream = if asset == 64 { native.sprite_graphics_decompression_stream(sheet).unwrap() }
+                    else { original.to_vec() };
+                let expected = decompress_cost(entry, sheet as u8, &rom[start..], address as u16, 0x7f_4000);
+                let consumed = expected.get_next_byte_calls as usize;
+                assert!(stream.len() >= consumed, "asset={asset} sheet={sheet} truncated");
+                assert_eq!(&stream[..consumed], &rom[start..start + consumed]);
+                assert_eq!(stream[consumed - 1], 0xff);
+                if consumed > original.len() {
+                    truncated.push((asset, sheet, original.len(), consumed));
+                }
+                let old_cost = decompress_cost(entry, sheet as u8, original, address as u16, 0x7f_4000);
+                for lag_free in [false, true] {
+                    native.lag_free = lag_free;
+                    let before = crate::cycle_ledger::master();
+                    native.charge_sheet_decompression(entry, asset, sheet, 0x14000);
+                    assert_eq!(crate::cycle_ledger::master() - before,
+                        if lag_free {expected.master} else {old_cost.master},
+                        "asset={asset} sheet={sheet} lag_free={lag_free}");
+                }
+            }
+        }
+        assert_eq!(truncated, [(64, 7, 1536, 1705)]);
+        eprintln!("all sheet extents checked; truncated={truncated:?}");
+    }
+
+    #[test]
     fn initialize_tilesets_composes_native_callers_selections_and_callee_returns() {
         use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
         let Some((template, rom)) = loaded_graphics_test_inputs() else { return };
@@ -3053,8 +3093,7 @@ impl ZeldaState {
     /// Charge the ROM's decompression of `sheet` from `asset` (64 = sprite
     /// sheets, 65 = background sheets) to the WRAM offset `dst`. The asset
     /// pack holds every sheet as the cartridge's verbatim compressed stream
-    /// (sheets 0..11 of asset 64 as their first 0x600 bytes; sprite sheet 7's
-    /// junk stream is longer than that window, so its cost stops short),
+    /// (sheets 0..11 of asset 64 as contiguous raw 0x600-byte windows),
     /// which `cycle_models::decompress` prices instruction by instruction.
     /// The entry routine's scope (open in the caller) takes its own
     /// instructions; every `Decompression_GetNextByte` call is recorded as
@@ -3067,6 +3106,15 @@ impl ZeldaState {
         let Some(stream) = self.asset_bytes(asset, usize::from(sheet)) else {
             return;
         };
+        // $00:E7A3..E852 walks commands through the $FF terminator, not
+        // through a native tile-sheet boundary. Reuse the source-contiguous
+        // raw-art window already used by the $00:E583 loader. This changes
+        // only lag-free accounting; output and other timing lanes retain
+        // their existing ownership.
+        let complete_stream = if self.lag_free && asset == 64 {
+            self.sprite_graphics_decompression_stream(usize::from(sheet))
+        } else { None };
+        let stream = complete_stream.as_deref().unwrap_or(stream);
         let cost = decompress_cost(
             entry,
             sheet,

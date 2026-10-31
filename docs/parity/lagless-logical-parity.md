@@ -999,3 +999,104 @@ the final counts and identities. `git diff --check` passes. Evidence occupies
 less than **0.8 GiB**, below the 3 GB limit. This is a verified partial
 owner-pricing stop; the intro-clear, other screened owners, loader partition
 and continuous-live sound acceptance remain unresolved.
+
+## Lagless missing-hold owners 3
+
+CPU investigation on `codex/lag3`, base `1008a128`. Evidence is under
+`target/lag3/`; the oracle cache and shared `full-v2` ledger remain read-only.
+The intro WRAM-clear candidate remains withdrawn and was not retried.
+
+The sprite decompression accounting now reuses the existing native
+`sprite_graphics_decompression_stream` reconstruction. Raw sheets 0–11 are
+contiguous source windows; `$00:E7A3..E852` walks commands through `$FF`,
+including a command crossing a native sheet boundary. No tail surcharge,
+new instruction price, source-ROM runtime read or sheet-specific exception
+is introduced. The existing instruction model prices the reconstructed
+stream; non-lag-free prices and graphics outputs are unchanged.
+
+The asset-backed extent fixture checks all **108 sprite and 114 background
+sheets** against their ROM streams, including the complete consumed bytes
+and terminator. **Only sprite sheet 7 is truncated** in its individual asset:
+1,536 bytes versus 1,705 through the terminator (6,056 output bytes).
+The existing instruction-by-instruction CPU fixture passes **336 cases**
+across the three decoder entries, with zero unfinished cases or mismatches.
+The new fixture also compares the actual charged work in lag-free and
+non-lag-free modes.
+
+This correction restores **no holds on this route**. Both complete sheet-only
+predictors are byte-identical to the retained main predictors, including
+iteration 729: the active graphics loader already reconstructs the full
+stream. The truncated accounting helper was a real local defect, but its
+repair is not an explanation of that route's remaining loader gap. The
+separate sheet-only ROM and live censuses both pass with unexplained zero.
+
+The retained new owner is the complete tile-collision **wrapper**
+`$08:8981..8A02`, excluding its `$08:8A03` children. Generated markers cover
+outdoor-priority rejection, header selection, coordinate save/translation/
+restore, both child calls, the first child's carry-dependent branch, and
+the return. `$0BFA,X` page crossings are charged for the actual slot.
+`$89F7 PHP` is consumed as data by `$89FB PLA`; the generator entries split
+that source boundary rather than pretending it is a PHP/PLP restoration.
+**480 unmodified-ROM fixtures** cover both worlds, all header branches,
+priority rejection, hit/miss and off-screen paths, and both slot-page cases.
+They compare wrapper instruction work and restored coordinates/floor.
+The fixtures load the real asset pack so outdoor child results agree.
+All **15,729 existing generated instructions** remain unchanged;
+**13 blocks / 66 instructions** are added, without fitting to hold counts.
+
+Full-route results are missing holds / excess holds / zero-source-lag FP
+iterations; every run covers **1,473,123 iterations**:
+
+| Candidate / lane | Missing | Excess | FP |
+| --- | ---: | ---: | ---: |
+| Main / seeded ROM | 2,354 | 0 | 0 |
+| Main / seeded live | 2,628 | 270 | 75 |
+| Sheet stream only / seeded ROM | 2,354 | 0 | 0 |
+| Sheet stream only / seeded live | 2,628 | 270 | 75 |
+| Sheet stream plus wrapper / seeded ROM | **2,336** | **0** | **0** |
+| Sheet stream plus wrapper / seeded live | **2,583** | **243** | **70** |
+| Sheet stream plus wrapper / continuous recorded ROM | **2,336** | **0** | **0** |
+
+All five timing gates **PASS, unexplained 0**; every runtime hold equals P2.
+The final seeded ROM and continuous recorded predictors are byte-identical,
+with **100,341 accepted holds / 5,151 masked callbacks**. Live has
+**100,337 / 5,143**. The wrapper restores 18 source holds without any newly
+missing ROM iteration: one each at 625,401 and 767,843, twelve on the 787k
+room `$003E` visit and four on its 820k visit. `wrapper/rom-changes.json`
+lists them. Live adds **no excess rows** and removes five existing FP events
+at 627,316 / 627,326 / 627,799 / 629,327 / 629,458, totaling 27 excess holds
+(`wrapper/live-excess-changes.json`). These seeded improvements do not prove
+equal SPC phase, strict sound identity or continuous-live acceptance.
+
+Re-grouping the remaining misses with the same room/area key and 120-iteration
+gap yields **684 clusters**. `07/00` and `09/00` retain **1,138 / 561** missing
+holds; the largest room `$003E` clusters retain **95 / 82 / 57** holds on
+the 820k / 787k / 841k visits. `wrapper/remaining-clusters.json` retains all
+membership. This is a current population partition, not a new attribution of
+positive parent-label differences to untimed bodies.
+
+The one-floor **body** `$08:8A03` and bomb damage remain unadmitted. The
+corrected body decoding is retained in `tile-body-source.json`: its outdoor
+lookup `$00:882E` returns M8 after the caller entered M16, so `$08:8A53`
+needs an explicit width boundary. The older listing's post-call mixed-width
+decode cannot establish a price. Complete native/source all-path body and
+bomb-damage fixtures, then separate zero-FP route trials, remain next work.
+No partial body price, classifier/matcher change or new environment switch
+is retained.
+
+Validation: **12 targeted Rust tests** and **seven generator tests**
+pass; default and `--no-default-features` product builds are warning-free.
+Library-test builds retain the existing unrelated dead-code warnings.
+`candidate-identities.json`, `candidate.patch`, `sheet-only.patch`, and
+`wrapper-pricing-audit.json` bind the code, binaries and reused evidence.
+The full seeded **CPU picture census** completes **1,473,123 iterations,
+PASS, unexplained 0**: **1,462,997 exact**, 3,952 late, 563 early, 4,702 torn,
+905 polygon, four during ROM lag and zero other content misses. Every hash
+is byte-identical to the retained baseline: **zero exact pictures lost**.
+`wrapper/pictures-gate.log` and `verification.json` retain the final checks.
+`git diff --check` passes; evidence occupies less than **0.9 GiB**, below
+the 3 GB limit. No GPU, Snes9x process, continuous live replay, full library
+suite, protected-cache/shared-ledger write, formatting, commit or push was
+performed. This is a verified partial owner-pricing stop; the one-floor body,
+bomb damage, remaining loader partition and continuous-live sound acceptance
+remain unresolved.
