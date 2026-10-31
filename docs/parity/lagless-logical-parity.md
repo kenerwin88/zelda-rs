@@ -1469,3 +1469,114 @@ No matcher, classifier, P2 formula, per-scene table, threshold, polygon
 schedule or environment switch changed. New self prices are lag-free only.
 No exact SPC phase, strict sound identity or continuous-live acceptance is
 claimed.
+
+## Lagless missing-hold owners 6
+
+CPU investigation on `codex/lag6`, base `5799319c`. Evidence is under
+`target/lag6/`; the authoritative cache and shared `full-v2` ledger remain
+read-only. Baseline ROM missing/excess/FP is **2,270 / 0 / 0**, seeded live
+**2,517 / 243 / 70**. The intro WRAM clear remains withdrawn.
+
+The missing rows were re-clustered with the existing 120-iteration analysis
+gap, module/submodule and room/area keys. There are **684 clusters**. The
+three leading room `$003E` visits contain **59 / 58 / 56** missing holds;
+Blind's room `$00AC` has 49, the leading `09/00` Tree cluster has 41, and
+room `$006B` has 40. The source routine comparisons are retained as signed
+exclusive evidence, not additive prices: in particular, DashItem's large
+profile label contains child work. No matcher or classifier changed.
+
+The withdrawn Blind-head and SpikeBlock prices were compared against their
+complete behavior-only seeded live control. Their first main-work changes
+are **732,237** and **329,419** respectively. Blind restores 11 direct holds;
+SpikeBlock restores 14. Both also move these existing live events:
+
+| Control iteration | Candidate iteration | Held NMIs moved |
+| --- | --- | ---: |
+| 735,937 | 735,936 | 1 |
+| 735,947 | 735,946 | 4 |
+| 736,420 | 736,422 | 7 |
+
+The destinations have zero source holds; the old positions lose their holds.
+The first pair moves the same **617,764-clock** main work. The next pairs
+move the loader/cutscene work, rather than charging the head/statue body at
+the false-positive row. This accounts for the 12 extra holds and three new
+FP iterations in both archived trials (**255 / 73**). No missing counterpart
+price is established. Both prices remain withdrawn whole.
+
+Fresh 732,000-start live windows reproduce Blind's 12 excess holds, but the
+SpikeBlock window has zero excess: its earlier carried SPC history is absent.
+The Blind/control APU probes show `$1A` publication at **735,866 / 735,867**,
+respectively. The source writes it at 735,868. These are command-publication
+observations, not exact SPC-cycle or PCM equality. Current main and the saved
+behavior-only control have identical accepted-hold and masked-callback rows
+through 737,999. The full saved predictors, identities, changed rows and
+paired event counterparts are retained; local windows do not replace the
+full seeded-live constraint.
+
+Four complete, independently trialled pricing owners are retained:
+
+* Bomb player-damage caller `$08:9815..9912`, including the shared `$97B5`
+  return, excluding sprite damage, hitbox, displacement and projection
+  children. **320 ROM fixtures** cover all **22 blocks** and both outcomes
+  of all **12 conditional branches**, checking owned player state.
+* Bomb distance `$08:9CCE..9D0F`: **100 fixtures** cover both signed absolute
+  values, zero/sign/wrap boundaries and slots on either side of the indexed
+  read page crossing. The source's second call at `$98E7` is retired by a
+  second pure distance query; its result is unchanged.
+* Bomb projection wrapper `$04:EB63..EBA9`: **100 fixtures** cover coordinates,
+  directions and speeds, compare returned velocities and restored sprite
+  coordinates/altitude, and exclude the existing projection child.
+* DashItem dispatcher `$05:FBF7..FBFD`, with the inherited `$00:8784..879B`
+  tail and separately scoped `$8781` entry. **Six fixtures** cover all three
+  valid selectors and slot boundaries. Its ownership ends before the selected
+  child; unscoped child markers must not leak into the dispatcher price.
+
+All new prices are lag-free only, use generated ROM blocks and actual branch
+outcomes, and have source-address comments. The generator adds **30 blocks /
+184 instructions**, leaving all **3,950 existing blocks / 16,137 instructions**
+unchanged. No gameplay behavior difference was exposed or repaired. No P2
+formula, scene table, fitted threshold, polygon schedule or environment switch changed.
+
+The incremental trials add the caller, distance, projection and dispatcher
+one at a time. Each has a saved binary, source patch and seeded ROM window;
+short live windows also pass. The caller restores **787,256** in the first
+room `$003E` visit. Its retained block profile records the actual phase-rejection
+path: `$9815`, `$981A`, taken `$981C`, `$983E`, `$97B5`, totaling **158
+source clocks**. The other three prices add source work but restore no
+additional holds in their tested windows. The room `$006B` window remains
+unchanged; its statue price is still withdrawn. These are complete prices,
+not prices selected or scaled to recover a target count.
+
+Both final gates complete **1,473,123 iterations, PASS, unexplained 0**:
+
+| Final lane | Missing | Excess | FP |
+| --- | ---: | ---: | ---: |
+| Eight-slice seeded recorded ROM | **2,269** | **0** | **0** |
+| Single full seeded live SPC | **2,516** | **243** | **70** |
+
+Both predictors change only the hold at **787,256** relative to their main
+baselines. No iteration gains missing holds; every runtime hold equals P2.
+ROM reports **100,408 accepted holds**, live **100,404**. Live masked callbacks
+remain **5,145**. The segmented ROM run reports **5,150 masked callbacks**;
+its seed-boundary diagnostics/elapsed callbacks are not claimed identical to
+the earlier single-run predictor. The chunked proof is the logical gate and
+held/lag rows, not continuous sound timing. The restored default executable
+is byte-identical to the frozen census binary. `rom-counts.json`,
+`live-counts.json`, `rom-runner.log`, `live-gate.log` and `verification.json`
+bind the completed results. The required live CSV is `target/lag6/live.csv`.
+
+The final partition still has **684 clusters**. Room `$003E` becomes
+**59 / 57 / 56**; Blind remains 49, Tree 41, and the leading room `$006B`
+cluster 40. These residuals are not silently assigned to parent labels or
+claimed repaired by the small dispatcher price.
+
+All **12 focused CPU unit tests** and **seven generator tests** pass,
+including **526 new executed-ROM fixtures**. Default and
+`--no-default-features` product builds are warning-free; the library-test
+build retains its pre-existing dead-code warnings. `git diff --check` passes.
+Evidence is below the 3 GB cap. No gameplay behavior changed, so the CPU
+picture census and continuous recorded run were skipped as requested.
+No GPU, Snes9x process, continuous live replay, full library suite,
+protected-cache/shared-ledger write, formatting, commit or push was performed.
+This is a verified partial pricing stop, not exact SPC phase, strict sound
+identity or continuous-live acceptance.

@@ -1447,6 +1447,30 @@ fn lumberjack_control_markers_match_rom_paths() {
 }
 
 #[test]
+fn lag6_dash_item_dispatch_matches_rom() {
+    for k in [0, 15] {
+        for graphics in 0..3 {
+            let mut native = marker29_state();
+            native.write_wram_byte(0xdc0 + k, graphics);
+            native.write_wram_byte(0xdd0 + k, 0); // Each selected child takes its inactive return.
+            native.sync_native_game_state_from_ram();
+            let machine = marker29_machine(&native, 0x05fbf7, k).unwrap();
+            let dispatching = std::cell::Cell::new(true);
+            crate::cycle_ledger::assert_rom_marker_work(0x05fbf7, machine,
+                |s| {
+                    let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                    if [0x05fc04, 0x05fc9e, 0x05fd4d].contains(&pc) { dispatching.set(false); }
+                    dispatching.get() && ((0x05fbf7..0x05fbfe).contains(&pc)
+                        || (0x008784..0x00879c).contains(&pc))
+                }, || native.sprite_dash_item(k));
+            native.set_lag_free(false);
+            assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x05fbf7,
+                || native.sprite_dash_item(k)), 0);
+        }
+    }
+}
+
+#[test]
 fn blind_head_behavior_matches_rom_paths() {
     let mut cases = 0;
     let visited = std::cell::RefCell::new(std::collections::BTreeSet::new());

@@ -49,6 +49,10 @@ impl ZeldaState {
         y: u16,
         vel: u8,
     ) -> ProjectSpeedRet {
+        // $04:EB63..EBA9, excluding the $06:EA1A projection child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x04eb63));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x04eb63);
         let old_x = self.sprite_get_x(0);
         let old_y = self.sprite_get_y(0);
         let old_z = self.sprite_slot_view(0).z();
@@ -56,6 +60,7 @@ impl ZeldaState {
         self.sprite_set_y(0, y);
         self.sprite_slot_view_mut(0).set_z(0);
         let pt = self.sprite_project_speed_towards_link(0, vel);
+        b.block(0x04eb95);
         self.sprite_slot_view_mut(0).set_z(old_z);
         self.sprite_set_x(0, old_x);
         self.sprite_set_y(0, old_y);
@@ -142,11 +147,23 @@ impl ZeldaState {
     }
 
     fn bomb_check_sprite_and_player_damage(&mut self, k: usize) {
+        // $08:9815..9912 and the shared $97B5 RTS; children own their bodies.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x089815));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x089815);
         let bomb_phase = self.ancilla_slot_view(k).item_to_link();
-        if bomb_phase == 0 || bomb_phase >= 9 {
+        if bomb_phase == 0 {
+            b.taken(0x089818); b.block(0x08983e); b.block(0x0897b5);
             return;
         }
+        b.block(0x08981a);
+        if bomb_phase >= 9 {
+            b.taken(0x08981c); b.block(0x08983e); b.block(0x0897b5);
+            return;
+        }
+        b.block(0x08981e);
         self.bomb_check_sprite_damage(k);
+        b.block(0x089821);
         if self
             .game_state
             .player
@@ -154,28 +171,42 @@ impl ZeldaState {
             .sprite_damage_disable_timer()
             != 0
         {
-            if k + 1 == self.game_state.player.follower_link.ancilla_pickup_flag() as usize
-                && self
+            b.block(0x089826);
+            if k + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
+                b.taken(0x08982b); b.block(0x0897b5); return;
+            }
+            b.block(0x08982d);
+            if self
                     .game_state
                     .player
                     .follower_link
                     .is_lifting_or_carrying()
             {
+                b.block(0x089834); b.block(0x08983e);
                 self.follower_link_state_mut()
                     .clear_lifting_or_carrying_state();
                 self.follower_link_state_mut().clear_direction_lock();
-            }
+            } else { b.taken(0x089832); }
+            b.block(0x0897b5);
             return;
         }
-
-        if self.game_state.player.follower_link.has_auxiliary_state()
-            || self.game_state.player.follower_link.incapacitated_timer() != 0
-            || self.ancilla_slot_view(k).floor()
-                != self.game_state.player.follower_link.lower_level_state()
-        {
+        b.taken(0x089824); b.block(0x089841);
+        if self.game_state.player.follower_link.has_auxiliary_state() {
+            b.taken(0x089843); b.block(0x08983e); b.block(0x0897b5);
             return;
         }
-
+        b.block(0x089845);
+        if self.game_state.player.follower_link.incapacitated_timer() != 0 {
+            b.taken(0x089847); b.block(0x08983e); b.block(0x0897b5);
+            return;
+        }
+        b.block(0x089849);
+        if self.ancilla_slot_view(k).floor() != self.game_state.player.follower_link.lower_level_state() {
+            b.taken(0x08984e); b.block(0x08983e); b.block(0x0897b5);
+            return;
+        }
+        b.block(0x089850);
+        if k >= 6 { b.crossing(0x089872); }
         let link_x = self.game_state.player.follower_link.x();
         let link_y = self.game_state.player.follower_link.y();
         let ax = self.ancilla_get_x(k).wrapping_sub(16);
@@ -195,26 +226,41 @@ impl ZeldaState {
             r7_spr_ysize: 32,
         };
 
-        if !self.check_if_hit_boxes_overlap(&hb) {
+        let overlap = self.check_if_hit_boxes_overlap(&hb);
+        b.block(0x0898a6);
+        if !overlap {
+            b.taken(0x0898a6); b.block(0x089912);
             return;
         }
-
+        b.block(0x0898a8);
+        if k >= 6 { b.crossing(0x0898b7); }
         let x = self.ancilla_get_x(k).wrapping_sub(8);
         let y = self.ancilla_get_y(k).wrapping_sub(12);
         let j = self.bomb_get_displacement_from_link(k) as usize;
+        b.block(0x0898ca);
         let pt = self.bomb_project_speed_towards_player(
             k,
             x,
             y,
             BOMB_CHECK_SPRITE_AND_PLAYER_DAMAGE_BOMB_DMG_SPEED[j],
         );
-        if self.game_state.player.follower_link.blink_countdown() != 0
-            || self.game_state.player.follower_link.has_menu_block_flag(2)
-        {
+        b.block(0x0898d2);
+        if self.game_state.player.follower_link.blink_countdown() != 0 {
+            b.taken(0x0898d6); b.block(0x089912);
             return;
         }
+        b.block(0x0898d8);
+        if self.game_state.player.follower_link.has_menu_block_flag(2) {
+            b.taken(0x0898dd); b.block(0x089912);
+            return;
+        }
+        b.block(0x0898df);
         self.follower_link_state_mut()
             .set_actual_velocity_xy(pt.x, pt.y);
+        // $98E7 repeats the distance child after storing projected velocity.
+        let j = self.bomb_get_displacement_from_link(k) as usize;
+        b.block(0x0898ea);
+        if j >= 14 { b.crossing(0x0898ea); }
         self.follower_link_state_mut()
             .set_actual_z_velocity_and_copy(BOMB_CHECK_SPRITE_AND_PLAYER_DAMAGE_BOMB_DMG_ZVEL[j]);
         self.follower_link_state_mut()
@@ -222,10 +268,12 @@ impl ZeldaState {
         self.follower_link_state_mut().set_auxiliary_state(1);
         self.follower_link_state_mut().set_blink_countdown(58);
         if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 == 0 {
+            b.block(0x089907);
             let armor = self.game_state.inventory.items.armor() as usize;
             self.follower_link_state_mut()
                 .set_given_damage(BOMB_CHECK_SPRITE_AND_PLAYER_DAMAGE_BOMB_DMG_TO_LINK[armor]);
-        }
+        } else { b.taken(0x089905); }
+        b.block(0x089912);
     }
 
     pub(super) fn ancilla07_bomb(&mut self, k: usize) {
@@ -435,8 +483,21 @@ impl ZeldaState {
     }
 
     fn bomb_get_displacement_from_link(&self, k: usize) -> i32 {
+        // $08:9CCE..9D0F: both signed absolute values and the distance index.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x089cce));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x089cce);
+        if k >= 6 { b.crossing(0x089cd8); }
         let x = self.ancilla_get_x(k);
         let y = self.ancilla_get_y(k);
+        if (self.game_state.player.follower_link.x().wrapping_add(8).wrapping_sub(x) as i16) >= 0 {
+            b.taken(0x089ced);
+        } else { b.block(0x089cef); }
+        b.block(0x089cf3);
+        if (self.game_state.player.follower_link.y().wrapping_add(12).wrapping_sub(y) as i16) >= 0 {
+            b.taken(0x089cfe);
+        } else { b.block(0x089d00); }
+        b.block(0x089d04);
         (((abs16(
             self.game_state
                 .player
@@ -1144,6 +1205,138 @@ impl ZeldaState {
 #[cfg(test)]
 mod price_tests {
     use super::*;
+
+    fn lag6_machine(native: &ZeldaState, entry: u32, slot: usize) -> snes::Snes {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut machine = snes::Snes::new();
+        machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());
+        machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+        machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = (entry >> 16) as u8; machine.cpu.db = machine.cpu.k;
+        machine.cpu.pc = entry as u16; machine.cpu.x = slot as u16; machine.cpu.sp = 0x1fc;
+        machine
+    }
+
+    #[test]
+    fn lag6_bomb_displacement_matches_rom() {
+        for slot in [0, 5, 6, 9] {
+            for x in [0u16, 1, 0x7fff, 0x8000, 0xffff] {
+                for y in [0u16, 1, 0x7fff, 0x8000, 0xffff] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    native.ancilla_set_xy(slot, x, y);
+                    native.write_wram_byte(0x22, 0xf8);
+                    native.write_wram_byte(0x23, 0xff);
+                    native.write_wram_byte(0x20, 0xf4);
+                    native.write_wram_byte(0x21, 0xff);
+                    native.sync_native_game_state_from_ram();
+                    let machine = lag6_machine(&native, 0x089cce, slot);
+                    let mut result = 0;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x089cce, machine,
+                        |s| s.cpu.k == 8 && (0x9cce..0x9d10).contains(&s.cpu.pc),
+                        || { result = native.bomb_get_displacement_from_link(slot); });
+                    assert_eq!(result, i32::from(source.snes().cpu.y));
+                    native.set_lag_free(false);
+                    assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x089cce,
+                        || { native.bomb_get_displacement_from_link(slot); }), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lag6_bomb_projection_matches_rom() {
+        for x in [0u16, 0x70, 0x80, 0x90, 0xffff] {
+            for y in [0u16, 0x70, 0x80, 0x90, 0xffff] {
+                for vel in [0, 8, 32, 127] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    for (a, v) in [(0x22, 0x80), (0x20, 0x80), (0xd10, 23),
+                        (0xd30, 4), (0xd00, 51), (0xd20, 6), (0xf70, 9)] {
+                        native.write_wram_byte(a, v);
+                    }
+                    native.sync_native_game_state_from_ram();
+                    let mut machine = lag6_machine(&native, 0x04eb63, 0);
+                    machine.ram[0..2].copy_from_slice(&x.to_le_bytes());
+                    machine.ram[2..4].copy_from_slice(&y.to_le_bytes());
+                    machine.cpu.y = vel as u16;
+                    machine.ram[0x1ff] = 0;
+                    let mut result = ProjectSpeedRet { x: 0, y: 0, xdiff: 0, ydiff: 0 };
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x04eb63, machine,
+                        |s| s.cpu.k == 4 && (0xeb63..0xebaa).contains(&s.cpu.pc),
+                        || { result = native.bomb_project_speed_towards_player(0, x, y, vel); });
+                    // The ROM returns Y velocity in $00 and X velocity in $01.
+                    assert_eq!((result.x, result.y), (source.snes().ram[1], source.snes().ram[0]));
+                    for a in [0xd10, 0xd30, 0xd00, 0xd20, 0xf70] {
+                        assert_eq!(native.read_wram_byte(a), source.snes().ram[a]);
+                    }
+                    native.set_lag_free(false);
+                    assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x04eb63,
+                        || { native.bomb_project_speed_towards_player(0, x, y, vel); }), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lag6_bomb_player_damage_matches_all_rom_paths() {
+        let visited = std::cell::RefCell::new(std::collections::BTreeSet::new());
+        let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+        let previous = std::cell::Cell::new(None);
+        let mut cases = 0;
+        for slot in [0, 5, 6, 9] {
+            for path in 0..16 {
+                for offset in [0u16, 8, 16, 24, 0xfff8] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    native.ancilla_set_xy(slot, 0x80u16.wrapping_add(offset), 0x80);
+                    for (a, v) in [(0xc5e + slot, if path == 0 { 0 } else if path == 1 { 9 } else { 1 }),
+                        (0x37b, if (2..=4).contains(&path) { 1 } else { 0 }),
+                        (0x2ec, if path == 2 { 0 } else { slot as u8 + 1 }),
+                        (0x308, if path == 4 { 0x80 } else { 0 }), (0x50, 1),
+                        (0x4d, if path == 5 { 1 } else { 0 }),
+                        (0x46, if path == 6 { 1 } else { 0 }),
+                        (0xc7c + slot, if path == 7 { 1 } else { 0 }),
+                        (0x22, if path == 8 { 0 } else { 0x80 }), (0x20, 0x80),
+                        (0x31f, if path == 9 { 1 } else { 0 }),
+                        (0xffc, if path == 10 { 2 } else { 0 }),
+                        (0x403, if path == 11 { 0x80 } else { 0 }),
+                        (0xf35b, (path % 3) as u8)] { native.write_wram_byte(a, v); }
+                    native.sync_native_game_state_from_ram();
+                    let machine = lag6_machine(&native, 0x089815, slot);
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x089815, machine,
+                        |s| {
+                            let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                            if let Some(old) = previous.replace(Some(pc)) { edges.borrow_mut().insert((old, pc)); }
+                            visited.borrow_mut().insert(pc);
+                            (0x089815..0x089913).contains(&pc) || pc == 0x0897b5
+                        }, || native.bomb_check_sprite_and_player_damage(slot));
+                    for a in [0x27, 0x28, 0x29, 0x2c7, 0x46, 0x4d, 0x31f, 0x373, 0x308, 0x50] {
+                        assert_eq!(native.read_wram_byte(a), source.snes().ram[a],
+                            "slot={slot} path={path} offset={offset:04x} address={a:04x}");
+                    }
+                    native.set_lag_free(false);
+                    assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x089815,
+                        || native.bomb_check_sprite_and_player_damage(slot)), 0);
+                    cases += 1;
+                }
+            }
+        }
+        for pc in [0x0897b5, 0x089815, 0x08981a, 0x08981e, 0x089821, 0x089826,
+            0x08982d, 0x089834, 0x08983e, 0x089841, 0x089845, 0x089849, 0x089850,
+            0x0898a6, 0x0898a8, 0x0898ca, 0x0898d2, 0x0898d8, 0x0898df,
+            0x0898ea, 0x089907, 0x089912] {
+            assert!(visited.borrow().contains(&pc), "uncovered block {pc:06x}");
+        }
+        for branch in [0x089818, 0x08981c, 0x089824, 0x08982b, 0x089832,
+            0x089843, 0x089847, 0x08984e, 0x0898a6, 0x0898d6, 0x0898dd, 0x089905] {
+            assert_eq!(edges.borrow().iter().filter(|(from, _)| *from == branch).count(), 2,
+                "uncovered branch {branch:06x}");
+        }
+        eprintln!("bomb player damage ROM cases={cases}");
+    }
 
     #[test]
     fn bomb_damage_markers_match_rom_paths() {

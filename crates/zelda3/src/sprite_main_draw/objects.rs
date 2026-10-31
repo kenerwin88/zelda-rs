@@ -1132,6 +1132,15 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_DashItem(int k) {  // 85fbf7
     pub(super) fn sprite_dash_item(&mut self, k: usize) {
+        // $05:FBF7..FBFD and the inherited $00:8784..879B dispatch tail.
+        // The three table-selected bodies retain their own ownership.
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05fbf7));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(0x05fbf7);
+            { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+            b.block(0x008784); b.block(0x008799);
+        }
         match self.sprite_slot_view(k).graphics() {
             0 => self.sprite_book_of_mudora(k),
             1 => self.sprite_bonk_key(k),
