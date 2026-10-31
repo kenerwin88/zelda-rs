@@ -1916,3 +1916,105 @@ module requires a new unit test; builds and final-candidate censuses are
 deferred at this explicit source-evidence stop. `git diff --check` passes.
 New evidence is below 3 GB. No GPU, continuous replay, library suite,
 protected-directory write, formatting, commit or push was performed.
+
+## Lagless live sound timing 4
+
+CPU-only investigation on `codex/live4`, base `8562ef00`. **The new source
+capture confirms the early publication in both decisive windows. A general
+closing-boundary transport trial still fails poll 462,627 and is withdrawn
+whole. No runtime or pricing change is retained.** Evidence is under
+`target/live4`; `target/live3` was read only.
+
+### Joined source and native clocks
+
+All **947,008** source PCM hash/count rows were independently compared with
+the authoritative cache: **504,870,726 pairs**, all equal. The capture's
+`reference_verified=true` agrees with this fresh check. `source-verification.json`
+binds the capture files. The selected APUI receipts and instruction snapshots
+are joined by absolute SMP cycle, including the instruction before, at, and
+after each store; `alignment.json` preserves the raw timer stages and `$43`.
+
+As in timing 3, native entry to the iteration after the producer's closing
+callback is translated onto the source delivery host's sample boundary.
+This aligns logical boundaries, not chip state or reset history. Native
+stores and KOFFs use the retained live2 instruction/DSP witnesses. The new
+source DSP stream independently reproduces both decisive KOFF coordinates
+(`source-koff.json`). The control KOFF remains the retained verified witness.
+
+| Poll | Source delivery host / raster | Source store after host start | Native publication minus source | Native command-to-KOFF duration minus source | Total KOFF difference |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 94,854 control | 103,088 / V225 H530 | 47 | -17,061 | +4,498 | -12,563 |
+| 462,627 | 500,220 / V225 H530 | 47 | -17,061 | -10,433 | -27,494 |
+| 881,733 | 946,365 / V225 H528 | 41 | -17,053 | +723 | -16,330 |
+
+All differences are SPC cycles. Source absolute store clocks are
+**1,758,669,007 / 8,533,702,831 / 16,144,893,737**. At their arrival
+instruction boundaries, source timer-0 stage1/stage2/stage3 is
+**79/15/0, 47/15/0, 41/12/0**, with `$43` **$B0/$E0/$50**.
+The retained native arrival brackets have `$43` **$C0/$08/$B0**;
+their timer fields are countdown/divider/counter, not the source's
+count-up stage representation. They must not be compared as identical fields.
+The duration residual contains inherited driver phase; this arithmetic does
+not isolate a timer/opcode defect or authorize a phase reset.
+
+`source-polls.json` joins the decisive `$08:C609` reads to instruction
+brackets. Source host **500,858** reads `$13` at +2,961 cycles; **500,859**
+reads zero at +2,825. Hosts **947,003 / 947,004** read `$13` / zero at
+**+2,889 / +2,922**. `control-source-polls.json` preserves the older control
+capture's reads, including host 103,726 zero at +2,437; that older recorder's
+PC labeling differs from the new capture. These bus timestamps are separate
+from the earlier sample-offset receipts.
+
+### Transport trials and rejection
+
+Two bounded, diagnostic changes used the existing cycle-level bus-store
+queue for all nominal ports, preserving CPU path spacing and leaving timed
+CPU actions and upload-return scheduling on their separate branches. Neither
+changed prices, P2, producers, matcher, classifiers, or environment switches.
+
+The first trial mapped V225 relative to a scanline-zero callback origin.
+That origin does not match the source's V225 callback cut and is rejected
+(`rejected-raster-origin.patch`). The second assigned the queued closing or
+held batch to the output interval's closing boundary, with the existing
+handler store offsets (`boundary-candidate.patch`). Neither is an admitted
+complete owner repair; opening/no-hold, VWF and upload-return acceptance
+would still require the wider checks if the decisive polls passed.
+
+Both trials were run from **458,000**, **878,000**, and **zero**, through
+462,700, 881,800, and 94,900 respectively. All six runs exit zero. Both retain
+zero at **94,854**, fix the second branch to zero at **881,734**, but still
+return zero at **462,627**, one iteration before the source. The closing-boundary
+control passes the unchanged gate, **unexplained 0**. The bounded nonzero
+starts are not full-route gate passes.
+
+A repeated closing-boundary 458,000-start trace observes `$13` at native
+**69,007,317**, just **+21** after entry to iteration 461,989, versus source
+**+47**: publication error is reduced to **-26 cycles**. Yet its KOFF at
+**79,889,865** remains **12,826 cycles early**; the command-to-KOFF residual
+is **-12,800**. This rejects the claim that correcting the whole-callback
+publication displacement alone fixes this poll. The residual changes with
+earlier transport history; it is not a fixed per-song correction.
+See `boundary-failure.json` and `boundary-state-*`.
+
+Both patches are withdrawn whole. The first continuous-live song-branch
+divergence **implied by the seeded evidence remains 462,627** (last clean
+462,626), as in the retained baseline. No continuous live replay was run.
+
+### Verified stopping boundary
+
+The fixed-two-poll requirement is **not met**. Intro WRAM clear and the
+Blind/SpikeBlock prices remain withdrawn; no combined candidate was tested
+or admitted. The single final full live census was not spent on a rejected
+candidate, and no `live.csv` was manufactured. No fresh full ROM census,
+delivered-command comparison, waveform/chip-stream proof, or picture census
+is claimed. ROM **2,269/0/0**, live **2,516/243/70**, and sound-proof counters
+remain prior evidence for unchanged runtime, not new results of these trials.
+
+Restored-code focused clock tests and product-build results are retained in
+`test-clock.log`, `build-reduced.log`, `build-final.log`, and `checks.json`.
+All **42 focused tests pass**; default and reduced-feature product builds
+are warning-free. The final binary is byte-identical to the retained lag6
+baseline (`55aa75f5...`). `verification.json` binds the trial artifacts and
+restoration. Evidence is approximately **134 MiB**; `git diff --check` passes.
+No GPU, Snes9x process, continuous live replay, full library suite, protected
+cache/shared-ledger write, formatting, commit or push was performed.
