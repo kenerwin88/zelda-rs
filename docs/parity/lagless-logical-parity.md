@@ -1100,3 +1100,121 @@ suite, protected-cache/shared-ledger write, formatting, commit or push was
 performed. This is a verified partial owner-pricing stop; the one-floor body,
 bomb damage, remaining loader partition and continuous-live sound acceptance
 remain unresolved.
+
+## Lagless missing-hold owners 4
+
+CPU investigation on `codex/lag4`, base `9b601d84`. Evidence is under
+`target/lag4/`; the oracle cache and shared `full-v2` ledger remain read-only.
+The intro WRAM clear remains withdrawn and was not retried.
+
+The fresh baseline completes all **1,473,123 iterations**, passes with
+unexplained zero, and reproduces the retained main predictor byte-for-byte:
+**2,336 missing / 0 excess / 0 FP**. Fresh native routine profiles are joined
+to the retained unmodified-ROM self profiles from `target/block-worklist/source/`.
+`iteration-routine-comparison.csv` retains every selected missing iteration
+and every signed routine difference, including negative balances and dispatch
+aliases. `cluster-profiles.json` contains the aggregate comparisons:
+
+| Cluster start / context | Missing holds | Source main clocks | Native main clocks |
+| --- | ---: | ---: | ---: |
+| 820,396 / room `$003E`, `07/00` | 95 | 29,659,114 | 27,986,372 |
+| 734,399 / room `$00AC`, `07/00` | 50 | 15,532,558 | 14,634,454 |
+| 912,671 / area `$010F`, `09/00` | 42 | 12,888,918 | 12,311,000 |
+| 1,399,071 / room `$006B`, `07/00` | 40 | 12,489,878 | 11,629,194 |
+| 761,077 / room `$001F`, `07/00` | 38 | 11,728,480 | 11,300,386 |
+
+On the selected room `$003E` visit, the one-floor body `$08:8A03`, bomb
+damage `$08:8287`, and Y/altitude latch `$08:9C7F` have respectively
+**222,680 / 28,930 / 62,890 source self clocks**, with zero native self price.
+These exposures select source bodies for investigation; they are not prices
+or independent predictions of recovered holds.
+
+The one-floor body candidate uses the corrected `$00:882E` return-width
+boundary from `target/lag3/tile-body-source.json`. Its ROM fixture finds a
+pre-existing result discrepancy on tile `$18`, with priority/floor2/type/U
+all zero: native returns hit while the ROM returns clear. The candidate's
+self-work check passes at that case, but its carry-result assertion fails.
+The native slope helper has profiles for `$10..$13` and falls back to hit
+for `$18..$1B`, which the collision table also routes through the slope test.
+The whole body candidate was withdrawn before a route trial; its patch,
+binary and failing fixture log remain `withdrawn-body.patch`, `zelda3-body`
+and `withdrawn-body-test.log`. No body price or slope-behavior change is retained.
+
+Two complete source bodies are retained:
+
+* `Bomb_CheckSpriteDamage`, `$08:8287..832A`: all sixteen slot tests,
+  frame/hit/projectile/floor/state rejection paths, hitbox rejection, the
+  special-sprite exemption, successful damage/recoil calls, and loop/return.
+  Hitbox, overlap, damage and reflexive-speed children retain separate ownership.
+  **1,920 unmodified-ROM fixtures** cover every slot, both ancilla page cases,
+  every parent branch and representative altitudes. They compare self clocks,
+  recoil and hit-timer results, and check that non-lag-free cost stays zero.
+* `Ancilla_LatchYCoordToZ`, `$08:9C7F..9CC2`: saved Y, directional signed
+  altitude, the `$FF` sentinel, coordinate stores and return.
+  **61,440 ROM fixtures** cover all 256 altitude bytes, all 20 native
+  directions, slot-page boundaries and coordinate wrap boundaries. They
+  compare self clocks, saved/adjusted coordinates and the uncharged default lane.
+
+The generated table adds **22 blocks / 109 instructions**; all **15,795**
+pre-existing generated instructions are unchanged. Prices come only from ROM
+blocks and actual branches/indexed crossings. There are no fitted counts,
+scene tables, thresholds, new environment switches, or classifier/matcher changes.
+
+Every timing run below covers **1,473,123 iterations**, **PASS, unexplained 0**:
+
+| Candidate / lane | Missing | Excess | FP |
+| --- | ---: | ---: | ---: |
+| Main / seeded ROM | 2,336 | 0 | 0 |
+| Main / seeded live | 2,583 | 243 | 70 |
+| Bomb damage / seeded ROM | **2,332** | **0** | **0** |
+| Bomb damage / seeded live | **2,579** | **243** | **70** |
+| Bomb damage plus latch / seeded ROM | **2,325** | **0** | **0** |
+| Bomb damage plus latch / seeded live | **2,572** | **243** | **70** |
+| Bomb damage plus latch / continuous recorded ROM | **2,325** | **0** | **0** |
+
+The final candidate restores **11** source holds with no newly missing ROM
+iteration: seven on the 787k room `$003E` visit and four on its 820k visit.
+The largest three room `$003E` clusters now retain **91 / 75 / 57** holds
+on the 820k / 787k / 841k visits. `*-changes.json` retains each changed row;
+`remaining-clusters.json` retains the remaining population. Bomb-only live
+timing moves the existing one/four-hold FP events **881,794 / 881,804 →
+881,793 / 881,803**, with unchanged excess/FP totals. The final two-owner
+candidate leaves every baseline live excess row unchanged.
+
+Every runtime hold equals P2. Final seeded ROM and continuous recorded
+predictors are byte-identical, with **100,352 accepted holds / 5,149 masked
+callbacks**; seeded live has **100,348 / 5,143**. These source-work and seeded
+census results do not establish equal SPC phase or continuous-live sound acceptance.
+
+The next-cluster PC partition names Blind head/control tails under the
+`$1D:C222` dispatcher and Lumberjack Tree code under `$05:FBF7`, including
+inherited JumpTableLocal work. `next-cluster-source-pages.json` preserves that
+partition. The finer `next-owner-ranges.json` isolates **189,608 source self
+clocks** at Blind head `$1D:A118..A1EC` and **119,900** at Lumberjack Tree
+control/states `$05:FD4D..FE22` on their respective selected missing iterations.
+Those bodies and the remaining multi-body label differences still need
+exclusive all-path fixtures and separate route trials; no aggregate surcharge
+is admitted.
+Iteration 729's `$00:E766/$00:E843` loader partition supplies no new exclusive,
+fixture-backed body in this batch and remains unchanged.
+
+Validation: **12 targeted Rust tests** and **seven generator tests**
+pass; default and `--no-default-features` product builds are warning-free.
+The library-test build retains the existing unrelated dead-code warnings.
+The final default rebuild is byte-identical to the census binary after the
+test-only ordinary-sprite damage coverage correction.
+
+The full seeded **CPU picture census** completes **1,473,123 iterations,
+PASS, unexplained 0**: **1,462,997 exact**, 3,952 late, 563 early, 4,702 torn,
+905 polygon, four during ROM lag and zero other content misses. Every picture
+hash is byte-identical to the retained main baseline: **zero exact pictures
+lost**. Its predictor is byte-identical to the final seeded ROM predictor.
+`final-pictures-gate.log`, `pricing-audit.json`, `candidate.patch` and
+`verification.json` retain the results and source/binary identities.
+
+`git diff --check` passes; evidence occupies less than **1.2 GiB**, below
+the 3 GB cap. No GPU, Snes9x process, continuous live replay, full library
+suite, protected-cache/shared-ledger write, formatting, commit or push was
+performed. This is a verified partial owner-pricing stop. The one-floor body,
+next-cluster bodies, remaining loader partition and continuous-live sound
+acceptance remain unresolved.

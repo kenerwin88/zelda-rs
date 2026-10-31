@@ -984,8 +984,22 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_latch_y_coord_to_z(&mut self, k: usize) -> u16 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x089c7f));
+        // $08:9C7F..9CC2: save Y, sign-extend the directional altitude,
+        // replace the -1 sentinel with zero, and store the adjusted Y.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x089c7f);
+        if k >= 6 { b.crossing(0x089c7f); }
         let y = self.ancilla_get_y(k);
         let z = self.ancilla_slot_view(k).z();
+        if self.ancilla_slot_view(k).direction() == 1 {
+            b.block(0x089c96);
+            if z & 0x80 == 0 { b.taken(0x089c9b); } else { b.block(0x089c9d); }
+        } else { b.taken(0x089c94); }
+        b.block(0x089ca1);
+        if self.ancilla_slot_view(k).direction() == 1 && z == 0xff { b.block(0x089caa); }
+        else { b.taken(0x089ca8); }
+        b.block(0x089cad);
         if self.ancilla_slot_view(k).direction() == 1 && z != 0xff {
             self.ancilla_set_y(k, y.wrapping_sub(z as i8 as i16 as u16));
         }
@@ -1778,6 +1792,40 @@ fn marker39_ancilla_machine(native: &ZeldaState, pc: u16, slot: usize) -> snes::
     machine.cpu.k = 8; machine.cpu.db = 8; machine.cpu.pc = pc;
     machine.cpu.x = slot as u16; machine.cpu.sp = 0x1fc;
     machine
+}
+
+#[cfg(test)]
+#[test]
+fn latch_y_coord_markers_match_rom_paths() {
+    let mut cases = 0;
+    for slot in [0, 5, 6, 9] {
+        for direction in 0..20 {
+            for z in 0..=255 {
+                for y in [0, 0xff, 0xffff] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    native.ancilla_set_y(slot, y);
+                    native.write_wram_byte(0xc72 + slot, direction);
+                    native.write_wram_byte(0x29e + slot, z);
+                    native.sync_native_game_state_from_ram();
+                    let machine = marker39_ancilla_machine(&native, 0x9c7f, slot);
+                    let mut saved = 0;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x089c7f, machine,
+                        |s| s.cpu.k == 8 && (0x9c7f..0x9cc3).contains(&s.cpu.pc),
+                        || { saved = native.ancilla_latch_y_coord_to_z(slot); });
+                    assert_eq!(saved, u16::from_le_bytes([source.snes().ram[0x72], source.snes().ram[0x73]]));
+                    for a in [0xbfa + slot, 0xc0e + slot] {
+                        assert_eq!(native.read_wram_byte(a), source.snes().ram[a]);
+                    }
+                    native.set_lag_free(false);
+                    assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x089c7f,
+                        || { native.ancilla_latch_y_coord_to_z(slot); }), 0);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("latch Y source cases={cases}");
 }
 
 #[cfg(test)]

@@ -63,19 +63,31 @@ impl ZeldaState {
     }
 
     fn bomb_check_sprite_damage(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x088287));
+        // $08:8287..832A: all sixteen slot tests and actual damage paths.
+        // Hitbox, overlap, damage and recoil children retain their own work.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x088287);
         for j in (0..16).rev() {
+            b.block(0x088289);
+            'slot: {
             if (((j as u8 ^ self.game_state.frame.frame_counter) & 3)
                 | self.sprite_slot_view(j).hit_timer()
                 | self.sprite_slot_view(j).ignore_projectile())
                 != 0
             {
-                continue;
+                b.block(0x088296); break 'slot;
             }
-            if self.sprite_slot_view(j).floor() != self.ancilla_slot_view(k).floor()
-                || self.sprite_slot_view(j).state() < 9
-            {
-                continue;
+            b.taken(0x088294); b.block(0x088299);
+            if self.sprite_slot_view(j).floor() != self.ancilla_slot_view(k).floor() {
+                b.taken(0x08829f); b.block(0x088296); break 'slot;
             }
+            b.block(0x0882a1);
+            if self.sprite_slot_view(j).state() < 9 {
+                b.taken(0x0882a6); break 'slot;
+            }
+            b.block(0x0882a8);
+            if k >= 6 { b.crossing(0x0882b7); }
             let ax = self.ancilla_get_x(k).wrapping_sub(24);
             let ay = self
                 .ancilla_get_y(k)
@@ -96,13 +108,21 @@ impl ZeldaState {
                 r7_spr_ysize: 0,
             };
             self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Unpriced);
-            if !self.check_if_hit_boxes_overlap(&hb) {
-                continue;
+            b.block(0x0882da);
+            let overlaps = self.check_if_hit_boxes_overlap(&hb);
+            b.block(0x0882df);
+            if !overlaps {
+                b.taken(0x0882df); break 'slot;
             }
-            if self.sprite_slot_view(j).sprite_type() == 0x92 && self.sprite_slot_view(j).c() >= 3 {
-                continue;
-            }
+            b.block(0x0882e1);
+            if self.sprite_slot_view(j).sprite_type() == 0x92 {
+                b.block(0x0882e8);
+                if self.sprite_slot_view(j).c() >= 3 { b.taken(0x0882ed); break 'slot; }
+            } else { b.taken(0x0882e6); }
+            b.block(0x0882ef);
+            if k >= 6 { b.crossing(0x0882f9); }
             self.ancilla_check_damage_to_sprite(j, self.ancilla_slot_view(k).ancilla_type());
+            b.block(0x08830d);
             let pt = self.ancilla_project_reflexive_speed_onto_sprite(
                 j,
                 self.ancilla_get_x(k),
@@ -110,10 +130,15 @@ impl ZeldaState {
                 64,
             );
             let value = 0u8.wrapping_sub(pt.x);
+            b.block(0x088312);
             self.sprite_slot_view_mut(j).set_x_recoil(value);
             let value = 0u8.wrapping_sub(pt.y);
             self.sprite_slot_view_mut(j).set_y_recoil(value);
+            }
+            b.block(0x088324);
+            if j == 0 { b.taken(0x088325); } else { b.block(0x088327); }
         }
+        b.block(0x08832a);
     }
 
     fn bomb_check_sprite_and_player_damage(&mut self, k: usize) {
@@ -1119,6 +1144,61 @@ impl ZeldaState {
 #[cfg(test)]
 mod price_tests {
     use super::*;
+
+    #[test]
+    fn bomb_damage_markers_match_rom_paths() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut cases = 0;
+        for slot in [0, 5, 6, 9] {
+            for sprite in 0..16 {
+                // Each rejection, both special-sprite branches, and damage.
+                for path in 0..10 {
+                    for z in [0u8, 16, 255] {
+                        let mut native = ZeldaState::new();
+                        native.set_lag_free(true);
+                        native.write_wram_byte(0x1a, if path == 0 { (sprite ^ 1) as u8 } else { sprite as u8 });
+                        native.write_wram_byte(0xef0 + sprite, if path == 1 { 1 } else { 0 });
+                        native.write_wram_byte(0xba0 + sprite, if path == 2 { 1 } else { 0 });
+                        native.write_wram_byte(0xf20 + sprite, if path == 3 { 1 } else { 0 });
+                        native.write_wram_byte(0xdd0 + sprite, if path == 4 { 8 } else { 9 });
+                        native.write_wram_byte(0xe20 + sprite, if path == 7 || path == 8 { 0x92 } else { 0x18 });
+                        native.write_wram_byte(0xdb0 + sprite, if path == 8 { 3 } else { 2 });
+                        native.write_wram_byte(0xe50 + sprite, 16);
+                        native.write_wram_byte(0xc4a + slot, 7);
+                        native.write_wram_byte(0x29e + slot, z);
+                        native.ancilla_set_xy(slot, 0x140, 0x140);
+                        let sx = if path == 5 { 0x240u16 } else { 0x140 };
+                        let sy = if path == 6 { 0x240u16 } else { 0x140u16.wrapping_sub(z as u16) };
+                        for (a, v) in [(0xd10 + sprite, sx as u8), (0xd30 + sprite, (sx >> 8) as u8),
+                            (0xd00 + sprite, sy as u8), (0xd20 + sprite, (sy >> 8) as u8)] {
+                            native.write_wram_byte(a, v);
+                        }
+                        native.sync_native_game_state_from_ram();
+                        let mut machine = snes::Snes::new();
+                        machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                        machine.ram.copy_from_slice(&native.wram_image());
+                        machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+                        machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+                        machine.cpu.k = 8; machine.cpu.db = 8; machine.cpu.pc = 0x8287;
+                        machine.cpu.x = slot as u16; machine.cpu.sp = 0x1fc;
+                        let source = crate::cycle_ledger::assert_rom_marker_work(0x088287, machine,
+                            |s| s.cpu.k == 8 && (0x8287..0x832b).contains(&s.cpu.pc),
+                            || native.bomb_check_sprite_damage(slot));
+                        for a in [0xf30 + sprite, 0xf40 + sprite, 0xef0 + sprite] {
+                            assert_eq!(native.read_wram_byte(a), source.snes().ram[a],
+                                "slot={slot} sprite={sprite} path={path} z={z} address={a:04x}");
+                        }
+                        native.set_lag_free(false);
+                        assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x088287,
+                            || native.bomb_check_sprite_damage(slot)), 0);
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        eprintln!("bomb damage source cases={cases}");
+    }
 
     #[test]
     fn bomb_draw_markers_match_rom_branches_and_child_exclusion() {
