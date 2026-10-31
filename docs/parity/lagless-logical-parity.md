@@ -1346,3 +1346,126 @@ the 3 GB cap. No GPU, Snes9x process, continuous live replay, full library
 suite, protected-cache/shared-ledger write, formatting, commit or push was
 performed. This is a verified partial owner-pricing stop: the behavior gaps
 and remaining owner partitions listed above remain unresolved.
+
+## Lagless native behavior fixes 1
+
+CPU investigation on `codex/behavior1`, base `d872c800`. Evidence is under
+`target/behavior1/`; the authoritative cache and shared `full-v2` ledger are
+read-only. The starting timing totals are **2,323 / 0 / 0** ROM and
+**2,570 / 243 / 70** seeded live missing/excess/FP.
+
+The native behavior repairs follow the unmodified cartridge:
+
+* Blind's bank-1D recoil entry compares sprite type `$CE` at `$1D:E93D`.
+  Its exemption now comes from the explicit ROM entry, in both ordinary and
+  lag-free modes. Bank-1E retains its `$7A` exemption. A head entering with
+  F=14 therefore continues after recoil and decrements subtype 2 to 1.
+* Ancilla slope calls at `$08:8A87` and `$08:8CB5` have no `$10..$13` guard.
+  Tiles `$18..$1B` index past the normal slope rows into `$06:E916..E935`;
+  those cartridge bytes are unsigned thresholds, not additional geometric
+  slopes. The ancilla helper preserves that lookup locally. The sprite
+  callers' explicit `$10..$13` guards and `EntitySlope` decoder are unchanged.
+* SpikeBlock's statue scan uses X delta + 16 < 32 and **Y delta + 8 < 16**,
+  including 16-bit coordinate wrap, as `$1E:BE58..BE72` specifies.
+
+The expanded one-floor fixture also exposed a separate copied exemption:
+tile `$03` on the upper floor returned clear before the one-floor body could
+classify it. Only class2's `$08:8CA2..8CAB` has that exemption. It is removed
+from the one-floor/targeted body. All three Somaria callers enter the same
+`$08:8A26` suffix (`$08:E1C7`, `$E401`, `$E793`); a separate 64-case ROM
+fixture checks their carry and owned WRAM results. Class2 keeps its own rule.
+
+The source matrices cover **384 Blind head cases** (all 28 body blocks and
+both outcomes of ten feasible branches; two `AND #0` branches cannot be
+taken), **8,992 one-floor cases** (23 blocks, 13 branch pairs), and
+**12,096 statue-scan cases** (ten blocks, six branch pairs). They compare
+owned state on every path. All three self-price matrices passed before the
+timing trials; the withdrawn patches retain those price witnesses. Final
+Blind and statue fixtures assert zero admitted self price; the retained
+ancilla fixture compares self work to the ROM and checks zero new self price
+outside lag-free mode. The recoil-bank matrix checks **5,120 cases**, including every
+sprite type in both modes. The slope matrix checks all 64 fine-coordinate
+pairs for `$10..$13` and `$18..$1B` at both ancilla entries: **1,024 cases**.
+
+Branch coverage caught an inherited fixture setup error: a coordinate setter
+re-projected ancilla fields after the test wrote its raw input bytes. Moving
+coordinate setup before those writes made the previously missed branches
+execute and exposed the tile-3 discrepancy. The early runs in
+`withdrawn-body-prefix/` were interrupted diagnostics, not acceptance passes.
+
+`recoil-all-callers.json` records all **70 native recoil call sites** and
+their ROM call targets. No other reachable Blind-type exemption caller was
+found. Bank-5 and bank-6 copies have unconditional double returns; their
+ordinary callers are not `$7A`. The unpriced helper's legacy exemption and
+the generic stunned path's unproved `$7A` reachability are not changed here.
+`Statue_BlockSprites` at `$06:C277` correctly uses X delta + 12 < 24 and
+Y delta + 12 < 36; directional push-block/player collision is a separate
+algorithm. Those sibling boxes are unchanged. The class2 ancilla slope
+sibling is repaired by the same fixture-proven helper.
+
+The first combined pricing candidate added **61 blocks / 225 instructions**,
+leaving all **16,050** existing instructions unchanged. It was withdrawn:
+seeded live reached **255 excess / 73 FP**, above the allowed 243/70. New
+events at **735,936 / 735,946 / 736,422** contributed **1 / 4 / 7** holds;
+the changes near 881k only moved existing FP events. Its ROM prefix had zero
+excess/FP and its completed CPU picture prefix was unchanged, but none of
+these interrupted runs is a full-route pass. `withdrawn-combined/` retains
+the binary, source patch, commands, counts and withdrawal reason. Complete
+owner trials and a behavior-only control separate pricing from behavior.
+
+Both isolated Blind-head and SpikeBlock self-price trials also reached
+**255 / 73** live excess/FP. Each complete owner price is withdrawn; neither
+is clipped, discounted or fitted to counts. Their behavior repairs remain
+independent of those prices. The retained addition is the one-floor body:
+**23 blocks / 87 instructions**, with all 16,050 prior instructions unchanged.
+All four isolated seeded-live runs completed 1,473,123 iterations with their
+logical gates passing, unexplained state zero, and no P2 disagreements:
+
+| Candidate (behavior repairs in all rows) | Missing | Excess | FP | Pricing decision |
+| --- | ---: | ---: | ---: | --- |
+| Behavior only | 2,570 | 243 | 70 | Control |
+| Blind head only | 2,571 | 255 | 73 | Withdraw whole owner |
+| SpikeBlock statue scan only | 2,568 | 255 | 73 | Withdraw whole owner |
+| Ancilla one-floor only | 2,517 | 243 | 70 | Retain for final route gates |
+
+The behavior-only control's hold/elapsed rows equal lag5 exactly. Ancilla
+pricing changes 57 timing rows: it removes 53 missing holds and moves the
+existing 1/4-hold FP events at 881,793/881,803 to 881,794/881,804. Their total
+is unchanged; this is not a claim that every individual hold stays in place.
+
+Fresh final runs use the cleaned retained source and each cover 1,473,123
+iterations:
+
+| Final run | Missing | Excess | FP | Logical gate |
+| --- | ---: | ---: | ---: | --- |
+| Seeded recorded ROM | 2,270 | 0 | 0 | PASS, unexplained 0 |
+| Seeded live | 2,517 | 243 | 70 | PASS, unexplained 0 |
+| Continuous recorded ROM | 2,270 | 0 | 0 | PASS, unexplained 0 |
+| Seeded CPU pictures | 2,270 | 0 | 0 | PASS, unexplained 0 |
+
+Continuous ROM reports all 1,473,123 iterations WRAM-clean. Its timing CSV
+equals seeded ROM byte for byte; final live equals the isolated ancilla
+trial. Every hold equals P2. ROM accepts 100,407 holds and separately reports
+5,152 elapsed NMIs; live accepts 100,403 and reports 5,145 elapsed NMIs.
+No ROM iteration gains missing holds. All 737 seeded segments are WRAM-clean,
+including polygon/song/lag comparisons. The CPU census preserves all
+**1,462,997 exact pictures**: 563 early, 3,952 late, 4 during-lag, 905 polygon,
+4,702 torn, and **zero content differences**. Its complete picture-hash file
+equals lag5 byte for byte; its timing CSV equals the final recorded-ROM CSV.
+
+All **42 focused Rust unit tests** and **seven generator tests** pass. Default
+and `--no-default-features` product builds are warning-free; the library-test
+build retains its 24 pre-existing warnings. The restored default executable
+is byte-identical to the one used for the final runs. Source/binary hashes,
+commands, caller audits, gate logs and timing counts are retained locally.
+
+`git diff --check` passes. Evidence occupies approximately **1.8 GiB**, below
+the 3 GB cap. No GPU run, Snes9x process, continuous live replay, full library
+suite, protected-cache/shared-ledger write, formatting, commit or push was
+performed. This is a verified behavior-repair stop with one admitted pricing
+owner; the Blind-head and statue-scan prices remain withdrawn in full.
+
+No matcher, classifier, P2 formula, per-scene table, threshold, polygon
+schedule or environment switch changed. New self prices are lag-free only.
+No exact SPC phase, strict sound identity or continuous-live acceptance is
+claimed.

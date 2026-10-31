@@ -323,7 +323,7 @@ fn spike_block_check_statue_collision_filters_by_frame_parity_and_overlap() {
     s.sprite_slot_view_mut(statue_even).set_state(9);
     s.sprite_slot_view_mut(statue_even).set_sprite_type(0x1c);
     s.sprite_set_x(statue_even, 0x010f);
-    s.sprite_set_y(statue_even, 0x020f);
+    s.sprite_set_y(statue_even, 0x0207);
     assert!(!s.spike_block_check_statue_collision(spike));
 
     s.sprite_set_x(statue_even, 0x0120);

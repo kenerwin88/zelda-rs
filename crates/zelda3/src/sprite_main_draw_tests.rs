@@ -927,6 +927,13 @@ fn marker29_state() -> ZeldaState {
 }
 
 fn lag5_source_return(machine: snes::Snes) -> snes::RomCpuTimingProbe {
+    behavior1_source_return(machine, |_| false)
+}
+
+fn behavior1_source_return(
+    machine: snes::Snes,
+    mut visit: impl FnMut(&snes::Snes) -> bool,
+) -> snes::RomCpuTimingProbe {
     use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
         RomCpuTimingProbe, SourcePpuReadState};
     let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
@@ -934,6 +941,7 @@ fn lag5_source_return(machine: snes::Snes) -> snes::RomCpuTimingProbe {
     let mut source = RomCpuTimingProbe::new(machine, clock,
         SourcePpuReadState::snes9x_reset()).unwrap();
     for _ in 0..10000 {
+        let _ = visit(source.snes());
         source.step().unwrap();
         if source.snes().cpu.pc == 0x8000 { break; }
     }
@@ -943,8 +951,7 @@ fn lag5_source_return(machine: snes::Snes) -> snes::RomCpuTimingProbe {
 
 #[test]
 fn lag5_blind_recoil_behavior_gap_rom_witness() {
-    // Admission stop: the bank-1D recoil return exempts $CE, whereas the
-    // shared native helper exempts $7A. No body price is admitted here.
+    // $1D:E93D exempts $CE and returns to the head's subtype update.
     let mut native = marker29_state();
     for (a, v) in [(0xdd0, 9), (0xe20, 0xce), (0xea0, 14), (0xe30, 2),
         (0xd10, 0x98), (0xd00, 0xb0), (0xd50, 32), (0xd40, 24)] {
@@ -956,8 +963,7 @@ fn lag5_blind_recoil_behavior_gap_rom_witness() {
     let source = lag5_source_return(marker29_machine(&native, 0x1da118, 0).unwrap());
     native.sprite_blind_head(0);
     assert_eq!(source.snes().ram[0xe30], 1);
-    assert_eq!(native.read_wram_byte(0xe30), 2);
-    eprintln!("Blind recoil witness: ROM continues to subtype 1; native returns with subtype 2");
+    assert_eq!(native.read_wram_byte(0xe30), 1);
 }
 
 #[test]
@@ -972,8 +978,102 @@ fn lag5_spike_statue_behavior_gap_rom_witness() {
     native.sprite_set_y(0, 0x4c); native.sprite_set_y(2, 0x40);
     let source = lag5_source_return(marker29_machine(&native, 0x1ebe19, 0).unwrap());
     assert!(source.snes().cpu.c);
-    assert!(!native.spike_block_check_statue_collision(0));
-    eprintln!("Spike statue witness: Y delta 12 is clear in ROM and colliding natively");
+    assert!(native.spike_block_check_statue_collision(0));
+}
+
+#[test]
+fn behavior1_recoil_bank_exemptions_match_rom() {
+    let mut cases = 0;
+    for (pc, entry) in [(0x1de8c5, SpriteRecoilEntry::Rom1DE8C5),
+        (0x1efe9b, SpriteRecoilEntry::Rom1EFE9B)] {
+        for kind in 0..=255u8 {
+            for f in [0, 1, 8, 0x80, 0x81] {
+                for lag_free in [false, true] {
+                    let k = if kind & 1 == 0 { 0 } else { 15 };
+                    let mut native = marker29_state();
+                    native.set_lag_free(lag_free);
+                    // Bank-1E MoveX restores X from the live sprite index.
+                    native.write_wram_byte(0xfa0, k as u8);
+                    for (a, v) in [(0xe20, kind), (0xea0, f), (0xcd2, 0x80),
+                        (0xf30, 0x7f), (0xf40, 0x80), (0xd40, 0x37), (0xd50, 0x62),
+                        (0xd00, 0xff), (0xd10, 0xff), (0xd20, 0xff), (0xd30, 0xff)] {
+                        native.write_wram_byte(a + k, v);
+                    }
+                    native.sync_native_game_state_from_ram();
+                    let source = lag5_source_return(marker29_machine(&native, pc, k).unwrap());
+                    let returned = native.sprite_return_if_recoiling(k, entry);
+                    assert_eq!(returned, source.snes().cpu.sp == 0x1fe,
+                        "pc={pc:x} kind={kind:x} f={f:x} lag_free={lag_free}");
+                    for a in [0xea0, 0xf30, 0xf40, 0xd40, 0xd50, 0xd00, 0xd10, 0xd20, 0xd30, 0xd60, 0xd70] {
+                        assert_eq!(native.read_wram_byte(a + k), source.snes().ram[a + k], "pc={pc:x} kind={kind:x} f={f:x} a={a:x}");
+                    }
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("Recoil bank exemption ROM cases={cases}");
+}
+
+#[test]
+fn behavior1_spike_statue_all_paths_match_rom() {
+    let visited = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let previous = std::cell::Cell::new(None);
+    let mut cases = 0;
+    for j in 0..16 {
+        let k = (j + 1) & 15;
+        for frame in [0, 1] {
+            for state_type in [(0, 0x1c), (9, 0x1b), (9, 0x1c)] {
+                for base in [0u16, 0xfff8] {
+                    for dx in [-17i16, -16, -15, 0, 15, 16, 17] {
+                        for dy in [-17i16, -9, -8, -7, 0, 7, 8, 9, 16] {
+                            let mut native = marker29_state();
+                            native.set_frame_counter(frame);
+                            native.sprite_slot_view_mut(j).set_state(state_type.0);
+                            native.sprite_slot_view_mut(j).set_sprite_type(state_type.1);
+                            native.sprite_set_x(j, base); native.sprite_set_y(j, base);
+                            native.sprite_set_x(k, base.wrapping_add(dx as u16));
+                            native.sprite_set_y(k, base.wrapping_add(dy as u16));
+                            let before = native.wram_image().into_owned();
+                            let mut default = native.clone();
+                            let machine = marker29_machine(&native, 0x1ebe19, k).unwrap();
+                            previous.set(None);
+                            let mut clear = false;
+                            let source = behavior1_source_return(machine,
+                                |s| {
+                                    let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                                    if let Some(old) = previous.replace(Some(pc)) { edges.borrow_mut().insert((old, pc)); }
+                                    visited.borrow_mut().insert(pc);
+                                    (0x1ebe19..0x1ebe7e).contains(&pc)
+                                });
+                            // The complete self-price candidate is withdrawn: live excess/FP
+                            // exceeds the ceiling. Retain the ROM behavior and path witness.
+                            assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x1ebe19,
+                                || { clear = native.spike_block_check_statue_collision(k); }), 0);
+                            assert_eq!(clear, source.snes().cpu.c, "j={j} frame={frame} dx={dx} dy={dy}");
+                            // Only ROM DP $00..$07 and CPU stack are scratch writes.
+                            assert_eq!(&source.snes().ram[8..0x100], &before[8..0x100]);
+                            assert_eq!(&source.snes().ram[0x200..], &before[0x200..]);
+                            assert_eq!(&*native.wram_image(), &before);
+                            default.set_lag_free(false);
+                            assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x1ebe19,
+                                || { assert_eq!(default.spike_block_check_statue_collision(k), clear); }), 0);
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for block in [0x1ebe19, 0x1ebe1b, 0x1ebe22, 0x1ebe27, 0x1ebe2e,
+        0x1ebe66, 0x1ebe74, 0x1ebe77, 0x1ebe79, 0x1ebe7c] {
+        assert!(visited.borrow().contains(&block), "block {block:x}");
+    }
+    for branch in [0x1ebe20, 0x1ebe25, 0x1ebe2c, 0x1ebe64, 0x1ebe72, 0x1ebe7a] {
+        assert_eq!(edges.borrow().iter().filter(|(pc, _)| *pc == branch).count(), 2, "branch {branch:x}");
+    }
+    eprintln!("Spike statue ROM cases={cases}; all 10 blocks and 6 branch pairs");
 }
 
 #[test]
@@ -1344,6 +1444,81 @@ fn lumberjack_control_markers_match_rom_paths() {
         assert_eq!(successors, 2, "uncovered Tree branch outcome {branch:06x}");
     }
     eprintln!("Lumberjack control ROM cases={cases}");
+}
+
+#[test]
+fn blind_head_behavior_matches_rom_paths() {
+    let mut cases = 0;
+    let visited = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let previous = std::cell::Cell::new(None);
+    for k in [0, 15] {
+        for path in 0..12 {
+            for axis in 0..16 {
+                let mut native = marker29_state();
+                for (address, value) in [
+                    (0xdd0 + k, if path == 0 { 0 } else { 9 }),
+                    (0xe20 + k, 0xce), (0x0d10 + k, if axis & 4 == 0 { 0x98 } else { 0x58 }),
+                    (0x0d00 + k, if axis & 8 == 0 { 0xb0 } else { 0x50 }),
+                    (0xed0 + k, (axis & 1) as u8), (0xec0 + k, ((axis >> 1) & 1) as u8),
+                    (0xd50 + k, if axis & 4 == 0 { 32 } else { 224 }),
+                    (0xd40 + k, if axis & 8 == 0 { 24 } else { 232 }),
+                    (0xea0 + k, match path { 1 => 14, 2 => 8, _ => 0 }),
+                    (0xe30 + k, if path & 1 == 0 { 0 } else { 2 }),
+                    (0xdf0 + k, if path == 3 { 1 } else { 0 }),
+                    (0xe80 + k, if path >= 4 { 31 } else { 0 }),
+                    (0xf90 + k, if path & 1 == 0 { 0 } else { 2 }),
+                    (0xeb0 + k, (axis & 15) as u8),
+                    (0x0ef0 + k, if path == 2 { 2 } else { 0 }),
+                ] { native.write_wram_byte(address, value); }
+                native.write_wram_word(0x22, 0x200);
+                native.write_wram_word(0x20, 0x200);
+                if path == 6 {
+                    for slot in 0..16 { native.write_wram_byte(0xdd0 + slot, 9); }
+                }
+                native.sync_native_game_state_from_ram();
+                let machine = marker29_machine(&native, 0x1da118, k).expect("ROM fixture");
+                let mut default = native.clone();
+                previous.set(None);
+                let source = behavior1_source_return(machine,
+                    |s| {
+                        let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                        if let Some(old) = previous.replace(Some(pc)) { edges.borrow_mut().insert((old, pc)); }
+                        visited.borrow_mut().insert(pc);
+                        (0x1da118..0x1da1ed).contains(&pc)
+                    });
+                // Whole head self-price withdrawn on the live-lane ceiling;
+                // behavior and all source paths remain independently checked.
+                assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x1da118,
+                    || native.sprite_blind_head(k)), 0);
+                for slot in 0..16 {
+                    for address in [0xe30, 0xeb0, 0xed0, 0xec0, 0xd50, 0xd40,
+                        0xd10, 0xd00, 0xd30, 0xd20, 0xf90, 0xea0, 0xe80, 0xdd0,
+                        0xdc0, 0xdf0, 0xf30, 0xf40] {
+                        assert_eq!(native.read_wram_byte(address + slot), source.snes().ram[address + slot],
+                            "k={k} slot={slot} path={path} axis={axis} address={address:x}");
+                    }
+                }
+                default.set_lag_free(false);
+                assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x1da118,
+                    || default.sprite_blind_head(k)), 0);
+                cases += 1;
+            }
+        }
+    }
+    for block in [0x1da118, 0x1da124, 0x1da13e, 0x1da145, 0x1da14a,
+        0x1da14d, 0x1da152, 0x1da160, 0x1da165, 0x1da168, 0x1da16b,
+        0x1da173, 0x1da176, 0x1da17b, 0x1da187, 0x1da192, 0x1da199,
+        0x1da1a7, 0x1da1ae, 0x1da1b8, 0x1da1bb, 0x1da1c2, 0x1da1d0,
+        0x1da1d7, 0x1da1e1, 0x1da1e4, 0x1da1e9, 0x1da1ec] {
+        assert!(visited.borrow().contains(&block), "block {block:x}");
+    }
+    // A197/A1C0 follow AND #0, so their taken outcomes are impossible.
+    for branch in [0x1da143, 0x1da150, 0x1da163, 0x1da174, 0x1da179,
+        0x1da1a5, 0x1da1b6, 0x1da1ce, 0x1da1df, 0x1da1e7] {
+        assert_eq!(edges.borrow().iter().filter(|(pc, _)| *pc == branch).count(), 2, "branch {branch:x}");
+    }
+    eprintln!("Blind head ROM cases={cases}; all 28 blocks and 10 feasible branch pairs");
 }
 
 #[test]

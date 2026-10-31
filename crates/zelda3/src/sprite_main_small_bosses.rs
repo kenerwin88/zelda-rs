@@ -2470,7 +2470,7 @@ impl ZeldaState {
     //     if (!((j ^ frame_counter) & 1) && sprite_state[j] && sprite_type[j] == 0x1c) {
     //       int x0 = Sprite_GetX(k), y0 = Sprite_GetY(k);
     //       int x1 = Sprite_GetX(j), y1 = Sprite_GetY(j);
-    //       if ((uint16)(x0 - x1 + 16) < 32 && (uint16)(y0 - y1 + 16) < 32)
+    //       if ((uint16)(x0 - x1 + 16) < 32 && (uint16)(y0 - y1 + 8) < 16)
     //         return false;
     //     }
     //   }
@@ -2487,7 +2487,8 @@ impl ZeldaState {
                 let x1 = self.sprite_get_x(j);
                 let y1 = self.sprite_get_y(j);
                 if x0.wrapping_sub(x1).wrapping_add(16) < 32
-                    && y0.wrapping_sub(y1).wrapping_add(16) < 32
+                    // $1E:BE6C ADC #$0008; $BE6F CMP #$0010.
+                    && y0.wrapping_sub(y1).wrapping_add(8) < 16
                 {
                     return false;
                 }

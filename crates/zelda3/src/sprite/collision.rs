@@ -2215,7 +2215,10 @@ impl ZeldaState {
         };
         // $1E:FE9B..FF1D / $1D:E8C5..E947 enter their same-bank XY body
         // at $1E:FF05 / $1D:E92F. Only that real movement call is newly priced.
-        let recoiling = self.sprite_return_if_recoiling_from(k, if self.lag_free { axis } else { None });
+        // $1D:E93D exempts Blind ($CE); bank-1E $FF13 exempts $7A.
+        // Select behavior from the ROM entry even outside lag-free mode.
+        let exempt = if entry == SpriteRecoilEntry::Rom1DE8C5 { 0xce } else { 0x7a };
+        let recoiling = self.sprite_return_if_recoiling_from(k, if self.lag_free { axis } else { None }, exempt);
         // $1E:FF18..FF19: the first PLA closed the recoil frame; this
         // second PLA/RTS belongs to the returning caller (including Pengator).
         if entry == SpriteRecoilEntry::Rom1EFE9B && recoiling {
@@ -2224,7 +2227,7 @@ impl ZeldaState {
         recoiling
     }
 
-    fn sprite_return_if_recoiling_from(&mut self, k: usize, axis: Option<SpriteMoveEntry>) -> bool {
+    fn sprite_return_if_recoiling_from(&mut self, k: usize, axis: Option<SpriteMoveEntry>, exempt: u8) -> bool {
         if self.sprite_slot_view(k).f() == 0 {
             return false;
         }
@@ -2283,7 +2286,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_y_velocity(value);
         let value = xvbak;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
-        self.sprite_slot_view(k).sprite_type() != 0x7a
+        self.sprite_slot_view(k).sprite_type() != exempt
     }
 
     // uint8 Sprite_CheckTileCollision(int k) {  // 85b88d
