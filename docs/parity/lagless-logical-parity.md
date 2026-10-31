@@ -870,3 +870,132 @@ of the remaining 2,365 holds or live acceptance.
 and their ROM fixture are withdrawn pending a live-lane explanation: they
 are ROM-correct in the ROM lane, but shifting boot time moves the live APU
 read schedule and adds 90 excess holds.
+
+## Lagless missing-hold owners 2
+
+CPU investigation on `codex/lag2`, base `7c66aca9`. Evidence is under
+`target/lag2/`; the oracle cache and `full-v2` remain read-only. Starting
+ROM missing/excess/FP is **2,373 / 0 / 0**, seeded live **2,647 / 270 / 75**.
+
+The intro-clear price remains **withdrawn**. The retained complete live
+predictors first differ at iteration **0**: main work **220,648 → 631,526**,
+holds **0 → 1**. The same 410,878-clock source price restores each of
+iterations 0–7. Fresh seeded live diagnostic prefixes reproduce **407,846
+baseline** and **397,581 intro-clear** complete predictor rows exactly.
+Both were deliberately interrupted after the first regression window;
+these are prefix reproductions, not new full census passes.
+`reused-identities.json` binds the binaries and full retained predictors;
+`intro-live-diagnosis.json` records the comparison.
+
+Iteration zero requests `$2143=$0A` on both binaries. The added held callback
+then clears it, so the final port vectors differ (`[00,00,00,0A]` versus
+zeros). No song-end poll or masked upload occurs during the eight clears.
+Row 8 retains a changed legacy preceding-handler diagnostic, with unchanged
+P2. The first post-boot P2 handler-budget difference is **1,917**: opening/lag handler
+budgets **35,428/3,018 → 35,474/3,064**, with holds still **1/1**. The
+preceding NMI's ambient echo is `$05` versus `$03` while the last request
+is `$03`; the existing `$00:8108..8113` acknowledgement branch accounts
+for the 46-clock difference. See `boot-ports.json`, `boot-*.jsonl.zst`, and
+`first-handler-echo.json`.
+
+The first changed upload is **10,425**: **23 → 22 masked callbacks**, both
+with **58 accepted holds**. Fresh upload traces contain **25,510 identical
+ordered bank/cursor/port/value/phase writes**, including headers, payload
+counters and four final clears. First-header-to-last-clear spans are
+**7,487,012 / 7,487,220 master clocks**. Equal payloads do not establish
+equal acknowledgement timing or chip state (`upload-identity.json`). Before
+380,880, eight extra holds and four fewer masked callbacks leave a net
+**four callbacks / 2,136 returned sample pairs**. This is playback-duration
+accounting, not absolute SPC-state equivalence.
+
+The first changed main-work path after boot is **380,880**. Baseline reads
+APUI00 **$01**, intro-clear reads **$00**, and the source reads **$13**.
+Both native rows are unheld; main work is **56,846 / 57,068** clocks. Zero
+takes the crystal's song-end branch one iteration early. Work then moves
+onto source-unheld iterations; reseeding at 382,000 changes the subsequent
+loader lineage. The complete excess increase is:
+
+| Iteration | Source holds | Baseline → intro-clear holds | Added excess |
+| --- | ---: | ---: | ---: |
+| 380,945 | 0 | 0 → 1 | 1 |
+| 380,955 | 0 | 0 → 4 | 4 |
+| 381,425 | 0 | 0 → 8 | 8 |
+| 383,178 | 0 | 0 → 7 | 7 |
+| 383,346 | 0 | 0 → 7 | 7 |
+| 383,634 | 1 | 1 → 59 | 58 |
+| 383,635 | 1 | 1 → 6 | 5 |
+
+These rows explain **90 excess holds and five new FP iterations** through
+changed execution, not an extra intro-clear price on those rows. The boot
+CPU/PPU handoff already executes the native cold upload, memory initialization
+and opening NMI under ledger muting, then restores logical playback's separate
+audio state. Charging that bootstrap inside iteration zero would put
+pre-iteration work in the wrong owner. No missing boot counterpart or census
+comparison defect is isolated. The evidence demonstrates carried SPC and
+acknowledgement phase sensitivity; remaining work omissions and unequal audio
+origins are unresolved. No fitted delay, source-answer substitution, matcher
+change or audio reset conceals it. The full retained intro-clear live result
+is still **2,753 / 360 / 80**, so that entire candidate remains withdrawn.
+
+Two further source owners are tested: shadow drawing `$08:F897..F909` and
+Link collision `$08:F76B..F7DB`. Generated ROM markers price actual branches
+and returns. Shadow's `$08:F702` coordinate child keeps separate ownership.
+Link collision includes the `$0BFA,X` page crossing for slots 6–9 and omits
+horizontal work when the vertical test rejects. Fixtures cover **210 shadow
+cases** (all seven shapes, clipping and OAM page boundaries) and **360 Link
+cases** (all five hitboxes, slot-page cases, signed altitudes/distances and
+exact rejection boundaries), comparing instruction work plus OAM outputs
+or collision results. All **3,828 existing generated blocks** are unchanged;
+**17 blocks** are added. No scene/count fitting is used.
+
+The one-floor tile body/wrapper and bomb-damage prices remain unadmitted.
+The loader audit confirms sprite sheet 7 begins at `$11:9A00` and reaches
+its terminator after **1,705 bytes**, beyond the native **1,536-byte** window;
+it describes **6,056 output bytes**. `sheet7-extent.json` preserves the
+command walk and iteration 729's source routine counts. This proves the
+truncation, not an exclusive additive price for `$00:E766/$00:E843` or
+the surrounding loader. No loader surcharge or partial tile-body price is
+retained.
+
+The full seeded ROM and live censuses and the continuous **recorded** ROM
+run each finish **1,473,123 iterations, PASS, unexplained 0**. Counts are
+missing holds / excess holds / zero-source-lag FP iterations:
+
+| Lane | Before | Retained two-owner result |
+| --- | ---: | ---: |
+| Seeded ROM | 2,373 / 0 / 0 | **2,354 / 0 / 0** |
+| Seeded live APU | 2,647 / 270 / 75 | **2,628 / 270 / 75** |
+| Continuous recorded ROM | 2,373 / 0 / 0 | **2,354 / 0 / 0** |
+
+All 19 ROM changes restore a source hold, with no newly missing iteration:
+**14 / 3 / 2** on the three room `$003E` visits around 787k / 820k / 841k.
+`restored-rom-holds.json` records every changed iteration. These are the
+joint result of the two complete owner prices, not isolated recovery claims
+for either owner or a runtime scene rule.
+
+All runtime held counts equal P2. ROM and continuous recorded predictors
+are byte-identical, with **100,323 accepted holds / 5,148 masked callbacks**.
+Live has **100,319 / 5,146**. Live aggregate excess/FP does not rise, but
+two existing false-positive events move **881,793 → 881,794** and
+**881,803 → 881,804** (one and four holds). This is not unchanged live
+phase or continuous-live acceptance. The intro-clear remains withdrawn;
+these two independent owner prices do not repair its audio-phase problem.
+
+Validation: **39 targeted CPU marker tests** (including the 570 new ROM
+cases) and **seven generator tests** pass. Default and
+`--no-default-features` product builds are warning-free; the library-test
+build retains unrelated existing dead-code warnings. The three timing gates
+are `candidate-{rom,live,continuous}-gate.log`; `pricing-audit.json` and
+`candidate-identities.json` bind the source/table/binary evidence. No GPU,
+Snes9x process, continuous live replay, full library suite, protected-cache
+or shared-ledger write, formatting, commit or push was performed.
+
+The full seeded **CPU picture census** also completes **1,473,123 iterations,
+PASS, unexplained 0**: **1,462,997 exact**, 3,952 late, 563 early, 4,702 torn,
+905 polygon and four during ROM lag, with zero other content misses. Every
+picture hash is byte-identical to the retained baseline: **zero exact
+pictures lost**. `candidate-cpu-video-gate.log` and `verification.json` bind
+the final counts and identities. `git diff --check` passes. Evidence occupies
+less than **0.8 GiB**, below the 3 GB limit. This is a verified partial
+owner-pricing stop; the intro-clear, other screened owners, loader partition
+and continuous-live sound acceptance remain unresolved.

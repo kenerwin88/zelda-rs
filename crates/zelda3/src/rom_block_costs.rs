@@ -4740,6 +4740,40 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x08f726, 0x08f72b, false, true, 78, 0x000000, &[]),
     // $08:F72B: fixed cost
     (0x08f72b, 0x08f72f, false, true, 78, 0x000000, &[]),
+    // $08:F76B: 08f76e +6 if the index crosses a page; 08f773 +6 if the index crosses a page; 08f778 +6 if the index crosses a page; 08f77d +6 if the index crosses a page; 08f784 +6 if the index crosses a page; 08f789 taken +6
+    (0x08f76b, 0x08f78b, true, true, 362, 0x08f789, &[0x08f76e, 0x08f773, 0x08f778, 0x08f77d, 0x08f784]),
+    // $08:F78B: fixed cost
+    (0x08f78b, 0x08f78f, true, true, 40, 0x000000, &[]),
+    // $08:F78F: 08f797 +6 if the index crosses a page; 08f79f +6 if the index crosses a page; 08f7a7 +6 if the index crosses a page; 08f7af taken +6
+    (0x08f78f, 0x08f7b1, true, true, 484, 0x08f7af, &[0x08f797, 0x08f79f, 0x08f7a7]),
+    // $08:F7B1: fixed cost
+    (0x08f7b1, 0x08f7b5, false, true, 38, 0x000000, &[]),
+    // $08:F7B5: 08f7b7 +6 if the index crosses a page; 08f7ba taken +6
+    (0x08f7b5, 0x08f7bc, false, true, 88, 0x08f7ba, &[0x08f7b7]),
+    // $08:F7BC: 08f7bf +6 if the index crosses a page; 08f7c7 taken +6
+    (0x08f7bc, 0x08f7c9, false, true, 180, 0x08f7c7, &[0x08f7bf]),
+    // $08:F7C9: fixed cost
+    (0x08f7c9, 0x08f7cd, false, true, 38, 0x000000, &[]),
+    // $08:F7CD: 08f7cf +6 if the index crosses a page; 08f7d2 taken +6
+    (0x08f7cd, 0x08f7d4, false, true, 88, 0x08f7d2, &[0x08f7cf]),
+    // $08:F7D4: fixed cost
+    (0x08f7d4, 0x08f7d8, false, true, 78, 0x000000, &[]),
+    // $08:F7D8: fixed cost
+    (0x08f7d8, 0x08f7dc, false, true, 78, 0x000000, &[]),
+    // $08:F897: 08f899 taken +6
+    (0x08f897, 0x08f89b, true, true, 32, 0x08f899, &[]),
+    // $08:F89B: fixed cost
+    (0x08f89b, 0x08f8a7, true, true, 146, 0x000000, &[]),
+    // $08:F8A7: fixed cost
+    (0x08f8a7, 0x08f8b1, true, true, 136, 0x000000, &[]),
+    // $08:F8B1: 08f8b1 +6 if the index crosses a page; 08f8b7 +6 if the index crosses a page; 08f8dc +6 if the index crosses a page; 08f8e1 taken +6
+    (0x08f8b1, 0x08f8e3, true, true, 656, 0x08f8e1, &[0x08f8b1, 0x08f8b7, 0x08f8dc]),
+    // $08:F8E3: fixed cost
+    (0x08f8e3, 0x08f8ea, true, true, 94, 0x000000, &[]),
+    // $08:F8EA: 08f8ea +6 if the index crosses a page; 08f8f0 +6 if the index crosses a page
+    (0x08f8ea, 0x08f909, true, true, 446, 0x000000, &[0x08f8ea, 0x08f8f0]),
+    // $08:F909: fixed cost
+    (0x08f909, 0x08f90a, true, true, 42, 0x000000, &[]),
     // $09:80C3: fixed cost
     (0x0980c3, 0x0980c6, true, true, 46, 0x000000, &[]),
     // $09:80C6: fixed cost

@@ -294,6 +294,17 @@ impl ZeldaState {
     }
 
     fn ancilla_check_link_collision_out(&self, k: usize, j: usize) -> Option<CheckPlayerCollOut> {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08f76b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $08:F76B..F78E: coordinates and signed altitude extension.
+        b.block(0x08f76b);
+        if k >= 6 { b.crossing(0x08f76e); } // $0BFA,X crosses into $0C00.
+        if self.ancilla_slot_view(k).z() & 0x80 == 0 {
+            b.taken(0x08f789);
+        } else {
+            b.block(0x08f78b);
+        }
+        b.block(0x08f78f); // $08:F78F..F7B0: signed vertical distance.
         let y = self
             .ancilla_y(k)
             .wrapping_add(ANCILLA_CHECK_LINK_COLLISION_OUT_YOFFS[j])
@@ -317,6 +328,24 @@ impl ZeldaState {
             .wrapping_sub(x);
         let r8 = abs16(r4);
         let r10 = abs16(r6);
+        if r4 & 0x8000 == 0 { b.taken(0x08f7af); }
+        else { b.block(0x08f7b1); }
+        b.block(0x08f7b5); // $08:F7B5..F7BB: vertical rejection.
+        if r8 >= ANCILLA_CHECK_LINK_COLLISION_OUT_H[j] {
+            b.taken(0x08f7ba);
+            b.block(0x08f7d8);
+        } else {
+            b.block(0x08f7bc); // $08:F7BC..F7D3: horizontal distance/test.
+            if r6 & 0x8000 == 0 { b.taken(0x08f7c7); }
+            else { b.block(0x08f7c9); }
+            b.block(0x08f7cd);
+            if r10 >= ANCILLA_CHECK_LINK_COLLISION_OUT_W[j] {
+                b.taken(0x08f7d2);
+                b.block(0x08f7d8); // $08:F7D8..F7DB: CLC return.
+            } else {
+                b.block(0x08f7d4); // $08:F7D4..F7D7: SEC return.
+            }
+        }
         if r8 < ANCILLA_CHECK_LINK_COLLISION_OUT_H[j] && r10 < ANCILLA_CHECK_LINK_COLLISION_OUT_W[j]
         {
             Some(CheckPlayerCollOut { r4, r6, r8, r10 })
@@ -1280,9 +1309,19 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_draw_shadow(&mut self, oam: usize, k: usize, mut x: u16, y: u16, pal: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08f897));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $08:F897..F8A6: select the shadow's optional four-pixel offset.
+        b.block(0x08f897);
         if k == 2 {
+            b.block(0x08f89b);
             x = x.wrapping_add(4);
+        } else {
+            b.taken(0x08f899);
         }
+        // $08:F8A7..F8B0: first coordinate call.
+        // The separately priced $F702 child owns coordinate clipping only.
+        b.block(0x08f8a7);
         self.ancilla_set_oam_safe(
             oam,
             x,
@@ -1291,8 +1330,11 @@ impl ZeldaState {
             ANCILLA_DRAW_SHADOW_ANCILLA_DRAW_SHADOW_FLAGS[k * 2] & !0x30 | pal,
             0,
         );
+        b.block(0x08f8b1); // $08:F8B1..F8E2: tile/extension and next tile test.
         let ch = ANCILLA_DRAW_SHADOW_ANCILLA_DRAW_SHADOW_CHAR[k * 2 + 1];
         if ch != 0xff {
+            // $08:F8E3..F908: second tile and extension; child excluded.
+            b.block(0x08f8e3);
             x = x.wrapping_add(8);
             self.ancilla_set_oam_safe(
                 oam + 4,
@@ -1302,7 +1344,11 @@ impl ZeldaState {
                 ANCILLA_DRAW_SHADOW_ANCILLA_DRAW_SHADOW_FLAGS[k * 2 + 1] & !0x30 | pal,
                 0,
             );
+            b.block(0x08f8ea); // $08:F8EA..F908: second tile/extension stores.
+        } else {
+            b.taken(0x08f8e1);
         }
+        b.block(0x08f909); // $08:F909 RTS.
     }
 
     pub(super) fn ancilla_check_damage_to_sprite(&mut self, k: usize, ty: u8) {
@@ -1711,6 +1757,74 @@ fn marker39_ancilla_machine(native: &ZeldaState, pc: u16, slot: usize) -> snes::
     machine.cpu.k = 8; machine.cpu.db = 8; machine.cpu.pc = pc;
     machine.cpu.x = slot as u16; machine.cpu.sp = 0x1fc;
     machine
+}
+
+#[cfg(test)]
+#[test]
+fn shadow_markers_match_all_rom_shapes_and_clipping_paths() {
+    for kind in 0..7 {
+        for (x, y) in [(0x40u16, 0x40u16), (0x7f, 0xef), (0x100, 0x40),
+            (0xff7f, 0x40), (0xff80, 0x40), (0x40, 0xffef), (0x40, 0xfff0),
+            (0x40, 0xf0), (0xffff, 0xffff), (0xfc, 0x40)] {
+            for oam in [0x800usize, 0x8fc, 0x9f8] {
+                let mut native = ZeldaState::new();
+                native.set_lag_free(true);
+                for (a, v) in [(0, y), (2, x), (0x90, 0x800), (0x92, 0xa20)] {
+                    native.write_wram_word(a, v);
+                }
+                native.write_wram_byte(4, 0x30);
+                native.sync_native_game_state_from_ram();
+                let mut machine = marker39_ancilla_machine(&native, 0xf897, kind);
+                // Callers supply their allocated OAM pointers with Y=0.
+                machine.ram[0x90..0x92].copy_from_slice(&(oam as u16).to_le_bytes());
+                machine.ram[0x92..0x94].copy_from_slice(&(0xa20u16 + ((oam - 0x800) / 4) as u16).to_le_bytes());
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x08f897, machine,
+                    |s| s.cpu.k == 8 && (0xf897..0xf90a).contains(&s.cpu.pc),
+                    || native.ancilla_draw_shadow(oam, kind, x, y, 0x30));
+                let actual = native.wram_image();
+                assert_eq!(&actual[oam..oam + 8], &source.snes().ram[oam..oam + 8],
+                    "kind={kind} x={x:04x} y={y:04x} oam={oam:04x}");
+                assert_eq!(&actual[0xa20..0xaa0], &source.snes().ram[0xa20..0xaa0]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn link_collision_markers_match_rom_signed_distances_and_boundaries() {
+    for kind in 0..5 {
+        for slot in [0, 9] {
+            for z in [0u8, 0x7f, 0x80, 0xff] {
+                for (dy, dx) in [(0u16, 0u16), (1, 1), (0xffff, 0xffff),
+                    (0x8000, 0), (0, 0x8000),
+                    (ANCILLA_CHECK_LINK_COLLISION_OUT_H[kind], 0),
+                    (ANCILLA_CHECK_LINK_COLLISION_OUT_H[kind] - 1, 0),
+                    (0, ANCILLA_CHECK_LINK_COLLISION_OUT_W[kind]),
+                    (0, ANCILLA_CHECK_LINK_COLLISION_OUT_W[kind] - 1)] {
+                    let mut native = ZeldaState::new();
+                    native.set_lag_free(true);
+                    let x = 0xfff8u16;
+                    let y = 0xfff8u16;
+                    native.ancilla_set_xy(slot, x, y);
+                    native.ancilla_slot_view_mut(slot).set_z(z);
+                    native.write_wram_word(0x20, y.wrapping_add(z as i8 as i16 as u16)
+                        .wrapping_add(ANCILLA_CHECK_LINK_COLLISION_OUT_YOFFS[kind])
+                        .wrapping_sub(ANCILLA_CHECK_LINK_COLLISION_OUT_LINK_YOFFS[kind]).wrapping_add(dy));
+                    native.write_wram_word(0x22, x.wrapping_add(ANCILLA_CHECK_LINK_COLLISION_OUT_XOFFS[kind])
+                        .wrapping_sub(ANCILLA_CHECK_LINK_COLLISION_OUT_LINK_XOFFS[kind]).wrapping_add(dx));
+                    native.sync_native_game_state_from_ram();
+                    let mut machine = marker39_ancilla_machine(&native, 0xf76b, slot);
+                    machine.cpu.y = kind as u16;
+                    let mut hit = false;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x08f76b, machine,
+                        |s| s.cpu.k == 8 && (0xf76b..0xf7dc).contains(&s.cpu.pc),
+                        || hit = native.ancilla_check_link_collision(slot, kind));
+                    assert_eq!(hit, source.snes().cpu.c, "kind={kind} slot={slot} z={z} dy={dy} dx={dx}");
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
