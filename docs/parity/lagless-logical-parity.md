@@ -1667,3 +1667,134 @@ passes. Only this documentation section remains changed; no touched runtime
 module requires a new unit test. Evidence is below 3 GB. No GPU, Snes9x
 process, continuous live replay, full library suite, protected-cache or
 shared-ledger write, formatting, commit or push was performed.
+
+## Lagless live sound timing 2
+
+CPU-only measurement on `codex/live2`, base `3951d3c6`. **No runtime repair
+is admitted; the two decisive polls remain unfixed.** All new evidence is in
+`target/live2/`. This investigation excludes a sustained sample-clock error
+and missing holds *inside these songs*. It does not establish a single
+source-faithful correction for the inherited driver and publication phases.
+
+Fresh seeded live runs from **458,000** and **878,000** reproduce native zero
+at **462,627 / 881,733**, versus source **462,628 / 881,734**. The fresh
+zero-start control agrees at **94,854**. Starts at 460,000 and 880,000 instead
+produce zero at 462,626 and 881,732: even these substantial lead-ins do not
+reconstruct the carried SPC phase. The earlier starts are therefore the
+decisive witnesses, not the shorter diagnostics. Native instruction snapshots
+were captured in separate repetitions of those same runs.
+
+### Per-iteration clocks and the host-cut distinction
+
+`clock-{458000,878000,0}.csv` contains every iteration in the requested
+461,900..462,700, 881,000..881,800 and 94,000..94,900 windows: actual native
+SPC execution deltas (including rebase origin), output-clock deltas, generated
+chip pairs, held/masked counts, source lag, source host coordinates and cached
+sample counts. Source sample counts multiplied by 32 are **sample-lattice
+cycles**, not an invented instruction-level source execution trace. Native
+execution deltas differ from the sample budget by small changes in instruction
+lookahead; they are reported separately.
+
+Both source cuts are retained. `open_host..close_host` can cover zero or two
+host callbacks when an NMI is accepted on the other side of host return.
+For a stable main/poll comparison, the second column uses consecutive
+`display_host` boundaries (the first visible scanline associated with that
+iteration). The cached poll receipts independently locate the three selected
+polls at hosts **500,858 / 947,003 / 103,726**, respectively. Treating every
+`open_host` as the poll's host would introduce a false whole-field discrepancy.
+
+| Requested window | Native generated pairs | Source pairs between display-host boundaries | Native/source holds | Masked callbacks |
+| --- | ---: | ---: | ---: | ---: |
+| 461,900..462,700 | 431,829 | 431,828 | 9 / 9 | 0 |
+| 881,000..881,800 | 429,697 | 429,696 | 5 / 5 | 0 |
+| 94,000..94,900 | 492,605 | 492,604 | 23 / 23 | 0 |
+
+More decisively, all three spans from the `$13` opening iteration to the
+selected poll contain **638 ordinary iterations**, **zero source lag NMIs,
+zero native holds and zero masked callbacks**. Both native output-clock
+advancement and the corresponding cached host interval are exactly
+**340,132 chip pairs = 10,884,224 SPC cycles** in every case. There is no
+missing hold to name inside these spans. The harness's 534 returned pairs
+are resampled output; they do not advance the SPC by 534 pairs per callback.
+The existing fractional hardware clock passes its two-million-callback test.
+
+### Delivered commands, poll phase and the actual ending event
+
+The delivery observer and instruction snapshots locate each native `$13`
+store and the `$08E5` SPC output-port-zero store. Each native final all-voice
+KOFF follows that zero store by **81 cycles**, also checked against the actual
+DSP event. `command-phase-brackets.json` retains instructions bracketing the
+input store, including timer state and software accumulator `$43`; the three
+native accumulator values there are **8 / 176 / 192**. They are observations,
+not values to install or reset.
+
+The retained full-route source DSP capture was located under
+`zelda3-rs-codex3/target/lagless-audio-notes3/original-full`. All **1,581,079**
+of its PCM hash/count rows were freshly compared with the authoritative
+cache, and its compressed DSP SHA-256 matches the previously bound capture
+(`a1c95628...`). This is verified retained evidence, not a new Snes9x run.
+`source-dsp.jsonl` and `source-receipts.jsonl` retain the selected source
+events and poll offsets.
+
+The following comparison uses an explicit boundary: native audio cursor at
+entry to the `$13` opening iteration, and source cumulative PCM at that
+iteration's display host. It does **not** claim equal chip state at that
+boundary. KOFF is directly observed on both sides; source output-port-zero
+times are not inferred from KOFF for the two new windows.
+
+| Poll | Native KOFF cycles after boundary | Source KOFF cycles after boundary | Native minus source | Native poll execution offset | Source poll sample offset |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 462,627 | 10,867,901 | 10,895,395 | −27,494 | +22 cycles | +92 pairs |
+| 881,733 | 10,874,550 | 10,890,880 | −16,330 | +19 cycles | +89 pairs |
+| 94,854 control | 10,873,821 | 10,886,384 | −12,563 | +22 cycles | +75 pairs |
+
+Native command-to-KOFF durations are **10,884,915 / 10,891,562 / 10,890,835
+cycles**. Their `$13` input stores precede the chosen native iteration
+boundary by **17,014 / 17,012 / 17,014 cycles**, on the preceding iteration's
+closing callback after its four holds. This quantifies the publication phase;
+the adjacent closing/opening labels alone still do not authorize adding a
+callback. Exact source input-store cycles and driver/timer state at those
+stores are not present in the cache or this retained full-route DSP stream.
+They remain unmeasured for the two decisive windows. The older exact source
+control witness places its store at host-start +47 cycles and its
+command-to-KOFF duration at 10,886,337 cycles; current native control duration
+is 4,498 cycles longer, despite the agreeing logical poll.
+
+Thus equal elapsed sample budgets coexist with unequal ending-event phase,
+including in the agreeing control. A rate change, a missing-hold surcharge,
+or a universal one-callback shift is not established as the repair. A complete
+partition still needs source input-store/driver-state witnesses at the two
+deliveries and a shared source-owned publication/read timeline. No recorded
+port answer, retrospective poll override, phase reset, scene table or fitted
+offset was tried or retained.
+
+### Admission and verification
+
+The intro-clear patch and the behavior1/lag6 Blind and SpikeBlock rejection
+evidence were re-read. There is **no fixed term against which to readmit
+them**. Intro clear remains withdrawn (its earlier 380,880 poll regression);
+Blind/SpikeBlock remain withdrawn whole (their earlier 12 added excess holds
+and three FP iterations). The new seed-phase sensitivity is consistent with
+those history-dependent effects, but does not prove their individual causes
+or replace a combined-candidate census.
+
+The zero-start 94,901-iteration control passes the unchanged gate with
+unexplained zero. Both bounded decisive windows have unexplained zero;
+the unchanged gate's full-prefix completeness check rejects their nonzero
+starts, so they are not labeled full-route passes. Default, reduced-feature
+and restored-default product builds are warning-free. The focused clock test
+passes; its library-test build retains existing dead-code warnings.
+
+Only documentation changed. Retained lag6 full-route gates and identities
+were rechecked: ROM **2,269 / 0 / 0**, live **2,516 / 243 / 70**, both PASS
+with unexplained zero. These are retained results, not fresh censuses. No
+final runtime candidate exists, so the single final full-live census was not
+spent and `target/live2/live.csv` was not manufactured. No fresh full ROM
+census or delivered-command proof is claimed. Sound behavior, prices, P2,
+classifiers and matcher are unchanged. The requested fixed-poll acceptance
+constraint is **not met**.
+
+`verification.json` binds the measurements and checks. Evidence is below
+3 GB; `git diff --check` passes. No GPU, Snes9x process, continuous live
+replay, full library suite, protected-cache/shared-ledger write, formatting,
+commit or push was performed.
