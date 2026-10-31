@@ -23,6 +23,11 @@ impl ZeldaState {
 
     // void Sprite_BlindLaser(int k) {  // 9da268
     pub(super) fn sprite_blind_laser(&mut self, k: usize) {
+        // $1D:A268..A2CA: laser caller only; collision/drawing/trail
+        // children retain independent ownership. Tables stay in-page.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1da268));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1da268);
         let j = (self.sprite_slot_view(k).head_direction() & 15) as usize;
         {
             let mut sprite = self.sprite_slot_view_mut(k);
@@ -30,17 +35,32 @@ impl ZeldaState {
             sprite.set_oam_flags(BLIND_LASER_OAM_FLAGS_BY_HEAD_DIR[j] | 3);
         }
         self.sprite_prep_oam_coord(k);
+        b.block(0x1da27d);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1da280);
         if self.sprite_slot_view(k).delay_main() != 0 {
+            b.block(0x1da285);
             if self.sprite_slot_view(k).delay_main() == 1 {
+                b.block(0x1da289);
                 self.sprite_slot_view_mut(k).clear();
+            } else {
+                b.taken(0x1da287);
             }
+            b.block(0x1da28c);
             return;
         }
+        b.taken(0x1da283); b.block(0x1da28d);
         // ROM $1D:A28D
         self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x1da291);
+        if self.sprite_slot_view(k).x_velocity() & 0x80 != 0 { b.block(0x1da298); }
+        else { b.taken(0x1da296); }
+        b.block(0x1da299);
+        if self.sprite_slot_view(k).y_velocity() & 0x80 != 0 { b.block(0x1da2ae); }
+        else { b.taken(0x1da2ac); }
+        b.block(0x1da2af);
         let x = self
             .sprite_get_x(k)
             .wrapping_add_signed(i16::from(self.sprite_slot_view(k).x_velocity() as i8));
@@ -50,10 +70,17 @@ impl ZeldaState {
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
         // ROM $1D:A2BD -> $1D:8094 -> $06:E496
-        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0 {
+        let wall = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        b.block(0x1da2c0);
+        if wall != 0 {
+            b.block(0x1da2c2);
             self.sprite_slot_view_mut(k).set_delay_main(12);
+        } else {
+            b.taken(0x1da2c0);
         }
+        b.block(0x1da2c7);
         self.blind_laser_spawn_trail_garnish(k);
+        b.block(0x1da2ca);
     }
 
     // void SpritePrep_Blind_PrepareBattle(int k) {  // 9da081

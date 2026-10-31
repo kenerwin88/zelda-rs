@@ -72,21 +72,21 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).move_z();
                 return;
             }
+            SpriteMoveZEntry::Rom05FA2E => 0x05fa2e,
             SpriteMoveZEntry::Rom06E96C => 0x06e96c,
             SpriteMoveZEntry::Rom1EFF62 => 0x1eff62,
             SpriteMoveZEntry::Rom1DE98B => 0x1de98b,
         };
-        // $06:E96C, $1E:FF62 and $1D:E98B are identical complete Z movers.
+        // $05:FA2E, $06:E96C, $1E:FF62 and $1D:E98B are identical complete Z movers.
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
         let b = crate::cycle_ledger::blocks(self.lag_free);
-        let delta = entry - 0x06e96c;
         b.block(entry);
         if self.sprite_slot_view(k).z_velocity() & 0x80 == 0 {
-            b.taken(0x06e983 + delta);
+            b.taken(entry + 0x17);
         } else {
-            b.block(0x06e985 + delta);
+            b.block(entry + 0x19);
         }
-        b.block(0x06e987 + delta);
+        b.block(entry + 0x1b);
         self.sprite_slot_view_mut(k).move_z();
     }
 

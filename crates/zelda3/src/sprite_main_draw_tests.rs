@@ -926,6 +926,117 @@ fn marker29_state() -> ZeldaState {
     native
 }
 
+fn lag5_source_return(machine: snes::Snes) -> snes::RomCpuTimingProbe {
+    use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, SourcePpuReadState};
+    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+    let mut source = RomCpuTimingProbe::new(machine, clock,
+        SourcePpuReadState::snes9x_reset()).unwrap();
+    for _ in 0..10000 {
+        source.step().unwrap();
+        if source.snes().cpu.pc == 0x8000 { break; }
+    }
+    assert_eq!(source.snes().cpu.pc, 0x8000);
+    source
+}
+
+#[test]
+fn lag5_blind_recoil_behavior_gap_rom_witness() {
+    // Admission stop: the bank-1D recoil return exempts $CE, whereas the
+    // shared native helper exempts $7A. No body price is admitted here.
+    let mut native = marker29_state();
+    for (a, v) in [(0xdd0, 9), (0xe20, 0xce), (0xea0, 14), (0xe30, 2),
+        (0xd10, 0x98), (0xd00, 0xb0), (0xd50, 32), (0xd40, 24)] {
+        native.write_wram_byte(a, v);
+    }
+    native.write_wram_word(0x22, 0x200);
+    native.write_wram_word(0x20, 0x200);
+    native.sync_native_game_state_from_ram();
+    let source = lag5_source_return(marker29_machine(&native, 0x1da118, 0).unwrap());
+    native.sprite_blind_head(0);
+    assert_eq!(source.snes().ram[0xe30], 1);
+    assert_eq!(native.read_wram_byte(0xe30), 2);
+    eprintln!("Blind recoil witness: ROM continues to subtype 1; native returns with subtype 2");
+}
+
+#[test]
+fn lag5_spike_statue_behavior_gap_rom_witness() {
+    let mut native = marker29_state();
+    native.set_frame_counter(0);
+    native.sprite_slot_view_mut(0).set_state(9);
+    native.sprite_slot_view_mut(0).set_sprite_type(0x8a);
+    native.sprite_slot_view_mut(2).set_state(9);
+    native.sprite_slot_view_mut(2).set_sprite_type(0x1c);
+    native.sprite_set_x(0, 0x40); native.sprite_set_x(2, 0x40);
+    native.sprite_set_y(0, 0x4c); native.sprite_set_y(2, 0x40);
+    let source = lag5_source_return(marker29_machine(&native, 0x1ebe19, 0).unwrap());
+    assert!(source.snes().cpu.c);
+    assert!(!native.spike_block_check_statue_collision(0));
+    eprintln!("Spike statue witness: Y delta 12 is clear in ROM and colliding natively");
+}
+
+#[test]
+fn lag5_blind_laser_markers_match_rom_paths() {
+    let mut cases = 0;
+    let visited = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let previous = std::cell::Cell::new(None);
+    for k in [0, 15] {
+        for head in 0..16 {
+            for delay in [0, 1, 2] {
+                for velocities in [(0, 0), (127, 128), (128, 127), (255, 255)] {
+                    for tile in [0, 1] {
+                        for active in [0, 9] {
+                            let mut native = marker29_state();
+                            for (a, v) in [(0xfa0, k as u8), (0xdd0 + k, active),
+                                (0xe20 + k, 0xce), (0xeb0 + k, head), (0xdf0 + k, delay),
+                                (0xd10 + k, 0x40), (0xd00 + k, 0x40),
+                                (0xd50 + k, velocities.0), (0xd40 + k, velocities.1)] {
+                                native.write_wram_byte(a, v);
+                            }
+                            for a in 0x12000..0x14000 { native.write_wram_byte(a, tile); }
+                            native.write_wram_word(0x22, 0x200);
+                            native.write_wram_word(0x20, 0x200);
+                            native.sync_native_game_state_from_ram();
+                            let mut default = native.clone();
+                            let machine = marker29_machine(&native, 0x1da268, k).unwrap();
+                            previous.set(None);
+                            let source = crate::cycle_ledger::assert_rom_marker_work(0x1da268, machine,
+                                |s| {
+                                    let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                                    if let Some(before) = previous.replace(Some(pc)) {
+                                        edges.borrow_mut().insert((before, pc));
+                                    }
+                                    visited.borrow_mut().insert(pc);
+                                    (0x1da268..0x1da2cb).contains(&pc)
+                                }, || native.sprite_blind_laser(k));
+                            for a in [0xdd0, 0xdc0, 0xf50, 0xdf0, 0xd00, 0xd10, 0xd20, 0xd30] {
+                                assert_eq!(native.read_wram_byte(a + k), source.snes().ram[a + k],
+                                    "k={k} head={head} delay={delay} velocities={velocities:?} tile={tile} active={active} a={a:x}");
+                            }
+                            default.set_lag_free(false);
+                            assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x1da268,
+                                || default.sprite_blind_laser(k)), 0);
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for entry in [0x1da268, 0x1da27d, 0x1da280, 0x1da285, 0x1da289, 0x1da28c,
+        0x1da28d, 0x1da291, 0x1da298, 0x1da299, 0x1da2ae, 0x1da2af, 0x1da2c0,
+        0x1da2c2, 0x1da2c7, 0x1da2ca] {
+        assert!(visited.borrow().contains(&entry), "uncovered laser block {entry:06x}");
+    }
+    for branch in [0x1da283, 0x1da287, 0x1da296, 0x1da2ac, 0x1da2c0] {
+        assert_eq!(edges.borrow().iter().filter(|(from, _)| *from == branch).count(), 2,
+            "uncovered laser branch outcome {branch:06x}");
+    }
+    eprintln!("Blind laser ROM cases={cases}");
+}
+
 #[test]
 fn marker30_bank1e_axis_whole_body_matches_rom() {
     marker30_axis_cases(0x1eff34);
@@ -1168,6 +1279,71 @@ fn marker31_tree_top_matches_rom() {
                 });
         }
     }
+}
+
+#[test]
+fn lumberjack_control_markers_match_rom_paths() {
+    let mut cases = 0;
+    let visited = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let previous = std::cell::Cell::new(None);
+    for k in [0, 15] {
+        for state in 0..3 {
+            for path in 0..12 {
+                for altitude in [0, 16, 128] {
+                    let mut native = marker29_state();
+                    for (a, v) in [(0xfa0, k as u8), (0xdd0 + k, if path == 0 { 0 } else { 9 }),
+                        (0xe20 + k, 0x3b), (0xd80 + k, state),
+                        (0xd10 + k, 0x40), (0xd00 + k, 0x40),
+                        (0xf70 + k, altitude), (0xf80 + k, 0),
+                        (0xe80 + k, if path & 1 == 0 { 6 } else { 0 }),
+                        (0xdf0 + k, if path == 2 { 1 } else { 0 }),
+                        (0x11a, if path == 3 { 0 } else { 1 }),
+                        (0xf50 + k, if path == 4 { 1 } else { 0 })] {
+                        native.write_wram_byte(a, v);
+                    }
+                    native.write_wram_word(0x22, if path == 5 { 0x200 } else { 0x40 });
+                    native.write_wram_word(0x20, if path == 6 { 0x200 } else { 0x40 });
+                    native.write_wram_word(0xfc2, if path == 5 { 0x200 } else { 0x40 });
+                    native.write_wram_word(0xfc4, if path == 6 { 0x200 } else { 0x40 });
+                    native.sync_native_game_state_from_ram();
+                    let machine = marker29_machine(&native, 0x05fd4d, k).expect("ROM fixture");
+                    let mut default = native.clone();
+                    previous.set(None);
+                    eprintln!("tree k={k} state={state} path={path} z={altitude}");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x05fd4d, machine,
+                        |s| {
+                            let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
+                            if let Some(before) = previous.replace(Some(pc)) {
+                                edges.borrow_mut().insert((before, pc));
+                            }
+                            visited.borrow_mut().insert(pc);
+                            (s.cpu.k == 5 && ((0xfd4d..0xfd92).contains(&s.cpu.pc)
+                            || (0xfd98..0xfe23).contains(&s.cpu.pc)))
+                            || (s.cpu.k == 0 && (0x8784..0x879f).contains(&s.cpu.pc))
+                        },
+                        || native.sprite_lumberjack_tree(k));
+                    for a in [0xdd0, 0xd80, 0xf70, 0xf80, 0xe80, 0xdf0, 0xd40, 0xd50] {
+                        assert_eq!(native.read_wram_byte(a + k), source.snes().ram[a + k],
+                            "k={k} state={state} path={path} z={altitude} a={a:x}");
+                    }
+                    default.set_lag_free(false);
+                    assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x05fd4d,
+                        || default.sprite_lumberjack_tree(k)), 0);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    // Every reachable source block and both outcomes of every conditional.
+    for entry in [0x5fd4d, 0x5fd5a, 0x5fd5d, 0x5fd61, 0x5fd63, 0x5fd68, 0x5fd6e, 0x5fd6f, 0x5fd72, 0x5fd78, 0x5fd7d, 0x5fd8b, 0x5fd98, 0x5fdac, 0x5fdbb, 0x5fdc5, 0x5fdcd, 0x5fdd0, 0x5fdd5, 0x5fde8, 0x5fdf3, 0x5fe00, 0x5fe0a, 0x5fe0b, 0x5fe10, 0x5fe1c, 0x5fe1f, 0x5fe22] {
+        assert!(visited.borrow().contains(&entry), "uncovered Tree block {entry:06x}");
+    }
+    for branch in [0x5fd61, 0x5fd7b, 0x5fdaa, 0x5fdb9, 0x5fdc3, 0x5fdd3, 0x5fe0e, 0x5fe1a] {
+        let successors = edges.borrow().iter().filter(|(from, _)| *from == branch).count();
+        assert_eq!(successors, 2, "uncovered Tree branch outcome {branch:06x}");
+    }
+    eprintln!("Lumberjack control ROM cases={cases}");
 }
 
 #[test]

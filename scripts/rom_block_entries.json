@@ -668,5 +668,12 @@
   {"entry": "06dc5c", "end": "06dc64"},
   {"entry": "06eb5e", "end": "06eb66"},
   {"entry":"07b5c0","end":"07b5d6"},
-  {"entry":"089e9e","end":"089fb6"}
+  {"entry":"089e9e","end":"089fb6"},
+  {"entry":"05fd4d","end":"05fd92"},
+  {"entry":"05fd98","end":"05fdcd"},
+  {"entry":"05fdcd","end":"05fdd0"},
+  {"entry":"05fdd0","end":"05fe0b"},
+  {"entry":"05fe0b","end":"05fe23"},
+  {"entry":"05fa2e","end":"05fa50"},
+  {"entry":"1da268","end":"1da2cb"}
 ]

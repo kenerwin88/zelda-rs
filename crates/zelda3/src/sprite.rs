@@ -29,6 +29,7 @@ pub(super) enum SpriteMoveEntry {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpriteMoveZEntry {
     Unpriced,
+    Rom05FA2E,
     Rom06E96C,
     Rom1EFF62,
     Rom1DE98B,

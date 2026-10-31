@@ -3131,6 +3131,36 @@ fn marker32_z_move_bank6_matches_rom() { marker32_z_move(0x06e96c); }
 fn marker32_z_move_bank1e_matches_rom() { marker32_z_move(0x1eff62); }
 
 #[test]
+fn lumberjack_z_child_markers_match_rom_paths() {
+    let mut cases = 0;
+    for k in [0, 15] {
+        for velocity in 0..=255 {
+            for altitude in [0, 127, 255] {
+                for subpixel in [0, 1, 255] {
+                    let mut native = marker31_state();
+                    for (a, v) in [(0xf80 + k, velocity), (0xf70 + k, altitude),
+                        (0xf90 + k, subpixel)] { native.write_wram_byte(a, v); }
+                    native.sync_native_game_state_from_ram();
+                    let machine = marker31_machine(&native, 0x05fa2e, k).expect("ROM fixture");
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x05fa2e, machine,
+                        |s| s.cpu.k == 5 && (0xfa2e..0xfa50).contains(&s.cpu.pc),
+                        || native.sprite_move_z(k, SpriteMoveZEntry::Rom05FA2E));
+                    for a in [0xf70 + k, 0xf90 + k] {
+                        assert_eq!(native.read_wram_byte(a), source.snes().ram[a],
+                            "k={k} velocity={velocity} altitude={altitude} subpixel={subpixel}");
+                    }
+                    native.set_lag_free(false);
+                    assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x05fa2e,
+                        || native.sprite_move_z(k, SpriteMoveZEntry::Rom05FA2E)), 0);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("Lumberjack Z child ROM cases={cases}");
+}
+
+#[test]
 fn marker32_xy_wrapper_bank1e_matches_rom() {
     for k in [0usize, 15] {
         let mut native = marker31_state();

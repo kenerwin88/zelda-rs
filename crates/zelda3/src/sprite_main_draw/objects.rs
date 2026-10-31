@@ -1323,63 +1323,80 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_LumberjackTree(int k) {  // 85fd4d
     pub(super) fn sprite_lumberjack_tree(&mut self, k: usize) {
+        // $05:FD4D..FE22 and inherited JumpTableLocal tail: caller only.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05fd4d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05fd4d);
         let value = 0x8f;
         self.sprite_slot_view_mut(k).set_flags2(value);
         let value = 0x47;
         self.sprite_slot_view_mut(k).set_flags4(value);
         self.dash_tree_top_draw(k);
+        b.block(0x05fd5a);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x05fd5d);
         // ROM $05:FD5D
-        if self.sprite_check_damage_same_layer_long_marked(k) {
+        let hit = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x05fd61);
+        if hit {
+            b.block(0x05fd63);
             self.sprite_nullify_hookshot_drag();
+            b.block(0x05fd68);
             self.follower_link_state_mut().set_speed_setting(0);
             self.sprite_repel_dash();
-        }
+            b.block(0x05fd6e);
+        } else { b.taken(0x05fd61); }
+        b.block(0x05fd6f);
         // ROM $05:FD6F
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x05fd72);
         self.sprite_slot_view_mut(k).subtract_z_velocity(1);
-        self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+        // $05:FD75 JSR $FA2E: the complete Z child owns its own work.
+        self.sprite_move_z(k, SpriteMoveZEntry::Rom05FA2E);
+        b.block(0x05fd78);
         if sign8(self.sprite_slot_view(k).z()) {
+            b.block(0x05fd7d);
             let value = 0;
             self.sprite_slot_view_mut(k).set_z(value);
             let value = 0u8.wrapping_sub(self.sprite_slot_view(k).z_velocity()) >> 2;
             self.sprite_slot_view_mut(k).set_z_velocity(value);
-        }
+        } else { b.taken(0x05fd7b); }
+        b.block(0x05fd8b);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_subtype2(value);
-                if self
-                    .game_state
-                    .sprites
-                    .workspace
-                    .current_sprite_x()
-                    .wrapping_sub(self.game_state.player.follower_link.x())
-                    .wrapping_add(24)
-                    < 65
-                    && self
-                        .game_state
-                        .sprites
-                        .workspace
-                        .current_sprite_y()
-                        .wrapping_sub(self.game_state.player.follower_link.y())
-                        .wrapping_add(32)
-                        < 81
-                    && ((self.game_state.world.scroll.bg1_x_offset()
-                        | self.game_state.world.scroll.bg1_y_offset())
-                        & 0xff)
-                        != 0
-                {
-                    let value = 20;
-                    self.sprite_slot_view_mut(k).set_z_velocity(value);
-                    let value = 1;
-                    self.sprite_slot_view_mut(k).set_ai_state(value);
+                b.block(0x05fd98);
+                let x_near = self.game_state.sprites.workspace.current_sprite_x()
+                    .wrapping_sub(self.game_state.player.follower_link.x()).wrapping_add(24) < 65;
+                if !x_near { b.taken(0x05fdaa); }
+                let y_near = if x_near {
+                    b.block(0x05fdac);
+                    let near = self.game_state.sprites.workspace.current_sprite_y()
+                        .wrapping_sub(self.game_state.player.follower_link.y()).wrapping_add(32) < 81;
+                    if !near { b.taken(0x05fdb9); }
+                    near
+                } else { false };
+                if x_near && y_near {
+                    b.block(0x05fdbb);
+                    if ((self.game_state.world.scroll.bg1_x_offset()
+                        | self.game_state.world.scroll.bg1_y_offset()) & 0xff) != 0 {
+                        b.block(0x05fdc5);
+                        self.sprite_slot_view_mut(k).set_z_velocity(20);
+                        self.sprite_slot_view_mut(k).set_ai_state(1);
+                    } else { b.taken(0x05fdc3); }
                 }
+                // $FDCD SEP is width-independent, reached in M8 or M16.
+                b.block(0x05fdcd);
             }
             1 => {
+                b.block(0x05fdd0);
                 if self.sprite_slot_view(k).z() == 0 {
+                    b.block(0x05fdd5);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     self.set_sound_effect_2(0x1b);
                     let value = (-4i8) as u8;
@@ -1387,35 +1404,44 @@ impl ZeldaState {
                     let value = (-4i8) as u8;
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
                     let mut j = self.lumberjack_tree_spawn_leaves(k);
+                    b.block(0x05fde8);
                     let ju = j as usize;
                     let value = 5;
                     self.sprite_slot_view_mut(ju).set_x_velocity(value);
                     let value = 5;
                     self.sprite_slot_view_mut(ju).set_y_velocity(value);
                     j = self.lumberjack_tree_spawn_leaves(k);
+                    b.block(0x05fdf3);
                     let ju = j as usize;
                     let value = 5;
                     self.sprite_slot_view_mut(ju).set_x_velocity(value);
                     let value = (-4i8) as u8;
                     self.sprite_slot_view_mut(ju).set_y_velocity(value);
                     j = self.lumberjack_tree_spawn_leaves(k);
+                    b.block(0x05fe00);
                     let ju = j as usize;
                     let value = (-4i8) as u8;
                     self.sprite_slot_view_mut(ju).set_x_velocity(value);
                     let value = 4;
                     self.sprite_slot_view_mut(ju).set_y_velocity(value);
-                }
+                } else { b.taken(0x05fdd3); }
+                b.block(0x05fe0a);
             }
             2 => {
+                b.block(0x05fe0b);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x05fe10);
                     let value = 8;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     if self.sprite_slot_view(k).subtype2() == 6 {
+                        b.block(0x05fe1c);
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_state(value);
-                    }
+                    } else { b.taken(0x05fe1a); }
+                    b.block(0x05fe1f);
                     self.sprite_slot_view_mut(k).add_subtype2(1);
-                }
+                } else { b.taken(0x05fe0e); }
+                b.block(0x05fe22);
             }
             _ => {}
         }

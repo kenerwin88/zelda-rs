@@ -1218,3 +1218,131 @@ suite, protected-cache/shared-ledger write, formatting, commit or push was
 performed. This is a verified partial owner-pricing stop. The one-floor body,
 next-cluster bodies, remaining loader partition and continuous-live sound
 acceptance remain unresolved.
+
+## Lagless missing-hold owners 5
+
+CPU investigation on `codex/lag5`, base `490b0408`. Evidence is under
+`target/lag5/`; the authoritative cache and shared `full-v2` ledger remain
+read-only. Main starts at **2,325 / 0 / 0** ROM and **2,572 / 243 / 70** seeded
+live missing/excess/FP. A fresh **628,474-complete-row** baseline prefix is
+byte-identical to main's retained ROM predictor. That deliberately interrupted
+prefix is not a new full census pass. The intro WRAM clear was not retried.
+
+The retained source owners are:
+
+* Lumberjack Tree control and states, `$05:FD4D..FE22`, including the inherited
+  `$00:8784..879B` JumpTableLocal tail. The shared `$00:8781` entry keeps its
+  own scope. Drawing, inactivity, damage, hookshot/dash response, movement
+  and leaf-spawning children are excluded from the caller's self price.
+  **216 unmodified-ROM fixtures** cover all **28 generated blocks** and both
+  outcomes of all **eight conditional branches**, and compare state results.
+  The state-table bytes are excluded; the width-independent `$FDCD SEP`
+  convergence is explicit. The non-lag-free self price remains zero.
+* The tree's Z-movement child, `$05:FA2E..FA4F`, bound at its actual `$FD75`
+  call. It reuses the existing native Z algorithm with its own generated
+  source entry. **4,608 ROM fixtures** cover all 256 velocity bytes, slot
+  boundaries, and altitude/subpixel wrap boundaries, comparing clocks and
+  resulting altitude/subpixel bytes. Other bank-5 Z call sites are unchanged.
+  Rebased markers use entry-relative offsets, preserving the existing
+  bank-6/1D/1E entries; the non-lag-free price is zero.
+* Blind laser, `$1D:A268..A2CA`, excluding coordinate preparation, inactivity,
+  damage, tile collision and trail-garnish children. **1,536 ROM fixtures**
+  cover every head direction, inactive and delay returns, signed X/Y movement,
+  and wall hit/miss. They visit all **16 generated blocks**, both outcomes of
+  all **five conditional branches**, compare result bytes, and check zero
+  non-lag-free self work.
+
+`ownership-audit.json` records the partitions and ancestor dispatch audit.
+`pricing-audit.json` finds **146 new instructions / 47 new blocks**, with all
+**15,904 existing instructions unchanged**. No fitted prices, per-scene tables,
+thresholds, P2 changes, matcher/classifier edits or new environment switches
+are introduced. Each candidate has its own saved binary and ROM/live trial.
+The separate 912,000–913,999 Tree-only window adds source work but restores no
+holds: both baseline and candidate have **43 missing / 0 excess**. It is a
+seeded diagnostic, not full-route acceptance.
+
+Three behavior discrepancies prevent further body admission in this batch:
+
+* **Blind head `$1D:A118..A1EC`: withdrawn whole before a route trial.**
+  With sprite `$CE`, F=14, the ROM's bank-1D recoil tail `$1D:E93A..E943`
+  returns to the head, but the shared native helper exempts only `$7A` and
+  exits the head early. The candidate fixture measures **696 native / 1,836
+  ROM self clocks**. A separate unpriced ROM witness confirms the consequence:
+  the ROM continues and decrements subtype 2 to 1; native leaves it at 2.
+  `withdrawn-blind.patch`, `withdrawn-blind-fixture.txt` and the fresh
+  `test-laser-and-blockers-final.log` preserve the candidate and evidence.
+  No charge for the unexecuted suffix or recoil behavior change is retained.
+* **One-floor tile body `$08:8A03`: still unadmitted.** The existing native
+  classification routes `$18..$1B` to slope collision, but `EntitySlope`
+  decodes only `$10..$13`; the ancilla fallback returns hit. The new ROM
+  witness checks every fine-coordinate pair for all four tiles: respectively
+  **53 / 56 / 60 / 64 carry differences out of 64**. This is an actual
+  behavior difference, not just a marker-width issue. Correcting it would
+  change behavior, so neither a partial price nor a decoding change is made.
+  `test-tile-witness.log` retains all four counts.
+* **Next room `$006B` cluster: SpikeBlock statue collision `$1E:BE19..BE7D`
+  is screened but unpriced.** ROM tests Y with `delta + 8 < 16`; native uses
+  `delta + 16 < 32`. The ROM witness at Y delta 12 returns clear while native
+  returns colliding. This is another behavior repair, not an additive clock
+  omission. No price is inferred from its positive routine-label difference.
+
+The raw first Blind-pricing failure log was accidentally overwritten by a
+later existing-test run; its observed assertion is explicitly labeled in
+`withdrawn-blind-fixture.txt`. The independent fresh behavior witness and the
+complete withdrawn patch remain reproducible. Other Blind control/state tails,
+DashItem dispatch, the loader partition and remaining clusters are not claimed
+resolved. Source work and seeded timing counts do not establish equal SPC
+phase, strict sound identity or continuous-live acceptance.
+
+Every timing run below completes **1,473,123 iterations**, **PASS,
+unexplained 0**. Counts are missing holds / excess holds / zero-source-lag
+FP iterations:
+
+| Candidate / lane | Missing | Excess | FP |
+| --- | ---: | ---: | ---: |
+| Tree control / seeded ROM | 2,325 | 0 | 0 |
+| Tree control / seeded live | 2,572 | 243 | 70 |
+| Tree control plus Z child / seeded ROM | 2,324 | 0 | 0 |
+| Tree control plus Z child / seeded live | 2,571 | 243 | 70 |
+| Tree control, Z child and Blind laser / seeded ROM | **2,323** | **0** | **0** |
+| Tree control, Z child and Blind laser / seeded live | **2,570** | **243** | **70** |
+| Final / continuous recorded ROM | **2,323** | **0** | **0** |
+
+The Z child restores iteration **912,688**; the laser restores **734,471**.
+Both had one source hold and no native hold. There are no newly missing ROM
+iterations. Tree-only changes no hold row in either lane. The final live
+aggregate excess/FP stays unchanged, but its existing one/four-hold FP events
+move **881,794 / 881,804 → 881,793 / 881,803**. Every added and removed row is
+retained in `final-live-excess-changes.json`; this is not unchanged live phase.
+
+Every runtime held count equals P2. Final seeded ROM and continuous recorded
+predictors are byte-identical, with **100,354 accepted holds / 5,156 masked
+callbacks**; live has **100,350 / 5,145**. Accepted holds and masked callbacks
+remain separate sound-proof terms. `timing-verification.json` binds the counts
+and predictor equality. Per-candidate `*-changes.json` and
+`*-remaining-clusters.json` retain the re-clustering after each candidate.
+There are still **684 clusters**. The largest room `$003E` visits remain
+**91 / 75 / 57** holds; the selected Blind and Tree clusters become **49 / 41**.
+The next room `$006B` cluster retains 40 and its screened behavior gap above.
+
+Validation: **32 focused Rust tests** and **seven generator tests**
+pass. Default and `--no-default-features` product builds are warning-free;
+the library-test build retains 24 pre-existing unrelated dead-code warnings.
+The delivered default rebuild is byte-identical to the final census binary.
+The intermediate continuous/picture runs were deliberately interrupted and
+are explicitly labeled diagnostic prefixes; they are not final passes.
+
+The final full-route seeded **CPU picture census** completes **1,473,123
+iterations, PASS, unexplained 0**: **1,462,997 exact**, 3,952 late, 563 early,
+4,702 torn, 905 polygon, four during ROM lag and zero other content misses.
+Every picture hash is byte-identical to main's retained baseline: **zero exact
+pictures lost**. Its predictor is byte-identical to both the final seeded ROM
+and continuous recorded ROM predictors. `final-pictures-gate.log` and
+`verification.json` retain the full results and source/binary identities;
+`candidate.patch` retains the delivered diff.
+
+`git diff --check` passes. Evidence occupies approximately **1.34 GB**, below
+the 3 GB cap. No GPU, Snes9x process, continuous live replay, full library
+suite, protected-cache/shared-ledger write, formatting, commit or push was
+performed. This is a verified partial owner-pricing stop: the behavior gaps
+and remaining owner partitions listed above remain unresolved.

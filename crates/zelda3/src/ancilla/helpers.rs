@@ -1830,6 +1830,45 @@ fn latch_y_coord_markers_match_rom_paths() {
 
 #[cfg(test)]
 #[test]
+fn one_floor_slope_behavior_difference_rom_witness() {
+    // Admission witness, not a repair: $18..$1B route to the ROM slope
+    // helper but have no native EntitySlope profile. Remove this known-gap
+    // assertion when that behavior is deliberately repaired in its own batch.
+    use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, SourcePpuReadState};
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    for tile in 0x18..=0x1b {
+        let mut mismatches = 0;
+        for fine_y in 0..8 {
+            for fine_x in 0..8 {
+                let mut native = ZeldaState::new();
+                native.set_assets(&assets).unwrap();
+                native.write_wram_byte(0x1b, 1);
+                for a in 0x12000..0x14000 { native.write_wram_byte(a, tile); }
+                native.ancilla_set_xy(0, 0x40 + fine_x, 0x40 + fine_y);
+                native.sync_native_game_state_from_ram();
+                let machine = marker39_ancilla_machine(&native, 0x8a03, 0);
+                let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                    CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                let mut source = RomCpuTimingProbe::new(machine, clock,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                for _ in 0..10000 {
+                    source.step().unwrap();
+                    if source.snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.snes().cpu.pc, 0x8000);
+                let hit = native.ancilla_check_tile_collision_one_floor(0);
+                mismatches += usize::from(hit != source.snes().cpu.c);
+            }
+        }
+        assert!(mismatches > 0, "known behavior gap changed for tile {tile:02x}");
+        eprintln!("one-floor tile {tile:02x}: {mismatches}/64 native/ROM carry differences");
+    }
+}
+
+#[cfg(test)]
+#[test]
 fn one_floor_wrapper_markers_match_rom_paths() {
     let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../zelda3_assets.dat")).unwrap();
