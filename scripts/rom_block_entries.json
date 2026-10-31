@@ -1,4 +1,11 @@
 [
+  {"entry": "0cc1a0", "end": "0cc1f5"},
+  {"entry": "0cfe45", "end": "0cfe56"},
+  {"entry": "0cfe56", "end": "0cfee9", "terminal_dispatch": true},
+  {"entry": "0cfeef", "end": "0cff05"},
+  {"entry": "0cff13", "end": "0cff49"},
+  {"entry": "0cff51", "end": "0cffb1"},
+  {"entry": "0ed60b", "end": "0ed618"},
   {"entry": "05fbf7", "end": "05fbfe"},
   {"entry": "089815", "end": "089913"},
   {"entry": "0897b5", "end": "0897b6"},

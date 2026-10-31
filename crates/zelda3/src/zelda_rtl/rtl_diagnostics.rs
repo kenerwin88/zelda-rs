@@ -442,7 +442,14 @@ impl ZeldaState {
         self.snes9x_hold_intro_step_this_frame = false;
         let poly_thread_teardown_frame = self.intro_poly_thread_teardown_pending;
         self.intro_poly_thread_teardown_pending = false;
-        let run_what = if self.native_startup_cpu.as_ref()
+        let run_what = if self.lag_free_intro_schedule.is_some() {
+            // The cold logical intro's before-main/pre-NMI hooks own the
+            // worker. Do not also advance the legacy $0649 accumulator:
+            // its unused dispatch carry would survive into a later intro.
+            // The cartridge selects this worker via $012A/$1F0A stack
+            // exchanges ($00:82C9..82CF, $00:8324..832A), not $0649.
+            i32::from(crate::RUN_MAIN)
+        } else if self.native_startup_cpu.as_ref()
             .is_some_and(|cpu| cpu.startup.owns_cpu_clock()) {
             // The retained CPU selects main/worker execution through NMI and
             // IRQ itself. The legacy frame scheduler must not run a second

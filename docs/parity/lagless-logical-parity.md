@@ -2374,3 +2374,156 @@ focused tests and seven generator tests. `verification.json` and
 `artifact-hashes.json` record the retained evidence. Only this documentation
 is changed; `git diff --check` passes. Evidence occupies about 604 MiB.
 No GPU run, commit, push or formatting pass was performed.
+
+## Lagless missing-hold owners 9
+
+CPU-only continuation on `codex/lag9`, base `18506713`. Evidence is under
+`target/lag9/`; the oracle cache and shared `full-v2` ledger were read-only.
+
+### Revised admission rule
+
+The user's revised rule replaces the historical fixed live excess/FP limits.
+ROM admission requires fewer missing holds, zero excess/FP, and a complete
+chunked seeded census passing with unexplained zero. For live admission,
+every changed live-only hold row versus the baseline must be attributed to
+an observed song-end poll episode and its execution/reseed-bounded aftermath,
+using the live1 hold-difference partition. A non-poll hold change rejects the
+candidate. Live totals and episode contributions remain reported; this rule
+does not establish source-equal SPC phase, delivery times or waveform.
+Any new ROM excess or FP withdraws the entire trial batch.
+
+### Re-admitted repair and prices
+
+The retained implementation is exactly lag8's `$0649` owner repair plus the
+lag7 four-owner prices and their ROM fixtures. Cold logical worker scheduling
+bypasses the independent legacy rotation accumulator; it introduces no reset,
+recorded port answer or scene threshold. The rebuilt executable is byte-identical
+to the retained lag8 candidate, SHA-256
+`53244f39b876059bafa5d3d1710c1472b1e5cf92acb87f429cd212f6b9e5f824`.
+The earlier lag8 ROM/live logs were freshly re-gated and their identities bound
+before beginning new runs. `readmission-partition.json` includes baseline and
+candidate values for every affected row, rather than just net totals.
+
+Fresh full seeded ROM and the **one single full seeded live census** each
+complete **1,473,123 iterations**, gate **PASS**, unexplained zero, and zero
+P2 disagreements. Both fresh CSVs are byte-identical to their retained lag8
+counterparts. ROM is **2,256 / 0 / 0**, versus baseline **2,269 / 0 / 0**;
+live is **2,511 / 251 / 72**, versus baseline **2,516 / 243 / 70**.
+`live-partition.json` records the complete fresh live1-style partition:
+
+| Origin poll | Changed live-versus-ROM hold rows | Added missing | Added excess | Added FP |
+| --- | ---: | ---: | ---: | ---: |
+| 94,853 (new) | 6 | 8 | 8 | 2 |
+| 462,627 (inherited) | 6 | 13 | 13 | 3 |
+| 881,733 (inherited) | 135 | 234 | 230 | 67 |
+| **Total** | **147** | **255** | **251** | **72** |
+
+Exactly **six** live-only hold rows change relative to baseline; none is
+unattributed and no inherited episode is removed. The fixed 243/70 ceiling
+is deliberately not applied under the revised rule.
+
+| Before window starting | Baseline ROM missing | Retained ROM missing | Retained live missing |
+| --- | ---: | ---: | ---: |
+| 94,334 | 79 | 67 | 67 |
+| 141,568 | 115 | 103 | 111 |
+| 228,499 | 253 | 240 | 248 |
+| 380,243 | 407 | 394 | 402 |
+| 461,989 | 486 | 473 | 481 |
+
+These are cumulative missing-hold contributions, not measured net SPC phase.
+
+The fresh first ROM chunk has no foreign reseed after iteration zero. Its
+0–148,000 carried prefix has **121 missing / 0 excess / 0 FP**, directly
+covering the later-intro failure that originally prevented admission.
+
+The first additional song branch is `$08:C606..C610` at **94,853**: native zero
+versus source `$13`, one iteration before source zero. Its six changed hold
+rows are **94,854, 94,855, 94,857, 94,858, 94,859 and 94,860**. The baseline's
+462,627 and 881,733 episodes retain their hold differences. The first new
+main-work difference is the poll itself. Main-work changes from this episode
+end at 94,887; handler-budget differences are separately retained, including
+later differences before the first actual live reseed at 464,000. They are
+not silently relabeled as extra missing or excess holds.
+
+The two inherited episodes retain live1's boundaries: the first reseeds at
+464,000; the second includes reseeds at 882,000, 884,000 and 884,327, with its
+last changed hold at 884,324. No sound transport, P2, classifier or matcher
+changed. The live acceptance here concerns the requested hold partition;
+strict delivered-command, chip-state and waveform proofs were not recaptured.
+The sound-timing 1–5 publication and inherited-phase limitations remain open.
+
+### Earliest-first follow-up: entire batch withdrawn
+
+Six additional owners were implemented and tested without fitted prices:
+
+* File select's three `$00:E766` entries for sheets `$5E/$5F/$6B`: generated
+  destination-setup markers plus the existing instruction-derived decoder
+  and its `$E843` child accounting. All three complete ROM calls and decoded
+  outputs match; the existing decoder tests cover every cartridge sheet.
+* Enemy-damage caller `$02:FE71..FEBA`: setup, all 2,048 nibble-expansion
+  passes, actual taken branches and return. Its `$02:FEBB/$FF5F` decoder
+  child remains separately unpriced, not charged from the parent delta.
+* Intro wrappers `$0C:C404`, `$C412` and `$C435`: bank/call work, all eight
+  actor calls, and both worker-GO branches, excluding the existing children.
+* Intro dispatcher `$0C:C448`: the six bounded code arms exclude the inline
+  jump table. `$00:8781..8783` owns its child prefix; its popped-frame tail
+  `$8784/$8799` belongs to the caller. Fixtures cover all six arms with every
+  timer/configuration byte and angle branch boundaries.
+
+The additional fixtures comprise **1,567 executed-ROM cases**, alongside the
+739 restored lag7 cases. The generator audit preserves all **16,321** baseline
+instruction prices; the combined trial adds 369 instructions (199 restored
+lag7 instructions and 170 follow-up instructions). Source listings and the
+complete rejected implementation/tests remain under `source-prices/` and
+`rejected-owner-candidate.patch`.
+
+The 0–2,000 trial improves missing holds **23 → 2**, with no excess/FP:
+684 is restored; 688 retains one missing hold, and 729 falls from nine to one.
+The source/native main gap at 684/688 is reduced to **1,364 clocks**; the
+remaining main-routing/dispatch ownership is not priced from that difference.
+At 729 the remaining decoder child accounts for **383,678 + 146,870** source
+clocks, while the signed `$E583/$E6B7` alias balance remains intact.
+
+The carried 0–148,000 prefix passes with **104 / 0 / 0**, unexplained zero.
+Focused boot and later-intro CPU checks reproduce all **4,000** repair-only
+picture hashes. These are trial diagnostics, not final retained improvements.
+
+The full eight-slice ROM trial passes the logical gate but **fails timing
+admission: 2,225 missing / 2 excess / 0 FP**. Runtime holds equal P2 everywhere.
+At **696,237** and **898,078**, both `01/00` file-select loads, source has 60
+holds; native rises **53 → 61**. Main work rises by **2,670,232** clocks in
+both cases. Opening/lag-handler budgets remain **26,164 / 20,070** in both
+baseline and trial; they did not change with the prices. The complete
+caller/decoder fixtures do not waive this full-route failure. The entire
+follow-up batch was withdrawn, without selectively suppressing a caller,
+fitting a price or changing P2. No full-live census was spent on this rejected
+batch; the one fresh full-live census belongs to the retained candidate.
+
+The rejected prefix deficits are **58 / 94 / 223 / 377 / 456**, distinct from
+the retained deficits above. The later ordered worklist was also inspected:
+`early-cluster-worklist.json` covers **42 clusters** before 141,568 (26 before
+94,334), with fresh native profiles and signed source comparisons for **159
+iterations**. Collision, sprite-dispatch and loader/model aliases remain
+explicitly unresolved. No aggregate routine delta was turned into a price.
+
+The required **single full CPU picture census** of the retained repair
+completes **1,473,123 iterations**, gate PASS/unexplained zero, preserving
+**1,462,997 exact pictures**. Every one of its 1,473,123 RGB hashes is identical
+to the prior `target/behavior1/pictures-hashes.txt` reference; **no exact picture
+is lost**. The full picture, live and fresh chunked ROM runs all use the same
+hash-bound retained executable. The rejected batch's two bounded picture
+checks are kept separately and do not substitute for this full census.
+
+All **23 retained focused Rust tests and seven generator tests pass**.
+Default and `--no-default-features` product builds are warning-free; the
+library-test build retains existing unrelated dead-code warnings. The active
+product executable is restored to the retained default binary. The gate,
+sound matcher and price-generator source files are unchanged from HEAD.
+`verification.json`, `artifact-hashes.json`, the retained/rejected patches,
+and the complete CSVs bind the results. Evidence is approximately **1.0 GiB**,
+below the 3 GB limit; `git diff --check` passes.
+
+This is a verified partial repair and revised-rule admission, with **2,256
+ROM missing holds still open**, not full sound or exact A/V acceptance. No GPU,
+Snes9x process, continuous live replay, full library suite, protected-cache or
+shared-ledger write, formatting pass, commit or push was performed.

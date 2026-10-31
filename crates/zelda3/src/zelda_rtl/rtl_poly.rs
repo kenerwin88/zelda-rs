@@ -111,6 +111,27 @@ mod phase_tests {
     use super::*;
 
     #[test]
+    fn cold_logical_worker_does_not_advance_legacy_rotation_clock() {
+        let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../zelda3_assets.dat")).expect("intro assets");
+        let mut game = ZeldaState::new();
+        game.set_assets(&assets).unwrap();
+        game.set_lag_free(true);
+        let mut audio = vec![0; 534 * 2];
+        for iteration in 0..730 {
+            loop {
+                game.zelda_run_frame(0);
+                game.zelda_render_audio(&mut audio, 534, 2);
+                assert_eq!(game.ram[CRYSTAL_ROTATION_COUNTER], 0,
+                    "cold worker dispatch leaked a legacy carry at {iteration}");
+                if !game.native_presentation_pending() { break; }
+            }
+        }
+        assert!(game.lag_free_intro_schedule.is_none());
+        assert_eq!(game.game_state.frame.main_module, 0);
+    }
+
+    #[test]
     fn main_bus_work_preserves_worker_phase_across_dma_partition() {
         // $420B stalls main while the CPU bus transfers the bytes. Splitting
         // a fixed amount of main bus work between instructions and DMA must
@@ -143,6 +164,20 @@ mod phase_tests {
 }
 
 impl ZeldaState {
+    /// CPU replay diagnostic for owners that are absent from a WRAM image.
+    pub fn debug_logical_runtime_state(&self) -> String {
+        format!(
+            "pacing={:#?}\npoly_thread={:#?}\nintro_schedule={:?}\npoly_job={}\npoly_upload_deferred={}\npoly_upload_started={}\npoly_upload_from_deferred={}\npoly_scheduler={}\npoly_completed_host={:?}\nlag_free_nmi_uploaded_poly={}\npoly_hold={}\npoly_work={:?}\npoly_wram={:?}\n",
+            self.native_pacing, self.lag_free_poly_thread, self.lag_free_intro_schedule,
+            self.poly_job_in_flight, self.nmi_poly_upload_deferred,
+            self.nmi_poly_upload_started, self.nmi_poly_upload_from_deferred,
+            self.snes9x_poly_scheduler_counter,
+            self.poly_completed_upload.as_ref().map(|(host, _)| host),
+            self.lag_free_nmi_uploaded_poly,
+            self.poly_job_hold_frames, self.last_poly_work, &self.wram_image()[0x1f00..0x2000],
+        )
+    }
+
     /// CPU-only display evidence at a polygon NMI, including the live upload
     /// destination rather than just the worker's possibly partial bitmap.
     pub(crate) fn debug_poly_nmi_state(&self, kind: &str, uploaded: bool) {

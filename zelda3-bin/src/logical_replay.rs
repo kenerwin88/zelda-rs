@@ -1290,6 +1290,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut classification_trace: Option<BufWriter<fs::File>> = None;
     let mut poly_uploads: Option<PolyUploads> = None;
     let mut dump_wram: Option<(u64, PathBuf)> = None;
+    let runtime_trace = zelda3::debug_env::var("ZELDA3_LOGICAL_RUNTIME_TRACE").ok().map(|value| {
+        let (range, path) = value.split_once(':').expect("runtime trace LO-HI:PATH");
+        let (lo, hi) = range.split_once('-').expect("runtime trace LO-HI");
+        (lo.parse::<u64>().unwrap(), hi.parse::<u64>().unwrap(), PathBuf::from(path))
+    });
     let mut index = 0;
     while index < args.len() {
         let value = |index: usize| {
@@ -2196,6 +2201,8 @@ pub(crate) fn run_logical_replay(args: &[String]) {
         }
         if let Some((target, dir)) = dump_wram.as_ref().filter(|(target, _)| *target == iteration.index) {
             fs::create_dir_all(dir).expect("create --dump-wram directory");
+            fs::write(dir.join(format!("engine-{target}.runtime.txt")), game.debug_logical_runtime_state())
+                .expect("write native runtime owners");
             fs::write(dir.join(format!("engine-{target}.bin")), &engine_image[..WRAM_LEN]).expect("write engine WRAM");
             fs::write(dir.join(format!("rom-{target}.bin")), &images.image).expect("write ROM WRAM");
             let vram: Vec<u8> = game.vram().iter().flat_map(|word| word.to_le_bytes()).collect();
@@ -2207,6 +2214,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             ppu.render_buffer = None;
             fs::write(dir.join(format!("engine-{target}.ppu.json")), serde_json::to_vec(&ppu).unwrap())
                 .expect("write engine PPU state");
+        }
+        if let Some((_, _, dir)) = runtime_trace.as_ref().filter(|(lo, hi, _)| (*lo..=*hi).contains(&iteration.index)) {
+            fs::create_dir_all(dir).expect("create runtime trace directory");
+            fs::write(dir.join(format!("{}.txt", iteration.index)), game.debug_logical_runtime_state())
+                .expect("write runtime trace");
         }
         for (written, &byte) in written.iter_mut().zip(&images.image) {
             *written |= byte != POWER_ON_FILL;

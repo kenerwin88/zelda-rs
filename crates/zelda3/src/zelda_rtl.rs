@@ -17081,6 +17081,9 @@ impl ZeldaState {
     }
 
     fn set_backdrop_color_black(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ed60b));
+        // $0E:D60B..D617: three fixed-color stores and RTL.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0ed60b);
         self.set_fixed_color_red(0x20);
         self.set_fixed_color_green(0x40);
         self.set_fixed_color_blue(0x80);

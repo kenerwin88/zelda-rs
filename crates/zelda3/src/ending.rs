@@ -942,9 +942,22 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_clear1kb_blocks_of_wram(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cc1a0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0cc1a0); // $0C:C1A0..C1A6: width, cursor and zero.
         let i = self.game_state.dungeon.scratch_word.primary_word();
         let r18 = self.game_state.dungeon.scratch_word.secondary_word();
+        if self.lag_free {
+            let mut cursor = i;
+            loop {
+                b.block(0x0cc1a7); // $0C:C1A7..C1E8: fifteen word stores and cursor test.
+                cursor = cursor.wrapping_sub(2);
+                if cursor == r18 { break; }
+                b.taken(0x0cc1e7);
+            }
+        }
         let i = self.clear_intro_wram_block_columns(i, r18);
+        b.block(0x0cc1e9); // $0C:C1E9..C1F4: next range, widths and RTL.
         self.ending_scratch_mut().set_primary_word(i);
         self.ending_scratch_mut()
             .set_secondary_word(i.wrapping_sub(0x400));
@@ -2867,6 +2880,9 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_setup_sword_and_intro_flash(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cfe45));
+        // $0C:FE45..FE55: setup falls into the separately owned periodic body.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0cfe45);
         self.intro_sword_mut().reset_sword_state();
         self.intro_periodic_sword_and_intro_flash();
     }
@@ -2949,10 +2965,18 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_periodic_sword_and_intro_flash(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cfe56));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0cfe56); // $0C:FE56..FE5C: bank and timer.
         if self.game_state.intro_sword.sparkle_timer() != 0 {
+            b.block(0x0cfe5d);
             self.intro_sword_mut().decrement_sparkle_timer();
+        } else {
+            b.taken(0x0cfe5b);
         }
+        b.block(0x0cfe5f); // $0C:FE5F..FE62: separately owned backdrop call.
         self.set_backdrop_color_black();
+        b.block(0x0cfe63); // $0C:FE63..FE67: flash guard.
         if self
             .game_state
             .ending
@@ -2960,6 +2984,7 @@ impl ZeldaState {
             .intro_palette_flash_count()
             != 0
         {
+            b.block(0x0cfe68); // $0C:FE68..FE6B: flash cadence.
             if self
                 .game_state
                 .ending
@@ -2968,6 +2993,7 @@ impl ZeldaState {
                 & 3
                 != 0
             {
+                b.block(0x0cfe6c); // $0C:FE6C..FE78: component update.
                 let flash = if self
                     .game_state
                     .enhanced_features
@@ -2978,16 +3004,30 @@ impl ZeldaState {
                     0x1f
                 };
                 let flash_component = self.game_state.intro_sword.flash_rgb_channel();
+                if flash_component == 2 { b.block(0x0cfe79); }
+                else { b.taken(0x0cfe77); }
+                b.block(0x0cfe7b);
                 self.or_fixed_color_component(flash_component, flash);
                 self.intro_sword_mut().cycle_flash_rgb_channel();
+            } else {
+                b.taken(0x0cfe6a);
             }
+            b.block(0x0cfe7d); // $0C:FE7D..FE7F: flash countdown.
             self.attract_scene_mut()
                 .decrement_intro_palette_flash_count();
+        } else {
+            b.taken(0x0cfe66);
         }
 
+        b.block(0x0cfe80); // $0C:FE80..FE81: ten sword objects.
         let sword_y = self.game_state.intro_sword.ypos();
         for j in (0..10).rev() {
+            b.block(0x0cfe82); // $0C:FE82..FEAC: coordinates, attributes, clipping.
             let y = sword_y.wrapping_add(INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_Y_OFFSETS[j]);
+            if y & 0xff00 == 0 { b.taken(0x0cfeab); }
+            else { b.block(0x0cfead); }
+            b.block(0x0cfeb0); // $0C:FEB0..FEBA: Y store and loop.
+            if j != 0 { b.taken(0x0cfeb9); }
             let visible_y = if y & 0xff00 != 0 { 0xf8u8 } else { y as u8 }.wrapping_sub(8);
             self.set_oam_plain(
                 0x52 + j,
@@ -2999,19 +3039,39 @@ impl ZeldaState {
             );
         }
 
+        b.block(0x0cfebb); // $0C:FEBB..FEC3: sword landing guard.
         if sword_y != 30 {
+            b.block(0x0cfec4);
             if sword_y == 0xffbe {
+                b.taken(0x0cfec9);
+                b.block(0x0cfed9);
                 self.set_sound_effect_1(1);
-            } else if sword_y == 14 {
-                self.intro_sword_mut().set_flash_rgb_channel_word(0);
-                self.attract_scene_mut().set_intro_palette_flash_count(0x20);
-                self.set_sound_effect_1(0x2c);
+            } else {
+                b.block(0x0cfecb);
+                if sword_y == 14 {
+                    b.block(0x0cfed0);
+                    b.block(0x0cfed9);
+                    self.intro_sword_mut().set_flash_rgb_channel_word(0);
+                    self.attract_scene_mut().set_intro_palette_flash_count(0x20);
+                    self.set_sound_effect_1(0x2c);
+                } else { b.taken(0x0cfece); }
             }
+            b.block(0x0cfedc); // $0C:FEDC..FEE1: advance Y.
             self.intro_sword_mut().set_ypos(sword_y.wrapping_add(16));
-        }
+        } else { b.taken(0x0cfec2); }
 
+        b.block(0x0cfee2); // $0C:FEE2..FEE8: phase dispatch, X8 table selector.
         match self.game_state.intro_sword.anim_phase() {
             0 => {
+                b.block(0x0cfeef); // $0C:FEEF..FF04: wait for flash and landing.
+                if self.game_state.ending.attract_scene.intro_palette_flash_count() != 0 {
+                    b.taken(0x0cfef2);
+                } else {
+                    b.block(0x0cfef4);
+                    if self.game_state.intro_sword.ypos() != 30 { b.taken(0x0cfefd); }
+                    else { b.block(0x0cfeff); }
+                }
+                b.block(0x0cff03);
                 if self
                     .game_state
                     .ending
@@ -3024,20 +3084,28 @@ impl ZeldaState {
                 }
             }
             1 => {
+                b.block(0x0cff13); // $0C:FF13..FF48: first sparkle countdown/draw.
                 if self.game_state.intro_sword.sparkle_timer() == 0 {
+                    b.block(0x0cff19);
                     if self
                         .intro_sword_mut()
                         .decrement_sparkle_step_check_negative()
                     {
+                        b.block(0x0cff1e);
+                        b.block(0x0cff47);
                         self.intro_sword_mut().set_sparkle_step(0);
                         self.intro_sword_mut().set_sparkle_timer(2);
                         self.intro_sword_mut().advance_anim_step();
                         return;
                     }
+                    b.taken(0x0cff1c);
+                    b.block(0x0cff2a);
                     let timer = INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_INTRO_SWORD_SPARKLE_TIMERS
                         [self.game_state.intro_sword.sparkle_step() as usize];
                     self.intro_sword_mut().set_sparkle_timer(timer);
-                }
+                } else { b.taken(0x0cff17); }
+                b.block(0x0cff2f);
+                b.block(0x0cff47);
                 self.set_oam_plain(
                     0x50,
                     0x44,
@@ -3049,10 +3117,17 @@ impl ZeldaState {
                 );
             }
             2 => {
+                b.block(0x0cff51); // $0C:FF51..FFB0: descending sparkle pair.
                 let k = self.game_state.intro_sword.sparkle_step() as usize;
                 if k >= 7 {
+                    b.taken(0x0cff55);
+                    b.block(0x0cffaf);
                     return;
                 }
+                b.block(0x0cff57);
+                if self.game_state.intro_sword.sparkle_y_offset() < 0x50 { b.taken(0x0cff69); }
+                else { b.block(0x0cff6b); }
+                b.block(0x0cff6d);
                 let y_base = self.game_state.intro_sword.sparkle_y_offset().min(0x4f);
                 let y = y_base
                     .wrapping_add(self.game_state.intro_sword.ypos() as u8)
@@ -3074,15 +3149,32 @@ impl ZeldaState {
                     0,
                 );
                 if self.game_state.intro_sword.sparkle_timer() == 0 {
+                    b.block(0x0cff94);
                     self.intro_sword_mut().advance_sparkle_y_offset();
+                    let offset = self.game_state.intro_sword.sparkle_y_offset();
+                    if offset == 4 { b.taken(0x0cff9d); }
+                    else {
+                        b.block(0x0cff9f);
+                        if offset == 0x48 { b.taken(0x0cffa1); }
+                        else {
+                            b.block(0x0cffa3);
+                            if offset == 0x4c { b.taken(0x0cffa5); }
+                            else {
+                                b.block(0x0cffa7);
+                                if offset != 0x58 { b.taken(0x0cffa9); }
+                            }
+                        }
+                    }
                     if matches!(
                         self.game_state.intro_sword.sparkle_y_offset(),
                         0x04 | 0x48 | 0x4c | 0x58
                     ) {
+                        b.block(0x0cffab);
                         let step = self.game_state.intro_sword.sparkle_step().wrapping_add(2);
                         self.intro_sword_mut().set_sparkle_step(step);
                     }
-                }
+                } else { b.taken(0x0cff92); }
+                b.block(0x0cffaf);
             }
             _ => {}
         }
@@ -3636,5 +3728,94 @@ mod polygon_picture_tests {
         state.credits_fade_color_and_begin_animating();
         assert!(state.ppu.bg_layer[1].tilemap_wider);
         assert!(state.ppu.bg_layer[1].tilemap_higher);
+    }
+}
+
+#[cfg(test)]
+mod lag7_price_tests {
+    use super::*;
+
+    fn machine(native: &ZeldaState, entry: u32, far: bool) -> snes::Snes {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut machine = snes::Snes::new();
+        machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+        machine.ram.copy_from_slice(&native.wram_image());
+        machine.cpu.e = false;
+        machine.cpu.unpack_flags(0x30);
+        machine.cpu.k = (entry >> 16) as u8;
+        machine.cpu.db = machine.cpu.k;
+        machine.cpu.pc = entry as u16;
+        machine.cpu.sp = 0x1fc;
+        machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+        if far { machine.ram[0x1ff] = machine.cpu.k; }
+        machine
+    }
+
+    #[test]
+    fn lag7_clear_all_ranges_and_loop_boundaries() {
+        for (start, stop) in (0..8u16).map(|i| (0x1ffe-i*0x400, 0x1bfeu16.wrapping_sub(i*0x400)))
+            .chain([(2, 0), (4, 0), (0, 0xfffe)]) {
+            let mut native = ZeldaState::new();
+            native.ram.fill(0x5a);
+            native.write_wram_word(0xc8, start);
+            native.write_wram_word(0xca, stop);
+            native.sync_native_game_state_from_ram();
+            native.set_lag_free(true);
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x0cc1a0,
+                machine(&native, 0x0cc1a0, true), |_| true,
+                || native.intro_clear1kb_blocks_of_wram());
+            for range in [0xc8..0xcc, 0x2000..0x20000] {
+                assert_eq!(native.wram_image()[range.clone()], source.snes().ram[range]);
+            }
+        }
+    }
+
+    #[test]
+    fn lag7_sword_all_branches_and_owned_outputs() {
+        for phase in 0..3u8 {
+            for seed in 0..240usize {
+                let mut native = ZeldaState::new();
+                let ypos = [0xff7eu16, 0xffbe, 14, 30, 0xfff0, 0xf0, 0x7ff0, 0xfffe][seed % 8];
+                native.write_wram_word(0xc8, ypos);
+                native.write_wram_byte(0xca, [0, 1, 2, 255][seed / 8 % 4]);
+                native.write_wram_byte(0xcb, (seed % 8) as u8);
+                native.write_wram_byte(0xcc, phase * 2);
+                native.write_wram_byte(0xcd, [0, 0x44, 0x48, 0x54, 0x50, 0xff, 0x4f, 0x10][seed % 8]);
+                native.write_wram_byte(0xd0, (seed % 3) as u8);
+                native.write_wram_byte(0xff9, [0, 1, 2, 4, 0x20][seed / 32 % 5]);
+                // Phase 1 indexes seven entries; phase 2 also exercises the terminal selector.
+                if phase == 1 { native.write_wram_byte(0xcb, (seed % 7) as u8); }
+                native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x0cfe56,
+                    machine(&native, 0x0cfe56, false), |s| s.cpu.k == 12,
+                    || native.intro_periodic_sword_and_intro_flash());
+                for range in [0xc8..0xce, 0xd0..0xd2, 0x9c..0x9f, 0xff9..0xffa,
+                    0x12e..0x12f, 0x940..0x970, 0xa70..0xa7c] {
+                    assert_eq!(native.wram_image()[range.clone()], source.snes().ram[range.clone()],
+                        "phase={phase} seed={seed} range={range:x?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lag7_setup_and_backdrop_complete_bodies() {
+        for seed in [0, 1, 2, 255] {
+            let mut native = ZeldaState::new();
+            native.write_wram_byte(0xca, seed);
+            native.sync_native_game_state_from_ram();
+            native.set_lag_free(true);
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x0cfe45,
+                machine(&native, 0x0cfe45, false),
+                |s| s.cpu.k == 12 && (0xfe45..0xfe56).contains(&s.cpu.pc),
+                || native.intro_setup_sword_and_intro_flash());
+            assert_eq!(native.wram_image()[0xc8..0xce], source.snes().ram[0xc8..0xce]);
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x0ed60b,
+                machine(&native, 0x0ed60b, true), |_| true,
+                || native.set_backdrop_color_black());
+            assert_eq!(native.wram_image()[0x9c..0x9f], source.snes().ram[0x9c..0x9f]);
+        }
     }
 }
