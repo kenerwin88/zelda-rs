@@ -1798,3 +1798,121 @@ constraint is **not met**.
 3 GB; `git diff --check` passes. No GPU, Snes9x process, continuous live
 replay, full library suite, protected-cache/shared-ledger write, formatting,
 commit or push was performed.
+
+## Lagless live sound timing 3
+
+Diagnosis on `codex/live3`, base `02a6f95a`. **The 94,854 control's
+command is one callback early on the aligned logical clock. No runtime
+repair is admitted: the two decisive source delivery witnesses are still
+missing.** New evidence and the ready-to-run capture plan are in
+`target/live3/`. No Snes9x process was run.
+
+### One clock for the control
+
+The retained `zelda3-rs-codex3/target/live-songend1/original/ports.jsonl`
+places the source port-0 `$13` store at host **103,088**, V225/H530,
+PC `$00:80F6`, `apu_cycle_after=47`. Its 103,741 PCM hash/count rows were
+freshly checked against the authoritative cache: all match, covering
+55,306,534 pairs. Summing cache counts strictly before host 103,088 gives
+54,958,405 pairs, hence source host start **1,758,668,960 SPC cycles**.
+
+The current retained zero-start live2 trace delivers at native absolute
+**1,755,822,410** (`baseline-0.log`, host 102,921). The cursor after the
+closing callback of 94,215, and therefore at entry to 94,216, is
+**1,755,839,424** (`state-0-94215/4-spc.txt`). The outcome row for 94,216
+is its *end*, one further callback later; using it as entry would introduce
+another false field. Align this entry with source host 103,088 by the
+explicit translation **+2,829,536**:
+
+| Store | Aligned SPC coordinate | Cycles from source host 103,088 start |
+| --- | ---: | ---: |
+| Native `$13` | 1,758,651,946 | −17,014 |
+| Source `$13` | 1,758,669,007 | +47 |
+| Native minus source | **−17,061** | **−17,061** |
+
+This is a logical-boundary alignment, not an assertion that the two chips
+share absolute reset time or state. The raw unaligned difference is
+−2,846,597 cycles and includes their earlier history. The aligned difference
+is approximately one NTSC callback (17,059.9 cycles). It also reconciles
+the prior KOFF result: **−17,061 + 4,498 = −12,563**. Thus the agreeing poll
+does not establish correct command phase. `control-alignment.json` records
+the arithmetic, cache proof and capture executable/core hashes.
+
+### Publication owner and scope
+
+`rtl_native_pacing.rs::native_time_apu_request` assigns a producer to
+`floor(P2 elapsed / (1364*262))`. `native_finish_main_cost` restores entry
+latches and starts callback zero. `native_publish_apu_requests`, called
+at the beginning of `nmi.rs::interrupt_nmi_audio_parts`, consumes requests
+whose slot is at most the current callback. For these item-receipt requests,
+four held callbacks precede slot 4, the ordinary closing handler. It samples
+the new latch, `zelda_push_apu_state` queues it, and `zelda_render_audio`
+pops that batch **before advancing that callback's SPC interval**.
+`spc_driver_clock.rs` schedules the `lagless-cycle` bus stores near that
+interval's beginning. The observed control store is 42 cycles after the
+closing interval starts, but 17,014 before the next iteration's entry.
+
+In the ROM, `$00:80F6 STA $2140` in the closing NMI of the producer's
+iteration is also the next iteration's opening-handler store. It follows
+the four lag NMIs and the actual `$012C` producer. The APU portion precedes
+the `$00:813A` update-latch branch, so held handlers can deliver commands
+too. Calling a callback "closing" does not place its store at the proper
+end of the audio interval: that ownership mismatch explains the control's
+measured early delivery.
+
+The queue/interval arrangement is shared by all four ordinary timed APU
+latches, not a `$13` or song-specific branch. A request authored after the
+last held NMI and admitted in the closing slot follows this same path.
+This does **not** prove every command after any held sequence is one
+callback early: earlier slots can publish during holds, multiple stores
+collapse with last-write-wins, music can be suppressed as already playing,
+and upload-return, timed CPU-access and VWF paths have separate owners.
+The analogous ordinary no-hold path also needs its boundary checked; a
+blanket delay keyed on "had holds" is not justified.
+
+### Required source capture; stop here
+
+The retained full-route DSP stream proves ending events, and the ledger
+identifies source delivery hosts **500,220 / 946,365**. Neither supplies
+their exact CPU-to-SPC store clocks and arrival-state instruction brackets.
+The exact control cannot fill these missing witnesses. Per the requested
+stop rule, no publication change, price trial or final census was run.
+
+Run the following **yourself**, once, from this checkout. It uses the retained
+oracle-only instrumented capture executable and core, never the gameplay
+frontend. The prepared plan retains CPU APUI receipts and SMP instructions
+only at hosts 103083–103090, 500214–500224, 500854–500862,
+946359–946369 and 946999–947007. The core runs cold through 947,007 to
+preserve phase; there are no intermediate savestates. Every PCM callback
+must match the cache, and all new output goes under `target/live3`.
+
+```sh
+cd /Users/missingno/Documents/zelda3-rs-codex
+C=/Users/missingno/Documents/zelda3-rs/.git/parity-oracle-cache/ed0121e1b093be4c1c69efb6c75057fede3eeda1a88201f9795a20040b307f18
+S=/Users/missingno/Documents/zelda3-rs-codex3/target/spc-songlength1
+ZELDA3_DEBUG_PCM_WINDOWS="$PWD/target/live3/source-plan.json" \
+  "$S/capture-original-zelda3" --render-original-audio-cpu \
+  "$C" "$S/core-source/libretro/snes9x_libretro.dylib" \
+  "$PWD/saves/zelda3.sfc" 947008 \
+  > target/live3/source-capture.log 2>&1
+```
+
+The plan pins core SHA-256
+`3ea10f7ab7e1b7a12600763f359afefb4c8342bb025a6ee1016740a4c177672a`;
+the retained executable is
+`8b634ea5b319eb94698e2178484f7bd0b515163534e323785ceaa11d080c192b`.
+Both were freshly hashed. The harness verifies ROM, SRAM, initial state
+and PCM authority and fails on trace overflow. Its output directory must
+be fresh. Inspect `ports.jsonl` for the `$13` stores and the selected polls;
+join `instructions.jsonl.zst` using sample/phase and absolute SMP cycles,
+retaining timer stages and `$43`. This separates publication displacement
+from inherited driver phase before choosing a repair.
+
+Runtime, pricing, P2, classifiers and matcher remain unchanged. Intro clear
+and Blind/SpikeBlock remain withdrawn. ROM **2,269/0/0**, live
+**2,516/243/70**, seeded-ROM PASS/unexplained 0 and sound command counts
+remain prior evidence, not newly executed verification. No touched runtime
+module requires a new unit test; builds and final-candidate censuses are
+deferred at this explicit source-evidence stop. `git diff --check` passes.
+New evidence is below 3 GB. No GPU, continuous replay, library suite,
+protected-directory write, formatting, commit or push was performed.
