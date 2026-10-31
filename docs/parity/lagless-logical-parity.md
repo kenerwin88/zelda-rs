@@ -2264,3 +2264,113 @@ completed results. Evidence occupies less than **0.5 GiB** and
 `git diff --check` passes. Only this documentation is changed. No GPU,
 Snes9x process, full library suite, protected-cache/shared-ledger write,
 formatting, commit or push occurred.
+
+## Lagless missing-hold owners 8
+
+CPU-only continuation on `codex/lag8`, base `aad8c3f7`. Evidence is under
+`target/lag8/`; the oracle cache and shared `full-v2` ledger remained read-only.
+**The carried owner is identified and the ROM repair is verified, but the
+combined candidate is withdrawn whole: live excess/FP exceed 243/70. No
+runtime, pricing, diagnostic, fixture or generated-table change is retained.**
+
+### Carried owner
+
+The carried field is `DisplayState::crystal_rotation_counter`, the legacy
+frontend accumulator at `$0649`. It is not a missing cartridge reset.
+`zelda_run_frame` in `rtl_diagnostics.rs` still advanced that accumulator
+while `lag_free_intro_schedule` independently owned the cold worker's
+before-main and pre-NMI work. At the boot exit (iteration 729), native
+`$0649` was **144**, versus cartridge **0**. A foreign seed restores zero.
+
+On the later intro's submodule-6 entry, the legacy scheduler adds the V-IRQ
+line, 144. The continuous run carries (144 + 144); the seeded run does not
+(0 + 144). Their worker state first differs at **146,739**: the continuous
+run completes `poly_job_in_flight` and leaves `$1F0C=$FF`, whereas the seeded
+run retains the job and `$1F0C=0`. Main disables `$012A` during the sword
+descent. When it resumes, the continuous run uploads the pending bitmap in
+the closing NMI of **146,781**. The cartridge's pre-NMI image has no pending
+upload there. The otherwise identical main work at 146,782 therefore enters
+through **26,234**, rather than **9,344**, clocks of opening-handler budget.
+The difference is **16,410 DMA clocks** (2,048 bytes plus setup), increased
+to **16,890** by the existing refresh accounting.
+
+The candidate bypasses legacy dispatch while the existing cold logical
+schedule owns the worker. It neither resets `$0649` at a scene boundary nor
+changes the schedule, P2, prices, classifiers or matcher. The cartridge's
+worker selection is the `$012A/$1F0A` stack exchange at `$00:82C9..82CF` and
+`$00:8324..832A`; the legacy accumulator must not run alongside its native
+owner. The lag7 four-owner pricing patch is reapplied unchanged.
+
+`carried-owner.json`, `wram-diff.json`, `source-poly-boundaries.json`, and
+the paired `trace-continuous/` / `trace-seed/` snapshots retain the evidence.
+The runtime observer includes native pacing, APU request slots, worker
+continuations and job state. An initial probe omitted `--seed-every` and
+therefore did not actually seed; `invalid-seed-probe.json` explicitly excludes
+it. The corrected seeded probes and both continuous reproductions agree.
+
+### Earliest remaining work
+
+The repaired **0..148,000 continuous prefix** passes the logical gate with
+**121 missing / 0 excess / 0 FP**, every hold equal to P2. The eight-slice
+full seeded ROM census completes **1,473,123 iterations**, gate PASS,
+unexplained zero, **2,256 / 0 / 0**, versus baseline **2,269 / 0 / 0**.
+Its five prefix deficits are **67 / 103 / 240 / 394 / 473**, before windows
+starting 94,334 / 141,568 / 228,499 / 380,243 / 461,989 respectively.
+These counts are missing-hold contributions, not measured net SPC phase.
+
+Fresh early profiles leave **nine holds at 729** and **one each at 684/688**.
+The sheet-7 extent lead in the previous worklist is stale: current code
+already reconstructs the contiguous raw-art stream, and the 222-sheet ROM
+extent test passes, including the 1,705-byte sheet-7 stream. A concrete
+remaining omission is `load_file_select_graphics`: its direct decodes of
+sheets `$5E/$5F/$6B` bypass decompression pricing. The source has six
+`$00:E766` calls at 729; native has three. The signed `$E583/$E6B7` balances
+still cancel by 366,550 clocks and must not be added as missing work.
+`decompress_enemy_damage_subclasses` and caller self-work remain separate.
+
+At 684/688, current native main is 3,232 clocks below the source profile.
+The complete wrapper self-work leads are `$0C:C404` (282), `$C412` (804),
+and `$C435` (232); `$C448` also contains a computed dispatcher with an inline
+jump table. Linear decoding crosses that data and is not a valid price.
+`earliest-owner-comparison.json` and `earliest-followup.json` preserve the
+signed comparisons and remaining proof boundaries. No follow-up price was
+added from aggregate differences.
+
+### Live rejection and restored stop
+
+The single full seeded-live census first exceeds admission by iteration
+900,729: **251 excess holds / 72 FP**, eight holds and two FP above the
+limits. The first new poll mismatch is **94,853**, native zero versus source
+`$13`; it shifts work to source-unheld 94,854 and 94,857 (five and three
+holds). It precedes the replayed intro and is independent of the `$0649`
+carry. A logical gate pass does not waive these numerical limits or prove
+SPC phase, command delivery, chip state or waveform equality.
+
+The candidate source and tests are preserved in `rejected-candidate.patch`;
+`owner-fix.patch` isolates the cold-scheduler correction for a future trial.
+The CPU picture run was stopped after **584,876 predictor rows** once live
+rejection was definitive. It is a partial diagnostic, not a full picture
+census or a new 1,462,997-exact receipt. The final tree restores all original
+runtime behavior, so the earlier exact-picture count remains prior evidence.
+
+Final restored prefix deficits remain **79 / 115 / 253 / 407 / 486**.
+The candidate's **67 / 103 / 240 / 394 / 473** are rejected-trial results.
+Further pricing is deferred at this verified withdrawal; the next loader
+and sword owners above are concrete follow-up work, not admitted changes.
+
+The full live run completed all **1,473,123 iterations**: **2,511 missing /
+251 excess / 72 FP**, with zero P2 disagreements. Its logical census gate
+passes (zero unexplained differences), but admission fails. No second live
+run was made.
+
+After withdrawal, default and `--no-default-features` product builds are
+warning-free; all **20 restored focused tests** pass (existing lib-test
+dead-code warnings remain). The restored 0..2,000 check passes with
+**23 / 0 / 0**, and its predictor CSV is byte-identical to lag7's restored
+check. The rebuilt executable SHA-256 is
+`55aa75f553f79101be1986442c940b72b7274773d44939b94bf3ce33abf8cfa1`,
+identical to the retained baseline. Candidate validation had passed 25
+focused tests and seven generator tests. `verification.json` and
+`artifact-hashes.json` record the retained evidence. Only this documentation
+is changed; `git diff --check` passes. Evidence occupies about 604 MiB.
+No GPU run, commit, push or formatting pass was performed.
