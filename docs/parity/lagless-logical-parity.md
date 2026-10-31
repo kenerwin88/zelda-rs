@@ -709,3 +709,164 @@ ZELDA3_SAVE_DIR="$PWD/target/picture3/gpu-saves" target/picture3/zelda3-default 
   --video "$C" --video-misses --report 0 \
   > target/picture3/full-confirm-gpu.log 2>&1
 ```
+
+## Lagless missing-hold owners
+
+CPU investigation on `codex/lag1`, base `f011a2aa`. Evidence is under
+`target/lag1/`; the cache and `full-v2` are read-only. The baseline has
+**2,393 missing holds in 2,363 iterations, zero excess and zero false
+positives**. Clusters join missing rows at most 120 logical iterations apart
+with the same module/submodule and room (and overworld area). This is an
+analysis grouping, never a runtime condition. `clusters.json` retains the
+complete ranked partition and its membership.
+
+There are **685 clusters**. `cluster-routine-comparison.json` and
+`cluster-routines.csv` compare every exclusive routine in the leading **76
+ordinary-gameplay clusters**, covering **1,438 holds (60.09%)**. Their source
+and native main totals are **446,178,280 / 414,464,956 clocks**. They retain
+negative alias balances and zero-native-cost bomb/tile-body witnesses, not
+just a positive-only ranking. The remaining clusters are counted but do not
+all have a source-routine attribution. Even within the profiled population,
+the audit does not establish a unique causal routine for every missing hold.
+
+The concentration is ordinary main work: `07/00` has **1,195** missing holds,
+`09/00` has **561**, together **73.38%**. The retained ROM routine and
+structural profiles cover all 1,756 of these iterations. Source main executes
+**557,446,168 instruction clocks**, versus **518,918,760** natively: a
+**38,527,408-clock** gap. Every row has positive instruction undercharge;
+both lanes have zero main DMA and the source has zero raster-wait reads.
+Thus these rows do not support an omitted large DMA/upload/wait explanation.
+Appending the measured instruction gap to the frozen completed-model inverse
+would reach 1,748 of the 1,756 holds. That is a diagnostic bound, not a price
+or permission to add the difference at runtime. The eight remaining inverse
+residuals are **6..690 clocks** (`phase-residuals.json`); interrupt/HDMA/refresh
+placement remains unresolved there.
+
+The three largest clusters are repeated visits to room `$003E`:
+
+| Iterations | Missing before | Missing after | Source main minus baseline native main | Unpriced Bomb_Draw self work |
+| --- | ---: | ---: | ---: | ---: |
+| 787,135–787,528 | 114 | 108 | 2,619,920 | 237,074 |
+| 820,396–820,779 | 113 | 102 | 2,660,240 | 249,174 |
+| 841,603–841,778 | 62 | 59 | 1,385,388 | 135,598 |
+
+The source and native routine clocks are exclusive, with signed differences
+retained. A positive parent label alone is not an untimed body: collision,
+velocity, control-handler and drawing tails can carry compensating negative
+labels. The matcher’s unresolved call/scalar aliases remain unresolved; its
+classifiers and pricing-admission rules are unchanged. A 2,000-iteration
+diagnostic from seed 786,000 reproduces canonical main costs on every missing
+row in that window (`room3e-pacing.csv`).
+
+`Bomb_Draw` is a concrete whole untimed caller body, `$08:9E9E..9FB5`:
+native coordinates, allocation, animation selection and shadow dispatch
+execute without their own instruction charge. Its already priced coordinate
+and explosion children are separate. Across the ordinary missing population,
+308 iterations execute **677,072** source self clocks here; its isolated
+frozen-inverse estimate reaches 20 holds. The candidate uses generated ROM
+block markers, actual branch outcomes, and no scene/count fitting. The ROM
+fixture also exposes an easily misread branch: `$9EB1 STA $04` preserves
+`CMP #$0080` / `ORA #$FF00` flags, so `$9EB3 BEQ` is not a zero-altitude test.
+The pricing follows those flags. Existing gameplay/output behavior is not
+changed by this marker addition.
+
+A fresh **1,100-host cold source-CPU probe** then locates an earlier whole
+omission, `Intro_Clear1kbBlocksOfWRAM`, `$0C:C1A0..C1F4`. The source routine
+profiler labels its tail under `Module_MainRouting`; the per-PC witness,
+not that parent label, identifies the work. Each boot call clears fifteen
+WRAM word columns 512 times. Native performs those stores but previously
+charged none of the loop. Generated markers now retire the setup, each
+actually executed fifteen-store column and its actual taken branch, and
+the cursor/return suffix: **410,878 instruction clocks per normal call**.
+No fixed hold count is installed. `early-source/instruction-profile.csv`,
+`timing-audit.csv`, and `early-owner-comparison.json` retain the source
+breakdown, including unheld controls. The eight full ranges and three short
+boundary fixtures compare both source instruction work and resulting WRAM.
+The cold 2,000-iteration trial restores all eight holds at iterations 0–7,
+with zero excess/FP and all 2,000 picture hashes unchanged. The boot shortfall
+before the first recorded poll falls **23 → 15** in that trial.
+
+The next early loading gap is a different, unadmitted group. At iteration
+729, source/native main is **19,589,454 / 16,385,366 clocks**. Positive
+exclusive labels include `$00:E766`, `$00:E843` and the dispatcher; the
+`$00:E6B7` positive cancels `$00:E583` exactly. Existing decompression and
+packing claims need a new instruction/caller partition before adding work.
+The report does not turn those raw deltas into a new loader surcharge.
+`load_gfx.rs::charge_sheet_decompression` explicitly documents another lead:
+the packed input for junk sprite sheet 7 ends before its source stream, so
+the existing instruction model stops pricing early. This investigation has
+not isolated that truncated-input contribution from the other loader aliases
+at iteration 729; it is a named next investigation, not an admitted correction.
+`remaining-unpriced-screen.json` separately records the inspected ancilla
+helpers still lacking self prices. On remaining profiled misses, the one-floor
+tile body `$08:8A03` has **799,316** source clocks and its wrapper `$08:8981`
+has **755,246**; their independent frozen-inverse screens reach **24 / 19**
+holds. Shadow drawing reaches 12, bomb damage and Link collision seven each.
+These overlapping screens have neither all-path fixtures nor a full-route
+zero-FP trial and are not production prices or promised recoveries.
+
+`poll-iterations.csv` retains cumulative baseline missing holds before every
+recorded APU-read iteration; `poll-deficits.json` groups contiguous reads.
+The ten long song-end windows have the following cumulative deficits (the
+count does not change within these windows):
+
+| Song-end window | Cumulative missing before repair | Cumulative missing after repair |
+| --- | ---: | ---: |
+| 94,334–94,854 | 79 | 71 |
+| 141,568–142,088 | 115 | 107 |
+| 228,499–229,035 | 253 | 245 |
+| 380,243–380,881 | 407 | 399 |
+| 461,989–462,628 | 486 | 478 |
+| 626,618–627,256 | 796 | 788 |
+| 735,229–735,867 | 1,059 | 1,051 |
+| 881,095–881,734 | 1,541 | 1,513 |
+| 1,064,096–1,064,734 | 1,894 | 1,866 |
+| 1,317,697–1,318,335 | 2,129 | 2,101 |
+
+The nominal missing-hold contribution is `count * 357366 * 15664 / 328125`
+SPC cycles (about 17,059.904 per hold), also retained per poll. This is not a
+measured absolute chip deficit. Masked upload callbacks, host/acceptance cuts,
+bootstrap origin, fractional sample phase, and command publication phase are
+separate terms in the sound proof. No continuous live replay was used to
+infer equality between that nominal contribution and actual SPC state.
+
+Both repairs together finish the seeded ROM census (`--seed-every 2000`) and
+continuous recorded ROM replay: **1,473,123 iterations, PASS, unexplained 0**.
+The full timing results are:
+
+| Stage | Missing | Excess | FP |
+| --- | ---: | ---: | ---: |
+| Fresh baseline | 2,393 | 0 | 0 |
+| Bomb_Draw only | 2,373 | 0 | 0 |
+| Bomb_Draw plus intro WRAM clear (withdrawn, see merge note) | 2,365 | 0 | 0 |
+
+Every runtime held count equals P2. There are no newly missing iterations.
+`cluster-results.csv` / `.json` report all 685 clusters: the three bomb
+clusters above and boot clusters **0: 1→0**, **1–7: 7→0** improve; the other
+680 are unchanged. `hold-changes.json` lists all 28 restored iterations.
+`poll-deficits-after.json` retains the after count at both ends of every read
+episode. This is a partial owner repair; the remaining early song-end deficit
+is still 71 holds, and no continuous live acceptance is claimed.
+
+The combined full-route seeded CPU picture census also completes all
+**1,473,123 iterations, PASS, unexplained 0**. Exact pictures remain
+**1,462,997**; every picture hash is identical to the retained baseline.
+**Lost exact pictures: none.** `verification.json` binds the final binaries,
+source files, predictor rows and picture hashes to the checks; the full
+gate logs and per-cluster evidence remain under `target/lag1/`.
+
+Validation: 12 targeted Rust unit tests and seven generator tests pass;
+default and `--no-default-features` product builds are warning-free.
+`git diff --check` passes. Evidence occupies less than 1 GB, below the 3 GB
+limit. No GPU run, continuous live replay, seeded live census, full library
+suite, protected-cache/ledger write, formatting pass, commit or push was
+performed. This is a verified partial owner repair, not complete attribution
+of the remaining 2,365 holds or live acceptance.
+
+**Merge note.** The seeded live-APU census separated the two repairs:
+`Bomb_Draw` alone gives **2,647 / 270 / 75** (baseline 2,667 / 270 / 75), while
+`Bomb_Draw` plus the intro WRAM clear gives **2,753 / 360 / 80**. Only the
+`Bomb_Draw` markers were merged (ROM **2,373 / 0 / 0**). The intro-clear markers
+and their ROM fixture are withdrawn pending a live-lane explanation: they
+are ROM-correct in the ROM lane, but shifting boot time moves the live APU
+read schedule and adds 90 excess holds.

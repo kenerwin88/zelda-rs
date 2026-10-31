@@ -744,8 +744,29 @@ impl ZeldaState {
     }
 
     fn bomb_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x089e9e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $08:9E9E..9FB5: Bomb_Draw self work; called bodies own their work.
+        b.block(0x089e9e);
         let (x, mut y) = self.ancilla_prep_adjusted_oam_coord(k);
+        b.block(0x089ea1);
         let z = self.ancilla_slot_view(k).z() as i8;
+        if z >= 0 { b.taken(0x089eac); } else { b.block(0x089eae); }
+        b.block(0x089eb1);
+        // STA $04 preserves CMP #$0080 / ORA #$FF00 flags: the BEQ at
+        // $9EB3 is not a test of the stored zero altitude and is never taken.
+        {
+            b.block(0x089eb5);
+            if z == -1 { b.taken(0x089eb8); } else {
+                b.block(0x089eba);
+                if self.ancilla_slot_view(k).k() == 3 { b.taken(0x089ec3); } else {
+                    b.block(0x089ec5);
+                    if self.ancilla_slot_view(k).object_priority() == 0 {
+                        b.taken(0x089ecb);
+                    } else { b.block(0x089ecd); }
+                }
+            }
+        }
         if z != 0
             && z != -1
             && self.ancilla_slot_view(k).k() != 3
@@ -754,19 +775,75 @@ impl ZeldaState {
             self.oam_state_mut().set_priority_word(0x3000);
         }
         y = y.wrapping_sub(z as i16 as u16);
+        b.block(0x089ed2);
         let j =
             BOMB_DRAW_FRAME_STARTS[self.ancilla_slot_view(k).item_to_link() as usize] as usize * 6;
 
         let mut r11 = 2;
         if self.ancilla_slot_view(k).item_to_link() == 0 {
+            b.block(0x089eff);
+            if self.ancilla_slot_view(k).work_byte_3() >= 0x20 {
+                b.taken(0x089f08);
+            } else { b.block(0x089f0a); }
             r11 = if self.ancilla_slot_view(k).work_byte_3() < 0x20 {
                 self.ancilla_slot_view(k).work_byte_3() & 0x0e
             } else {
                 4
             };
-        }
+        } else { b.taken(0x089efd); }
 
+        b.block(0x089f0e);
         if self.ancilla_slot_view(k).item_to_link() == 0 {
+            // $08:9F17..9F72: source short-circuit allocation branches.
+            b.block(0x089f17);
+            let mut region_b = false;
+            if self.ancilla_slot_view(k).l() != 0 { b.taken(0x089f1a); } else {
+                b.block(0x089f1c);
+                let eligible = if self.sprite_slot_view(0).sprite_type() == 0x92 {
+                    b.taken(0x089f21); true
+                } else {
+                    b.block(0x089f23);
+                    if k + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
+                        b.taken(0x089f28); false
+                    } else { true }
+                };
+                if eligible {
+                    b.block(0x089f2a);
+                    if !self.game_state.player.follower_link.is_lifting_or_carrying() {
+                        b.taken(0x089f2f); region_b = true;
+                    } else {
+                        b.block(0x089f31);
+                        if self.ancilla_slot_view(k).k() == 3 { b.taken(0x089f36); } else {
+                            b.block(0x089f38);
+                            if self.game_state.player.follower_link.facing() != 0 {
+                                b.taken(0x089f3a);
+                            } else { region_b = true; }
+                        }
+                    }
+                }
+            }
+            if region_b { b.block(0x089f3c); } else {
+                b.block(0x089f43);
+                if !self.game_state.oam.has_sprite_sorting() { b.taken(0x089f46); } else {
+                    b.block(0x089f48);
+                    if self.ancilla_slot_view(k).floor() == 0 { b.taken(0x089f4b); } else {
+                        b.block(0x089f4d);
+                        if self.ancilla_slot_view(k).l() != 0 {
+                            b.taken(0x089f50); b.block(0x089f5e);
+                        } else {
+                            b.block(0x089f52);
+                            if k + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
+                                b.taken(0x089f57);
+                            } else {
+                                b.block(0x089f59);
+                                if !self.game_state.player.follower_link.is_lifting_or_carrying() {
+                                    b.taken(0x089f5c);
+                                } else { b.block(0x089f5e); }
+                            }
+                        }
+                    }
+                }
+            }
             if self.ancilla_slot_view(k).l() == 0
                 && (self.sprite_slot_view(0).sprite_type() == 0x92
                     || k + 1 == self.game_state.player.follower_link.ancilla_pickup_flag() as usize)
@@ -779,6 +856,7 @@ impl ZeldaState {
                         && self.game_state.player.follower_link.facing() == 0)
             {
                 self.ancilla_allocate_oam_from_region_b_or_e(12);
+                b.block(0x089f41);
             } else if self.game_state.oam.has_sprite_sorting()
                 && self.ancilla_slot_view(k).floor() != 0
                 && (self.ancilla_slot_view(k).l() != 0
@@ -793,12 +871,26 @@ impl ZeldaState {
                 self.oam_state_mut()
                     .set_current_extended_pointer(0x0a20 + 0x34);
             }
-        }
+        } else { b.taken(0x089f15); }
 
+        b.block(0x089f74);
         let oam_org = self.game_state.oam.current_pointer_usize();
         let numframes =
             BOMB_DRAW_FRAME_COUNTS[self.ancilla_slot_view(k).item_to_link() as usize] as usize;
         let mut oam = oam_org;
+        let mut offset = false;
+        if self.ancilla_slot_view(k).item_to_link() != 0 { b.taken(0x089f7d); } else {
+            b.block(0x089f7f);
+            if self.ancilla_slot_view(k).tile_attribute() == 9 {
+                b.taken(0x089f84); offset = true;
+            } else {
+                b.block(0x089f86);
+                if self.ancilla_slot_view(k).tile_attribute() != 0x40 {
+                    b.taken(0x089f88);
+                } else { offset = true; }
+            }
+        }
+        b.block(if offset { 0x089f8a } else { 0x089f8e });
         if self.ancilla_slot_view(k).item_to_link() == 0
             && (self.ancilla_slot_view(k).tile_attribute() == 9
                 || self.ancilla_slot_view(k).tile_attribute() == 0x40)
@@ -806,11 +898,16 @@ impl ZeldaState {
             oam += 8;
         }
 
+        b.block(0x089f90);
         self.ancilla_draw_explosion(oam, j, 0, numframes, r11, x, y);
+        b.block(0x089fa6);
         oam += numframes * 4;
 
         let mut pt = Point16U { x, y };
-        if let Some(r10) = self.bomb_check_underside_sprite_status(k, &mut pt) {
+        let underside = self.bomb_check_underside_sprite_status(k, &mut pt);
+        b.block(0x089fab);
+        if let Some(r10) = underside {
+            b.block(0x089fad);
             if oam != oam_org + 4 {
                 oam = oam_org;
             }
@@ -821,7 +918,9 @@ impl ZeldaState {
                 pt.y,
                 self.game_state.oam.priority_high(),
             );
-        }
+            b.block(0x089fb2);
+        } else { b.taken(0x089fab); }
+        b.block(0x089fb5);
     }
 
     pub(super) fn ancilla32_blast_wall_fireball(&mut self, k: usize) {
@@ -1020,6 +1119,45 @@ impl ZeldaState {
 #[cfg(test)]
 mod price_tests {
     use super::*;
+
+    #[test]
+    fn bomb_draw_markers_match_rom_branches_and_child_exclusion() {
+        for slot in 0..10 {
+            for variant in 0..192usize {
+                let mut n = ZeldaState::new();
+                n.set_lag_free(true);
+                let mut ram = n.wram_image().into_owned();
+                ram[0xfa0] = slot as u8;
+                ram[0xc4a + slot] = 7;
+                ram[0xc5e + slot] = (variant % 11) as u8;
+                ram[0x29e + slot] = [0, 1, 127, 128, 255][variant % 5];
+                ram[0x380 + slot] = ((variant / 3) % 4) as u8;
+                ram[0x385 + slot] = ((variant / 5) % 2) as u8;
+                ram[0x280 + slot] = ((variant / 7) % 2) as u8;
+                ram[0x39f + slot] = [0, 14, 31, 32, 255][variant % 5];
+                ram[0x3e4 + slot] = [0, 9, 0x40][variant % 3];
+                ram[0xc7c + slot] = ((variant / 2) % 2) as u8;
+                ram[0xfb3] = ((variant / 4) % 2) as u8;
+                ram[0x2ec] = if variant & 1 != 0 { slot as u8 + 1 } else { 0 };
+                ram[0x308] = if variant & 2 != 0 { 0x80 } else { 0 };
+                ram[0x2f] = ((variant / 8) % 4 * 2) as u8;
+                ram[0xe20] = if variant & 4 != 0 { 0x92 } else { 0 };
+                ram[0xc04 + slot] = 80;
+                ram[0xbfa + slot] = 96;
+                ram[0x90..0x92].copy_from_slice(&0x820u16.to_le_bytes());
+                ram[0x92..0x94].copy_from_slice(&0xa28u16.to_le_bytes());
+                n.ram.copy_from_slice(&ram);
+                n.sync_native_game_state_from_ram();
+                let machine = super::super::tests::marker29_machine(&n, 0x089e9e, slot).expect("ROM");
+                crate::cycle_ledger::assert_rom_marker_work(0x089e9e, machine,
+                    |s| s.cpu.k == 8 && (0x9e9e..0x9fb6).contains(&s.cpu.pc),
+                    || n.bomb_draw(slot));
+                n.set_lag_free(false);
+                assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x089e9e,
+                    || n.bomb_draw(slot)), 0);
+            }
+        }
+    }
 
     #[test]
     fn explosion_price_matches_executed_rom_paths() {
