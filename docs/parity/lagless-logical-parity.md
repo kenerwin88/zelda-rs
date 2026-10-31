@@ -1580,3 +1580,90 @@ No GPU, Snes9x process, continuous live replay, full library suite,
 protected-cache/shared-ledger write, formatting, commit or push was performed.
 This is a verified partial pricing stop, not exact SPC phase, strict sound
 identity or continuous-live acceptance.
+
+## Lagless live sound timing 1
+
+CPU-only investigation on `codex/live1`, base `5750947e`. **Diagnosis only:
+no runtime repair is admitted.** Evidence is under `target/live1/`. The
+retained lag6 predictors and binary are SHA-256-bound in `census.json`;
+their full logical gates were rechecked, not rerun. Both gates PASS with
+unexplained zero. ROM remains **2,269 / 0 / 0**, live **2,516 / 243 / 70**.
+The requested improvement constraint is therefore **not achieved**.
+
+Comparing all 1,473,123 corresponding rows isolates **141 changed hold
+rows**. Every row is retained in `hold-differences.json`, with its source,
+ROM/native holds, signed missing/excess/FP changes, main work and originating
+poll. No missing hold is removed. The complete differences are:
+
+| Origin / source module | Changed rows | Added missing | Added excess | Added FP | First changed hold |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Room `$0006`, `07/18` | 4 | 5 | 5 | 2 | 462,699 |
+| Room `$0006`, `07/00` | 1 | 0 | 8 | 1 | 463,179 |
+| Room `$0006`, `0E/02` | 1 | 8 | 0 | 0 | 463,180 |
+| Room `$00DE`, `07/18` | 4 | 5 | 5 | 2 | 881,794 |
+| `$00DE` aftermath, `0E/02` | 125 | 142 | 135 | 62 | 882,275 |
+| Exit aftermath, `16/04` | 3 | 0 | 90 | 3 | 884,319 |
+| Exit aftermath, `08/00` | 1 | 58 | 0 | 0 | 884,322 |
+| Exit aftermath, `08/01` | 1 | 5 | 0 | 0 | 884,323 |
+| Exit aftermath, `08/02` | 1 | 24 | 0 | 0 | 884,324 |
+| **Total** | **141** | **247** | **243** | **70** | **462,699** |
+
+The initiating song-end branches are `$08:C606..C610`: native reads zero
+at **462,627** and **881,733**, while the source reads **$13**; source zero
+arrives at **462,628** and **881,734**. The retained full live log names
+these two drift origins. Fresh seeded windows **458,000..463,999** and
+**878,000..885,999** reproduce every affected hold row exactly. They also
+retain the poll values and command queues. The first episode accounts for
+13 missing/13 excess/3 FP; the second accounts for 234/230/67.
+
+This is a causal execution/reseed partition, not 141 independent SPC faults.
+The first episode reseeds at 464,000. The second reseeds at 882,000, 884,000
+and 884,327; its later text and loader work follows those fresh-engine
+boundaries. No independent upload/handshake fault is isolated by this
+comparison. The `$1A` queue publications are **462,627 / 881,733**, versus
+source port stores **462,629 / 881,735**. They follow the early zero branch;
+they are not independently proved causes. Queue observations are not
+cycle-level delivered-port witnesses.
+
+The preceding `$13` requests do **not** reproduce the old premature-slot
+failure. Fresh `producer-*.log` traces place them at the item-receipt store
+in `misc.rs`, after main prefixes **1,317,082 / 1,325,588** clocks. Existing
+P2 places them at wall clocks **1,444,034 / 1,452,780**, slot **4**, and
+publishes each exactly once on the closing callback after all four holds.
+The source ledger likewise contains four lag NMIs at 461,988 / 881,094,
+then the `$13` port stores in the following opening handlers at
+461,989 / 881,095. The adjacent iteration labels reflect the existing
+closing/opening convention; they do not justify adding one callback.
+
+A retrospective poll-window experiment was drafted and withdrawn before
+execution. The cache-verified source trace documented in
+[Live sound continuous 1](lagless-audio-pcm.md#live-sound-continuous-1)
+places the native poll at interval-start +22 SPC cycles and the source at
++2,444 in that older witness. Looking back a callback would introduce an
+unsupported delay. `rejected-retrospective-poll.patch` is rejected evidence,
+not a candidate. Current inherited driver/timer phase, exact synchronized
+port delivery and in-iteration poll timing remain unpartitioned; neither
+an opcode/timer defect nor a source-faithful correction is established.
+
+The first continuous-live divergence **inferred from the retained seeded
+run is 462,627**, last clean song branch 462,626: there is no actual reseed
+before it. No continuous replay was run. A fresh seeded 0..95,999 prefix
+also reaches the first song's zero at 94,854, agreeing with the source;
+the separate 92,000-start diagnostic ends one iteration early, illustrating
+why short-window SPC phase cannot replace the carried prefix.
+
+Intro WRAM clear and Blind/SpikeBlock prices remain **inadmissible**: no
+timing repair or new combined-candidate verification establishes otherwise.
+No sound behavior remains changed, so strict delivered-command counters
+were not rerun and no new sound-proof improvement is claimed. No final
+candidate exists, so the one final full live census was not spent and
+`target/live1/live.csv` was not fabricated from prior evidence. No fresh
+full ROM census is claimed. Default and reduced builds and final evidence
+identities are recorded separately under `target/live1/`.
+
+Both final builds are warning-free; the restored default binary is
+byte-identical to lag6's census binary (`55aa75f5...`). `git diff --check`
+passes. Only this documentation section remains changed; no touched runtime
+module requires a new unit test. Evidence is below 3 GB. No GPU, Snes9x
+process, continuous live replay, full library suite, protected-cache or
+shared-ledger write, formatting, commit or push was performed.
