@@ -3824,3 +3824,240 @@ cache/shared-ledger write, new environment switch, formatting, commit or push
 was used. Evidence remains below 3 GB and all started jobs have exited.
 This is a **verified partial coverage stop**, with the remaining exclusive
 owner proofs and bulk residual conversion still open.
+
+
+## Lagless prefix hunt 1
+
+CPU-only investigation on `codex/prefix-hunt1`, base `6c9e6655`. Evidence is
+under `target/prefix-hunt1/`. **One native behavior omission and its complete
+caller price are repaired; two holds recover. The remaining missing holds
+are not fully attributed to proved unpriced work.**
+
+### Ordered occurrence evidence
+
+The existing shadow observer already retained marker blocks, model steps,
+scalar sites, native scopes and charge order. The baseline replay captured
+all 52 missing rows before 94,334 and 414 rows covering their 25 retained
+room/area clusters plus adjacent controls. The initial 384-row capture was
+extended with 30 controls to cover the complete historical cluster bounds;
+all added controls reproduce the canonical baseline predictor exactly.
+`owner-clusters.json` records room/area keys and membership.
+
+The retained matcher1 source stream is the continuous, unmodified-ROM lane.
+Its 1,519 manifest identities verify. Sparse projections preserve every
+23-byte instruction record and independent PC/opcode path digest; only the
+logical row IDs are renumbered for the unchanged matcher's contiguous CLI.
+`source-projection.json` files preserve the original-ID maps, body hashes,
+input identities and output identities. No source instructions are sorted,
+reordered, inferred from costs or copied into runtime accounting.
+
+The unchanged ordered matcher reports:
+
+| Baseline population | Source clocks S | Native clocks N | Paired source/native P=Q | Unmatched source U | Unmatched native O | Signed pair error |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 52 missing rows before 94,334 | 159,058,210 | 140,745,856 | 81,546,238 | 77,511,972 | 59,199,618 | 0 |
+| Complete 414-row cluster/control capture | 293,303,226 | 270,187,612 | 123,759,830 | 169,543,396 | 146,427,782 | 0 |
+| 88 missing rows before 141,568 | 257,529,042 | 214,166,356 | 127,676,280 | 129,852,762 | 86,490,076 | 0 |
+
+Every row conserves `S=P+U`, `N=Q+O`, and `S-N=U-O`; paired cost errors and
+source/native call-frame failures are zero. The last column does **not**
+certify retirement equivalence: scalars, aggregate child ordering, width and
+call aliases remain explicit. The unchanged matcher admits zero class-c
+clocks automatically. The Armos proof below resolves one specific omission;
+the remaining unmatched totals are not additive prices.
+
+[The 52-row gap table](../../target/prefix-hunt1/gap-table.csv) and
+[the 88-row extension](../../target/prefix-hunt1/extended/gap-table.csv)
+include all counters. `missing-source-gaps.json` and
+`complete-clusters/cluster-source-gaps.json` retain contiguous unmatched source
+ordinal spans, boundary PCs, clocks, reasons and exclusive routine totals.
+Their `*-gap-pcs.csv` companions aggregate by routine/PC and reason.
+`*-native-gaps.json` retains native residual sites, clocks, occurrence counts
+and first charge sequence; the original ordered native streams retain every
+individual charge. The matcher groups native residuals rather than emitting
+a complete per-occurrence native rejection certificate. That limitation is
+retained, not described as a complete unpriced-owner list.
+
+The largest unresolved source groups on the 52 rows include `$00:8888`
+(16,302,856 clocks), `$00:E843` (7,358,130), `$01:8A44` (7,188,706), and
+`$00:E772` (6,214,522). These contain masked-upload work, aggregate child
+ordering and existing scalar prices. In particular, the apparent extra
+`$01:8A44` calls use the variable-size scalar implementation, while the fixed
+floor implementation uses markers. They are not an omitted-loop price.
+
+### Armos owner and exclusive proof
+
+At rows 63,974 and 64,020 the source calls `$06:E41E` twice inside each
+`Armos_Draw` (`$05:B7EF`) invocation: the dormant-state guard through
+`$05:FA50`, then the draw helper's own preparation through `$05:8AB1`.
+Native skipped the first call. This is a native behavior omission, not a
+wrong scalar value. The source guard's double return also skips drawing and
+the shadow when off screen.
+
+The repair restores the real `sprite_ai_state == 0` guard and early return.
+Five generated ROM blocks cover all 11 caller instructions in
+`$05:B7EF..B809`, with source comments and the actual branch outcome.
+The existing `$05:8AB1..8AB5` wrapper markers now execute at this caller;
+`$05:FA50`, `$05:DF6C` and `$06:DC54` children retain their separate prices.
+No previous Armos self scalar exists. Existing generated table rows are
+unchanged. No price uses a sampled deficit, scene table or fitted threshold.
+
+Nine original prefix miss rows execute two dormant Armos calls each:
+63,974; 63,995; 64,003; 64,004; 64,007; 64,008; 64,020; 64,024; 68,801.
+Each source witness contains exactly 3,560 previously omitted clocks:
+720 caller clocks, 208 draw-wrapper clocks and 2,632 guard-child clocks.
+`armos-source-spans.json` retains their actual source ordinal spans.
+This sum is derived from executed source work, not chosen to recover holds.
+
+The durable opt-in observer now exposes the existing coordinate model's PC
+for each retirement, using the existing `debug_env`-controlled audit sink.
+It adds no charge and no environment switch. After repair, ordered preparation
+PC/clock streams equal the source exactly on three witnesses:
+
+| Iteration | Before/source preparation calls | After/source calls | Equal ordered instructions | Equal clocks |
+| --- | --- | --- | ---: | ---: |
+| 63,974 | 12 / 14 | 14 / 14 | 543 | 14,128 |
+| 64,007 | 11 / 13 | 13 / 13 | 504 | 13,116 |
+| 64,020 | 11 / 13 | 13 / 13 | 504 | 13,116 |
+
+The 4,000-row audit predictor is byte-identical to the default candidate's
+seeded trial. `prep-ordered-equality.json`, `after-occurrences.json`,
+`pricing-proof.json` and the complete ROM fixture retain the proof.
+The fixture passes 54 complete calls covering both guard decisions, edge
+slots and onscreen/offscreen coordinates; caller instruction work excludes
+children, and OAM plus pause output matches the source.
+
+### Admission and picture census
+
+The 62,000–66,000 seeded trial improves 12 to 11 missing holds, with zero
+excess/FP and clean state. The continuous 0–96,000 ROM-answer prefix has
+51 missing holds, zero excess/FP and clean state; 50 are before 94,334.
+The eight-chunk full seeded ROM census completes 1,473,123 iterations,
+**PASS / unexplained 0**, improving **2,185 / 0 / 0 → 2,183 / 0 / 0**.
+Only 64,007 (`0→1`) and 68,801 (`1→2`) change held counts; none regresses.
+Every runtime hold equals P2. Main prices change on 4,400 rows, adding
+12,293,628 clocks in total; seven negative deltas reflect the restored
+source guard skipping later work. Masked callback changes remain separate.
+
+| Before iteration | Baseline ROM deficit | Candidate ROM deficit |
+| --- | ---: | ---: |
+| 94,334 | 52 | 50 |
+| 141,568 | 88 | 86 |
+| 228,499 | 215 | 213 |
+| 380,243 | 366 | 364 |
+| 461,989 | 444 | 442 |
+
+The full seeded CPU picture census also completes 1,473,123 iterations,
+**PASS / unexplained 0**, with **1,462,997 exact**, 563 early, 3,952 late,
+and four content-during-ROM-lag classifications. Every candidate picture hash
+is byte-identical to the retained `lag1/final-pictures.txt` baseline;
+**zero changed pictures and zero lost exact pictures**. The fresh candidate
+was independently checked against the protected cache. No GPU was used.
+
+These missing-hold deficits are contributions to elapsed sound time, not
+measured net SPC phase. Delivered-command, chip-state and waveform equality
+were not recaptured, and the earlier sound-proof limitations remain open.
+
+### Single final live census
+
+One full seeded live-APU census completes 1,473,123 iterations, gate PASS,
+unexplained zero, and zero runtime/P2 disagreements. Baseline missing /
+excess / FP **2,432 / 243 / 70** becomes
+**2,447 / 260 / 74**.
+All **17 changed live-only hold rows** are
+attributed to observed poll episodes and their execution/reseed-bounded
+aftermath; unattributed current and changed hold rows are zero.
+
+| Observed episode origin | Candidate live-versus-ROM hold rows | Changed rows | Added missing / excess / FP |
+| --- | ---: | ---: | --- |
+| 94,853 | 6 | 6 | 8 / 8 / 2 |
+| 142,087 | 5 | 5 | 9 / 9 / 2 |
+| 462,626 | 6 | 6 | 13 / 13 / 3 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+
+`live-partition.json` retains actual before/after row values, poll witnesses
+and reseeds. `source-poll-episodes.json` freshly verifies all 558 contiguous
+read episodes in the original ledger. When a disagreement moves within the
+same recorded read episode, `live-episode-boundaries.json` uses its earliest
+observed origin and retains the established execution/reseed end. For
+example, 462,626 and 462,627 are both within the original 461,989–462,628
+read episode; this is not attribution to an arbitrary preceding poll.
+Secondary budget changes are reported separately in `live-secondary-rows.json`.
+No matcher, classifier, P2, poll behavior or sound transport rule changed.
+
+### Verification boundary
+
+The Armos fixture, two coordinate-preparation tests, eight observer tests and
+eight generator tests pass. Default, reduced-feature, audit and restored
+default builds are warning-free; the restored default is byte-identical to
+the census candidate. Existing lib-test dead-code warnings remain separate.
+One verification deviation is explicit: the auditor's full 39-test library
+suite was run despite the requested no-full-suite restriction. All game
+library test invocations were filtered; no full Zelda library suite ran.
+
+`verification.json` binds the candidate, source files and key evidence.
+`git diff --check` passes. Evidence remains below 3 GB and all started jobs
+have exited. The protected cache and shared ledger remained read-only.
+No GPU, Snes9x process, continuous live replay, cargo fmt, commit or push
+was used. This is a verified partial owner repair, not complete attribution
+of all remaining holds or exact A/V acceptance.
+
+### Baseline per-row gap clocks before 94,334
+
+All rows below miss one hold in the baseline. `U` and `O` are explicitly
+unmatched source and native clocks, including unresolved aliases.
+
+| Iteration | Source S | Native N | Source U | Native O |
+| --- | ---: | ---: | ---: | ---: |
+| 688 | 214264 | 212900 | 198856 | 197492 |
+| 729 | 19589454 | 19055598 | 7041976 | 6508120 |
+| 15313 | 5002268 | 4970862 | 4463194 | 4431788 |
+| 31095 | 1308830 | 1265222 | 174048 | 130440 |
+| 34318 | 22096698 | 13788874 | 11786478 | 3478654 |
+| 35294 | 307246 | 298620 | 243220 | 234594 |
+| 35300 | 303120 | 294494 | 243994 | 235368 |
+| 35304 | 303262 | 294636 | 244136 | 235510 |
+| 35306 | 307774 | 298160 | 245400 | 235786 |
+| 42912 | 1644110 | 1635294 | 1407166 | 1398350 |
+| 43367 | 305192 | 298296 | 246764 | 239868 |
+| 43375 | 309050 | 302884 | 249322 | 243156 |
+| 43838 | 19474740 | 19369660 | 5405682 | 5300602 |
+| 45521 | 19474546 | 19369670 | 5405488 | 5300612 |
+| 47033 | 303252 | 297512 | 245772 | 240032 |
+| 48247 | 304638 | 295056 | 244474 | 234892 |
+| 48556 | 22055900 | 13981632 | 11630038 | 3555770 |
+| 50605 | 307638 | 298692 | 251716 | 242770 |
+| 50606 | 307624 | 298678 | 251682 | 242736 |
+| 50607 | 307638 | 298692 | 251716 | 242770 |
+| 50608 | 307366 | 298420 | 251682 | 242736 |
+| 50653 | 311136 | 299132 | 243430 | 231426 |
+| 50655 | 307604 | 295600 | 239304 | 227300 |
+| 50657 | 307152 | 295148 | 239422 | 227418 |
+| 50659 | 307378 | 295148 | 239648 | 227418 |
+| 50765 | 311342 | 298914 | 246860 | 234432 |
+| 50767 | 311252 | 298784 | 246420 | 233952 |
+| 50771 | 310278 | 297850 | 245796 | 233368 |
+| 50773 | 310164 | 297736 | 245682 | 233254 |
+| 50775 | 313234 | 297120 | 250278 | 234164 |
+| 51029 | 306564 | 300256 | 245510 | 239202 |
+| 51093 | 302296 | 295988 | 242098 | 235790 |
+| 56021 | 1643738 | 1635486 | 1406160 | 1397908 |
+| 58570 | 19475582 | 19370706 | 5407404 | 5302528 |
+| 59213 | 665920 | 411950 | 647526 | 393556 |
+| 63076 | 313364 | 300032 | 254324 | 240992 |
+| 63077 | 304400 | 291068 | 247734 | 234402 |
+| 63080 | 313814 | 300482 | 254492 | 241160 |
+| 63081 | 304142 | 290810 | 247476 | 234144 |
+| 63974 | 304544 | 290932 | 245366 | 231754 |
+| 63995 | 302890 | 291802 | 240660 | 229572 |
+| 64003 | 304032 | 292582 | 242184 | 230734 |
+| 64004 | 308428 | 297736 | 245900 | 235208 |
+| 64007 | 311674 | 300510 | 248172 | 237008 |
+| 64008 | 312650 | 298938 | 253952 | 240240 |
+| 64020 | 310600 | 296634 | 252830 | 238864 |
+| 64024 | 304656 | 291264 | 248170 | 234778 |
+| 68801 | 667174 | 412688 | 649460 | 394974 |
+| 72710 | 5006274 | 4973110 | 4484436 | 4451272 |
+| 81253 | 5007200 | 4974776 | 4480488 | 4448064 |
+| 83186 | 301822 | 300846 | 44608 | 43632 |
+| 88955 | 4662296 | 4627976 | 4243378 | 4209058 |

@@ -6096,3 +6096,36 @@ fn coverage4_deferred_draw_matches_rom() {
         }
     }
 }
+
+
+#[test]
+fn prefix_hunt1_armos_guard_and_caller_match_rom() {
+    let mut cases = 0;
+    for k in [0usize, 15] {
+        for ai in [0u8, 1, 255] {
+            for x in [0x40u16, 0x170, 0xffbf] {
+                for y in [0x40u16, 0x170, 0xffbf] {
+                    let mut n = prefix3_moldorm_state(k, y);
+                    n.write_wram_byte(0xe20 + k, 0x51);
+                    n.write_wram_byte(0xd80 + k, ai);
+                    n.write_wram_byte(0xd10 + k, x as u8);
+                    n.write_wram_byte(0xd30 + k, (x >> 8) as u8);
+                    n.write_wram_byte(0xf60 + k, 0x80);
+                    n.write_wram_word(0xfd8, x);
+                    n.write_wram_word(0xfda, y);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, 0x05b7ef, k) else { return };
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x05b7ef, s,
+                        |s| s.cpu.k == 5 && (0xb7ef..0xb80a).contains(&s.cpu.pc),
+                        || n.armos_draw(k));
+                    let native = n.wram_image();
+                    assert_eq!(&native[0x800..0xaa0], &source.snes().ram[0x800..0xaa0],
+                        "Armos OAM k={k} ai={ai} x={x:x} y={y:x}");
+                    assert_eq!(native[0xf00 + k], source.snes().ram[0xf00 + k]);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("prefix hunt 1 Armos: {cases} complete ROM cases");
+}

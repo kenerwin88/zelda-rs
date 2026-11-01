@@ -302,6 +302,12 @@ impl ZeldaState {
         }
         use crate::cycle_models::sprite_prep::Publication;
         let instruction = work.work.step(self.coordinate_prep_inputs(k))?;
+        // Preserve each $06:E41E continuation retirement in the write-only
+        // observer. This PC is model evidence, not a new ledger charge.
+        #[cfg(feature = "rom-shadow-audit")]
+        if crate::rom_shadow_audit::observing() {
+            crate::rom_shadow_audit::model(vec![(Some(instruction.pc), instruction.master_cycles, false)]);
+        }
         crate::cycle_ledger::charge_routine(0x06_e41e, u64::from(instruction.master_cycles));
         match instruction.publication {
             Some(Publication::ScratchByte { offset, value }) => {

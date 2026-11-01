@@ -245,9 +245,28 @@ impl ZeldaState {
     //   Two large stacked tiles plus a common shadow.
     // }
     pub(super) fn armos_draw(&mut self, k: usize) {
-        let mut info = self.sprite_draw_multiple(k, &ARMOS_DRAW_FRAMES);
-        // ROM $05:B805
+        // $05:B7EF..B809: the dormant guard is a separate preparation call,
+        // before the draw helper's own preparation. Its double return skips
+        // both drawing and the shadow. Child bodies retain their own prices.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05b7ef));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05b7ef);
+        if self.sprite_slot_view(k).ai_state() == 0 {
+            b.block(0x05b7f4);
+            if self.sprite_prep_oam_coord_or_double_ret_from(k,
+                super::sprite::PrepOamCoordEntry::Bank5DoubleRet).is_none() { return; }
+        } else { b.taken(0x05b7f2); }
+        b.block(0x05b7f7);
+        let mut info = {
+            let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x058ab1));
+            b.block(0x058ab1); // JSL DF6C; no child work included.
+            let info = self.sprite_draw_multiple(k, &ARMOS_DRAW_FRAMES);
+            b.block(0x058ab5); // RTS back to B805.
+            info
+        };
+        b.block(0x05b805);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x05b809);
     }
 
     // -----------------------------------------------------------------------

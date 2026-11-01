@@ -29,7 +29,7 @@ pub(crate) enum Publication {
 pub(crate) struct Instruction {
     pub master_cycles: u32,
     pub publication: Option<Publication>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "rom-shadow-audit"))]
     pub pc: u32,
 }
 
@@ -134,6 +134,6 @@ impl PrepWork {
         };
         self.stage = next;
         let _ = pc;
-        Some(Instruction { master_cycles, publication, #[cfg(test)] pc: 0x06_0000 | pc })
+        Some(Instruction { master_cycles, publication, #[cfg(any(test, feature = "rom-shadow-audit"))] pc: 0x06_0000 | pc })
     }
 }

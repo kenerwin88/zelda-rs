@@ -1516,6 +1516,16 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x05ab97, 0x05ab9b, true, true, 62, 0x000000, &[]),
     // $05:AB9B: fixed cost
     (0x05ab9b, 0x05ab9c, true, true, 42, 0x000000, &[]),
+    // $05:B7EF: 05b7ef +6 if the index crosses a page; 05b7f2 taken +6
+    (0x05b7ef, 0x05b7f4, true, true, 48, 0x05b7f2, &[0x05b7ef]),
+    // $05:B7F4: fixed cost
+    (0x05b7f4, 0x05b7f7, true, true, 46, 0x000000, &[]),
+    // $05:B7F7: fixed cost
+    (0x05b7f7, 0x05b805, true, true, 162, 0x000000, &[]),
+    // $05:B805: fixed cost
+    (0x05b805, 0x05b809, true, true, 62, 0x000000, &[]),
+    // $05:B809: fixed cost
+    (0x05b809, 0x05b80a, true, true, 42, 0x000000, &[]),
     // $05:B88D: fixed cost
     (0x05b88d, 0x05b891, true, true, 62, 0x000000, &[]),
     // $05:B891: fixed cost
