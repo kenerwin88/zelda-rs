@@ -6199,7 +6199,7 @@ impl ZeldaState {
             }
             if self.lag_free {
                 // $02:F7AD..F7CA split at each destination store.
-                crate::cycle_ledger::charge([176, 102, 130, 172][store]);
+                crate::cycle_ledger::blocks(true).block([0x02f7ad, 0x02f7b7, 0x02f7bc, 0x02f7c3][store]);
             }
             let cache = [MAP16_DECODE_0_OVERWORLD, MAP16_DECODE_2_OVERWORLD,
                 MAP16_DECODE_1_OVERWORLD, MAP16_DECODE_3_OVERWORLD][store];
@@ -6293,18 +6293,23 @@ impl ZeldaState {
         let _scope = crate::cycle_ledger::routine(0x02_f691);
         self.prepare_overworld_map32_definition(input);
         // $02:F7AD..F7CA: index, four loads/stores, destination advance, RTS.
-        if self.lag_free { crate::cycle_ledger::charge(580); }
+        let markers = crate::cycle_ledger::blocks(self.lag_free);
+        for pc in [0x02f7ad, 0x02f7b7, 0x02f7bc, 0x02f7c3] { markers.block(pc); }
         let idx = (input & 7) as usize;
         self.write_decoded_overworld_map32_to_bg2_tilemap(dst, idx);
     }
 
     fn prepare_overworld_map32_definition(&mut self, input: u16) {
         // $02:F691..F69A: compare the shared definition cache.
-        if self.lag_free { crate::cycle_ledger::charge(110); }
+        // Caller $F600..F603 sets DB=$7F. The output's $F7AE AND #$0007
+        // bounds its indexed cache reads to 0..7 (manifest index_max).
+        let markers = crate::cycle_ledger::blocks(self.lag_free);
+        markers.block(0x02f691);
         let a = input & !7;
         if a != self.overworld_map16_decode().decode_last() {
             // $02:F698 taken, F69D..F7AB: expand four six-byte definitions.
-            if self.lag_free { crate::cycle_ledger::charge(6 + 3166); }
+            markers.taken(0x02f698);
+            markers.block(0x02f69d);
             self.set_overworld_map16_decode_last(a);
             self.set_overworld_map16_decode_tmp(a >> 1);
             let x = (a >> 1) as usize + (a >> 2) as usize;
@@ -6328,8 +6333,8 @@ impl ZeldaState {
             self.fill_map16_decode_block(MAP16_DECODE_1_OVERWORLD, &map1, x);
             self.fill_map16_decode_block(MAP16_DECODE_2_OVERWORLD, &map2, x);
             self.fill_map16_decode_block(MAP16_DECODE_3_OVERWORLD, &map3, x);
-        } else if self.lag_free {
-            crate::cycle_ledger::charge(24); // $02:F69A JMP.
+        } else {
+            markers.block(0x02f69a); // $02:F69A JMP.
         }
 
     }
@@ -6459,15 +6464,19 @@ impl ZeldaState {
         if self.lag_free && step == 0 { crate::cycle_ledger::charge(46); }
         let _scope = self.lag_free.then(|| crate::cycle_ledger::profile_routine(0x02_fd87, step == 0));
         if self.lag_free {
+            let markers = crate::cycle_ledger::blocks(true);
             // $02:FD87..FDC2: 16 paired stripe copies.
-            if step == 0 { crate::cycle_ledger::charge(224); }
+            if step == 0 { markers.block(0x02fd87); }
             if step < 32 {
-                crate::cycle_ledger::charge(if step % 2 == 0 { 262 } else {
-                    332 + if step == 31 { 0 } else { 6 }
-                });
+                markers.block(if step % 2 == 0 { 0x02fd9a } else { 0x02fdad });
+                if step % 2 == 1 && step != 31 { markers.taken(0x02fdc2); }
             } else if step == 32 {
                 // $02:FDC4..FDF6: destination setup and first prep call.
-                crate::cycle_ledger::charge(104 + if self.overworld_map16_y_unit() < 16 { 6 } else { 112 } + 438);
+                markers.block(0x02fdc4);
+                if self.overworld_map16_y_unit() < 16 { markers.taken(0x02fdcb); }
+                else { markers.block(0x02fdcd); }
+                markers.block(0x02fdd7);
+                markers.block(0x02fdeb);
             }
             // $02:FDE8 calls FDF7 for the first half. The second half
             // falls through FDF3 into the same body in FD87's call frame.
@@ -6475,13 +6484,13 @@ impl ZeldaState {
                 .then(|| crate::cycle_ledger::profile_routine(0x02_fdf7, step == 32));
             if step == 32 || step == 97 {
                 // $02:FDF7..FE0C: header + 16-tile loop setup.
-                crate::cycle_ledger::charge(324);
+                markers.block(0x02fdf7);
             } else if step >= 33 {
                 let operation = (step - 33) % 65;
                 // $02:FE0E..FE3D split at stores. Final branch per 4 words.
-                crate::cycle_ledger::charge([288, 94, 122, 192][usize::from(operation % 4)]
-                    + if operation % 4 == 3 && operation != 63 { 6 } else { 0 });
-                if operation == 63 { crate::cycle_ledger::charge(126); } // $FE3F..FE46.
+                markers.block([0x02fe0e, 0x02fe22, 0x02fe29, 0x02fe32][usize::from(operation % 4)]);
+                if operation % 4 == 3 && operation != 63 { markers.taken(0x02fe3d); }
+                if operation == 63 { markers.block(0x02fe3f); } // $FE3F..FE46.
             }
         }
         if step < 32 {

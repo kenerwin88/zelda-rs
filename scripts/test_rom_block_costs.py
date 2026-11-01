@@ -78,6 +78,20 @@ class BlockCosts(unittest.TestCase):
         blocks=costs.generated_blocks(rom,[dict(spec,terminal_dispatch=True)])
         self.assertEqual([i.name for b in blocks for i in b],['JML'])
 
+    def test_indexed_bus_bound_checks_the_entire_effective_range(self):
+        rom = bytearray(0x8000)
+        rom[:4] = bytes([0xbd, 0x00, 0x44, 0x60])
+        spec = dict(entry='008000', end='008004', m8=False, x8=False, data_bank=127)
+        self.assertIn('data bank', costs.generated_blocks(rom, [spec])[0][0].price()[2])
+        self.assertEqual(costs.generated_blocks(rom, [dict(spec, index_max=7)])[0][0].price(), (46, 0, ''))
+        for bank, bound in [(0, 7), (127, 65535)]:
+            with self.assertRaisesRegex(ValueError, 'not uniformly slow'):
+                costs.emit_rust(rom, [dict(spec, data_bank=bank, index_max=bound)])
+        with self.assertRaisesRegex(ValueError, 'invalid index bound'):
+            costs.generated_blocks(rom, [dict(spec, index_max=-1)])
+        with self.assertRaisesRegex(ValueError, 'conflicting index bounds'):
+            costs.generated_blocks(rom, [dict(spec, index_max=7), spec])
+
 
 if __name__ == '__main__':
     unittest.main()

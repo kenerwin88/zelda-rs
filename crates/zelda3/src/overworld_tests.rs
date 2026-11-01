@@ -1,5 +1,90 @@
 use super::*;
 
+fn coverage5_rom_machine(n: &ZeldaState, entry: u16, db: u8) -> snes::Snes {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut s = snes::Snes::new();
+    s.cart.load(snes::CartType::LoRom, &std::fs::read(root.join("saves/zelda3.sfc")).unwrap(), 0x2000);
+    s.ram.copy_from_slice(&n.wram_image());
+    s.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+    s.cpu.e = false; s.cpu.unpack_flags(0); s.cpu.k = 2; s.cpu.db = db;
+    s.cpu.pc = entry; s.cpu.sp = 0x1fc;
+    s
+}
+
+#[test]
+fn coverage5_map32_markers_match_rom_cache_hit_miss_and_each_output_index() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut base = ZeldaState::new();
+    base.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    base.set_lag_free(true);
+    for definition in [0u16, 8, 0xf8, 0x100, 0x1ff8] {
+        for index in 0..8 {
+            for hit in [false, true] {
+                let input = definition | index;
+                let mut n = base.clone();
+                n.set_overworld_map16_decode_last(if hit { definition } else { 0xffff });
+                for a in 0x14400..0x14440 { n.ram[a] = a as u8; }
+                let mut s = coverage5_rom_machine(&n, 0xf691, 0x7f);
+                s.cpu.a = input; s.cpu.y = 0;
+                s.ram[0..3].copy_from_slice(&[0x00, 0x20, 0x7e]);
+                s.ram[3..6].copy_from_slice(&[0x80, 0x20, 0x7e]);
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x02f691, s,
+                    |s| s.cpu.k == 2 && (0xf691..0xf7cb).contains(&s.cpu.pc),
+                    || n.overworld_parse_map32_definition(0x2000, input));
+                for a in [0x2000, 0x2002, 0x2080, 0x2082] {
+                    assert_eq!(&n.ram[a..a+2], &source.snes().ram[a..a+2]);
+                }
+                assert_eq!(&n.ram[0x14400..0x14440], &source.snes().ram[0x14400..0x14440]);
+            }
+        }
+    }
+}
+
+#[test]
+fn coverage5_map8_markers_match_rom_exclusive_parent_and_child() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut base = ZeldaState::new();
+    base.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    base.set_lag_free(true);
+    // Both destination branches, source/destination wrapping, both pages,
+    // and first/repeated/final loop passes. The first FDF7 is a JSR child;
+    // the second is a fallthrough in FD87's own frame, identified by SP.
+    for y in [0u16, 15, 16, 31] {
+        for (src, dst) in [(0x410u16, 0u16), (0x400, 31), (0x23fe, 16)] {
+            for (page, page_base) in [(OverworldMap16SourcePage::Main, 0x2000usize),
+                                     (OverworldMap16SourcePage::Overlay, 0x4000)] {
+                for owner in [0x02fd87u32, 0x02fdf7] {
+                    let mut n = base.clone();
+                    for i in 0..0x1000 { write_le_u16(&mut n.ram, page_base+i*2, (i & 0xfff) as u16); }
+                    n.sync_native_game_state_from_ram();
+                    n.set_overworld_map16_src_off(src);
+                    n.set_overworld_map16_dst_off(dst);
+                    n.set_overworld_map16_y_unit(y);
+                    let mut s = coverage5_rom_machine(&n, 0xfd87, 0x0f);
+                    s.ram[4..7].copy_from_slice(&[page_base as u8, (page_base >> 8) as u8, 0x7e]);
+                    for a in [0x0a, 0x0e, 0xcc] { s.ram[a..a+2].fill(0); }
+                    let map8 = n.GetMap16toMap8Table();
+                    crate::cycle_ledger::profile_iteration(true);
+                    crate::cycle_ledger::profile_main_begin();
+                    let source = crate::cycle_ledger::assert_rom_marker_work(owner, s,
+                        |s| s.cpu.k == 2 && (0xfd87..0xfe47).contains(&s.cpu.pc)
+                            && (if owner == 0x02fd87 { s.cpu.sp == 0x1fc } else { s.cpu.sp == 0x1fa }),
+                        || for step in 0..162 {
+                            n.write_overworld_map8_row_step(page, 0, 0, 0x14000, step, &map8);
+                        });
+                    crate::cycle_ledger::profile_main_end();
+                    crate::cycle_ledger::profile_iteration(false);
+                    assert_eq!(&n.ram[0x500..0x540], &source.snes().ram[0x500..0x540]);
+                    // This fixture proves instruction work and stripe inputs.
+                    // Packed assets normalize unused map8 words; they are not
+                    // a byte-identical copy of every ROM table word.
+                    assert_eq!(&n.ram[0x14000..0x14004], &source.snes().ram[0x14000..0x14004]);
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn marker44_overworld_transition_body_matches_rom() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

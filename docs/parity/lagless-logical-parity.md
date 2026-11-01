@@ -3405,3 +3405,141 @@ prior evidence**, not a fresh picture claim. No classifier/matcher change,
 GPU run, Snes9x process, continuous live replay, full library suite, protected
 cache/shared-ledger write, new environment switch, cargo fmt, commit or push
 occurred. Complete residual ownership and bulk pricing remain open.
+
+
+## Lagless pricing coverage 5
+
+CPU-only continuation on `codex/coverage5`, base `cf211ee8`. Evidence is in
+`target/coverage5/`. **Verified partial coverage stop: three complete existing
+scalar owners are replaced with generated ROM markers. No new runtime clocks
+are added and no additional holds recover. Bulk residual ownership remains open.**
+
+### Owners and ROM proof
+
+* `$02:F691..F7CA`, map32 definition expansion: cache-hit/miss prefix, complete
+  four-definition expansion, and four output-store fragments. The 80 executed-ROM
+  cases cover both cache paths, all eight output indices and five definition
+  positions; cache bytes and destination words also agree. Caller `$F600..F603`
+  establishes DB `$7F`; `$F7AE AND #$0007` bounds the output index.
+* `$02:FD87..FDF6`, map16 stripe preparation, plus its `$FDF7..FE46` fallthrough:
+  both destination branches, every paired stripe pass, header/setup and second
+  output half. The first `$FDF7` JSR child is excluded. The existing caller JSR
+  remains separate. Original per-store continuation boundaries are preserved.
+* `$02:FDF7..FE46`, map8 upload preparation: complete first-half child, header,
+  four-word loop and return. Twenty-four executed-ROM calls are evaluated once
+  for the parent and once for the child (48 exclusive comparisons); stack depth
+  distinguishes the JSR child from the parent's fallthrough. Both map pages,
+  both destination branches, wrapping source/stripe indices and first/repeated/
+  last loops are covered. Stripe inputs and upload headers agree.
+
+The generator now accepts an explicit reviewed indexed-read bound and checks
+**every effective byte** for a uniform slow-memory bus class. Unknown, mixed
+or conflicting bounds fail closed. The new bound is seven, from the ROM mask,
+not a sampled count. Generator regression tests include rejection across bus
+classes. No classifier or matcher changes. All replaced scalar fragment prices
+match their generated replacements exactly; no scalar executes alongside them.
+
+The initial map8 test's clock check passed but an additional output comparison
+encountered unused ROM map8 words normalized by the packed assets. The final
+fixture explicitly checks clock ownership, stripe inputs and headers; it does
+not claim all packed table words are byte-identical to the raw ROM. No runtime
+behavior was changed to accommodate the fixture.
+
+The ranked review retains `$00:8888`'s separate song-upload protocol ownership,
+`$0D:A18E`'s existing instruction model, and `$00:F312`'s resumable spotlight
+work. `$01:893C` mixes dispatcher and JMP-tail drawer aliases; full exclusive
+path accounting remains open. No residual difference was added as a price.
+`candidate-owners.json`, `ranked-worklist.json` and `remaining-worklist.json`
+retain these boundaries, including the prior 53-entry occurrence worklist.
+
+### Admission, prefixes and live partition
+
+The 14,000–16,000 and 636,000–638,000 seeded windows pass with zero excess/FP.
+The eight-chunk seeded ROM census covers **1,473,123 iterations**, gate **PASS**,
+**unexplained 0**. Missing/excess/FP remains **2,185 / 0 / 0**; every runtime
+hold equals P2. All predictor columns are unchanged from Coverage 4. No owner
+required withdrawal or bisection, and zero holds recovered.
+
+| Before iteration | Baseline ROM deficit | Candidate ROM deficit |
+| --- | ---: | ---: |
+| 94,334 | 52 | 52 |
+| 141,568 | 88 | 88 |
+| 228,499 | 215 | 215 |
+| 380,243 | 366 | 366 |
+| 461,989 | 444 | 444 |
+
+The single full seeded live census covers **1,473,123 iterations**, gate
+**PASS**, **unexplained 0**. Missing/excess/FP remains **2,432 / 243 / 70**;
+every runtime hold equals P2. Changed live-only hold rows: **0**;
+unattributed current or changed rows: **0**.
+
+| Origin poll | Current live-versus-ROM hold rows | Changed rows | Added missing / excess / FP |
+| --- | ---: | ---: | ---: |
+| 462,627 | 6 | 0 | 13 / 13 / 3 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+
+`live-partition.json` retains actual row values, observed polls and execution/
+reseed bounds; secondary budget differences are in `live-secondary-rows.json`.
+Prefix deficits are missing-hold contributions, not measured SPC phase.
+No new delivered-command, chip-state or waveform proof is claimed.
+
+### Sampled residual and verification
+
+Fresh native audit receipts cover all **2,222 selected rows**, with retained
+source instructions for **1,967**; **255 source-unavailable rows** remain explicit.
+Source identities were rehashed. All eight audit predictor CSVs equal the
+candidate default chunks byte for byte; every accounting equation has zero
+residual and no native receipt is missing. The unchanged coverage tool reports:
+
+| Source instruction class | Coverage 4 clocks | Coverage 5 clocks |
+| --- | ---: | ---: |
+| marker_touched | 418,667,218 | 482,669,386 |
+| model_touched | 702,556,794 | 702,556,794 |
+| scalar_touched | 10,425,100 | 10,425,100 |
+| unresolved_alias | 829,374,278 | 765,372,110 |
+| uncovered | 0 | 0 |
+
+Source main remains **1,961,023,390** clocks; sampled native main remains
+**1,692,878,744**, signed difference **268,144,646**.
+This is same-iteration PC membership, not ordered occurrence equivalence.
+The **64,002,168-clock** marker gain includes **33,543,804 clocks before
+462,627**. Each of the three converted source owners now has zero unresolved
+clocks in this sample. This proves existing charge coverage, not new runtime work.
+
+Top 20 remaining unresolved aliases (`top20-residual.csv`):
+
+| Routine | Unresolved source clocks | Before 462,627 |
+| --- | ---: | ---: |
+| `$00:8888` | 212,320,844 | 141,005,650 |
+| `$0d:a18e` | 28,935,000 | 6,021,584 |
+| `$00:f312` | 24,587,840 | 10,930,526 |
+| `$01:893c` | 24,053,720 | 14,720,412 |
+| `$06:e41e` | 18,511,452 | 3,247,412 |
+| `$06:83f2` | 17,562,454 | 2,967,576 |
+| `$00:e9e4` | 14,687,028 | 13,023,258 |
+| `$06:84e2` | 14,147,678 | 3,027,322 |
+| `$09:c6f5` | 13,288,600 | 5,496,256 |
+| `$00:df4f` | 12,989,356 | 10,020,372 |
+| `$0d:f0f7` | 12,617,688 | 1,926,306 |
+| `$07:d9d8` | 12,570,954 | 1,687,306 |
+| `$0d:fdab` | 11,098,308 | 1,459,092 |
+| `$0e:cb5e` | 10,039,322 | 4,655,784 |
+| `$09:b0b6` | 9,664,876 | 689,102 |
+| `$06:e72f` | 9,617,840 | 1,212,776 |
+| `$0d:fdd9` | 8,974,968 | 1,086,050 |
+| `$02:febb` | 7,626,922 | 4,083,872 |
+| `$0d:fb94` | 6,929,684 | 1,342,182 |
+| `$00:882e` | 6,674,802 | 2,407,062 |
+
+All **45 overworld tests**, **eight generator tests** and **six coverage-tool
+tests** pass. Default, reduced-feature, audit and restored-default builds are
+warning-free; the test compilation retains existing unrelated dead-code warnings.
+The restored binary is byte-identical to the ROM/live census candidate.
+`verification.json` and `artifact-hashes.json` bind the stopping point;
+`git diff --check` passes and evidence remains below 3 GB.
+
+Only pricing annotations, their generator, fixtures and documentation changed.
+The conditional CPU picture census was not rerun: **1,462,997 exact pictures is
+prior evidence**, not a new picture claim. No GPU, Snes9x, continuous live replay,
+full library suite, protected cache/shared-ledger write, new environment switch,
+formatting, commit or push occurred.

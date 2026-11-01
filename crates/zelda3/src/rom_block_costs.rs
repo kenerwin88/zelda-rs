@@ -1052,6 +1052,46 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x02f3ac, 0x02f3b8, false, false, 210, 0x000000, &[]),
     // $02:F3B8: fixed cost
     (0x02f3b8, 0x02f3b9, false, false, 42, 0x000000, &[]),
+    // $02:F691: 02f698 taken +6
+    (0x02f691, 0x02f69a, false, false, 110, 0x02f698, &[]),
+    // $02:F69A: fixed cost
+    (0x02f69a, 0x02f69d, false, false, 24, 0x000000, &[]),
+    // $02:F69D: fixed cost
+    (0x02f69d, 0x02f7ad, false, false, 3166, 0x000000, &[]),
+    // $02:F7AD: fixed cost
+    (0x02f7ad, 0x02f7b7, false, false, 176, 0x000000, &[]),
+    // $02:F7B7: fixed cost
+    (0x02f7b7, 0x02f7bc, false, false, 102, 0x000000, &[]),
+    // $02:F7BC: fixed cost
+    (0x02f7bc, 0x02f7c3, false, false, 130, 0x000000, &[]),
+    // $02:F7C3: fixed cost
+    (0x02f7c3, 0x02f7cb, false, false, 172, 0x000000, &[]),
+    // $02:FD87: fixed cost
+    (0x02fd87, 0x02fd9a, false, false, 224, 0x000000, &[]),
+    // $02:FD9A: fixed cost
+    (0x02fd9a, 0x02fdad, false, false, 262, 0x000000, &[]),
+    // $02:FDAD: 02fdc2 taken +6
+    (0x02fdad, 0x02fdc4, false, false, 332, 0x02fdc2, &[]),
+    // $02:FDC4: 02fdcb taken +6
+    (0x02fdc4, 0x02fdcd, false, false, 104, 0x02fdcb, &[]),
+    // $02:FDCD: fixed cost
+    (0x02fdcd, 0x02fdd7, false, false, 112, 0x000000, &[]),
+    // $02:FDD7: fixed cost
+    (0x02fdd7, 0x02fdeb, false, false, 288, 0x000000, &[]),
+    // $02:FDEB: fixed cost
+    (0x02fdeb, 0x02fdf7, false, false, 150, 0x000000, &[]),
+    // $02:FDF7: fixed cost
+    (0x02fdf7, 0x02fe0e, false, false, 324, 0x000000, &[]),
+    // $02:FE0E: fixed cost
+    (0x02fe0e, 0x02fe22, false, false, 288, 0x000000, &[]),
+    // $02:FE22: fixed cost
+    (0x02fe22, 0x02fe29, false, false, 94, 0x000000, &[]),
+    // $02:FE29: fixed cost
+    (0x02fe29, 0x02fe32, false, false, 122, 0x000000, &[]),
+    // $02:FE32: 02fe3d taken +6
+    (0x02fe32, 0x02fe3f, false, false, 192, 0x02fe3d, &[]),
+    // $02:FE3F: fixed cost
+    (0x02fe3f, 0x02fe47, false, false, 126, 0x000000, &[]),
     // $02:FE71: fixed cost
     (0x02fe71, 0x02fe8c, true, true, 286, 0x000000, &[]),
     // $02:FE8C: fixed cost

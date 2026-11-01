@@ -153,6 +153,7 @@ class Instruction:
         self.m8 = m8
         self.x8 = x8
         self.data_bank = None
+        self.index_max = None
 
     def price(self, dp_low_nonzero=False):
         """Return (master_cycles, variable_extra, note). variable_extra is the
@@ -190,6 +191,15 @@ class Instruction:
                     note = "+6 if the index crosses a page"
             if mode in ("abs", "abs,x", "abs,y") and self.operand is not None \
                     and 0x2000 <= (self.operand & 0xFFFF) < 0x6000:
+                if self.data_bank is not None and mode != "abs" and self.index_max is not None:
+                    # A reviewed native index bound must prove one bus class
+                    # over every possible effective byte, not just the base.
+                    base = (self.data_bank << 16) | (self.operand & 0xffff)
+                    costs = {access_cost(base + offset)
+                             for offset in range(self.index_max + data)}
+                    if costs != {8}:
+                        raise ValueError(f'{self.pc:06x}: indexed range is not uniformly slow memory')
+                    return (cycles - bus) * 6 + bus * 8, variable, note
                 if self.data_bank is not None and mode == "abs":
                     # The manifest's caller audit proves DB is fixed in this range.
                     delta = sum(access_cost((self.data_bank << 16) |
@@ -381,6 +391,8 @@ def generated_blocks(rom, entries):
                 old = instructions[pc]
                 if old.data_bank != spec.get('data_bank'):
                     raise ValueError(f'{pc:06x}: conflicting data banks')
+                if old.index_max != spec.get('index_max'):
+                    raise ValueError(f'{pc:06x}: conflicting index bounds')
                 if (old.m8, old.x8) != (m8, x8):
                     raise ValueError(f'{pc:06x}: conflicting M/X entry states')
                 if saved_widths[pc] != status:
@@ -395,6 +407,10 @@ def generated_blocks(rom, entries):
             if bank is not None and (not isinstance(bank, int) or not 0 <= bank <= 255):
                 raise ValueError(f'{pc:06x}: invalid data bank')
             ins.data_bank = bank
+            index_max = spec.get('index_max')
+            if index_max is not None and (not isinstance(index_max, int) or not 0 <= index_max <= 65535):
+                raise ValueError(f'{pc:06x}: invalid index bound')
+            ins.index_max = index_max
             instructions[pc] = ins
             saved_widths[pc] = status
             # A lexically proven PHP/PLP pair restores its actual M/X. Other
