@@ -3119,3 +3119,138 @@ point. Evidence is below 3 GB; `git diff --check` passes. No GPU run, Snes9x
 process, continuous live replay, full library suite, protected-cache/shared-
 ledger write, new environment switch, formatting pass, commit or push occurred.
 The general per-routine model/alias and all-path pricing work remains open.
+
+## Lagless pricing coverage 3
+
+CPU-only continuation on `codex/coverage3`, base `97760d5c`. Evidence is under
+`target/coverage3/`. **Verified partial pricing stop: five of the 58 residual
+worklist entries are priced, plus their shared cape tail; 53 entries remain
+open. The requested complete bulk worklist is not finished.**
+
+The user's revised admission rule permits exact prices to accumulate without
+requiring recovered holds: generated blocks or corrected all-path ROM models,
+children excluded, no double charge, full-route ROM missing not increased,
+zero ROM excess/FP, gate PASS/unexplained zero, and owners 9's bounded
+live-only hold-row poll partition. No classifier, matcher or P2 rule changes.
+The first combined batch passes, so no census-failing owner required bisection.
+
+### Prices retained
+
+| Entry | Complete priced body and proof |
+| --- | --- |
+| `$0D:BB0A` Oam_GetBufferPosition | Re-admits Coverage 2's complete scalar replacement, including `$BB39` indexed-read crossing. All 2,304 region/cursor/fitting/equality/overflow/wrapping ROM cases pass. |
+| `$07:82DA` Link_HandleBunnyTransformation | All guards, transformation setup, five-slot loop, countdown and returns through `$8364`, including shared `$82D8`. 144 executed-ROM cases cover every branch; reset, dash, poof, sound and palette children excluded. |
+| `$07:B5D6` Link_HandleToss | Complete `$B5D6..B608` leaf, all three guards and `$0305` branch; 300 ROM cases. |
+| `$07:B073` CheckYButtonPress | Complete `$B073..B086` leaf, all guards and success; 300 ROM cases. |
+| `$07:AE88` cape lift guard | Complete guard and early return; the actual fallthrough uses the shared `$AE8F` owner once. Both guard paths pass. |
+| `$07:AE8F` cape passive tail | Complete `$AE8F..AEBF` body and shared `$AE87` return; 216 ROM cases cover cape/item/timer/magic branches. `$AE47` child excluded. |
+
+The generator decodes the unmodified ROM, whose SHA-256 matches the protected
+cache manifest. Markers carry source addresses and branch outcomes; no sampled
+count or deficit supplies a price. Existing caller charges exclude these
+bodies. The OAM scalar is replaced, not retained alongside its markers.
+`candidate-owners.json`, `candidate.patch`, fixture logs and
+`rom-identity.json` retain the proof boundaries.
+
+The inactive/paused canonical helper families remain intact. Inspection also
+retains the already-priced `$06:84E2` dispatch and `$00:8781` split
+(52 own clocks plus 362 caller clocks). Their residuals are not additive
+parent prices. Sword swing's control/SFX/reset/spin tails, collision/drawing
+wrapper occurrences, dispatched sprite bodies and `$00:80B5` aliases still
+need complete exclusive proofs. The quiet-cape body additionally appears in
+the existing file-load model, so a global helper charge would need that owner
+resolved first. `remaining-worklist.json` preserves all 53 pending entries
+and the reviewed boundaries; none is assigned a fitted residual price.
+
+### Full-route ROM and prefix results
+
+The fresh eight-chunk seeded census covers **1,473,123 iterations**, gate
+**PASS**, **unexplained 0**. Missing / excess / FP improves from
+**2,226 / 0 / 0** to **2,189 / 0 / 0**. Exactly **37** hold rows recover one
+hold each; no row loses a hold, and every runtime hold equals P2.
+Main prices change on **1,051,384 iterations**, adding **487,200,574 clocks**
+over the route. OAM's isolated retained Coverage 2 trial recovered no holds;
+that is no longer grounds to withdraw its exact repair.
+
+| Before iteration | Baseline ROM deficit | Candidate ROM deficit | Candidate live deficit |
+| --- | ---: | ---: | ---: |
+| 94,334 | 56 | 53 | 53 |
+| 141,568 | 92 | 89 | 89 |
+| 228,499 | 221 | 216 | 216 |
+| 380,243 | 375 | 367 | 367 |
+| 461,989 | 454 | 445 | 559 |
+
+These are cumulative missing-hold contributions, not measured net SPC phase.
+`rom-comparison.json` retains every changed hold and the full price-delta
+distribution. The 14,000–16,000 seeded trial also has zero excess/FP.
+
+### One final live census
+
+The single full seeded live run covers **1,473,123 iterations**, gate
+**PASS**, **unexplained 0**. Missing / excess / FP is
+**2,550 / 333 / 75**, versus baseline
+**2,728 / 473 / 88**, with zero runtime/P2 disagreements.
+There are **31 changed live-only hold rows**,
+all within observed baseline/candidate poll episodes and their retained
+execution/reseed bounds; **zero unattributed hold rows**. Removed episodes
+retain their baseline witnesses and rows; they are not erased from the partition.
+
+| Origin poll | Candidate live-versus-ROM hold rows | Changed rows versus baseline | Added missing / excess / FP |
+| --- | ---: | ---: | ---: |
+| 142,087 | 0 | 5 | 0 / 0 / 0 |
+| 229,034 | 0 | 4 | 0 / 0 / 0 |
+| 380,880 | 15 | 0 | 114 / 90 / 5 |
+| 462,627 | 6 | 0 | 13 / 13 / 3 |
+| 627,255 | 0 | 10 | 0 / 0 / 0 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+| 1,064,733 | 0 | 12 | 0 / 0 / 0 |
+
+`live-partition.json` retains the actual row values, fresh poll observations
+and actual reseeds. Secondary budget differentials are reported separately:
+main_master: **1794**; cost_entry_handler: **1386**; cost_lag_handler: **1358**; cost_main_dma: **0**; cost_main_hdma: **1449**; cost_raster_wait: **17**. `live-secondary-rows.json` retains every such differential,
+including handler-budget changes outside immediate episode execution windows.
+Those are not counted as changed holds or assigned to the nearest preceding
+poll. The hold partition is not a proof that every secondary budget difference
+has a unique poll owner. Delivered-command, chip-state and waveform proofs
+were not recaptured; the earlier sound-proof limitations remain open.
+
+### Remaining sampled coverage and verification
+
+The unchanged coverage tool was rerun on fresh native receipts for the same
+**1,967 source-covered rows** of the original **2,222-row** missing cohort.
+The **255 source-unavailable rows** remain explicit. All source/native
+accounting equations have zero residual; every sampled native row is present.
+All eight audit predictor CSVs are byte-identical to the default candidate's
+corresponding full-route CSVs.
+
+| Source instruction classification | Before clocks | After clocks |
+| --- | ---: | ---: |
+| marker_touched | 380,650,416 | 398,560,956 |
+| model_touched | 702,556,794 | 702,556,794 |
+| scalar_touched | 10,425,100 | 10,425,100 |
+| unresolved_alias | 867,391,080 | 849,480,540 |
+
+Source main remains **1,961,023,390 clocks**; sampled native main increases
+from **1,692,138,630** to **1,692,801,808**, reducing the signed difference
+from **268,884,760** to **268,221,582 clocks**. Generated-marker membership
+gains **17,910,540 source clocks**, largely by replacing the previously opaque
+OAM scalar; it is not that much new runtime work. Remaining unresolved aliases
+are **849,480,540 clocks**. This is still same-iteration PC membership, not
+ordered occurrence equivalence or a list of proved-unpriced instructions.
+`coverage.json`, `coverage-comparison.json` and `top50-residual.csv` retain
+all classifications and rankings.
+
+All **19 player-module tests**, **three OAM allocator tests**, **seven block
+generator tests** and **six coverage-tool tests** pass. Default,
+`--no-default-features`, audit and restored-default builds are warning-free;
+the library-test compilation retains 24 existing unrelated dead-code warnings.
+The restored default binary is byte-identical to the census candidate.
+`verification.json` and `artifact-hashes.json` bind source, binary and evidence;
+`git diff --check` passes and evidence remains below 3 GB.
+
+Only pricing, generated entries, fixtures and this documentation change.
+No gameplay write or runtime rule changed, so the conditional CPU picture
+census was not rerun: **1,462,997 exact pictures remains prior evidence**.
+No GPU, Snes9x process, continuous live replay, full library suite, protected
+cache/shared-ledger write, new environment switch, formatting, commit or push
+was performed. Complete bulk residual pricing remains unfinished.

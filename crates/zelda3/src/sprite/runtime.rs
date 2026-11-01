@@ -1722,29 +1722,33 @@ impl ZeldaState {
 
     pub(in crate::zelda_rtl) fn oam_get_buffer_position(&mut self, num: u8, y: u8) -> u16 {
         // Cycle ledger: Oam_GetBufferPosition $0D:BB0A (entry m8 x8, JSR
-        // target; Y <= 10 and the fallback index stays below 96, so no abs,y
-        // page crossing). $0D:BB0A-BB1C STA STZ REP LDA $fe0,y STA CLC ADC
+        // target; Y <= 10). The fallback word index at $0D:BB39 can cross
+        // the $BAAA table's page in region F. $0D:BB0A-BB1C STA STZ REP LDA $fe0,y STA CLC ADC
         // CMP $ba9e,y BCC (252): a fitting request takes the BCC (+6) into
         // $0D:BB41 STA $fe0,y (46); an overflow runs $0D:BB1E-BB3F (520, BRA
         // included). Then $0D:BB44-BB5A (354, RTS included).
         let _scope = crate::cycle_ledger::routine(0x0d_bb0a);
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(0x0dbb0a); // Entry through BCC; children excluded (this is a leaf).
         let region = (y >> 1) as usize;
         let mut pstart = self.game_state.oam.region_base_word(region);
         let p = pstart.wrapping_add(num as u16);
-        crate::cycle_ledger::charge(if p >= OAM_GET_BUFFER_POSITION_LIMITS[region] {
-            252 + 520 + 354
-        } else {
-            252 + 6 + 46 + 354
-        });
         if p >= OAM_GET_BUFFER_POSITION_LIMITS[region] {
             let alloc = self.game_state.oam.region_alloc_counter(region);
             let j = alloc & 7;
+            b.block(0x0dbb1e); // Overflow cursor and fallback-table read through BRA.
+            if 0xaa + (region * 8 + j as usize) * 2 > 0xff {
+                b.crossing(0x0dbb39);
+            }
             self.oam_state_mut()
                 .set_region_alloc_counter(region, alloc.wrapping_add(1));
             pstart = OAM_GET_BUFFER_POSITION_FALLBACKS[region * 8 + j as usize];
         } else {
+            b.taken(0x0dbb1c);
+            b.block(0x0dbb41); // Fitting allocation's STA.
             self.oam_state_mut().set_region_base_word(region, p);
         }
+        b.block(0x0dbb44); // Shared pointer publication through RTS.
         let oam = 0x0800 + pstart;
         self.oam_state_mut()
             .set_current_extended_pointer(0x0a20 + (pstart >> 2));

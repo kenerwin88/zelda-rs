@@ -36,6 +36,10 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_cape_passive_lift_check(&mut self) {
+        // $07:AE88..AE8D; AE8F is a shared fallthrough entry, not a call.
+        let _scope = crate::cycle_ledger::routine(0x07ae88);
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07ae88);
         if self
             .game_state
             .player
@@ -52,18 +56,30 @@ impl ZeldaState {
                     .has_grabbing_wall_state())
         {
             self.player_check_handle_cape_stuff();
+        } else {
+            b.taken(0x07ae8d); b.block(0x07ae87);
         }
     }
 
     pub(super) fn player_check_handle_cape_stuff(&mut self) {
-        if !self.game_state.player.follower_link.is_cape_active()
-            || self.game_state.player.follower_link.current_item_active() != 19
-        {
+        // $07:AE8F..AEBF shared tail. $07:AE47 child is excluded.
+        let _scope = crate::cycle_ledger::routine(0x07ae8f);
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07ae8f);
+        if !self.game_state.player.follower_link.is_cape_active() {
+            b.taken(0x07ae91); b.block(0x07ae87);
             return;
         }
+        b.block(0x07ae93);
+        if self.game_state.player.follower_link.current_item_active() != 19 {
+            b.taken(0x07ae98); b.block(0x07ae87);
+            return;
+        }
+        b.block(0x07ae9a);
         if self.game_state.player.follower_link.current_item_active()
             == self.game_state.player.follower_link.current_item_y()
         {
+            b.block(0x07ae9f);
             self.follower_link_state_mut()
                 .decrement_cape_decrement_counter();
             if self
@@ -73,29 +89,51 @@ impl ZeldaState {
                 .cape_decrement_counter()
                 != 0
             {
+                b.taken(0x07aea3); b.block(0x07aebf);
                 return;
             }
+            b.block(0x07aea5);
             let cape_timer = PLAYER_CHECK_HANDLE_CAPE_STUFF_CAPE_DEPLETION_TIMERS
                 [self.magic_consumption_level() as usize];
             self.follower_link_state_mut()
                 .set_cape_decrement_counter(cape_timer);
             if self.game_state.inventory.player_resources.magic.amount() == 0 {
+                b.taken(0x07aeb3); b.block(0x07aebf);
                 return;
             }
+            b.block(0x07aeb5);
             if self.player_magic_mut().decrement_magic_power() != 0 {
+                b.taken(0x07aeba); b.block(0x07aebf);
                 return;
             }
+        } else {
+            b.taken(0x07ae9d);
         }
+        b.block(0x07aebc);
         self.link_force_unequip_cape();
+        b.block(0x07aebf);
     }
 
     pub(super) fn check_y_button_press(&mut self) -> bool {
-        if self.game_state.player.follower_link.button_mask_b_y() & 0x40 != 0
-            || self.game_state.player.follower_link.incapacitated_timer() != 0
-            || self.game_state.player.follower_link.filtered_joypad_h() & 0x40 == 0
-        {
+        // $07:B073..B086: complete leaf, including each short-circuit exit.
+        let _scope = crate::cycle_ledger::routine(0x07b073);
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07b073);
+        if self.game_state.player.follower_link.button_mask_b_y() & 0x40 != 0 {
+            b.taken(0x07b075); b.block(0x07b085);
             return false;
         }
+        b.block(0x07b077);
+        if self.game_state.player.follower_link.incapacitated_timer() != 0 {
+            b.taken(0x07b079); b.block(0x07b085);
+            return false;
+        }
+        b.block(0x07b07b);
+        if self.game_state.player.follower_link.filtered_joypad_h() & 0x40 == 0 {
+            b.taken(0x07b07f); b.block(0x07b085);
+            return false;
+        }
+        b.block(0x07b081);
         self.follower_link_state_mut()
             .add_button_mask_b_y_bits(0x40);
         true

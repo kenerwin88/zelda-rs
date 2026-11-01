@@ -1,4 +1,11 @@
 [
+  {"entry": "0782d8", "end": "078365"},
+  {"entry": "0782da", "end": "078365"},
+  {"entry": "07ae87", "end": "07aec0"},
+  {"entry": "07ae88", "end": "07aec0"},
+  {"entry": "07b073", "end": "07b087"},
+  {"entry": "07b5d6", "end": "07b609"},
+  {"entry": "0dbb0a", "end": "0dbb5b"},
   {"entry": "01af8b", "end": "01afc8", "m8": false, "x8": false},
   {"entry": "01afd4", "end": "01b00d", "m8": false, "x8": false},
   {"entry": "01b017", "end": "01b050", "m8": false, "x8": false},

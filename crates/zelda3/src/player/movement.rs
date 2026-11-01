@@ -507,13 +507,28 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_handle_toss(&mut self) -> bool {
-        if self.game_state.player.follower_link.y_button_action_flags() & 0x80 == 0
-            || self.game_state.player.follower_link.filtered_joypad_l() & 0x80 == 0
-            || self.game_state.player.follower_link.is_lift_throw_primed()
-        {
+        // $07:B5D6..B608: complete leaf; no child charges.
+        let _scope = crate::cycle_ledger::routine(0x07b5d6);
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07b5d6);
+        if self.game_state.player.follower_link.y_button_action_flags() & 0x80 == 0 {
+            b.taken(0x07b5da); b.block(0x07b607);
             return false;
         }
-
+        b.block(0x07b5dc);
+        if self.game_state.player.follower_link.filtered_joypad_l() & 0x80 == 0 {
+            b.taken(0x07b5e0); b.block(0x07b607);
+            return false;
+        }
+        b.block(0x07b5e2);
+        if self.game_state.player.follower_link.is_lift_throw_primed() {
+            b.taken(0x07b5e7); b.block(0x07b607);
+            return false;
+        }
+        b.block(0x07b5e9);
+        if self.ram[0x305] == 1 { b.block(0x07b601); }
+        else { b.taken(0x07b5ff); }
+        b.block(0x07b605);
         self.follower_link_state_mut()
             .clear_lift_throw_scratch_state();
         self.follower_link_state_mut().set_y_button_action_step(0);

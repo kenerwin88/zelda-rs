@@ -4,6 +4,99 @@ use crate::game_state::constants::{
     LINK_IS_BUNNY_MIRROR, LINK_IS_IN_DEEP_WATER,
 };
 
+#[test]
+fn coverage3_toss_and_y_press_all_paths_match_rom() {
+    for entry in [0x07b5d6, 0x07b073] {
+        for first in [0, 0x40, 0x80, 0xff] {
+            for second in [0, 1, 0x40, 0x80, 0xff] {
+                for third in [0, 1, 0x40, 0x80, 0xff] {
+                    for item in [0, 1, 2] {
+                        let mut native = ZeldaState::new();
+                        let fields = if entry == 0x07b5d6 { [0x3b, 0xf6, 0x309] }
+                            else { [0x3a, 0x46, 0xf4] };
+                        for (a, v) in fields.into_iter().zip([first, second, third]) {
+                            native.write_wram_byte(a, v);
+                        }
+                        native.write_wram_byte(0x305, item);
+                        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+                        let machine = marker36_player_machine(&native, entry).expect("unmodified ROM required");
+                        crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+                            |s| s.cpu.k == 7 && if entry == 0x07b5d6 {
+                                (0xb5d6..0xb609).contains(&s.cpu.pc)
+                            } else { (0xb073..0xb087).contains(&s.cpu.pc) }, || {
+                                if entry == 0x07b5d6 { native.link_handle_toss(); }
+                                else { native.check_y_button_press(); }
+                            });
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn coverage3_bunny_all_paths_match_rom() {
+    for timer in [0u16, 1, 0x100] {
+        for poof in [0, 1] {
+            for handler in [0, 23, 28] {
+                for picking in [0, 2] {
+                    for countdown in [0, 1, 0x80, 0x81] {
+                        let mut native = ZeldaState::new();
+                        native.write_wram_word(0x3f5, timer);
+                        for (a, v) in [(0x3f7, poof), (0x5d, handler), (0x309, picking),
+                            (0x2e2, countdown), (0xc4a, 0x30), (0xc4b, 0x31), (0xc4c, 1)] {
+                            native.write_wram_byte(a, v);
+                        }
+                        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+                        let machine = marker36_player_machine(&native, 0x0782da).expect("unmodified ROM required");
+                        crate::cycle_ledger::assert_rom_marker_work(0x0782da, machine,
+                            |s| s.cpu.k == 7 && (0x82d8..0x8365).contains(&s.cpu.pc), || {
+                                native.link_handle_bunny_transformation();
+                            });
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn coverage3_cape_all_paths_match_rom() {
+    for cape in [0, 1] {
+        for active in [0, 19] {
+            for selected in [0, 19] {
+                for countdown in [0, 1, 2] {
+                    for magic in [0, 1, 2] {
+                        for level in 0..3 {
+                            let mut native = ZeldaState::new();
+                            for (a, v) in [(0x55, cape), (0x304, active), (0x303, selected),
+                                (0x4c, countdown), (0xf36e, magic), (0xf37b, level)] {
+                                native.write_wram_byte(a, v);
+                            }
+                            native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+                            let machine = marker36_player_machine(&native, 0x07ae8f).expect("unmodified ROM required");
+                            crate::cycle_ledger::assert_rom_marker_work(0x07ae8f, machine,
+                                |s| s.cpu.k == 7 && (s.cpu.pc == 0xae87 || (0xae8f..0xaec0).contains(&s.cpu.pc)), || {
+                                    native.player_check_handle_cape_stuff();
+                                });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for lifting in [0, 0x80] {
+        let mut native = ZeldaState::new();
+        native.write_wram_byte(0x308, lifting);
+        native.sync_native_game_state_from_ram(); native.set_lag_free(true);
+        let machine = marker36_player_machine(&native, 0x07ae88).expect("unmodified ROM required");
+        crate::cycle_ledger::assert_rom_marker_work(0x07ae88, machine,
+            |s| s.cpu.k == 7 && ((0xae88..0xae8f).contains(&s.cpu.pc) || (lifting == 0 && s.cpu.pc == 0xae87)), || {
+                native.link_handle_cape_passive_lift_check();
+            });
+    }
+}
+
 fn marker36_player_machine(native: &ZeldaState, entry: u32) -> Option<snes::Snes> {
     let rom = player_caller_test_rom()?;
     let mut machine = snes::Snes::new();

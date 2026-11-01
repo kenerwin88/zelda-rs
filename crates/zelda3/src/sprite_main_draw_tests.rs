@@ -890,6 +890,42 @@ fn action_hitbox_and_swamola_prices_match_executed_rom_paths() {
     }
 }
 
+#[test]
+fn coverage2_oam_allocator_all_regions_cursors_and_paths_match_rom() {
+    // All six regions, all eight fallback cursors, fitting/equality/overflow
+    // and wrapping sums. $0D:BB0A..BB5A is a leaf: no child work is included.
+    for region in 0..6usize {
+        let limit = u16::from_le_bytes([
+            ZeldaState::native_oam_table_byte(0x0dba9e + region as u32 * 2).unwrap(),
+            ZeldaState::native_oam_table_byte(0x0dba9f + region as u32 * 2).unwrap(),
+        ]);
+        for cursor in 0..8u16 {
+            for num in [0u8, 1, 16, 255] {
+                for base in [0u16, limit - 1, limit, limit + 1, 0x40, 0x7f, 0x80, 0xff, 0x100, 0x1ff, 0x200, 0xffff] {
+                    let mut native = marker29_state();
+                    for (address, word) in [(0xfe0 + region * 2, base), (0xfec + region * 2, cursor)] {
+                        for (i, byte) in word.to_le_bytes().into_iter().enumerate() {
+                            native.write_wram_byte(address + i, byte);
+                        }
+                    }
+                    native.sync_native_game_state_from_ram();
+                    let mut machine = marker29_machine(&native, 0x0dbb0a, 0).expect("unmodified ROM required");
+                    machine.cpu.a = u16::from(num);
+                    machine.cpu.y = (region * 2) as u16;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x0dbb0a, machine,
+                        |s| s.cpu.k == 13 && (0xbb0a..0xbb5b).contains(&s.cpu.pc), || {
+                            native.oam_get_buffer_position(num, (region * 2) as u8);
+                        });
+                    let image = native.wram_image();
+                    for range in [0x90..0x94, 0xfe0..0xff8] {
+                        assert_eq!(&image[range.clone()], &source.snes().ram[range]);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn marker29_machine(native: &ZeldaState, entry: u32, slot: usize) -> Option<snes::Snes> {
     use snes::{CartType, Snes};
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)

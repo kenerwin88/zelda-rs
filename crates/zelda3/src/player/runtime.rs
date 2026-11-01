@@ -877,48 +877,87 @@ impl ZeldaState {
     pub(super) fn player_handler_15_hold_item(&mut self) {}
 
     pub(super) fn link_handle_bunny_transformation(&mut self) -> bool {
+        // $07:82DA..8364 with the shared $82D8 CLC/RTS; calls exclude children.
+        let _scope = crate::cycle_ledger::routine(0x0782da);
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0782da);
         if self.game_state.player.follower_link.temp_bunny_timer() == 0 {
+            b.taken(0x0782e0); b.block(0x0782d8);
             return false;
         }
-
+        b.block(0x0782e2);
         if !self.game_state.player.follower_link.needs_transform_poof() {
+            b.block(0x0782e7);
+            if self.game_state.player.follower_link.handler_state() == 23 {
+                b.taken(0x0782eb);
+            } else {
+                b.block(0x0782ed);
+                if self.game_state.player.follower_link.handler_state() == 28 { b.taken(0x0782ef); }
+            }
             if matches!(
                 self.game_state.player.follower_link.handler_state(),
                 23 | 28
             ) {
+                b.block(0x07835b);
                 self.follower_link_state_mut().clear_temp_bunny_timer();
                 return false;
             }
+            b.block(0x0782f1);
             if self
                 .game_state
                 .player
                 .follower_link
                 .picking_throw_state_has(2)
             {
+                b.block(0x0782f8);
                 self.follower_link_state_mut().clear_state_bits();
+            } else {
+                b.taken(0x0782f6);
             }
+            b.block(0x0782fb);
             let preserved_lift_bit = self.game_state.player.follower_link.state_bits() & 0x80;
             self.link_reset_properties_a();
+            b.block(0x078305);
             self.follower_link_state_mut()
                 .set_state_bits(preserved_lift_bit);
 
             for i in 0..5 {
+                b.block(0x07830b);
+                if self.ancilla_slot_view(i).ancilla_type() == 0x30 { b.taken(0x078310); }
+                else {
+                    b.block(0x078312);
+                    if self.ancilla_slot_view(i).ancilla_type() != 0x31 { b.taken(0x078314); }
+                }
                 if matches!(self.ancilla_slot_view(i).ancilla_type(), 0x30 | 0x31) {
+                    b.block(0x078316);
                     self.ancilla_slot_view_mut(i).set_ancilla_type(0);
                 }
+                b.block(0x078319);
+                if i != 4 { b.taken(0x07831a); }
             }
+            b.block(0x07831c);
             self.link_cancel_dash();
+            b.block(0x07831f);
             self.ancilla_add_cape_poof(0x23, 4);
+            b.block(0x078327);
             self.ancilla_sfx2_near(0x14);
+            b.block(0x07832c);
             self.follower_link_state_mut().set_cape_transform_timer(20);
             self.follower_link_state_mut().start_bunny_transform_poof();
+        } else {
+            b.taken(0x0782e5);
         }
-
+        b.block(0x07833d);
         if (self.follower_link_state_mut().tick_cape_transform_timer() as i8).is_negative() {
+            b.block(0x078342);
             self.follower_link_state_mut().set_handler_state(28);
             self.follower_link_state_mut().finish_bunny_transform_poof();
             self.load_gear_palettes_bunny();
+            b.block(0x078351);
+        } else {
+            b.taken(0x078340);
         }
+        b.block(0x078363);
         true
     }
 
