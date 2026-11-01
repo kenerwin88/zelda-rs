@@ -2818,3 +2818,136 @@ with **2,226 ROM missing holds** and all five prefix deficits still open.
 Iteration **15,313** remains the next unresolved cluster. No GPU run,
 Snes9x process, continuous live replay, full library suite, protected-cache
 or shared-ledger write, formatting pass, commit or push was performed.
+
+## Lagless pricing coverage 1
+
+CPU-only diagnostic continuation on `codex/coverage1`, base `6c4f0bf8`.
+Evidence is under `target/coverage1/`. **Partial diagnostic checkpoint: no
+new prices are admitted, and the requested bulk-pricing step is not complete.**
+Neither a missing marker nor an exclusive routine difference proves that a
+source instruction is unpriced. The retained matcher and classifiers are
+unchanged; this diagnostic does not relax their ownership requirements.
+
+The baseline contains **2,222 missing iterations / 2,226 missing holds**.
+The census has per-PC source evidence for **1,967** of those iterations,
+including **all 453 missing rows before 462,627** and a route-spanning sample
+through **1,447,695**. The other **255** later rows are listed explicitly;
+sample totals are not extrapolated to the full route.
+
+### Durable source extraction and native census
+
+`logical_frame_ledger --coverage-source ORDERED.bin.zst COHORT.json FRESH.csv`
+projects the retained ordered source stream without executing a CPU. The
+cohort is a JSON object containing `rows`, an array of logical iteration IDs.
+It preserves PC, M/X, count, instruction clocks and exclusive JSR/JSL owner;
+JMP tails retain their caller. Entry/return, adjacency, call-stack width,
+truncation and clock conservation checks fail closed. Output creation is
+exclusive, and the companion receipt lists unavailable iterations.
+
+The retained matcher1 stream supplies **1,023** current missing rows within
+its verified 742,248-iteration boundary. Its manifest verifies unchanged.
+The source-hash-verified `target/block-worklist/source/instruction-profile.csv`
+supplies the remaining sampled rows. Every overlapping iteration agrees at
+the complete `(routine, PC, M/X, count, clocks)` level. Source PC totals
+reconcile to the ordered headers and the older independent routine totals,
+with **zero residual**. No protected cache or shared ledger was written.
+
+`scripts/pricing_coverage.py` consumes those CSVs, the current native
+`ZELDA3_SHADOW_AUDIT_SUMMARY` receipts and predictor CSVs. It decodes generated
+block footprints from the ROM, observes actual marker/model execution, and
+keeps legacy scalar charges and separate VWF work explicit. The native charge
+classes reconcile to each observer total; observer plus VWF reconciles to the
+predictor's main total. Every selected native iteration has a receipt.
+Its required `--source-totals` inputs are the extraction receipt JSON and/or
+source routine-profile CSV; it rejects a partial per-PC row whose sum differs
+from that independent total.
+
+This is **same-iteration PC membership**, not ordered occurrence matching:
+one native visit does not prove every repeated source visit was priced.
+Marker widths are checked; model PC presence does not establish its complete
+call/width/retirement identity. Any remaining opaque native work leaves
+unmatched source PCs in `unresolved_alias`, rather than declaring them free.
+
+`scripts/pricing_scalar_footprints.json` starts the reviewed scalar catalog
+with the complete `ClearOamBuffer` leaf `$00:841E..8489`. Its existing source
+comment enumerates setup, four 32-store passes, three taken branches and RTS,
+giving the existing **5,300-clock** scalar. The catalog binds the native file
+hash, observed charge site, routine scope, complete decoded leaf and fixed
+charge contract. This maps an existing price; it adds no runtime charge.
+Changed source, scope or charge contracts require re-review.
+
+| Sampled source instruction class | Clocks |
+| --- | ---: |
+| Generated marker touches PC at the recorded width | 380,650,416 |
+| Executed instruction-model witness touches PC | 702,556,794 |
+| Reviewed legacy scalar footprint touches PC | 10,425,100 |
+| Unresolved scalar/model/domain aliases | 867,391,080 |
+| Proved uncovered / admitted new pricing | 0 |
+| **Source main total** | **1,961,023,390** |
+
+All 1,967 classification equations have zero residual. Native main totals
+**1,692,138,630**, leaving a signed **268,884,760-clock** difference. That
+difference is not an additive price. `coverage.json` retains each iteration,
+every routine, prefix windows, scalar sites and input identities;
+`top50.csv` and `top50-before-462627.csv` provide the requested rankings with
+clocks and missing-row counts. They rank **unresolved** work: there is no
+proved-uncovered top-50 list.
+
+The largest unresolved entry is `$00:8888` (**212,320,844 clocks / 27 rows**),
+the song-bank upload protocol, whose separate timing paths are documented in
+`spc_driver_clock.rs`. `$02:F691` (**35,904,696 / 23**) already has cache
+hit/miss and output scalars in `overworld.rs`. `$00:F312`
+(**24,587,840 / 56**) is charged across resumable spotlight phases in
+`load_gfx.rs`. `$00:841E` initially appeared unresolved despite its complete
+existing scalar; the reviewed footprint accounts for all its **10,425,100**
+source clocks. These are concrete double-pricing risks, not new price owners.
+Complete scalar/model and separate-domain ownership remains necessary before
+converting this ranking into bulk pricing; no candidate was trialled or
+selectively suppressed.
+
+### Verification boundary
+
+The fresh eight-slice seeded ROM census completes **1,473,123 iterations**,
+gate **PASS**, unexplained zero: **2,226 missing / 0 excess / 0 FP**.
+Every predictor row is byte-identical to lag11, including all main/handler
+budgets, and every runtime hold equals P2. The five prefix deficits remain
+**56 / 92 / 221 / 375 / 454** before and after. This verifies that enabling
+the observer does not change the route's predictor results.
+
+Default and `--no-default-features` product builds are warning-free; the
+restored default executable is byte-identical to lag11, SHA-256
+`024f3525d22f466562cfdf65112dd1efe795819b86e660c7769947d2dbaa4b54`.
+All **six ledger-example tests** and **six coverage-tool tests** pass.
+No gameplay or runtime pricing changed, so the conditional CPU picture census
+was not rerun; no new picture, delivered-command, chip-state or waveform proof
+is claimed. The existing 1,462,997-exact-picture result remains prior evidence.
+
+The **one full seeded live census** also completes **1,473,123 iterations**,
+gate **PASS**, unexplained zero: **2,728 missing / 473 excess / 88 FP**,
+with no P2 disagreement. `live.csv` is byte-identical to lag11's live CSV.
+All **187** live-versus-ROM hold rows retain their prior bounded episode,
+with **zero changed live-only hold rows and zero unattributed rows**. Every
+origin poll is observed again in the fresh log as native zero versus source
+`$13`. `live-partition.json` checks every differing row against the retained
+episode's execution/reseed bound; no nearest-preceding-poll inference is used.
+
+| Origin poll | Hold rows | Added missing | Added excess | Added FP |
+| --- | ---: | ---: | ---: | ---: |
+| 142,087 | 5 | 9 | 9 | 2 |
+| 229,034 | 4 | 9 | 9 | 2 |
+| 380,880 | 15 | 114 | 90 | 5 |
+| 462,627 | 6 | 13 | 13 | 3 |
+| 627,255 | 10 | 27 | 27 | 5 |
+| 881,733 | 135 | 234 | 230 | 67 |
+| 1,064,733 | 12 | 96 | 95 | 4 |
+| **Total** | **187** | **502** | **473** | **88** |
+
+Live prefix deficits remain **56 / 92 / 230 / 393 / 586**. These unchanged
+controls do not satisfy owners 9's fewer-missing-holds requirement for a new
+pricing admission. The result is a verified diagnostic stop, with bulk
+pricing and complete instruction ownership still open.
+
+`verification.json` and `artifact-hashes.json` bind the checks and artifacts.
+Evidence remains below **1 GB** and `git diff --check` passes. No GPU,
+Snes9x process, continuous live replay, full library suite, protected-cache
+or shared-ledger write, formatting pass, commit or push was performed.

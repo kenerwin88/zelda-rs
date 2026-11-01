@@ -1,0 +1,15 @@
+[
+  {
+    "name": "ClearOamBuffer",
+    "source": "crates/zelda3/src/zelda_rtl/rtl_oam_obj.rs",
+    "source_sha256": "3bf915b6f8854175208e503a397165361d169fb37e6663e66b26552c761cd04b",
+    "site": "crates/zelda3/src/zelda_rtl/rtl_oam_obj.rs:1654:9",
+    "routine": "00841e",
+    "entry": "00841e",
+    "end": "00848a",
+    "m8": true,
+    "x8": true,
+    "master_per_charge": 5300,
+    "proof": "Complete leaf, no children: source-address comment at CLEAR_OAM_BUFFER_MASTER_CYCLES enumerates LDX, four 32-store passes, three taken BPLs and RTS. Existing native scalar charges that complete leaf. This is PC membership only, not a new price or ordered occurrence pairing."
+  }
+]

@@ -6,6 +6,10 @@
 //! stores in `picture-events.jsonl.zst`. `at` is the source bus-access timestamp;
 //! line/cycle are its physical beam position; retirement is recorded separately.
 //! This does not alter execution.
+//! `--coverage-source ORDERED.bin.zst COHORT.json FRESH.csv` projects retained
+//! ordered source witnesses into sparse per-PC clocks without running a CPU.
+//! See scripts/pricing_coverage.py for the corresponding native PC-touch census;
+//! unresolved scalar aliases are not proof of unpriced instructions.
 //!
 //! Runs the cartridge from reset on the in-repo source CPU (the owner whose
 //! presented OAM matches the pinned Snes9x cache) and cuts the route into main
@@ -56,6 +60,8 @@
 //! wall minus CPU/DMA/refresh is a residual, not a new timing price.
 
 use sha2::{Digest, Sha256};
+#[path = "logical_frame_ledger/coverage.rs"]
+mod coverage;
 use snes::{Snes9xColdCpuExecutor, SourceCpuAcceptedInterrupt, SourceCpuBusAccessKind};
 use std::{
     env,
@@ -361,6 +367,9 @@ fn write_seed(path: PathBuf, snes: &snes::Snes) -> Result<(), Box<dyn Error>> {
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args().skip(1);
     let first = args.next().ok_or("missing ROM path")?;
+    if first == "--coverage-source" {
+        return coverage::run(args.collect());
+    }
     // Static snapshot diagnostic, deliberately separate from the source's
     // line-by-line capture: no CPU or HDMA is advanced by this mode.
     if first == "--ppu-snapshot" {
