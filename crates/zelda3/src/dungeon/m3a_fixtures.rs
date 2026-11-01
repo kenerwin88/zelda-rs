@@ -57,6 +57,33 @@ fn m3b_nx4_entry_and_shared_body_match_rom() {
 }
 
 #[test]
+fn prefix_hunt2_variable_blocks_match_rom_without_price_change() {
+    let assets=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    for n in [1u16,2,3,4,8,16,32] {
+        for dst in [0u16,8,0x800,0x1000] {
+            let mut native=ZeldaState::new();
+            native.set_assets(&assets).unwrap();
+            let mut ram=native.wram_image().into_owned();
+            for (i,offset) in [0xbf,0xc2,0xc5,0xc8,0xcb,0xce,0xd1,0xd4].into_iter().enumerate() {
+                let address=0x7e2000u32+(i as u32%4)*0x80+(i as u32/4)*2;
+                ram[offset..offset+3].copy_from_slice(&address.to_le_bytes()[..3]);
+            }
+            // Complete M16/X16 call, no child routines. n=1 covers the
+            // untaken outer branch; all others cover repeated and final passes.
+            let expected=source_work(&ram,0x018a44,false,false,false,n,0,dst);
+            for lagless in [false,true] {
+                let mut state=native.clone();state.set_lag_free(lagless);
+                let before=crate::cycle_ledger::master();
+                state.room_draw_a_many32x32_blocks(i32::from(n),0,dst/2);
+                assert_eq!(crate::cycle_ledger::master()-before,expected,
+                    "n={n} dst={dst:04x} lagless={lagless}");
+            }
+        }
+    }
+}
+
+#[test]
 fn m3a_fixed_floor_n8_matches_rom_for_both_planes() {
     for plane in [ROOM_BG2_TILEMAP_BASE, ROOM_BG1_TILEMAP_BASE] {
         for dst in [0, 8, 0x800, 0x1000] {

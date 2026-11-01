@@ -3123,25 +3123,35 @@ impl ZeldaState {
             0x7e_0000 + dst as u32,
         );
         #[cfg(feature = "rom-shadow-audit")]
-        let mut children = if crate::rom_shadow_audit::observing() {
+        if crate::rom_shadow_audit::observing() {
             let (witness_cost, _, steps) = crate::cycle_models::decompress::decompress_instruction_timeline(
                 entry, sheet, stream, stream_source_offset(entry, sheet), 0x7e_0000 + dst as u32);
             assert_eq!(witness_cost, cost);
-            let mut own = Vec::new();
-            let mut children = Vec::new();
-            let mut child = Vec::new();
+            // $00:E772..E852: expose the existing model in retirement order.
+            // A child scope starts at $E843 and closes after its actual RTS;
+            // the parent JSR stays outside. No gameplay runs between charges.
+            // The aggregate non-audit lane below keeps exactly the same price.
+            let mut child_scope = None;
+            let mut total = 0u64;
+            let mut child_total = 0u64;
+            let mut calls = 0u64;
             for step in steps {
-                let row = (step.pc, step.master_cycles, step.in_get_next_byte);
-                if step.in_get_next_byte {
-                    child.push(row);
-                    if step.pc == Some(0xe851) { children.push(std::mem::take(&mut child)); }
-                } else { own.push(row); }
+                if step.in_get_next_byte && child_scope.is_none() {
+                    child_scope = Some(crate::cycle_ledger::routine(0x00_e843));
+                    calls += 1;
+                } else if !step.in_get_next_byte {
+                    drop(child_scope.take());
+                }
+                crate::rom_shadow_audit::model(vec![(step.pc, step.master_cycles, step.in_get_next_byte)]);
+                crate::cycle_ledger::charge(u64::from(step.master_cycles));
+                total += u64::from(step.master_cycles);
+                if step.in_get_next_byte { child_total += u64::from(step.master_cycles); }
             }
-            assert!(child.is_empty());
-            assert_eq!(children.len() as u64, cost.get_next_byte_calls);
-            crate::rom_shadow_audit::model(own);
-            Some(children.into_iter())
-        } else { None };
+            drop(child_scope);
+            assert_eq!((total, child_total, calls),
+                (cost.master, cost.get_next_byte_master, cost.get_next_byte_calls));
+            return;
+        }
         crate::cycle_ledger::charge(cost.master - cost.get_next_byte_master);
         let Some(last_call) = cost.get_next_byte_calls.checked_sub(1) else {
             return;
@@ -3150,12 +3160,8 @@ impl ZeldaState {
         // a bank end (if any) costs 56 more, booked on the last record here
         // since only the per-host total is compared.
         for _ in 0..last_call {
-            #[cfg(feature = "rom-shadow-audit")]
-            if let Some(children) = &mut children { crate::rom_shadow_audit::model(children.next().unwrap()); }
             crate::cycle_ledger::charge_routine(0x00_e843, GET_NEXT_BYTE_MASTER);
         }
-        #[cfg(feature = "rom-shadow-audit")]
-        if let Some(children) = &mut children { crate::rom_shadow_audit::model(children.next().unwrap()); }
         crate::cycle_ledger::charge_routine(
             0x00_e843,
             cost.get_next_byte_master - last_call * GET_NEXT_BYTE_MASTER,

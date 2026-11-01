@@ -4061,3 +4061,156 @@ unmatched source and native clocks, including unresolved aliases.
 | 81253 | 5007200 | 4974776 | 4480488 | 4448064 |
 | 83186 | 301822 | 300846 | 44608 | 43632 |
 | 88955 | 4662296 | 4627976 | 4243378 | 4209058 |
+
+## Lagless prefix hunt 2
+
+CPU-only investigation on `codex/prefix-hunt2`, base `9449d31b`. Evidence is
+under `target/prefix-hunt2/`. **Verified partial ordering stop: the three
+named decompression/tile owners now pair, without adding a price or changing
+behavior. No new native omission is proved; zero holds recover.** Remaining
+unmatched work is not an additive pricing worklist.
+
+### Ordered retirements and exclusive ownership
+
+* `$01:8A44..8A88`, variable `RoomDraw_A_Many32x32Blocks`: expose its existing
+  scalar blocks with the already-generated M16/X16 markers. Both inner-loop
+  outcomes, outer-loop repetition and final return retain identical clocks.
+  The fixed eight-block floor implementation now emits its two inner passes
+  from one loop site, eliminating the unchanged matcher's ambiguous two-site
+  witness. Gameplay writes and their order are unchanged. The complete-call
+  ROM fixture checks seven counts and four destinations in both timing lanes
+  (56 native checks); the retained fixed-floor fixture also passes.
+* `$00:E772/$00:E843` and the background decompression entries: the opt-in
+  audit build retires each existing model instruction with its PC and clocks,
+  interleaving parent JSRs and the actual `GetNextByte` children. Child scopes
+  close after their actual return. This replaces the observer's parent-first,
+  children-last aggregation. Assertions conserve total clocks, child clocks
+  and child calls. Ordinary builds retain the aggregate charge; no gameplay
+  runs between the audit charges. The every-cartridge-sheet ROM fixture checks
+  the model's ordered PCs, clocks, children and final return.
+
+No generated price-table entry changes. Children remain exclusive, no work
+is charged twice, and no runtime price is selected from source counts. Both
+142,000-row candidate audit captures have predictor fields identical to the
+committed baseline; the final capture also includes the single-site floor
+loop. The default full-route predictor CSV is byte-identical to hunt 1's.
+
+The unchanged matcher uses the original 52- and 88-row populations, including
+the two holds recovered by hunt 1. Source streams and their original-ID maps
+are reused read-only from hunt 1; the matcher freshly verifies their manifest
+identities and independent instruction count/clock/PC-path digests. It changes
+no instruction order or source body. Final results:
+
+| Cohort | Source S | Native N | Paired P=Q | Unmatched source U | Unmatched native O |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 52 rows | 159,058,210 | 140,777,896 | 108,704,320 | 50,353,890 | 32,073,576 |
+| 88 rows | 257,529,042 | 214,200,176 | 163,648,464 | 93,880,578 | 50,551,712 |
+
+A fresh replay of hunt 1's retained `zelda3-candidate-audit` binary on the
+same rows has identical native totals and predictor fields. Pairing improves
+from **81,548,110 to 108,704,320** clocks on 52 rows and
+from **127,678,256 to 163,648,464** on 88 rows.
+`ordered-before-after.json` binds this comparison; it does not mix the older
+pre-Armos cohort prices into the claimed observer gain.
+
+Every row conserves `S=P+U`, `N=Q+O`, and `S-N=U-O`. Paired cost errors and
+source/native frame failures are zero; automatic class-c admission remains
+zero. `$01:8A44`, `$00:E772`, and `$00:E843` each have **zero remaining
+unmatched source clocks** on both cohorts. This establishes the selected
+ordered occurrences, not complete route retirement equivalence.
+
+### Remaining source spans and sibling review
+
+The [52-row table](../../target/prefix-hunt2/final-audit/52/gap-table.csv) and
+[88-row table](../../target/prefix-hunt2/final-audit/88/gap-table.csv) retain all
+signed counters. Each directory's `missing-source-gaps.json` records contiguous
+source ordinals, first/last PCs, clocks, owner and rejection reason;
+`owners-by-reason.json` / `.csv` group all spans and retain a first witness.
+`missing-native-gaps.json` preserves the matcher's native residual groups;
+individual native retirements remain in the compressed ordered stream. These
+are grouped native rejections, not complete per-occurrence certificates.
+
+| Remaining owner | 52-row clocks | 88-row clocks | Reason / boundary |
+| --- | ---: | ---: | --- |
+| `$00:8888` | 16,302,856 | 40,019,900 | Masked-upload protocol, outside ordinary main-work retirement; scalar/call mapping unproved. Its executing SPC handshake and masked callbacks cannot be added as a missing main price. |
+| `$00:E609` | 4,480,848 | 7,073,460 | Sheet-loader suffix/conversion model call, width or order mapping unresolved. |
+| `$00:E583` | 3,552,552 | 5,131,464 | Same loader/shared conversion boundary; already has instruction retirements. |
+| `$00:E60D` | 2,366,856 | 3,747,450 | Same loader/shared conversion boundary. |
+| `$01:893C` | 2,504,882 | 3,449,216 | Dispatcher and JMP-tail object-body scalar/call aliases. |
+| `$02:FD87` | 1,414,080 | 2,121,120 | Generated-marker occurrence mapping unresolved; absent mapped marker is not proof of absent native work. |
+| `$09:C6F5` | 1,209,784 | 1,646,680 | Existing bounds-dependent scalar with independently owned Proxima child. |
+| `$00:F312` | 881,640 | 2,222,068 | Retained spotlight/raster-wait scalar and continuation boundary. |
+| `$09:C452` | 702,620 | 1,053,930 | Reset entry/call mapping; the 4,096-pass clear already has markers and a ROM fixture. |
+
+The sibling review inventories 55 reference `*Draw*` functions containing
+coordinate-preparation guards. The 51 directly matched native functions have
+the same textual preparation-call counts; four helper/filename aliases were
+reviewed explicitly. ChainBallTrooper retains both checks; Zora King retains
+its conditional second check; Ganon retains the guarded preparation and draw
+path; Trinexx propagates the helper's double-return result before drawing.
+`sibling-draw-review.json` preserves the inspected bodies and manual findings.
+This is a source-review bound, not an all-path ROM proof for all 55 drawers.
+It establishes no additional Armos-like omission to repair in this batch.
+
+The smaller branch-extra residuals also remain explicit. In DrawMultiple,
+`$05:DFDF`'s existing marker attaches the taken extra to every pass after the
+first, while the ROM takes it on every pass before the last. Both charge
+`n-1` extras; this is misplaced occurrence evidence, not a proved missing
+loop or body. No extra price is admitted from that residual.
+
+### ROM admission, prefixes and live partition
+
+The eight-chunk seeded ROM census completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, with **2,183 missing / 0 excess / 0 FP**, unchanged.
+Every runtime hold equals P2. All predictor columns are unchanged, not only
+held counts. The continuous 0–96,000 ROM prefix also passes with clean state
+and **51 / 0 / 0**, of which 50 missing holds precede 94,334.
+
+| Before iteration | Before | After |
+| --- | ---: | ---: |
+| 94,334 | 50 | 50 |
+| 141,568 | 86 | 86 |
+| 228,499 | 213 | 213 |
+| 380,243 | 364 | 364 |
+| 461,989 | 442 | 442 |
+
+One full seeded live-APU census completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,447 / 260 / 74**, unchanged. Its CSV is
+byte-identical to `target/prefix-hunt1/live.csv`; every hold equals P2.
+Changed live-only hold rows and unattributed current/changed rows are all
+**zero**. The retained source read-episode inventory is reused with its
+identity; fresh poll observations and actual reseeds come from this run.
+
+| Observed poll origin | Current live-versus-ROM hold rows | Changed rows | Added missing / excess / FP |
+| --- | ---: | ---: | --- |
+| 94,853 | 6 | 0 | 8 / 8 / 2 |
+| 142,087 | 5 | 0 | 9 / 9 / 2 |
+| 462,626 | 6 | 0 | 13 / 13 / 3 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+
+`live-partition.json` retains the row values, poll witnesses and execution/
+reseed bounds. Secondary budget differences are separately recorded; these
+are not silently attributed to an arbitrary preceding poll.
+
+
+These deficits are missing-hold contributions, not measured net SPC phase.
+No delivered-command, chip-state or waveform equality was recaptured. The
+masked-upload and sound-proof limitations remain open.
+
+### Verification boundary
+
+The new variable-count fixture, retained fixed-floor fixture, three
+decompressor tests and eight observer tests pass (13 filtered tests total).
+Default, reduced-feature, final audit and restored-default product builds
+are warning-free; the test build retains existing unrelated dead-code
+warnings. The restored default binary equals the full-census candidate.
+No gameplay behavior changed, so **1,462,997 exact CPU pictures remains prior
+hunt-1 evidence**, not a freshly rerun picture census.
+
+`verification.json` binds source, binaries and key receipts. The matcher,
+classifier, replay harness, generated price table and P2 source are unchanged.
+`git diff --check` passes. No GPU, Snes9x process, continuous live replay, full
+library suite, protected cache/shared-ledger write, new environment switch,
+formatting, commit or push was used. Evidence remains below 3 GB and all
+started jobs have exited. This is a verified ordering improvement; complete
+attribution and repair of the remaining missing holds is still open.

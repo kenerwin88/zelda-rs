@@ -1203,18 +1203,23 @@ impl ZeldaState {
         src: usize,
         mut dst: u16,
     ) -> u16 {
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
         // $018A44: STA $0A (the block count).
-        crate::cycle_ledger::charge(32);
+        if self.lag_free { blocks.block(0x018a44); }
+        else { crate::cycle_ledger::charge(32); }
         loop {
             // $018A46-$018A49: LDA #$0002 / STA $04 (the two 4x2 passes).
-            crate::cycle_ledger::charge(56);
+            if self.lag_free { blocks.block(0x018a46); }
+            else { crate::cycle_ledger::charge(56); }
             for pass in 0..2 {
                 // $018A4B-$018A7B: eight tile stores through the line pointers,
                 // Y += $100, DEC $04, BNE (priced not taken).
-                crate::cycle_ledger::charge(952);
+                if self.lag_free { blocks.block(0x018a4b); }
+                else { crate::cycle_ledger::charge(952); }
                 if pass == 0 {
                     // BNE $018A4B taken after the first pass.
-                    crate::cycle_ledger::charge(6);
+                    if self.lag_free { blocks.taken(0x018a7b); }
+                    else { crate::cycle_ledger::charge(6); }
                 }
                 for y in 0..2 {
                     for x in 0..4 {
@@ -1225,7 +1230,8 @@ impl ZeldaState {
                 dst += xy(0, 2) as u16;
             }
             // $018A7D-$018A85: Y -= $1F8, DEC $0A, BNE (priced not taken).
-            crate::cycle_ledger::charge(136);
+            if self.lag_free { blocks.block(0x018a7d); }
+            else { crate::cycle_ledger::charge(136); }
             dst = dst
                 .wrapping_add(xy(4, 0) as u16)
                 .wrapping_sub(xy(0, 4) as u16);
@@ -1234,10 +1240,12 @@ impl ZeldaState {
                 break;
             }
             // BNE $018A46 taken for every block but the last.
-            crate::cycle_ledger::charge(6);
+            if self.lag_free { blocks.taken(0x018a85); }
+            else { crate::cycle_ledger::charge(6); }
         }
         // $018A87-$018A88: CLC / RTS.
-        crate::cycle_ledger::charge(56);
+        if self.lag_free { blocks.block(0x018a87); }
+        else { crate::cycle_ledger::charge(56); }
         dst
     }
 
@@ -1709,8 +1717,11 @@ impl ZeldaState {
             b.block(0x018a44);
             for block in 0..8 {
                 b.block(0x018a46);
-                b.block(0x018a4b); b.taken(0x018a7b);
-                b.block(0x018a4b);
+                // Both source loop passes retire at the same native site.
+                for pass in 0..2 {
+                    b.block(0x018a4b);
+                    if pass == 0 { b.taken(0x018a7b); }
+                }
                 b.block(0x018a7d);
                 if block < 7 { b.taken(0x018a85); }
             }
