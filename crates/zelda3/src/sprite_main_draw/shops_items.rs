@@ -427,7 +427,7 @@ impl ZeldaState {
         }
 
         // ROM $05:F03D -> $05:B88D -> $06:E496
-        if (self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) & 3) != 0 {
+        if (self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) & 3) != 0 {
             let value = 0u8.wrapping_sub(self.sprite_slot_view(k).x_velocity());
             self.sprite_slot_view_mut(k).set_x_velocity(value);
         }

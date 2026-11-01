@@ -3254,3 +3254,154 @@ census was not rerun: **1,462,997 exact pictures remains prior evidence**.
 No GPU, Snes9x process, continuous live replay, full library suite, protected
 cache/shared-ledger write, new environment switch, formatting, commit or push
 was performed. Complete bulk residual pricing remains unfinished.
+
+
+## Lagless pricing coverage 4
+
+CPU-only continuation on `codex/coverage4`, base `a2366e9e`. Evidence is in
+`target/coverage4/`. **Verified partial pricing stop: one complete collision
+wrapper is added at 21 source-confirmed call sites; three existing drawing
+owners and their shared entries are converted from scalars to ROM markers.
+The complete 53-entry residual worklist is not finished.**
+
+### Owners and exclusive proof
+
+* `$05:B88D..B891` collision near wrapper: generated JSL `$06:E496` and RTS,
+  **104 source instruction clocks**. Eight executed-ROM fixtures cover slot
+  endpoints and indoor/outdoor/layer inputs, checking clocks and returned
+  collision value. Twenty-one native sites now name the actual bank-$05
+  wrapper. Nineteen already charged the `$06:E496` child; the rat and fireball
+  sites now also invoke that existing complete child wrapper. `$06:E4AB`
+  collision work remains its separate owner. Caller JSR prices remain intact.
+* `$05:DF6C`, shared `$DF70`, and `$DF78..DFE4`: replaces the existing entry,
+  complete drawing-loop and return scalars, including clipping, priority,
+  repeated-loop branches and the off-screen return. No scalar executes beside
+  its replacement markers. The ordinary non-lagless ledger totals are retained.
+* `$05:DFE9..E00A`: replaces the priority-preparation scalars on every branch.
+  The coordinate child remains excluded. Its existing `$05:FA57/FA58`
+  double-return caller charge remains separate and unchanged; it is not added
+  again or misrepresented as new uncovered work.
+* `$1D:8549..854D`: complete drawing bank wrapper replacement, child excluded.
+  `$05:DF75` and `$05:DFE5` deferred entries use the same verified drawing and
+  preparation owners, excluding the existing OAM allocator child.
+
+The drawing fixtures execute **210 direct/R6/bank-wrapper cases** and
+**24 deferred-entry cases** against the unmodified ROM. They independently
+check body, preparation and wrapper prices across the priority-state branches,
+clipped Y, off-screen double return, and first/repeated/last loop iterations.
+The initial fixture caught an omitted `$05:DF73 BRA` marker in the conversion;
+it was corrected from the decoded ROM before any census candidate was built.
+Prices come from ROM instructions, never from sampled deficits or hold counts.
+The development ROM matches the read-only cache manifest identity.
+
+`candidate-owners.json`, `collision-sites.json`, `candidate.patch`, fixture
+logs and the generated block table retain the admitted boundaries. The largest
+sampled owner, DrawMultiple, already had scalar prices: its coverage gain is
+not new instruction work. Remaining `$06:E41E` coordinate/continuation aliases,
+`$06:84E2` dispatched bodies, `$00:8781`'s existing 52-own/362-caller split,
+and `$00:80B5` parent aliases receive no additive residual price. Sword swing
+still needs complete control/SFX/reset/spin/recoil tail ownership. Canonical
+inactive/paused families are preserved. `ranked-worklist.json` records the
+source-clock ranking; `remaining-worklist.json` preserves all 53 residual
+entries with their review status rather than claiming scalar conversion closed
+every occurrence difference.
+
+### ROM admission and prefixes
+
+Both seeded trial windows, 14,000–16,000 and 636,000–638,000, have zero excess/FP.
+The full eight-chunk seeded ROM census completes **1,473,123 iterations**,
+**PASS**, **unexplained 0**. Missing/excess/FP improves from **2,189 / 0 / 0**
+to **2,185 / 0 / 0**. The four changed hold rows
+(49,037; 683,818; 683,820; 1,440,055) each recover one hold; none loses a hold.
+Every runtime hold equals P2. The combined batch passes, so no census-failing
+owner required withdrawal or bisection.
+
+Main prices change on **104,876 iterations**, adding **20,488,122 clocks**
+over the route. `rom-comparison.json` retains every changed column and hold.
+
+| Before iteration | Baseline ROM deficit | Candidate ROM deficit | Candidate live deficit |
+| --- | ---: | ---: | ---: |
+| 94,334 | 53 | 52 | 52 |
+| 141,568 | 89 | 88 | 88 |
+| 228,499 | 216 | 215 | 215 |
+| 380,243 | 367 | 366 | 366 |
+| 461,989 | 445 | 444 | 444 |
+
+These are cumulative missing-hold contributions, not net measured SPC phase.
+
+### Single final live census
+
+The one full seeded live census completes **1,473,123 iterations**, gate
+**PASS**, **unexplained 0**, and zero runtime/P2 disagreements. Missing/excess/FP
+is **2,432 / 243 / 70**, against Coverage 3's
+**2,550 / 333 / 75**. There are **15 changed live-only
+hold rows**, with **0 unattributed changed rows**
+and **0 unattributed current rows**.
+
+| Origin poll | Candidate live-versus-ROM hold rows | Changed rows versus baseline | Added missing / excess / FP |
+| --- | ---: | ---: | ---: |
+| 380,880 | 0 | 15 | 0 / 0 / 0 |
+| 462,627 | 6 | 0 | 13 / 13 / 3 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+
+`live-partition.json` retains baseline and candidate row values, observed polls
+and actual reseeds within the established execution/reseed episode bounds.
+`live-secondary-rows.json` reports budget differences separately; they are not
+silently assigned to the nearest preceding poll. This hold partition is not
+source-equal delivered-command, SPC-state or waveform proof. Those strict
+sound proofs were not recaptured.
+
+### Sampled coverage and verification
+
+The unchanged coverage tool consumes fresh native audit receipts for all
+**2,222 selected rows**, of which **1,967** have retained source
+instructions. The **255 unavailable rows** remain explicit.
+The retained ordered source stream ends at iteration 742,247; no later retained
+per-instruction stream was found for cheap extraction. The existing independent
+per-PC sample supplies the later available rows; no cold ROM rerun was substituted
+for missing source evidence. `source-availability.json` and hash-verified reused
+source identities record this boundary.
+
+An initial library-only audit feature build emitted empty receipt streams; it
+is explicitly invalidated under `invalid-audit-library-feature/` and supplies
+no coverage claim. The corrected executable-feature build passed a two-row
+receipt pilot before the complete audit.
+
+All eight audit predictor CSVs equal their default-candidate full-route chunks
+byte for byte. Every native receipt is present; source class totals and native
+observer/predictor equations have zero residual.
+
+| Source instruction class | Coverage 3 clocks | Coverage 4 clocks |
+| --- | ---: | ---: |
+| marker_touched | 398,560,956 | 418,667,218 |
+| model_touched | 702,556,794 | 702,556,794 |
+| scalar_touched | 10,425,100 | 10,425,100 |
+| unresolved_alias | 849,480,540 | 829,374,278 |
+| uncovered | 0 | 0 |
+
+Source main remains **1,961,023,390 clocks**. Sampled native main is
+**1,692,878,744**, and the signed difference is **268,144,646**,
+versus **268,221,582** before. These are same-iteration PC-touch
+classes, not ordered occurrence equivalence or admitted additive prices.
+`coverage-comparison.json`, `audit-price-delta.json` and `top50-residual.csv`
+retain the classifications, native change accounting and residual ranking.
+Across all 2,222 sampled native rows, the entire 76,936-clock increase is
+59,176 clocks in the new near wrapper plus 17,760 in the newly invoked
+existing child wrapper, with zero unexplained native price delta. The drawing
+replacements add no native work in this sample.
+
+All **227 sprite-module tests**, the additional deferred-entry test,
+**seven generator tests** and **six coverage-tool tests** pass. Default,
+`--no-default-features`, audit and restored-default builds are warning-free;
+the test compilation retains the 24 pre-existing dead-code warnings. The
+restored default binary is byte-identical to the ROM/live census candidate.
+`git diff --check` passes; `verification.json` and `artifact-hashes.json` bind
+the stopping point. Evidence remains below 3 GB.
+
+Only pricing, source-entry selections, generated blocks, fixtures and this
+note change. No gameplay operation or runtime pacing rule changed, so the
+conditional CPU picture census was not rerun: **1,462,997 exact pictures is
+prior evidence**, not a fresh picture claim. No classifier/matcher change,
+GPU run, Snes9x process, continuous live replay, full library suite, protected
+cache/shared-ledger write, new environment switch, cargo fmt, commit or push
+occurred. Complete residual ownership and bulk pricing remain open.

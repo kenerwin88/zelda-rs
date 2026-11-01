@@ -1440,6 +1440,10 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x05ab97, 0x05ab9b, true, true, 62, 0x000000, &[]),
     // $05:AB9B: fixed cost
     (0x05ab9b, 0x05ab9c, true, true, 42, 0x000000, &[]),
+    // $05:B88D: fixed cost
+    (0x05b88d, 0x05b891, true, true, 62, 0x000000, &[]),
+    // $05:B891: fixed cost
+    (0x05b891, 0x05b892, true, true, 42, 0x000000, &[]),
     // $05:B89A: 05b89a +6 if the index crosses a page; 05b89d +6 if the index crosses a page; 05b8a3 +6 if the index crosses a page; 05b8a8 +6 if the index crosses a page
     (0x05b89a, 0x05b8b2, true, true, 282, 0x000000, &[0x05b89a, 0x05b89d, 0x05b8a3, 0x05b8a8]),
     // $05:B8B2: fixed cost
@@ -1590,6 +1594,14 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x05dcd4, 0x05dcd6, true, true, 58, 0x000000, &[]),
     // $05:DCD6: 05dcd6 +6 if the index crosses a page
     (0x05dcd6, 0x05dcde, true, true, 128, 0x000000, &[0x05dcd6]),
+    // $05:DF6C: fixed cost
+    (0x05df6c, 0x05df70, true, true, 48, 0x000000, &[]),
+    // $05:DF70: fixed cost
+    (0x05df70, 0x05df73, true, true, 46, 0x000000, &[]),
+    // $05:DF73: fixed cost
+    (0x05df73, 0x05df75, true, true, 22, 0x000000, &[]),
+    // $05:DF75: fixed cost
+    (0x05df75, 0x05df78, true, true, 46, 0x000000, &[]),
     // $05:DF78: 05df78 taken +6
     (0x05df78, 0x05df7a, true, true, 16, 0x05df78, &[]),
     // $05:DF7A: fixed cost
@@ -1608,6 +1620,20 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x05dfe1, 0x05dfe4, false, false, 50, 0x000000, &[]),
     // $05:DFE4: fixed cost
     (0x05dfe4, 0x05dfe5, true, true, 44, 0x000000, &[]),
+    // $05:DFE5: fixed cost
+    (0x05dfe5, 0x05dfe9, true, true, 62, 0x000000, &[]),
+    // $05:DFE9: fixed cost
+    (0x05dfe9, 0x05dfec, true, true, 46, 0x000000, &[]),
+    // $05:DFEC: 05dff3 +6 if the index crosses a page; 05dff8 taken +6
+    (0x05dfec, 0x05dffa, true, true, 150, 0x05dff8, &[0x05dff3]),
+    // $05:DFFA: fixed cost
+    (0x05dffa, 0x05dffe, true, true, 40, 0x000000, &[]),
+    // $05:DFFE: 05e000 taken +6
+    (0x05dffe, 0x05e002, true, true, 32, 0x05e000, &[]),
+    // $05:E002: fixed cost
+    (0x05e002, 0x05e009, true, true, 72, 0x000000, &[]),
+    // $05:E009: fixed cost
+    (0x05e009, 0x05e00b, true, true, 70, 0x000000, &[]),
     // $05:E1A7: fixed cost
     (0x05e1a7, 0x05e1b1, true, true, 126, 0x000000, &[]),
     // $05:E1B1: 05e1b1 taken +6

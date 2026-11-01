@@ -187,7 +187,7 @@ impl ZeldaState {
                 b.block(0x0596b2);
                 if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0 {
                     b.block(0x0596b9);
-                    let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                    let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
                     b.block(0x0596bc);
                     if collision != 0 {
                         b.taken(0x0596bc);
@@ -294,7 +294,7 @@ impl ZeldaState {
             self.sprite_get16_bit_coords(k);
             b.block(0x05979a);
             // ROM $05:979A -> $05:B88D -> $06:E496
-            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
             b.block(0x05979d);
             if self.game_state.sprites.workspace.tile() == NativeTile::DEEP_WATER {
                 b.block(0x0597a4);

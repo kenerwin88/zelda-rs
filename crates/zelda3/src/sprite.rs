@@ -60,6 +60,7 @@ pub(super) enum SpriteDamageBothEntry {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpriteTileCollisionEntry {
     Unpriced,
+    Rom05B88D,
     Rom06E496,
     Rom1E8B2E,
 }

@@ -1004,7 +1004,7 @@ impl ZeldaState {
         let value = 255;
         self.sprite_slot_view_mut(k).set_subtype(value);
         // ROM $05:E8C5 -> $05:B88D -> $06:E496
-        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
         b.block(0x05e8c8);
         let bak0 = self.sprite_slot_view(k).flags4();
         let value = 7;

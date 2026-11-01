@@ -2318,6 +2318,16 @@ impl ZeldaState {
                 result
 
             }
+            SpriteTileCollisionEntry::Rom05B88D => {
+                // $05:B88D JSL $06:E496; $05:B891 RTS. The child owns
+                // its bank wrapper and collision body, not this near wrapper.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05b88d));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x05b88d);
+                let result = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+                b.block(0x05b891);
+                result
+            }
             SpriteTileCollisionEntry::Rom1E8B2E => {
                 // $1E:8B2E..8B32: JSL $06:E496 and RTS; the far child is already priced.
                 let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8b2e));

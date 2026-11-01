@@ -167,7 +167,7 @@ impl ZeldaState {
             return;
         }
         // ROM $05:921E -> $05:B88D, $05:8F69 -> $05:B88D -> $06:E496
-        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
         // $05:8F6C JSL $06:F121: complete body, caller opcode unchanged.
         self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
         match self.sprite_slot_view(k).ai_state() {
@@ -362,7 +362,7 @@ impl ZeldaState {
         // ROM $05:9218
         if !self.sprite_check_damage_same_layer_long_marked(k)
             // ROM $05:921E -> $05:B88D -> $06:E496
-            && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) == 0
+            && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) == 0
         {
             return;
         }
@@ -1242,14 +1242,14 @@ impl ZeldaState {
             let value = 1;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
             // ROM $05:9364 -> $05:B88D, $05:9370 -> $05:B88D, $05:93C4 -> $05:B88D -> $06:E496
-            let mut coll = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            let mut coll = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
             b.block(0x059367);
             let value = (-1i8) as u8;
             self.sprite_slot_view_mut(k).set_x_velocity(value);
             let value = (-1i8) as u8;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
             // ROM $05:9364 -> $05:B88D, $05:9370 -> $05:B88D, $05:93C4 -> $05:B88D -> $06:E496
-            coll |= self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            coll |= self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
             b.block(0x059373);
             let j = if coll < 4 {
                 b.block(0x05937b);
@@ -1295,7 +1295,7 @@ impl ZeldaState {
         let value = SOLDIER_B_STEP_Y_VELOCITIES[j] as u8;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
         // ROM $05:9364 -> $05:B88D, $05:9370 -> $05:B88D, $05:93C4 -> $05:B88D -> $06:E496
-        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
 
         b.block(0x0593c7);
         j = usize::from(self.sprite_slot_view(k).direction());

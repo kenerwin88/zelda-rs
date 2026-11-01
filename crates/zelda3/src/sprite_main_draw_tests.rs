@@ -6000,3 +6000,99 @@ fn bypass6_stunned_entry_prefix_and_freeze_alias_match_rom() {
     }
     eprintln!("bypass6 stunned prefix/alias: {cases} ROM cases");
 }
+
+#[test]
+fn coverage4_collision_near_wrapper_matches_rom() {
+    use crate::zelda_rtl::sprite::SpriteTileCollisionEntry;
+    for k in [0, 15] {
+        for indoors in [0, 1] {
+            for layer in [0, 4] {
+                let mut n = marker29_state();
+                n.write_wram_byte(0x1b, indoors);
+                n.write_wram_byte(0x46c, layer);
+                n.sync_native_game_state_from_ram();
+                let machine = marker29_machine(&n, 0x05b88d, k).expect("development ROM required");
+                let mut result = 0;
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x05b88d, machine,
+                    |s| s.cpu.k == 5 && (0xb88d..0xb892).contains(&s.cpu.pc),
+                    || result = n.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D));
+                assert_eq!(result, source.snes().cpu.a as u8);
+            }
+        }
+    }
+}
+
+#[test]
+fn coverage4_draw_multiple_entries_match_rom() {
+    use crate::zelda_rtl::sprite::DrawMultipleEntry;
+    // Complete Direct/R6/Bank1d bodies, every priority-state branch, loop
+    // first/repeated/last, Y clipping and the coordinate child's double return.
+    for owner in 0..3 {
+    for entry in [DrawMultipleEntry::Direct, DrawMultipleEntry::R6, DrawMultipleEntry::Bank1d] {
+        if owner == 2 && entry != DrawMultipleEntry::Bank1d { continue; }
+        for (state, saved, priority) in [(9,0,0), (10,9,0), (10,11,1), (11,0,0), (11,0,1)] {
+            for (x, y) in [(0x40u16,0x40u16), (0x40,0x13f), (0x400,0x40)] {
+                for count in [1usize, 5] {
+                    let mut n = marker29_state();
+                    for (a,v) in [(0xdd0,state),(0x1fa2c,saved),(0x1fa3c,priority),(0xcaa,0x80)] {
+                        n.write_wram_byte(a,v);
+                    }
+                    n.write_wram_word(0xfd8,x); n.write_wram_word(0xfda,y);
+                    n.sync_native_game_state_from_ram();
+                    let pc = match entry { DrawMultipleEntry::Direct => 0x05df6c,
+                        DrawMultipleEntry::R6 => 0x05df70, DrawMultipleEntry::Bank1d => 0x1d8549 };
+                    let mut machine = marker29_machine(&n,pc,0).expect("development ROM required");
+                    // Draw records are data in bank 1E; DB stays the caller's bank.
+                    machine.cpu.db=0x1e; machine.cpu.a=count as u16;
+                    machine.ram[6..8].copy_from_slice(&(count as u16).to_le_bytes());
+                    machine.ram[8..10].copy_from_slice(&0xacecu16.to_le_bytes());
+                    let scope = match owner {
+                        1 => 0x05dfe9, 2 => 0x1d8549,
+                        _ => if entry == DrawMultipleEntry::R6 {0x05df70} else {0x05df6c},
+                    };
+                    crate::cycle_ledger::assert_rom_marker_work(scope,machine,
+                        |s| match owner {
+                            // The existing double-return scalar at FA57/FA58
+                            // remains separate; these are the replaced blocks.
+                            1 => s.cpu.k==5 && (0xdfe9..0xe00b).contains(&s.cpu.pc),
+                            2 => s.cpu.k==0x1d && (0x8549..0x854e).contains(&s.cpu.pc),
+                            _ => s.cpu.k==5 && (0xdf6c..0xdfe5).contains(&s.cpu.pc),
+                        }, || {
+                            n.sprite_draw_multiple_from(0,&STALFOS_KNIGHT_DRAW_FRAMES[..count],entry);
+                        });
+                }
+            }
+        }
+    }
+}
+}
+
+#[test]
+fn coverage4_deferred_draw_matches_rom() {
+    for owner in [0x05df75, 0x05dfe5] {
+        for state in [9, 10, 11] {
+            for x in [0x40, 0x400] {
+                for count in [1usize, 5] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, state), (0x1fa2c, 11), (0x1fa3c, 1), (0xcaa, 0x80)] {
+                        n.write_wram_byte(a, v);
+                    }
+                    n.write_wram_word(0xfd8, x);
+                    n.sync_native_game_state_from_ram();
+                    let mut machine = marker29_machine(&n, 0x05df75, 0).expect("development ROM required");
+                    machine.cpu.db = 0x1e;
+                    machine.ram[6..8].copy_from_slice(&(count as u16).to_le_bytes());
+                    machine.ram[8..10].copy_from_slice(&0xacecu16.to_le_bytes());
+                    crate::cycle_ledger::assert_rom_marker_work(owner, machine,
+                        |s| s.cpu.k == 5 && if owner == 0x05df75 {
+                            (0xdf75..0xdfe5).contains(&s.cpu.pc)
+                        } else {
+                            (0xdfe5..0xe00b).contains(&s.cpu.pc)
+                        }, || {
+                            n.sprite_draw_multiple_player_deferred(0, &STALFOS_KNIGHT_DRAW_FRAMES[..count]);
+                        });
+                }
+            }
+        }
+    }
+}

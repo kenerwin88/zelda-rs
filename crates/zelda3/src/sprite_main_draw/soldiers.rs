@@ -633,7 +633,7 @@ impl ZeldaState {
             self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
         }
         // $05:CBF3 JSR B88D -> JSL E496; $05:CBF6 JSL F121.
-        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
         self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 15) == 0 {
             let dir = self.sprite_direction_to_face_link(k);
@@ -676,7 +676,7 @@ impl ZeldaState {
         }
         // ROM $05:CC78 -> $05:B88D -> $06:E496
         b.block(0x05cc78);
-        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
         b.block(0x05cc7b);
         // $05:CC7B JSL $06:F121: complete body, caller opcode unchanged.
         self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
@@ -845,7 +845,7 @@ impl ZeldaState {
             self.sprite_spawn_poof_garnish(k);
         } else if self.sprite_slot_view(k).delay_main() == 0
             // ROM $05:AB6F -> $05:B88D -> $06:E496
-            && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0
+            && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) != 0
         {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
@@ -883,7 +883,7 @@ impl ZeldaState {
             return;
         }
         // ROM $05:B04B -> $05:B88D -> $06:E496
-        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
         // ROM $05:B04E
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         // $05:B051 JSL $06:F121: complete body, caller opcode unchanged.
@@ -1000,7 +1000,7 @@ impl ZeldaState {
         // $05:B675 JSR $05:AB93: both complete damage calls.
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
         // ROM $05:B67D -> $05:B88D -> $06:E496
-        if self.sprite_slot_view(k).delay_aux2() == 0 && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0 {
+        if self.sprite_slot_view(k).delay_aux2() == 0 && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) != 0 {
             let value = 16;
             self.sprite_slot_view_mut(k).set_delay_main(value);
         }

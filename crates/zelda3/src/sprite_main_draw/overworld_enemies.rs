@@ -1324,14 +1324,14 @@ impl ZeldaState {
                         != 0
                     {
                         // ROM $05:B88D JSL $06:E496
-                        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+                        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
                         return;
                     }
                     // ROM $05:B885
                     self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
                     if self.sprite_slot_view(k).wall_collision() == 0 {
                         // ROM $05:B88D JSL $06:E496
-                        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+                        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
                         return;
                     }
                 }

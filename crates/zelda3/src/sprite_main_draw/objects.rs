@@ -1054,7 +1054,7 @@ impl ZeldaState {
         // ROM $05:95C9
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         // ROM $05:95CC -> $05:B88D -> $06:E496
-        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0 {
+        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) != 0 {
             let value =
                 SPRITE_57_DESERT_STATUE_NEXT_D[usize::from(self.sprite_slot_view(k).direction())];
             self.sprite_slot_view_mut(k).set_direction(value);

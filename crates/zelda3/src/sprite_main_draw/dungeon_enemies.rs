@@ -1644,7 +1644,7 @@ impl ZeldaState {
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
         // $05:A8D1 JSR $05:F9ED: complete body, caller opcode unchanged.
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
-        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+        let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
         charge(48); // $A8D7..A8DA state test.
         if self.sprite_slot_view(k).ai_state() != 0 {
             charge(6 + 48); // Taken BNE, $A917..A91A delay test.
@@ -1747,7 +1747,7 @@ impl ZeldaState {
             // ROM $05:A9D5
             self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
             // ROM $05:A9D8 -> $05:B88D -> $06:E496
-            let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
             if self.sprite_slot_view(k).ai_state() != 0 {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let value = 0;
@@ -1953,7 +1953,7 @@ impl ZeldaState {
             // ROM $05:B7C0
             self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
             // ROM $05:B7C3 -> $05:B88D -> $06:E496
-            let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
             if (self.sprite_slot_view(k).delay_main() | self.sprite_slot_view(k).z()) == 0 {
                 let value = 8;
                 self.sprite_slot_view_mut(k).set_delay_main(value);

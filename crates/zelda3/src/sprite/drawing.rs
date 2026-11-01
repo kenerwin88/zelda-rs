@@ -483,7 +483,7 @@ impl ZeldaState {
             // Sprite_DrawMultiple__ $1D:8549 (JSR target): JSL $05:DF6C (62)
             // ... RTS (42).
             let scope = crate::cycle_ledger::routine(0x1d_8549);
-            crate::cycle_ledger::charge(62);
+            crate::cycle_ledger::blocks(true).block(0x1d8549);
             scope
         });
         let prepared = {
@@ -502,7 +502,7 @@ impl ZeldaState {
             prepared
         };
         if wrapper.is_some() {
-            crate::cycle_ledger::charge(42);
+            crate::cycle_ledger::blocks(true).block(0x1d854d);
         }
         drop(wrapper);
         prepared
@@ -521,12 +521,14 @@ impl ZeldaState {
         match entry {
             DrawMultipleEntry::Direct | DrawMultipleEntry::Bank1d => {
                 let scope = crate::cycle_ledger::routine(0x05_df6c);
-                crate::cycle_ledger::charge(48 + 46 + 22);
+                let b = crate::cycle_ledger::blocks(true);
+                b.block(0x05df6c); b.block(0x05df70); b.block(0x05df73);
                 scope
             }
             DrawMultipleEntry::R6 => {
                 let scope = crate::cycle_ledger::routine(0x05_df70);
-                crate::cycle_ledger::charge(46 + 22);
+                let b = crate::cycle_ledger::blocks(true);
+                b.block(0x05df70); b.block(0x05df73);
                 scope
             }
         }
@@ -542,13 +544,16 @@ impl ZeldaState {
         src: impl IntoIterator<Item = DrawMultipleWordData>,
         drawable: Option<(u16, u16, u8)>,
     ) {
+        let b = crate::cycle_ledger::blocks(true);
+        // $05:DF78..DFE4, excluding the separately owned preparation child.
+        b.block(0x05df78);
         let Some(info) = drawable else {
-            crate::cycle_ledger::charge(16 + 6 + 44);
+            b.taken(0x05df78); b.block(0x05dfe4);
             return;
         };
-        crate::cycle_ledger::charge(16 + 108);
-        self.sprite_draw_multiple_words_with_info_charged(k, src, info, true, false);
-        crate::cycle_ledger::charge(50 + 44);
+        b.block(0x05df7a);
+        self.sprite_draw_multiple_words_with_info_charged(k, src, info, !self.lag_free, true);
+        b.block(0x05dfe1); b.block(0x05dfe4);
     }
 
     /// The prepared coordinates, and the draw triple when the sprite is on
@@ -575,13 +580,15 @@ impl ZeldaState {
         deferred: bool,
     ) -> (PrepOamCoordsRet, Option<(u16, u16, u8)>) {
         let _scope = crate::cycle_ledger::routine(if deferred { 0x05_dfe5 } else { 0x05_dfe9 });
+        let b = crate::cycle_ledger::blocks(true);
         if deferred {
-            crate::cycle_ledger::charge(62);
+            b.block(0x05dfe5);
             // This entry JSLs the bank wrapper, not the bank-6 RTS body.
             crate::cycle_ledger::charge_routine(0x06_f864, 190);
             self.oam_allocate_defer_to_player(k);
         }
-        crate::cycle_ledger::charge(46);
+        // $05:DFE9 JSR; the coordinate child owns its complete double-return path.
+        b.block(0x05dfe9);
         let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw_from(k, PrepOamCoordEntry::Bank5DoubleRet);
         if !out_of_bounds {
             let state = self.sprite_slot_view(k).state();
@@ -590,12 +597,12 @@ impl ZeldaState {
             } else {
                 state
             };
-            crate::cycle_ledger::charge(
-                150 + if state == 10 { 40 } else { 6 }
-                    + 32
-                    + if priority_state == 11 { 72 } else { 6 }
-                    + 70,
-            );
+            // $05:DFEC..E00A: priority-state branches and near return.
+            b.block(0x05dfec);
+            if state == 10 { b.block(0x05dffa); } else { b.taken(0x05dff8); }
+            b.block(0x05dffe);
+            if priority_state == 11 { b.block(0x05e002); } else { b.taken(0x05e000); }
+            b.block(0x05e009);
         }
         let prepared = PrepOamCoordsRet {
             x: prepped.x,
@@ -657,7 +664,7 @@ impl ZeldaState {
         let wrapper = (entry == DrawMultipleEntry::Bank1d).then(|| {
             // Sprite_DrawMultiple__ $1D:8549: JSL $05:DF6C (62) ... RTS (42).
             let scope = crate::cycle_ledger::routine(0x1d_8549);
-            crate::cycle_ledger::charge(62);
+            crate::cycle_ledger::blocks(true).block(0x1d8549);
             scope
         });
         let prepared = {
@@ -667,7 +674,7 @@ impl ZeldaState {
             prepared
         };
         if wrapper.is_some() {
-            crate::cycle_ledger::charge(42);
+            crate::cycle_ledger::blocks(true).block(0x1d854d);
         }
         drop(wrapper);
         prepared
@@ -798,7 +805,7 @@ impl ZeldaState {
         // prologue allocates the deferred OAM region before the shared
         // coordinate prep, then the shared $05:DF78 tail.
         let _scope = crate::cycle_ledger::routine(0x05_df75);
-        crate::cycle_ledger::charge(46);
+        crate::cycle_ledger::blocks(true).block(0x05df75);
         let (prepared, drawable) = self.sprite_prepare_draw_multiple_from(k, true);
         self.sprite_draw_multiple_body(
             k,

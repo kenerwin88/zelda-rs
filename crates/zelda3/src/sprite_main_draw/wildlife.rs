@@ -1148,7 +1148,7 @@ impl ZeldaState {
         // ROM $05:94C1
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         // ROM $05:94C4 -> $05:B88D -> $06:E496
-        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496) != 0 || self.sprite_slot_view(k).delay_main() == 0 {
+        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) != 0 || self.sprite_slot_view(k).delay_main() == 0 {
             // ROM Sprite_58_Crab $05:94CE: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
             let value = self.get_random_number_with_carry().masked_adc(63, 32);
             self.sprite_slot_view_mut(k).set_delay_main(value);
