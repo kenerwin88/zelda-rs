@@ -2306,20 +2306,52 @@ impl ZeldaState {
         // then $0D:FDE9-FDEE LDA [$0A],y, TXY, STA [$07],y, RTS (168). The
         // JSR form opens its own scope with the same blocks.
         let _scope = crate::cycle_ledger::routine(0x0d_fdab);
-        crate::cycle_ledger::charge(24);
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
+        // $FDAB: initialize the heart column.
+        if self.lag_free { blocks.block(0x0dfdab); }
+        else { crate::cycle_ledger::charge(24); }
         let mut x = 0usize;
         let mut row = 0usize;
         let mut ended_in_remainder = false;
         while n > 0 {
             let row_wrap = if x >= 10 { 126 } else { 6 };
             if n >= 8 {
-                crate::cycle_ledger::charge(72 + 176);
-                let _draw = crate::cycle_ledger::routine(0x0d_fdd9);
-                crate::cycle_ledger::charge(40 + row_wrap + 168);
+                if self.lag_free {
+                    // $FDAE..FDBD: compare, subtract and call the child.
+                    blocks.block(0x0dfdae);
+                    blocks.block(0x0dfdb5);
+                } else { crate::cycle_ledger::charge(72 + 176); }
+                {
+                    let _draw = crate::cycle_ledger::routine(0x0d_fdd9);
+                    if self.lag_free {
+                        blocks.block(0x0dfdd9);
+                        if x >= 10 { blocks.block(0x0dfdde); }
+                        else { blocks.taken(0x0dfddc); }
+                        blocks.block(0x0dfde9);
+                    } else { crate::cycle_ledger::charge(40 + row_wrap + 168); }
+                }
+                // $FDC0..FDC2 belongs to the caller, after the child RTS.
+                if self.lag_free { blocks.block(0x0dfdc0); }
             } else {
-                crate::cycle_ledger::charge(
+                if self.lag_free {
+                    // $FDC4..FDD6: remainder selects a BRA tail, not a JSR.
+                    blocks.block(0x0dfdae);
+                    blocks.taken(0x0dfdb3);
+                    blocks.block(0x0dfdc4);
+                    if n >= 5 { blocks.block(0x0dfdc9); }
+                    else {
+                        blocks.taken(0x0dfdc7);
+                        blocks.block(0x0dfdce);
+                        blocks.block(0x0dfdd3);
+                    }
+                    // The JMP-tail drawing work retains the parent owner.
+                    blocks.block(0x0dfdd9);
+                    if x >= 10 { blocks.block(0x0dfdde); }
+                    else { blocks.taken(0x0dfddc); }
+                    blocks.block(0x0dfde9);
+                } else { crate::cycle_ledger::charge(
                     72 + 6 + 40 + if n >= 5 { 46 } else { 6 + 40 + 46 } + 40 + row_wrap + 168,
-                );
+                ); }
                 ended_in_remainder = true;
             }
             if x >= 10 {
@@ -2333,7 +2365,16 @@ impl ZeldaState {
         if !ended_in_remainder {
             // Nothing left: the three compares with their BCCs taken and
             // the RTS (72 + 6 + 40 + 6 + 40 + 6 + 42).
-            crate::cycle_ledger::charge(212);
+            if self.lag_free {
+                // $FDAE -> $FDC4 -> $FDCE -> $FDD8: empty remainder return.
+                blocks.block(0x0dfdae);
+                blocks.taken(0x0dfdb3);
+                blocks.block(0x0dfdc4);
+                blocks.taken(0x0dfdc7);
+                blocks.block(0x0dfdce);
+                blocks.taken(0x0dfdd1);
+                blocks.block(0x0dfdd8);
+            } else { crate::cycle_ledger::charge(212); }
         }
     }
 
@@ -2684,6 +2725,38 @@ const HUD_TILEMAP_RIGHT_PART: [u16; 12 * 5] = [
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn heart_markers_match_rom_parent_and_jsr_child_exclusively() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        // Every attainable quarter-heart value through twenty full hearts,
+        // including the empty return and all remainder/row-wrap branches.
+        for n in 0..=160u16 {
+            for child in [false, true] {
+                let mut native = super::ZeldaState::new();
+                native.set_lag_free(true);
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                machine.ram[0..2].copy_from_slice(&n.to_le_bytes());
+                // Both long-indirect operands are slow WRAM, as in the HUD.
+                machine.ram[7..10].copy_from_slice(&[0, 0x20, 0x7e]);
+                machine.ram[10..13].copy_from_slice(&[0, 0x30, 0x7e]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0);
+                machine.cpu.k = 0x0d;
+                machine.cpu.db = 0x0d;
+                machine.cpu.pc = 0xfdab;
+                machine.cpu.sp = 0x1fb;
+                machine.ram[0x1fc..0x1fe].copy_from_slice(&[0xff, 0x7f]);
+                let owner = if child { 0x0dfdd9 } else { 0x0dfdab };
+                crate::cycle_ledger::assert_rom_marker_work(owner, machine,
+                    |s| s.cpu.k == 0x0d && (0xfdab..0xfdef).contains(&s.cpu.pc)
+                        && (s.cpu.sp < 0x1fb) == child,
+                    || native.hud_update_hearts_inner(0, &[0, 1, 2], i32::from(n)));
+            }
+        }
+    }
+
     use super::*;
 
     #[test]

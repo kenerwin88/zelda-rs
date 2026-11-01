@@ -5607,6 +5607,64 @@ impl ZeldaState {
 
 #[cfg(test)]
 #[test]
+fn filter_colors_markers_match_complete_rom_leaf_and_slices() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for countdown in 0..32u16 {
+        for pattern in 0..4usize {
+            let mut native = ZeldaState::new();
+            native.set_lag_free(true);
+            native.set_countdown_word(countdown);
+            let mut machine = snes::Snes::new();
+            machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+            for index in 0..256 {
+                // Each channel visits all 32 table indices, including zero;
+                // the two constant palettes exercise the guard uniformly.
+                let aux = match pattern {
+                    0 => 0,
+                    1 => 0x7fff,
+                    _ => ((index & 31) | (((index / 3) & 31) << 5)
+                        | (((index / 7) & 31) << 10)) as u16,
+                };
+                native.set_aux_color_constant(index, aux);
+                machine.ram[0xc300 + index * 2..0xc302 + index * 2]
+                    .copy_from_slice(&aux.to_le_bytes());
+            }
+            // Caller $E916..E947: pointer, mask and channel deltas.
+            let pointer = 0xe88cu16 + if countdown >= 16 { 2 } else { 0 };
+            machine.ram[0xb7..0xb9].copy_from_slice(&pointer.to_le_bytes());
+            let mask = 0x8000u16 >> (countdown & 15);
+            machine.ram[0x0c..0x0e].copy_from_slice(&mask.to_le_bytes());
+            for (address, delta) in [(6, 1u16), (8, 32), (10, 1024)] {
+                machine.ram[address..address + 2].copy_from_slice(&delta.to_le_bytes());
+            }
+            machine.cpu.e = false;
+            machine.cpu.unpack_flags(0);
+            machine.cpu.k = 0;
+            machine.cpu.db = 0;
+            machine.cpu.pc = 0xe9e4;
+            machine.cpu.x = 0x40;
+            machine.cpu.sp = 0x1fb;
+            machine.ram[0x1fc..0x1fe].copy_from_slice(&[0xff, 0x7f]);
+            crate::cycle_ledger::assert_rom_marker_work(0x00e9e4, machine,
+                |s| s.cpu.k == 0 && (0xe9e4..0xea49).contains(&s.cpu.pc), || {
+                    let _scope = crate::cycle_ledger::routine(0x00e9e4);
+                    if pattern == 3 {
+                        // A continuation may cut after any completed color.
+                        for index in (0x20..0xd8).chain(0xe0..0xf0) {
+                            native.charge_filter_colors_range(index, index + 1);
+                        }
+                    } else {
+                        native.charge_filter_colors_range(0x20, 0xd8);
+                        native.charge_filter_colors_range(0xe0, 0xf0);
+                    }
+                });
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
 fn high_tile_conversion_markers_match_complete_rom_leaf() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
@@ -5795,6 +5853,51 @@ impl ZeldaState {
     /// index ranges.
     fn charge_filter_colors_range(&self, from: usize, to: usize) {
         let countdown = self.game_state.display.palette_filter.countdown_word();
+        if self.lag_free {
+            let blocks = crate::cycle_ledger::blocks(true);
+            for index in from..to {
+                let aux = self.game_state.display.palette_buffer.aux_color(index);
+                let work = zelda3_palette::filter_range_step_work(aux, countdown);
+                // $E9E4..E9EE: main/aux loads and zero-aux guard.
+                blocks.block(0x00e9e4);
+                if work.aux_nonzero {
+                    // $E9F0..EA2C: three ROM-table channel tests and adds.
+                    // $E924 sets ($B7) to $E88C/$E88E, DB=0; Y<=124.
+                    // All indirect reads stay in slow ROM, with X/Y 16-bit.
+                    blocks.block(0x00e9f0);
+                    if work.red_steps { blocks.block(0x00e9fc); }
+                    else { blocks.taken(0x00e9fa); }
+                    blocks.block(0x00ea02);
+                    if work.green_steps { blocks.block(0x00ea13); }
+                    else { blocks.taken(0x00ea11); }
+                    blocks.block(0x00ea19);
+                    if work.blue_steps { blocks.block(0x00ea27); }
+                    else { blocks.taken(0x00ea25); }
+                    // $EA2E..EA33: commit the filtered color.
+                    blocks.block(0x00ea2e);
+                } else { blocks.taken(0x00e9ee); }
+                // $EA34..EA48: both index ranges, their gap, and RTS.
+                blocks.block(0x00ea34);
+                match index {
+                    0x20..=0xd6 => blocks.taken(0x00ea39),
+                    0xd7 => {
+                        blocks.block(0x00ea3b);
+                        blocks.block(0x00ea3d);
+                        blocks.block(0x00ea43);
+                        blocks.taken(0x00ea46);
+                    }
+                    0xe0..=0xef => {
+                        blocks.block(0x00ea3b);
+                        blocks.taken(0x00ea3b);
+                        blocks.block(0x00ea43);
+                        if index < 0xef { blocks.taken(0x00ea46); }
+                        else { blocks.block(0x00ea48); }
+                    }
+                    _ => unreachable!("FilterColors filters colors $20-$D7 and $E0-$EF"),
+                }
+            }
+            return;
+        }
         for index in from..to {
             let aux = self.game_state.display.palette_buffer.aux_color(index);
             let work = zelda3_palette::filter_range_step_work(aux, countdown);

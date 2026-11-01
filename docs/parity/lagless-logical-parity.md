@@ -3677,3 +3677,150 @@ the Codex session ended at about 1.17M iterations. It was rerun in full on the s
 source: **1,473,123 iterations, PASS, unexplained 0, 2,432 missing / 243 excess /
 70 FP**, with zero held/lag rows changed against Coverage 5's live CSV. The focused
 SPC-clock, graphics-loader and `Do3To4High16Bit` fixture tests pass (78).
+
+## Lagless pricing coverage 7
+
+CPU-only continuation on `codex/coverage7`, base `ac340898`. Evidence is in
+`target/coverage7/`. Three existing scalar owners are replaced with generated
+ROM markers, with **no additional runtime clocks**. Complete residual-owner
+conversion remains unfinished; `residual-review.json` records the retained
+models, alias boundaries and open proofs rather than treating unresolved
+source clocks as an additive price. `$00:8888` is unchanged.
+
+### Owners and exclusive ROM proof
+
+| Owner | Complete conversion and fixture |
+| --- | --- |
+| `$00:E9E4..EA48` FilterColors | Aux-zero guard, all three channel tests/adds, both color-index ranges, range gap and return. 128 complete executed-ROM cases cover all 32 countdown table positions, zero/nonzero palettes, channel decisions, and splitting at every completed color. No children. |
+| `$0D:FDAB..FDD8` Hud_UpdateHearts, with remainder tail | All health values 0–160 cover empty/full/partial hearts and both row branches. 161 exclusive parent comparisons exclude JSR children by stack depth; the BRA remainder tail remains owned by the parent. |
+| `$0D:FDD9..FDEE` Hud_UpdateHearts_DrawHeart | 161 exclusive child comparisons over the same complete ROM calls cover column continuation, row wrap, long-indirect load/store and RTS. No double charge with the parent's BRA tail. |
+
+The three owners add **25 generated blocks / 81 source instructions**.
+The generator and its pricing rules are unchanged. The ordinary timing lane
+retains its scalar charges exclusively; the lagless lane uses markers once.
+The palette continuation cuts and HUD child ownership remain explicit.
+All replaced scalar prices agree with their ROM fixtures; no undercharge
+correction or fitted price is admitted in this batch.
+
+The retained Link OAM model passes 6,912 complete-call cases and 11,328
+pose/bank cases. Spotlight's retained source fixture passes approximately
+10 million instruction boundaries, including raster polls, projection stores
+and caller returns. These models retain suspended instructions, live stores
+and child boundaries; a whole-call marker would discard that phase ownership.
+The native spotlight path separately owns its variable raster wait through
+`native_wait_until_line`; replayed table prefixes remain uncharged.
+Retained coordinate-preparation, sprite-slot, VWF, tile-probe and decompression
+fixtures also pass. These checks do **not** turn every continuation scalar or
+source/native call alias into an all-path coverage proof.
+
+`$01:893C` still includes JMP-tail object drawers; `$06:84E2` and `$09:B0B6`
+include selected sprite/garnish bodies. Their existing dispatch prices cannot
+absorb the whole residual. `$09:C6F5`, `$07:D9D8`, `$0D:F0F7`, `$0D:FB94`,
+the shared tile-property entries and the remaining top-ranked owners still
+need complete exclusive marker or continuation proofs. The review identifies
+the concrete boundaries and the fresh fixture logs for retained models.
+
+### ROM admission and prefixes
+
+Both seeded trials, 14,000–16,000 and 62,000–64,000, have zero excess/FP and
+zero runtime/P2 disagreements. The eight-chunk full ROM census completes
+**1,473,123 iterations**, gate **PASS**, unexplained **0**:
+**2,185 missing / 0 excess / 0 FP**. Its CSV is byte-identical to Coverage 6;
+all predictor columns and main-work totals are unchanged. **Zero holds recover.**
+
+| Before iteration | Baseline deficit | Candidate deficit |
+| --- | ---: | ---: |
+| 94,334 | 52 | 52 |
+| 141,568 | 88 | 88 |
+| 228,499 | 215 | 215 |
+| 380,243 | 366 | 366 |
+| 461,989 | 444 | 444 |
+
+These deficits are missing-hold contributions, not measured SPC phase.
+
+### Fresh coverage and remaining top 20
+
+Fresh native receipts cover all **2,222** selected rows. Retained source
+instructions cover **1,967**; **255 source-unavailable rows** remain explicit.
+All eight audit predictor chunks equal their default-candidate counterparts
+byte for byte, and every source/native accounting equation has zero residual.
+The unchanged coverage tool reports:
+
+| Source instruction class | Coverage 6 clocks | Coverage 7 clocks |
+| --- | ---: | ---: |
+| marker_touched | 495,658,742 | 530,419,046 |
+| model_touched | 702,556,794 | 702,556,794 |
+| scalar_touched | 10,425,100 | 10,425,100 |
+| unresolved_alias | 752,382,754 | 717,622,450 |
+| uncovered | 0 | 0 |
+
+The **34,760,304-clock** marker gain is exactly the three converted owners,
+including **15,568,400 clocks before 462,627**. Each now has zero unresolved
+clocks in the sample. Source main remains **1,961,023,390**, sampled native
+main **1,692,878,744**, and signed difference **268,144,646 clocks**.
+This is same-iteration PC membership, not ordered occurrence equivalence or
+new runtime work. `coverage.json`, `coverage-comparison.json`,
+`audit-equality.json` and `top20-residual.csv` retain the evidence.
+
+| Routine | Unresolved source clocks | Before 462,627 |
+| --- | ---: | ---: |
+| `$00:8888` | 212,320,844 | 141,005,650 |
+| `$0D:A18E` | 28,935,000 | 6,021,584 |
+| `$00:F312` | 24,587,840 | 10,930,526 |
+| `$01:893C` | 24,053,720 | 14,720,412 |
+| `$06:E41E` | 18,511,452 | 3,247,412 |
+| `$06:83F2` | 17,562,454 | 2,967,576 |
+| `$06:84E2` | 14,147,678 | 3,027,322 |
+| `$09:C6F5` | 13,288,600 | 5,496,256 |
+| `$0D:F0F7` | 12,617,688 | 1,926,306 |
+| `$07:D9D8` | 12,570,954 | 1,687,306 |
+| `$0E:CB5E` | 10,039,322 | 4,655,784 |
+| `$09:B0B6` | 9,664,876 | 689,102 |
+| `$06:E72F` | 9,617,840 | 1,212,776 |
+| `$02:FEBB` | 7,626,922 | 4,083,872 |
+| `$0D:FB94` | 6,929,684 | 1,342,182 |
+| `$00:882E` | 6,674,802 | 2,407,062 |
+| `$00:F4CC` | 6,598,686 | 3,406,070 |
+| `$06:8328` | 6,433,512 | 1,437,662 |
+| `$07:D798` | 6,118,316 | 969,754 |
+| `$07:E245` | 5,969,186 | 929,974 |
+
+### Final live admission and verification
+
+The **single full seeded live census** completes **1,473,123 iterations**,
+gate **PASS**, unexplained **0**, with **2,432 missing / 243 excess / 70 FP**
+and zero runtime/P2 disagreements. Its CSV is byte-identical to Coverage 5's.
+The local Coverage 6 CSV is physically truncated at iteration 1,169,000,
+so the complete Coverage 5 CSV is the comparison baseline; no truncated
+file supplies full-route evidence. `baseline-live-selection.json` records
+this choice despite Coverage 6's documented completion elsewhere.
+
+| Origin poll | Current live-versus-ROM hold rows | Changed rows | Added missing / excess / FP |
+| --- | ---: | ---: | ---: |
+| 462,627 | 6 | 0 | 13 / 13 / 3 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+
+Both fresh poll witnesses are native `$00` versus source `$13`.
+`live-partition.json` retains every row, observed poll and actual reseed
+within the established execution/reseed bounds. Changed live-only hold rows
+are **0**, with **0 unattributed current or changed rows**. Secondary budget
+differences are unchanged, separately recorded in `live-secondary-rows.json`.
+This is not equal delivered-command phase, SPC state or waveform proof.
+
+All **85 focused Rust tests**, **eight generator tests** and **six coverage-tool
+tests** pass. Default, reduced-feature, audit and restored-default builds are
+warning-free; the lib-test compilation retains 24 existing dead-code warnings.
+The restored default binary is byte-identical to the census candidate. ROM,
+SRAM and input hashes match the protected cache manifest. Classifier, matcher,
+coverage tool, price generator and replay-harness source identities are unchanged.
+`verification.json`, `pricing-audit.json`, `owner-coverage.json` and
+`artifact-hashes.json` bind the result; `git diff --check` passes.
+
+Only pricing annotations, generated entries, fixtures and this note change.
+No gameplay behavior changed, so the conditional CPU picture census was not
+rerun: **1,462,997 exact pictures remains prior evidence**, not a fresh claim.
+No GPU, Snes9x process, continuous live replay, full library suite, protected
+cache/shared-ledger write, new environment switch, formatting, commit or push
+was used. Evidence remains below 3 GB and all started jobs have exited.
+This is a **verified partial coverage stop**, with the remaining exclusive
+owner proofs and bulk residual conversion still open.

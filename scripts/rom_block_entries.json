@@ -740,5 +740,8 @@
   {"entry":"05fdd0","end":"05fe0b"},
   {"entry":"05fe0b","end":"05fe23"},
   {"entry":"05fa2e","end":"05fa50"},
-  {"entry":"1da268","end":"1da2cb"}
+  {"entry":"1da268","end":"1da2cb"},
+  {"entry":"00e9e4","end":"00ea49","m8":false,"x8":false},
+  {"entry":"0dfdab","end":"0dfdef","m8":false,"x8":false},
+  {"entry":"0dfdd9","end":"0dfdef","m8":false,"x8":false}
 ]
