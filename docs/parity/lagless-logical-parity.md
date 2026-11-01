@@ -2951,3 +2951,171 @@ pricing and complete instruction ownership still open.
 Evidence remains below **1 GB** and `git diff --check` passes. No GPU,
 Snes9x process, continuous live replay, full library suite, protected-cache
 or shared-ledger write, formatting pass, commit or push was performed.
+
+## Lagless pricing coverage 2
+
+CPU-only continuation on `codex/coverage2`, base `98272549`. Evidence is
+under `target/coverage2/`. **Verified partial diagnostic stop: no new pricing
+is retained. Per-routine ownership and all-path correction of every residual
+remain incomplete.** The OAM scalar error below is proved, but its complete
+trial fails owners 9's requirement to reduce missing holds and is withdrawn.
+
+### Routine comparison and ownership limits
+
+`routine-table.csv` / `routine-table.md` report **151 routines** occurring in
+at least 500 of the **1,967 source-covered missing rows**. Each has controls:
+**629 non-missing rows** from ten seeded windows, after excluding 11 rows whose
+seed-boundary budgets differ from the baseline. All 640 captured control rows
+reconcile source PC totals to ordered-stream receipts, native charge classes
+to the observer, and observer plus separate VWF to the predictor, with zero
+residual. Twenty-two reused input hashes and the source manifest verify.
+
+The source sample still lacks **255 of 2,222 missing rows**. Therefore this
+is not a complete-route eligibility census: `threshold-uncertainty.json`
+lists 38 additional routines that could cross 500 if every unavailable row
+contained them. No sample quantity is extrapolated. `paired-routine-rows.csv`
+retains source-exclusive clocks, actual native-scope clocks and signed deltas
+per iteration. `routine-summary.json` resolves observed scalar/model charge
+sites and names; `ownership-notes.json` records reviewed boundaries.
+
+Delta below is **native minus source**, in master clocks per iteration.
+These are actual scope totals; a negative cell is not an additive price.
+The full 151-row table also gives source/native means and the supplemental
+ownership projection.
+
+| Routine | Missing rows | Mean delta | Median | Native < source | Control rows | Mean delta | Median | Native < source |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| $05:DF6C | 1463 | -722.14 | 0 | 18.46% | 116 | 0.00 | 0 | 0.00% |
+| $06:83F2 | 1871 | 0.00 | 0 | 0.00% | 457 | 0.00 | 0 | 0.00% |
+| $06:84E2 | 1911 | -2555.92 | -2194 | 99.48% | 628 | -2629.01 | -2272 | 100.00% |
+| $06:E41E | 1851 | 947.65 | 346 | 2.97% | 429 | 220.08 | 346 | 3.50% |
+| $07:D9D8 | 1602 | -33.32 | 0 | 4.43% | 318 | -33.67 | 0 | 3.46% |
+| $07:E245 | 1345 | -2546.40 | -2390 | 100.00% | 294 | -2406.18 | -2416 | 100.00% |
+| $0D:A18E | 1885 | 0.00 | 0 | 0.00% | 613 | 0.00 | 0 | 0.00% |
+| $0D:BB0A | 1909 | -0.14 | 0 | 2.20% | 604 | 0.00 | 0 | 0.00% |
+| $0D:F0F7 | 1852 | 0.00 | 0 | 0.00% | 383 | 0.00 | 0 | 0.00% |
+| $0D:FB94 | 1825 | 0.00 | 0 | 0.00% | 378 | 0.00 | 0 | 0.00% |
+| $0D:FDAB | 1852 | 0.00 | 0 | 0.00% | 378 | 0.00 | 0 | 0.00% |
+| $0D:FDD9 | 1852 | 0.00 | 0 | 0.00% | 378 | 0.00 | 0 | 0.00% |
+
+**87 native scopes match every sampled missing row exactly**, accounting for
+238,572,382 source clocks. The hypothesized blanket undercharge is absent in
+LinkOam_Main, sprite timers, HUD decimal conversion and heart drawing.
+
+A separate conservative diagnostic projects a native scope entry, marker PC
+or conserving model-step PC only where that PC has one source owner in the
+same iteration. It conserves the charged total and leaves ambiguous or
+nonconserving model witnesses opaque. This is PC membership, **not ordered
+occurrence matching**, and zero unmapped work does not prove source identity.
+Neither the classifier nor matcher changes, and no projection becomes a price.
+
+This resolves `$07:E245`: native `$07:E373` and `$07:E3E0` scopes own its
+fallthrough/JMP tails. Including those existing charges makes every sampled
+missing/control delta zero. Adding its raw 2,546-clock mean deficit would
+charge existing work twice. The `$06:84E2` projection reduces the mean missing
+scope deficit to 705.93 clocks, but its dispatched bodies still need precise
+occurrence ownership. `$06:E41E` has a positive mean, not a consistent
+undercharge; its continuation/caller aliases remain explicit.
+
+The canonical inactive-helper family (`$06:D9EC`, `$05:F94E`, `$1A:F954`,
+`$1D:E8A2`, `$1E:FE78`) matches exactly on **2,184 / 2,204 paired rows**, with
+**zero native-under-source rows**; the other 20 have native excess work.
+The paused family (`$06:D9F3`, `$05:F955`, `$1E:FE7F`) matches all **131** rows.
+`family-rows.csv` and `family-summary-paired.json` retain this check. Individual
+negative bank-specific scopes must not be priced independently of their
+existing canonical helper charges; mixed occurrences are not silently split.
+
+`routine-input-buckets.json` records delta ranges/medians by actual source
+entry visits, without fitting prices. Only the OAM input relationship below
+has a new complete executed-ROM fixture. The residual worklist includes every
+routine with any negative projected row in either cohort; no consistency
+threshold supplies a price. Examples include the bunny, toss, cape and Y-button
+helpers, sword swing, collision/drawing wrappers and dispatched sprite bodies.
+For example, the sampled zero-timer bunny exit is the ROM's
+LDA/ORA/taken-BEQ/CLC/RTS, **142 clocks**; the initial toss guard is
+LDA/AND/taken-BEQ/CLC/RTS, **118 clocks**. Their semantic helpers have no direct
+charge, and the reviewed caller prices exclude these bodies. Full alternate
+paths and child ownership still require fixtures; no early-exit-only scalar
+was added. Source block inventories and `residual-worklist.json` retain the
+next work. Input/path causality for every residual is not claimed complete.
+
+The Coverage 1 double-pricing boundaries remain intact: `$00:8888` has
+separate song-upload timing, `$02:F691` has cache/output scalars, `$00:F312`
+has resumable spotlight prices, and `$00:841E` retains its exact 5,300-clock
+leaf. None receives a new charge.
+
+### Proved OAM error; whole trial withdrawn
+
+`Oam_GetBufferPosition` `$0D:BB0A..BB5A` is a leaf. Its overflow scalar
+omits the indexed-read page crossing at **`$0D:BB39 LDA $BAAA,Y`**. The source
+byte index is `2 * (region * 8 + (cursor & 7))`; region F crosses when that
+index is at least 86. The existing instruction model already prices this
+crossing; the ordinary scalar did not. The sampled **42** deficient rows
+contain **43 crossings / 258 clocks**, exactly equal to their complete
+source-minus-native discrepancy (`oam-cause.json`). No residual supplied a price.
+
+The trial replaces the entire scalar with **44 decoded instructions / four
+generated ROM blocks**, including the taken BCC, the crossing marker and
+RTS. No child work or previous scalar is retained. The unmodified-ROM fixture
+passes **2,304 cases**, covering all six regions, eight fallback cursors,
+fitting/equality/overflow paths and wrapping sums; it checks instruction
+clocks and OAM pointers/counters. Existing allocator/model tests also pass.
+
+The focused 636,000–638,000 trial has zero excess/FP. The complete eight-slice
+seeded ROM census passes, unexplained zero, **2,226 missing / 0 excess / 0 FP**.
+All runtime holds equal P2. Main prices change on **752 iterations**, adding
+4,908 clocks, but **no hold row changes**. Thus the entire trial is withdrawn
+under owners 9: correct source pricing alone does not meet its fewer-missing
+holds admission rule. `oam-trial.patch`, the tested binary, fixture logs and
+`oam-trial-comparison.json` retain the rejected candidate; none of its runtime,
+generated-entry or fixture edits remains in the checkout.
+
+| Before window starting | Baseline ROM deficit | Trial ROM deficit | Restored ROM deficit |
+| --- | ---: | ---: | ---: |
+| 94,334 | 56 | 56 | 56 |
+| 141,568 | 92 | 92 | 92 |
+| 228,499 | 221 | 221 | 221 |
+| 380,243 | 375 | 375 | 375 |
+| 461,989 | 454 | 454 | 454 |
+
+### Restored verification and live partition
+
+The rebuilt default executable is byte-identical to the original baseline:
+`024f3525d22f466562cfdf65112dd1efe795819b86e660c7769947d2dbaa4b54`.
+The restored ROM evidence reuses the hash-verified Coverage 1 CSV and freshly
+re-gates its log, PASS/unexplained zero; it is **not a second fresh ROM run**.
+Default and `--no-default-features` builds are warning-free. Three targeted
+OAM tests, nine ledger-ownership tests and seven generator tests pass; the
+library-test build retains existing unrelated dead-code warnings.
+
+The **one full seeded live census** on the restored binary completes
+**1,473,123 iterations**, gate PASS/unexplained zero, with **2,728 missing /
+473 excess / 88 FP**, and zero P2 disagreements. `live.csv` is byte-identical
+to Coverage 1. All **187** live-versus-ROM hold rows retain their existing
+execution/reseed-bounded episode, with **zero changed live-only rows and zero
+unattributed rows**. All seven origin polls are freshly observed as native
+zero versus source `$13`; `live-partition.json` checks the exact row values
+and bounds, rather than choosing the nearest preceding poll.
+
+| Origin poll | Hold rows | Added missing | Added excess | Added FP |
+| --- | ---: | ---: | ---: | ---: |
+| 142,087 | 5 | 9 | 9 | 2 |
+| 229,034 | 4 | 9 | 9 | 2 |
+| 380,880 | 15 | 114 | 90 | 5 |
+| 462,627 | 6 | 13 | 13 | 3 |
+| 627,255 | 10 | 27 | 27 | 5 |
+| 881,733 | 135 | 234 | 230 | 67 |
+| 1,064,733 | 12 | 96 | 95 | 4 |
+| **Total** | **187** | **502** | **473** | **88** |
+
+Live prefix deficits remain **56 / 92 / 230 / 393 / 586**. These are missing
+hold contributions, not net SPC phase. No delivered-command, chip-state or
+waveform proof was recaptured. No behavior change survives, so the conditional
+CPU picture census was not rerun; **1,462,997 exact pictures remains prior
+evidence**, not a new picture claim.
+
+`verification.json`, input identities and artifact hashes bind the stopping
+point. Evidence is below 3 GB; `git diff --check` passes. No GPU run, Snes9x
+process, continuous live replay, full library suite, protected-cache/shared-
+ledger write, new environment switch, formatting pass, commit or push occurred.
+The general per-routine model/alias and all-path pricing work remains open.
