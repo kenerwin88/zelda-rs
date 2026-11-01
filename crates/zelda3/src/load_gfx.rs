@@ -3282,14 +3282,23 @@ impl ZeldaState {
         num: usize,
     ) {
         let _scope = crate::cycle_ledger::routine(0x00_df4f);
+        let blocks = crate::cycle_ledger::blocks(self.lag_free);
         // $DF4F: STY $0C.
-        crate::cycle_ledger::charge(32);
+        if self.lag_free { blocks.block(0x00df4f); }
+        else { crate::cycle_ledger::charge(32); }
         for tile in 0..num {
             // $DF51-$DFB5 for one tile (see above).
-            crate::cycle_ledger::charge(5_792);
-            if tile + 1 < num {
-                // $DFB5: BNE $DF51 taken.
-                crate::cycle_ledger::charge(6);
+            if self.lag_free {
+                blocks.block(0x00df51); // Pointer setup and LDY #3.
+                for pair in 0..4 {
+                    blocks.block(0x00df5c); // Two rows through DEY/BPL.
+                    if pair != 3 { blocks.taken(0x00dfa9); }
+                }
+                blocks.block(0x00dfab); // Destination advance and DEC/BNE.
+                if tile + 1 < num { blocks.taken(0x00dfb5); }
+            } else {
+                crate::cycle_ledger::charge(5_792);
+                if tile + 1 < num { crate::cycle_ledger::charge(6); }
             }
             let src2 = src + 0x10;
             for i in 0..8 {
@@ -3303,7 +3312,8 @@ impl ZeldaState {
             src = src2 + 8;
         }
         // $DFB7: RTS.
-        crate::cycle_ledger::charge(42);
+        if self.lag_free { blocks.block(0x00dfb7); }
+        else { crate::cycle_ledger::charge(42); }
     }
 
     /// `Do3To4Low16Bit` (`$00:DFB8`, m16 x16). Per tile the ROM runs
@@ -5592,6 +5602,43 @@ impl ZeldaState {
 
     pub(super) fn asset_bytes(&self, asset: usize, index: usize) -> Option<&[u8]> {
         Some(self.asset_memblk(asset, index)?.ptr)
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn high_tile_conversion_markers_match_complete_rom_leaf() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for num in [1, 2, 8, 32] {
+        for src in [0x2000usize, 0x20f7] {
+            for dst in [0x4000usize, 0x40f9] {
+                let mut native = ZeldaState::new();
+                native.set_lag_free(true);
+                let data: Vec<u8> = (0..num * 24 + 1)
+                    .map(|i| (i as u8).wrapping_mul(73).wrapping_add(19)).collect();
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                machine.ram[src..src + data.len()].copy_from_slice(&data);
+                machine.ram[2] = 0x7e;
+                machine.ram[5] = 0x7e;
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0);
+                machine.cpu.k = 0;
+                machine.cpu.db = 0;
+                machine.cpu.pc = 0xdf4f;
+                machine.cpu.a = src as u16;
+                machine.cpu.x = dst as u16;
+                machine.cpu.y = num as u16;
+                machine.cpu.sp = 0x1fb;
+                machine.ram[0x1fc..0x1fe].copy_from_slice(&[0xff, 0x7f]);
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x00df4f, machine,
+                    |s| s.cpu.k == 0 && (0xdf4f..0xdfb8).contains(&s.cpu.pc),
+                    || native.do3_to_4_high_16bit_from_slice(0x10000 + dst, &data, 0, num));
+                assert_eq!(&native.ram[0x10000 + dst..0x10000 + dst + num * 32],
+                    &source.snes().ram[0x10000 + dst..0x10000 + dst + num * 32]);
+            }
+        }
     }
 }
 

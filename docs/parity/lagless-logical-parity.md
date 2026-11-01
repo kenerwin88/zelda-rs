@@ -3543,3 +3543,137 @@ The conditional CPU picture census was not rerun: **1,462,997 exact pictures is
 prior evidence**, not a new picture claim. No GPU, Snes9x, continuous live replay,
 full library suite, protected cache/shared-ledger write, new environment switch,
 formatting, commit or push occurred.
+
+## Lagless pricing coverage 6
+
+CPU-only continuation on `codex/coverage6`, base `d36e2726`. Evidence is under
+`target/coverage6/`. The upload audit follows every route upload, including
+source-unheld iterations, rather than just Coverage 5's 27 missing rows.
+
+### Upload ownership and measurement
+
+The ledger contains **228 actual `$00:8888` protocols**. Three additional
+iterations (571,209, 693,051 and 1,394,043) exceed the census's 256-write
+classification boundary through repeated NMI stores, but have no upload
+handshake reads. They are retained separately; the classifier is unchanged.
+
+ROM-answer replay does **not** install upload acknowledgements: the harness
+excludes these iterations when installing `$2140` song-end answers. Both
+native lanes run `SongBankHostTransfer` against their own executing SPC.
+The lagless path starts the deferred upload from `rtl_native_pacing.rs`,
+advances its bus-access coroutine in `spc_driver_clock.rs`, and suppresses
+NMI callbacks until its actual return forecast. The separate instruction
+model in `cycle_models/song_bank.rs` is not a replacement for this runtime
+protocol. A difference in upload wait counts is therefore not a price charged
+from replayed answers in the ROM lane.
+
+`source-upload-terms.json` reconstructs the executed paths from the ledger's
+ordered port reads and writes. Every acknowledgement is consumed in order;
+headers, counters, payload lengths and the terminal clears are checked.
+The three payload shapes contain 12,747 / 13,366 / 8,344 bytes, each with
+two data blocks and one terminal header. None takes `$88AD`'s bank wrap or
+`$88CA`'s zero-token retry. `source-reconstruction-proof.json` compares these
+totals with the 27 retained instruction profiles: **all deltas are zero**.
+
+The existing `ZELDA3_DEBUG_SONG_UPLOAD` switch now optionally reports each
+completed native transfer's access counts, CPU gaps and refresh-inclusive
+wall gaps. Preview clones never emit completion records. The observation
+fixture checks unchanged port writes, deadlines and serialized state, plus
+conservation of every first-read-to-final-clear gap. This instrumentation
+does not add upload work to the main cycle ledger.
+
+The CPU total includes `$8888..8890` and the first CMP's fetches (116 clocks
+before the first bus read), and the final store's remaining access plus
+`PLP/RTS` (76 after the last clear). The taken receiver-ready loop costs
+**58 clocks**; the header and byte acknowledgement loops cost **52 clocks**.
+`rom-upload-comparison.csv` and `live-upload-comparison.csv` retain every
+upload's signed native-minus-source total and its ready/header/byte terms.
+Native refresh is separate from instruction clocks. The source masked count
+is `close_host - open_host - lag_nmis - 1`; it is compared with native masked
+callbacks, never with accepted P2 holds. Neither callback counts nor a total
+CPU delta establish equal command phase, chip state or waveform.
+
+### Residual owner retained
+
+`$00:DF4F..DFB7` (`Do3To4High16Bit`) replaces its existing scalar with generated
+ROM blocks: entry, per-tile setup, four two-row passes, destination advance,
+both loop branches and return. There are no children. All **16 complete
+executed-ROM fixtures** agree on clocks and output bytes, covering first and
+repeated tiles and aligned/unaligned source and destination addresses.
+The scalar remains exclusive to the ordinary timing lane; lagless uses the
+markers once. The complete clock total is unchanged.
+
+`residual-review.json` retains the top-20 review. `$0D:A18E` already has an
+instruction model and continuation prices; `$00:F312` partitions resumable
+spotlight work and its raster barrier. `$01:893C` includes JMP-tail object
+drawer aliases. `$00:E9E4` already prices the aux-zero guard, three channel
+branches and both color-index ranges. No unresolved parent total is added
+on top of those owners. Their remaining exclusive marker proofs stay open.
+
+### ROM admission and upload results
+
+The eight-chunk seeded ROM census completes **1,473,123 iterations**, gate
+**PASS**, unexplained **0**. Its CSV is byte-identical to Coverage 5's:
+**2,185 missing / 0 excess / 0 FP**, zero runtime/P2 disagreements, and zero
+recovered holds. Prefix deficits remain **52 / 88 / 215 / 366 / 444** before
+94,334 / 141,568 / 228,499 / 380,243 / 461,989. The 10,000–12,000 seeded trial
+also has zero missing/excess/FP; only its opening row's handler history
+differs from the carried full-route baseline.
+
+All **228** ROM-lane native transfers pair with the source upload iterations.
+Source upload instruction work totals **1,809,325,130 clocks**; native totals
+**1,805,988,672**, a signed difference of **−3,336,458**. The partition is:
+
+| Term | Native minus source CPU clocks |
+| --- | ---: |
+| Receiver-ready waits, 58 clocks per taken loop | −3,337,030 |
+| Header-ack waits, 52 clocks per taken loop | +780 |
+| Byte-ack waits, 52 clocks per taken loop | −208 |
+| Other instruction work | **0** |
+
+Every individual upload has zero remaining term, not merely a cancelling
+aggregate. Ready/header/byte counts differ on 228 / 187 / 140 uploads.
+Individual total deltas range from −400,480 to +435,602 clocks. Native
+refresh contributes a separately reported **54,562,200 clocks**. Source
+masked intervals total **5,202**, versus **5,147** native callbacks; those
+55 callbacks are not recovered or missing accepted lag holds. Entry phase,
+refresh and callback cuts remain separate from the instruction-cost proof.
+No route-executed byte-loop or handshake-loop unit price is found wrong,
+and no upload timing repair or additional main price is admitted.
+
+### Fresh marker coverage
+
+All eight fresh audit predictor CSVs are byte-identical to their default
+census chunks. Native receipts cover all **2,222** selected rows; source
+instructions cover **1,967**, with **255** source-unavailable rows explicit.
+All accounting equations conserve clocks. The unchanged coverage tool reports:
+
+| Source instruction class | Coverage 5 clocks | Coverage 6 clocks |
+| --- | ---: | ---: |
+| marker_touched | 482,669,386 | 495,658,742 |
+| model_touched | 702,556,794 | 702,556,794 |
+| scalar_touched | 10,425,100 | 10,425,100 |
+| unresolved_alias | 765,372,110 | 752,382,754 |
+| uncovered | 0 | 0 |
+
+The **12,989,356-clock** marker gain is exactly `$00:DF4F`'s formerly
+unresolved sampled work, including **10,020,372 clocks before 462,627**.
+Source main remains **1,961,023,390**; sampled native main remains
+**1,692,878,744**; signed difference remains **268,144,646 clocks**.
+This is existing-price coverage, not new runtime work or ordered retirement
+equivalence. `coverage.json`, `coverage-comparison.json`, `audit-equality.json`
+and `top20-residual.csv` retain the results.
+
+All **43 SPC-clock tests**, **35 graphics-loader tests**, **eight generator
+tests** and **six coverage-tool tests** pass. Default, reduced-feature, audit
+and restored-default builds are warning-free; the lib-test build retains
+existing unrelated dead-code warnings. The restored default binary is
+byte-identical to the census candidate. The ROM, SRAM and route input hashes
+match the protected cache manifest. Classifiers and matchers are unchanged;
+the replay harness diff contains only the opt-in observation.
+
+**Completion note.** The batch's single full seeded live census was interrupted when
+the Codex session ended at about 1.17M iterations. It was rerun in full on the same
+source: **1,473,123 iterations, PASS, unexplained 0, 2,432 missing / 243 excess /
+70 FP**, with zero held/lag rows changed against Coverage 5's live CSV. The focused
+SPC-clock, graphics-loader and `Do3To4High16Bit` fixture tests pass (78).

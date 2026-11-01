@@ -1889,6 +1889,13 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             continue;
         }
         let observed_polls = game.take_song_end_poll_observations();
+        if zelda3::debug_env::var_os("ZELDA3_DEBUG_SONG_UPLOAD").is_some()
+            && (native_elapsed != 0
+                || iteration.is_some_and(|row| row.apu_writes.len() > APU_UPLOAD_WRITES))
+        {
+            eprintln!("song_upload_iteration iteration={} callbacks={} held={} masked={} cartridge_song_end_answers={}",
+                iteration_index, audio_callbacks, native_held, native_elapsed, apu_read_replay);
+        }
         if let (Some(output), Some(iteration), Some(context)) =
             (audio_timing.as_mut(), iteration, entry_audio_context)
         {

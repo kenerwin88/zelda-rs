@@ -231,6 +231,19 @@ struct SongBankHostTransfer {
     observation_host: Option<u64>,
     #[serde(skip)]
     observation_cycle: Option<u64>,
+    #[serde(skip)]
+    timing_audit: Option<SongBankTimingAudit>,
+}
+
+// Diagnostic only: the protocol owns these clocks outside main's cycle ledger.
+// In particular, do not charge them again as P2 main work.
+#[derive(Clone, Debug, Default)]
+struct SongBankTimingAudit {
+    first_read: u64,
+    accesses: [u64; 12],
+    clocks: [u64; 12],
+    cpu: [u64; 12],
+    scheduled_cpu: u64,
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
@@ -294,6 +307,8 @@ impl SongBankHostTransfer {
             interleave_host_cpu: false,
             observation_host: None,
             observation_cycle: None,
+            timing_audit: crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD")
+                .is_some().then(SongBankTimingAudit::default),
         }
     }
 
@@ -325,6 +340,7 @@ impl SongBankHostTransfer {
             command_master_clock + SONG_BANK_WRITE_TO_FIRST_READY_POLL_MASTER_CLOCKS
         };
         self.next_host_access_master_clock = Some(first_read);
+        if let Some(audit) = &mut self.timing_audit { audit.first_read = first_read; }
     }
 
     fn advance_host_cpu_until(
@@ -346,6 +362,22 @@ impl SongBankHostTransfer {
     }
 
     fn perform_host_access(&mut self, in_ports: &mut [u8; 6], out_ports: [u8; 4]) -> bool {
+        let audit_phase = match self.phase {
+            SongBankHostTransferPhase::AwaitReceiverReadyLow => 0,
+            SongBankHostTransferPhase::AwaitReceiverReadyHigh { .. } => 1,
+            SongBankHostTransferPhase::WriteBlockTargetLow { .. } => 2,
+            SongBankHostTransferPhase::WriteBlockTargetHigh { .. } => 3,
+            SongBankHostTransferPhase::WriteBlockFlag { .. } => 4,
+            SongBankHostTransferPhase::WriteBlockToken { .. } => 5,
+            SongBankHostTransferPhase::AwaitBlockAck { .. } => 6,
+            SongBankHostTransferPhase::WriteByteCounter { .. } => 7,
+            SongBankHostTransferPhase::WriteByteValue { .. } => 8,
+            SongBankHostTransferPhase::AwaitByteAck { .. } => 9,
+            SongBankHostTransferPhase::ClearPort { .. } => 10,
+        };
+        if let Some(audit) = &mut self.timing_audit { audit.accesses[audit_phase] += 1; }
+        let before = self.next_host_access_master_clock;
+        if let Some(audit) = &mut self.timing_audit { audit.scheduled_cpu = 0; }
         match self.phase {
             SongBankHostTransferPhase::AwaitReceiverReadyLow => {
                 self.phase = SongBankHostTransferPhase::AwaitReceiverReadyHigh {
@@ -465,6 +497,12 @@ impl SongBankHostTransfer {
                 self.schedule_after(SONG_BANK_CLEAR_PORT_MASTER_CLOCKS);
             }
         }
+        if let (Some(audit), Some(before), Some(after)) =
+            (&mut self.timing_audit, before, self.next_host_access_master_clock)
+        {
+            audit.clocks[audit_phase] += after - before;
+            audit.cpu[audit_phase] += audit.scheduled_cpu;
+        }
         false
     }
 
@@ -501,6 +539,7 @@ impl SongBankHostTransfer {
     }
 
     fn schedule_after(&mut self, master_clocks: u64) {
+        if let Some(audit) = &mut self.timing_audit { audit.scheduled_cpu += master_clocks; }
         let next = self
             .next_host_access_master_clock
             .expect("scheduled song-bank host transfer has no CPU clock");
@@ -894,6 +933,11 @@ impl AbsoluteDspEventClock {
             });
             if transfer_completed {
                 let transfer = self.song_bank_transfer.take().unwrap();
+                if !self.observation_silent && let Some(audit) = &transfer.timing_audit {
+                    eprintln!("song_upload_timing host={} bank={} first_read={} clear={} accesses={:?} wall_by_phase={:?} cpu_by_phase={:?}",
+                        self.host_frame_index, transfer.bank_id, audit.first_read,
+                        transfer.completed_port_clear_master_clock.unwrap(), audit.accesses, audit.clocks, audit.cpu);
+                }
                 self.completed_song_bank_id = Some(transfer.bank_id);
                 self.completed_song_bank_port_clear_master_clock =
                     transfer.completed_port_clear_master_clock;

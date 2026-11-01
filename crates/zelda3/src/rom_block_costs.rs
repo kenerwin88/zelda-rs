@@ -70,6 +70,16 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x00d60c, 0x00d618, false, false, 168, 0x00d616, &[]),
     // $00:D618: fixed cost
     (0x00d618, 0x00d619, false, false, 42, 0x000000, &[]),
+    // $00:DF4F: fixed cost
+    (0x00df4f, 0x00df51, false, false, 32, 0x000000, &[]),
+    // $00:DF51: fixed cost
+    (0x00df51, 0x00df5c, false, false, 126, 0x000000, &[]),
+    // $00:DF5C: 00dfa9 taken +6
+    (0x00df5c, 0x00dfab, false, false, 1370, 0x00dfa9, &[]),
+    // $00:DFAB: 00dfb5 taken +6
+    (0x00dfab, 0x00dfb7, false, false, 168, 0x00dfb5, &[]),
+    // $00:DFB7: fixed cost
+    (0x00dfb7, 0x00dfb8, false, false, 42, 0x000000, &[]),
     // $00:DFB8: fixed cost
     (0x00dfb8, 0x00dfba, false, false, 32, 0x000000, &[]),
     // $00:DFBA: fixed cost

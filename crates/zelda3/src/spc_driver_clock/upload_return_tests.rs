@@ -1,5 +1,46 @@
 use super::*;
 
+#[test]
+fn upload_timing_observation_preserves_protocol_and_partitions_every_gap() {
+    let mut observed = SongBankHostTransfer::new(0, &[2, 0, 0, 0x20, 0x11, 0x22, 0, 0]);
+    observed.timing_audit = Some(Default::default());
+    observed.mark_command_scheduled_at_master_clock(0);
+    let mut plain = observed.clone();
+    plain.timing_audit = None;
+    let mut observed_ports = [0; 6];
+    let mut plain_ports = [0; 6];
+    let mut retries = 0;
+    loop {
+        let ack = match observed.phase {
+            SongBankHostTransferPhase::AwaitReceiverReadyLow
+            | SongBankHostTransferPhase::AwaitReceiverReadyHigh { .. } => [0xaa, 0xbb, 0, 0],
+            SongBankHostTransferPhase::AwaitBlockAck { token, .. } => {
+                retries += 1;
+                [if retries % 3 == 0 { token } else { token ^ 0xff }, 0, 0, 0]
+            }
+            SongBankHostTransferPhase::AwaitByteAck { counter, .. } => {
+                retries += 1;
+                [if retries % 3 == 0 { counter } else { counter ^ 0xff }, 0, 0, 0]
+            }
+            _ => [0; 4],
+        };
+        let done = observed.perform_host_access(&mut observed_ports, ack);
+        assert_eq!(plain.perform_host_access(&mut plain_ports, ack), done);
+        assert_eq!(observed_ports, plain_ports);
+        assert_eq!(observed.next_host_access_master_clock, plain.next_host_access_master_clock);
+        assert_eq!(bincode::serialize(&observed).unwrap(), bincode::serialize(&plain).unwrap());
+        if done { break; }
+    }
+    let audit = observed.timing_audit.unwrap();
+    assert_eq!(audit.clocks.iter().sum::<u64>(),
+        observed.completed_port_clear_master_clock.unwrap() - audit.first_read);
+    assert_eq!(audit.accesses[7], 2);
+    assert_eq!(audit.accesses[10], 4);
+    assert_eq!(audit.cpu.iter().sum::<u64>(),
+        6 + 332 + 2 * (6 + 106 + 74 + 30) + 4 * 52 + 210 + 62
+        + 2 * 6 + 236 + 82 + 4 * 52 + 82 + 304 + 90);
+}
+
 fn cpu_port_clock_fixture(program: &[u8]) -> AbsoluteDspEventClock {
     let mut clock = clock_at_first_host_boundary();
     clock.absolute_apu_cycle = 0;
