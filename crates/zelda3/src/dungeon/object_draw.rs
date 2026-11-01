@@ -248,11 +248,32 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_CheckIfWallIsMoved`
     pub(super) fn room_draw_check_if_wall_is_moved(&mut self) -> bool {
+        self.room_draw_check_if_wall_is_moved_priced(false)
+    }
+
+    fn room_draw_check_if_wall_is_moved_priced(&mut self, price: bool) -> bool {
+        let _scope = (self.lag_free && price).then(|| crate::cycle_ledger::routine(0x019298));
+        let b = crate::cycle_ledger::blocks(self.lag_free && price);
+        // $01:9298..92D0: both tag guards and saved-room branch, M16 -> M8 -> M16.
+        b.block(0x019298);
         self.bg1_move_calc_mut().set_buffer(0);
         self.dungeon_moving_floor_mut().clear_floor_move_flags();
 
         let tag0 = self.game_state.dungeon.header.primary_header_tag();
         let tag1 = self.game_state.dungeon.header.header_tag(1);
+        if tag0 < 0x1c { b.taken(0x0192a7); }
+        else {
+            b.block(0x0192a9);
+            if tag0 < 0x20 { b.taken(0x0192ab); }
+        }
+        if !(0x1c..0x20).contains(&tag0) {
+            b.block(0x0192ad);
+            if tag1 < 0x1c { b.taken(0x0192b4); }
+            else {
+                b.block(0x0192b6);
+                if tag1 >= 0x20 { b.taken(0x0192b8); }
+            }
+        }
         let i = if (0x1c..0x20).contains(&tag0) {
             Some(0usize)
         } else if (0x1c..0x20).contains(&tag1) {
@@ -262,18 +283,37 @@ impl ZeldaState {
         };
 
         if let Some(i) = i {
+            b.block(0x0192ba);
             if self.game_state.dungeon.savegame_state.savegame_state_bits() & (0x1000 >> i) != 0 {
+                b.block(0x0192c2);
                 self.dungeon_room_load_mut().set_header_collision(0);
                 self.dungeon_header_mut().clear_header_tag(i);
                 self.dungeon_room_load_mut().clear_bg2_properties();
                 return false;
             }
+            b.taken(0x0192c0);
         }
+        b.block(0x0192cd);
         true
     }
 
     /// ROM: `MovingWall_FillReplacementBuffer`
     pub(super) fn moving_wall_fill_replacement_buffer(&mut self, dsto: u16) {
+        self.moving_wall_fill_replacement_buffer_priced(dsto, false);
+    }
+
+    fn moving_wall_fill_replacement_buffer_priced(&mut self, dsto: u16, price: bool) {
+        let _scope = (self.lag_free && price).then(|| crate::cycle_ledger::routine(0x0192d1));
+        let b = crate::cycle_ledger::blocks(self.lag_free && price);
+        // $01:92D1..92FA: 64 replacement words and the X-screen bit branch.
+        b.block(0x0192d1);
+        for i in 0..64 {
+            b.block(0x0192d7);
+            if i < 63 { b.taken(0x0192dd); }
+        }
+        b.block(0x0192df);
+        if dsto & 0x20 != 0 { b.block(0x0192ed); } else { b.taken(0x0192eb); }
+        b.block(0x0192f2);
         self.dungeon_room_effects_mut()
             .fill_moving_wall_replacement_buffer(0x01ec);
         let value = (dsto & 0x001f) | if dsto & 0x0020 != 0 { 0x0400 } else { 0 } | 0x1000;
@@ -283,38 +323,71 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_MovingWallRight`
     pub(super) fn room_draw_moving_wall_right(&mut self, width: u8, height: u8, dsto: u16) {
-        if !self.room_draw_check_if_wall_is_moved() {
+        // $01:9190..921B: actual source loops; helper bodies remain exclusive.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x019190);
+        if !self.room_draw_check_if_wall_is_moved_priced(true) {
+            b.block(0x019193); b.block(0x019195);
             return;
         }
+        b.block(0x019193); b.taken(0x019193); b.block(0x019196);
         self.dungeon_room_load_mut()
             .increment_header_collision_2_mirror();
         let size0 = MOVING_WALL_SIZE_TABLE0[width as usize];
         let size1 = MOVING_WALL_SIZE_TABLE1[height as usize];
-        self.moving_wall_fill_replacement_buffer(dsto.wrapping_sub(size1).wrapping_sub(1));
         self.dungeon_room_effects_mut()
             .set_moving_wall_dot_pointer(height.wrapping_mul(2));
 
         let fill_src = 0x03d8;
+        for i in 0..size1 {
+            b.block(0x0191b6);
+            if i + 1 < size1 { b.taken(0x0191b9); }
+        }
+        b.block(0x0191bb);
         let mut dst1 = dsto.wrapping_sub(size1);
-        for _ in 0..size1 {
+        for column in 0..size1 {
+            b.block(0x0191c1);
             let mut dst2 = dst1;
             self.room_write_current(dst2, self.tile_word(fill_src, 0));
-            for _ in 0..(size0 * 2 + 4) {
+            for row in 0..(size0 * 2 + 4) {
+                b.block(0x0191cc);
                 self.room_write_current(dst2 + 64, self.tile_word(fill_src, 1));
                 dst2 += 64;
+                if row + 1 < size0 * 2 + 4 { b.taken(0x0191d9); }
             }
+            b.block(0x0191db);
             self.room_write_current(dst2 + 64, self.tile_word(fill_src, 2));
             dst1 += 1;
+            if column + 1 < size1 { b.taken(0x0191e6); }
         }
+
+        b.block(0x0191e8);
+        self.moving_wall_fill_replacement_buffer_priced(dsto.wrapping_sub(size1).wrapping_sub(1), true);
+        b.block(0x0191f1);
 
         let src = 0x072a;
         let mut dst = dsto;
-        self.room_draw_1x3_rightwards(src, dst, 3);
-        dst += 3 * 64;
-        for _ in 0..size0 {
-            self.object_draw_3x2(src + 18, dst);
-            dst += 2 * 64;
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x019216));
+            b.block(0x019216);
+            self.room_draw_1x3_rightwards(src, dst, 3);
         }
+        b.block(0x0191f9);
+        dst += 3 * 64;
+        for row in 0..size0 {
+            b.block(0x019203);
+            // $01:9BD9 is a six-store leaf, not $9D04's two-row loop.
+            // The stores are identical; use the actual called body's price.
+            if self.lag_free {
+                let _scope = crate::cycle_ledger::routine(0x019bd9);
+                b.block(0x019bd9);
+                crate::cycle_ledger::muted(|| self.object_draw_3x2(src + 18, dst));
+            } else { self.object_draw_3x2(src + 18, dst); }
+            b.block(0x019206);
+            dst += 2 * 64;
+            if row + 1 < size0 { b.taken(0x01920e); }
+        }
+        b.block(0x019210); b.block(0x019216);
         self.room_draw_1x3_rightwards(src + 30, dst, 3);
     }
 
@@ -869,6 +942,7 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_Chest`
     pub(super) fn room_draw_chest(&mut self, dsto: u16) {
+        self.price_room_draw_chest();
         if self.game_state.frame.main_module == 26 {
             return;
         }
@@ -913,6 +987,84 @@ impl ZeldaState {
             }
         }
         None
+    }
+
+    /// $01:98D0..99BA self work. The $9895 tail keeps its existing price.
+    /// The translated storage helpers do not charge these branches or stores.
+    fn price_room_draw_chest(&self) {
+        if !self.lag_free { return; }
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(0x0198d0);
+        if self.game_state.frame.main_module == 26 {
+            b.taken(0x0198d8); b.block(0x0198cf); return;
+        }
+        // The native chest count is a byte offset in the same six-word list.
+        let index = self.game_state.dungeon.room_items.num_chests_x2() as usize / 2;
+        if index >= DUNGEON_CHEST_OPEN_MASKS.len() { return; }
+        b.block(0x0198da);
+        if self.room_plane_offset() != 0 { b.block(0x0198e8); }
+        else { b.taken(0x0198e6); }
+        b.block(0x0198ef);
+        let flags = self.game_state.dungeon.savegame_state.savegame_state_bits();
+        let opened = flags & DUNGEON_CHEST_OPEN_MASKS[index] != 0;
+        if opened { b.taken(0x0198f5); b.block(0x01995c); }
+        else { b.block(0x0198f7); }
+        // Opened and unopened chests have the same tag predicates at two
+        // distinct source spans, separated by $68 bytes. No scene identity
+        // selects the path: it is the actual saved chest bit above.
+        let d = if opened { 0x68 } else { 0 };
+        let first = self.game_state.dungeon.header.header_tag(0);
+        let second = self.game_state.dungeon.header.header_tag(1);
+        let mut slot = None;
+        if first == 0x27 { b.taken(0x01990d + d); slot = Some(0); }
+        else {
+            b.block(0x01990f + d);
+            if first == 0x3c { b.taken(0x019912 + d); slot = Some(0); }
+            else {
+                b.block(0x019914 + d);
+                if first == 0x3e { b.taken(0x019917 + d); slot = Some(0); }
+                else {
+                    b.block(0x019919 + d);
+                    if first < 0x29 { b.taken(0x01991c + d); }
+                    else {
+                        b.block(0x01991e + d);
+                        if first < 0x33 { b.taken(0x019921 + d); slot = Some(0); }
+                    }
+                }
+            }
+        }
+        if slot.is_none() {
+            b.block(0x019923 + d);
+            if second == 0x27 { b.taken(0x01992b + d); slot = Some(1); }
+            else {
+                b.block(0x01992d + d);
+                if second == 0x3c { b.taken(0x019930 + d); slot = Some(1); }
+                else {
+                    b.block(0x019932 + d);
+                    if second == 0x3e { b.taken(0x019935 + d); slot = Some(1); }
+                    else {
+                        b.block(0x019937 + d);
+                        if second < 0x29 { b.taken(0x01993a + d); }
+                        else {
+                            b.block(0x01993c + d);
+                            if second >= 0x33 { b.taken(0x01993f + d); }
+                            else { slot = Some(1); }
+                        }
+                    }
+                }
+            }
+            if slot == Some(1) { b.block(0x019941 + d); }
+        }
+        if let Some(slot) = slot {
+            if !opened {
+                b.block(0x019946);
+                if flags & DUNGEON_CHEST_OPEN_MASKS[slot] == 0 {
+                    b.taken(0x01994d); b.block(0x0198cf); return;
+                }
+                b.block(0x01994f);
+            } else { b.block(0x0199ae); }
+        }
+        b.block(if opened { 0x0199b3 } else { 0x019954 });
     }
 
     /// ROM: `RoomDraw_SinglePot`

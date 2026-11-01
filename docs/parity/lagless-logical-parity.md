@@ -4402,3 +4402,222 @@ Delivered-command, chip-state and waveform equality were not recaptured.
 exited. No GPU, Snes9x process, continuous live replay, full library suite,
 protected-cache/shared-ledger write, new environment switch, cargo fmt,
 commit or push was used. The matcher, classifiers and P2 source are unchanged.
+
+
+## Lagless prefix hunt 4
+
+2026-11-01, `codex/prefix-hunt4`, base `10cf410f` (main at start).
+Evidence: `target/prefix-hunt4/`. The pinned oracle cache and shared
+`full-v2` ledger were read only; the fresh CPU source slice is local evidence,
+not a replacement authority. `generated-table-proof.json` binds the ROM,
+cache manifest, SRAM and inputs.
+
+### Object bodies and children
+
+All 114 positive complete-call gaps from hunt 3 are closed across 20 object
+entry points: **977/977 complete calls now have equal instruction costs**,
+versus 863 equal / 114 positive / 0 negative before. The 198,876-clock
+inclusive deficit becomes zero; all 977 dispatcher prefixes remain exact.
+`object-inclusive-comparison.json` retains each source ordinal span and
+native call occurrence. This is inclusive cost equality, not a claim that
+all retirements pair in the unchanged ordered matcher.
+
+The following table names each missing span. Counts and gaps are diagnostic
+witness totals, never runtime prices. All final complete-call gaps are zero.
+JMP tails retain the source dispatcher owner `$01:893C`; a tail entry is not
+invented as a separate source call. Width is M16/X16 at these entries;
+`$9298`'s M8 guard and return to M16 are represented by generated blocks.
+
+| Tail entry | Calls fixed | Prior inclusive gap | Missing source span / child ownership |
+| --- | ---: | ---: | --- |
+| `$01:8BE0` | 2 | 3,232 | $8BE0..8BF3 size-child call and shrinking-row call/control loop; B0AF/B2CE children excluded |
+| `$01:8BF4` | 3 | 6,548 | $8BF4..8C0D size-child call and growing-row call/control loop; B0AF/B2D0 children excluded |
+| `$01:8C0E` | 1 | 1,712 | $8C0E..8C21 size-child call and shrinking-row call/control loop; B0AF/B2CE children excluded |
+| `$01:8C22` | 2 | 3,620 | $8C22..8C36 size-child call and upward shrinking-row call/control loop; B0AF/B2CE children excluded |
+| `$01:8F30` | 27 | 1,296 | $8F30..8F35 LDA #2 and tail JMP; existing 8D80 body unchanged |
+| `$01:8F8A` | 20 | 42,496 | $8F8A..8F9C size JSR and direct vertical store/DEC/BNE loop; B0AC child excluded |
+| `$01:9190` | 1 | 45,564 | $9190..921B body and 9298 guard/92D1 replacement children; 9BD9 six-store child replaces incorrect 9D04 loop price without duplicate charge |
+| `$01:939F` | 2 | 1,776 | $939F..93B6 size child and spaced Nx4 call/control loop; 97F0 child excluded |
+| `$01:93DC` | 12 | 20,232 | $93DC..93F6 parent control and final 93F7..9428 fallthrough; real 93FF/93F7 JSR children remain separately charged |
+| `$01:94BD` | 9 | 18,090 | $94BD..94DE size and bar call/control loop; B0AC/B2F6 children excluded |
+| `$01:94DF` | 3 | 2,730 | $94DF..9500 size and Nx4 call/control loop plus shelf tail JMP; B0AC/97F0/B2E1 bodies excluded |
+| `$01:97B5` | 3 | 16,410 | $97B5..97DB size call and direct top/repeated-row store loops; B0AF child excluded |
+| `$01:98D0` | 6 | 6,570 | $98D0..99BA module/plane/chest/tag branches and list stores; shared 9895 drawing tail excluded |
+| `$01:9A0C` | 3 | 144 | $9A0C..9A11 LDA #6 and tail JMP; existing 8D80 body unchanged |
+| `$01:9D6C` | 9 | 216 | $9D6C LDA #2; existing 9D6F shared body unchanged |
+| `$01:A194` | 3 | 6,144 | $A194..A1D0 complete top/three-middle/bottom direct-store body |
+| `$01:A26D` | 3 | 10,158 | $A26D..A2C0 list stores and four inline dual-plane columns; native drawing helper was unpriced |
+| `$01:A31C` | 3 | 9,918 | $A31C..A369 list stores and four inline dual-plane columns; native drawing helper was unpriced |
+| `$01:A4B4` | 1 | 1,076 | $A4B4..A4F4 plane/list stores plus A563..A583 edge flags; 8D80 child excluded |
+| `$01:A584` | 1 | 944 | $A584..A5D1 plane/list stores and edge flags; 8D80 child excluded |
+
+The runtime uses `cycle_ledger` ROM block markers at the actual body/loop
+operations. The unchanged generator adds 126 blocks; all 4,221 prior rows
+are unchanged. Child bodies are excluded from parent blocks. The moving
+wall calls `$9BD9`'s six-store leaf, not `$9D04`'s two-row loop: its existing
+identical native stores run muted under the actual source leaf price.
+Replacement-buffer work moves to its source call position after the fill.
+The table's final `$93F7` execution is fallthrough, separate from its real
+JSR children. There is no sampled-count correction, scene table or threshold.
+
+The expanded complete-object fixture executes the ROM for all encoded
+width/height combinations and both planes and compares both total cost and
+tile memory. Separate chest fixtures cover module exit, both planes, every
+valid list slot, saved/opened states, tag comparisons and tag precedence.
+Moving-wall fixtures cover every size, tag boundaries/precedence, saved
+flags and both destination screen-bit paths. These are coverage-3 pricing
+fixtures with independently excluded children, not a promotion of aggregate
+route equality into ordered or sound equivalence.
+
+### Spotlight arrival phase
+
+`spotlight-arrival-proof.json` retains all five source/native prefixes;
+the final audit verifies that these prefixes did not change in this hunt.
+
+| Iteration | Source instruction prefix | Native instruction prefix | Upstream deficit | Source wait passes |
+| --- | ---: | ---: | ---: | ---: |
+| 59,213 | 345,548 | 343,960 | 1,588 | 1,419 |
+| 68,801 | 344,422 | 344,098 | 324 | 1,409 |
+| 101,031 | 340,936 | 340,534 | 402 | 1,429 |
+| 109,016 | 341,098 | 338,776 | 2,322 | 1,428 |
+| 112,191 | 341,986 | 340,544 | 1,442 | 1,423 |
+
+A fresh cold CPU source trace at iteration 59,213 reaches `$00:F3A3` at
+**V257/H306**; native reaches it at **V255/H1322**. The observed arrival
+separation is 1,712 wall clocks: 1,588 instruction clocks of upstream
+undercharge plus an explicit 124-clock bus/coordinate remainder. Because
+the source masks V with `$FF`, native exits at 255, while source reads 1
+and waits through the physical field wrap to 192. The source's 1,419 passes
+are therefore a phase symptom, not a separately missing fixed price.
+The 59,214 freshly recorded ledger rows are byte-identical to the authority
+prefix (`spotlight-source-identity.json`).
+
+At that source arrival, the generic barrier predicts 268,596 wall clocks
+versus the route ROM loop's 268,578: an 18-clock difference. The expanded
+ROM loop fixture checks 64 V/H arrivals, including both sides of the
+255/256 sample boundary; maximum observed wall error is 170 clocks, within
+the existing one-pass-plus-refresh bound. The isolated V257/H306 fixture
+has 1,465 CPU passes, versus the route's 1,419 with HDMA: CPU instruction
+passes and elapsed wall time must not be conflated. This remains a bounded
+wall approximation, not an exact pass-count or full bus-phase proof.
+
+No wait formula or fixed wait price changed. Upstream deficits and the
+remaining bus/coordinate discrepancy remain open. The optional diagnostic
+`ZELDA3_DEBUG_NATIVE_RASTER_WAIT` uses `crate::debug_env`; it only records
+arrival accounting. The other four native arrivals are retained in the
+artifact; only 59,213 has a newly captured source raster trace here.
+
+### Ordered matcher, 52 and 88 prefix rows
+
+The matcher and classifiers are unchanged. Both cohorts complete with E=0
+and no unequal pairs, but **ordered coverage regresses**: U increases 13,662
+clocks on each cohort: `$893C` grows by 14,448 while `$B0AF` shrinks by
+786. Exact object call totals do not erase rejected
+scope/alias/fallthrough groups. No matcher exception or exclusion was added.
+
+| Cohort | U before -> after | O before -> after | Paired source before -> after |
+| --- | ---: | ---: | ---: |
+| 52 | 35,788,090 -> 35,801,752 | 17,507,776 -> 17,647,986 | 123,270,120 -> 123,256,458 |
+| 88 | 71,826,498 -> 71,840,160 | 28,497,632 -> 28,710,170 | 185,702,544 -> 185,688,882 |
+
+Per-owner U below is exclusive reconstructed source ownership; O is native
+scope ownership. O ranges preserve unresolved mixed native groups, whose
+bounds cannot be summed as independent exact values. The source's JMP-tail
+work remains in `$893C`; native `$93DC` is an existing observer scope.
+`owner-before-after.csv/json` includes all 20 tail addresses, children and
+hunt-3 owners, including zero/unchanged rows.
+
+| Owner | 52 U before -> after | 52 O before -> after | 88 U before -> after | 88 O before -> after |
+| --- | ---: | ---: | ---: | ---: |
+| `$01:893C` | 2,504,882 -> 2,519,330 | [2,326,962, 2,379,322] -> [2,425,628, 2,477,988] | 3,449,216 -> 3,463,664 | [3,220,226, 3,286,866] -> [3,374,548, 3,441,188] |
+| `$01:93DC` | 0 -> 0 | 0 -> 20,232 | 0 -> 0 | 0 -> 20,232 |
+| `$01:9298` | 0 -> 0 | 0 -> 0 | 476 -> 476 | 0 -> 476 |
+| `$01:92D1` | 0 -> 0 | 0 -> 0 | 6,614 -> 6,614 | 0 -> 6,614 |
+| `$01:9216` | 0 -> 0 | 0 -> 0 | 1,544 -> 1,544 | 0 -> 48 |
+| `$01:9BD9` | 0 -> 0 | 0 -> 0 | 4,578 -> 4,578 | 0 -> 4,578 |
+| `$01:93F7` | 14,448 -> 14,448 | [0, 22,224] -> 14,448 | 14,448 -> 14,448 | [0, 22,224] -> 14,448 |
+| `$01:B0AF` | 786 -> 0 | 0 -> 0 | 5,764 -> 4,978 | 786 -> 2,882 |
+| `$00:F312` | 881,640 -> 881,640 | 378,612 -> 378,612 | 2,222,068 -> 2,222,068 | 957,734 -> 957,734 |
+| `$09:C6F5` | 33,880 -> 33,880 | 33,880 -> 33,880 | 46,948 -> 46,948 | 46,948 -> 46,948 |
+
+The sheet owners `$00:E583/E609/E60D`, map `$02:FD87/FDF7`, and reset
+`$09:C452` remain U/O zero on both cohorts. The final cohort directories
+retain source gaps, native grouped rejections, reasons, and ordered joins.
+The table body/fallthrough and moving-wall child scopes remain structural
+matching work; they are not unpriced clocks after the exact fixtures.
+
+### ROM and picture admission
+
+The eight-chunk seeded ROM census completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,159 missing / 0 excess / 0 FP**, versus
+2,183 / 0 / 0. All holds equal P2. There are 856 changed predictor rows;
+24 rows each recover exactly one missing hold. No row adds excess or FP.
+The continuous 0–96,000 prefix passes at **49 / 0 / 0**, versus 51 / 0 / 0.
+
+| Before iteration | Missing before | Missing after |
+| --- | ---: | ---: |
+| 94,334 | 50 | 48 |
+| 141,568 | 86 | 83 |
+| 228,499 | 213 | 205 |
+| 380,243 | 364 | 354 |
+| 461,989 | 442 | 431 |
+
+One final CPU picture census completes the full route, gate PASS, with
+**1,462,997 exact pictures**, unchanged; content and unexplained differences
+are zero. All 1,473,123 per-iteration picture hashes are byte-identical to
+hunt 1 (`picture-hash-comparison.json`). This freshly checks the moving-wall
+operation-order change.
+Four filtered Rust tests pass (complete object fixture, chest, moving wall,
+raster arrival), plus eight generator tests. Default, reduced-feature,
+audit and restored-default product builds are warning-free; unrelated
+library-test dead-code warnings are separate. The restored default binary
+is byte-identical to the candidate, and all 142,000 audit predictor rows
+match the ordinary ROM census.
+
+### Single seeded live census and stop point
+
+One full seeded `--live-apu-reads --pacing-predictor` run completes
+**1,473,123 iterations**, gate **PASS / unexplained 0**, at
+**2,556 missing / 369 excess / 82 FP**, versus
+2,447 / 260 / 74. All holds equal P2. The live-only differential has
+37 changed hold rows; unattributed current
+and changed hold rows are both zero. Attribution uses observed original
+read episodes and actual execution/reseed ends, not nearest-poll guesses.
+
+| Poll origin | Current live-versus-ROM hold rows | Changed differential rows | Added missing / excess / FP |
+| --- | ---: | ---: | --- |
+| 94,853 | 0 | 6 | 0 / 0 / 0 |
+| 142,087 | 5 | 0 | 9 / 9 / 2 |
+| 380,880 | 15 | 15 | 114 / 90 / 5 |
+| 462,626 | 6 | 6 | 13 / 13 / 3 |
+| 627,255 | 10 | 10 | 27 / 27 / 5 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+
+`live-partition.json` retains row values, fresh poll observations and reseeds;
+`live-episode-boundaries.json` binds the reused source read inventory to
+those observations. Live missing/excess/FP worsen by **109 / 109 / 8**
+despite the 24 recovered ROM holds. Poll-episode contributions grow from
+264 / 260 / 74 to 397 / 369 / 82. This is not a live pacing improvement.
+
+Secondary accounting-field changes are retained in
+`live-secondary-rows.json` and checked separately in
+`live-secondary-attribution.json`; they are not counted as recovered holds.
+All 2,668 changed main-work differentials lie within the explicit episode
+bounds. Outside those bounds remain 191 opening-handler and 191 lag-handler
+rows, 12 HDMA rows and 16 raster-wait rows. These budget-only differences
+are not attributed by the hold-row proof and remain explicitly unresolved.
+
+This is a verified pricing stop. The 20 object tail prices meet the all-path
+fixture and ROM/live/picture gates. Ordered scope/fallthrough residuals and
+spotlight's upstream phase deficit remain open. Missing-hold recovery is
+reported as recovery, not net SPC phase improvement. Delivered-command,
+chip-state and waveform equality were not recaptured; no cold A/V or sound
+parity claim follows from these results.
+
+`verification.json` binds changed source, binaries, unchanged matcher/gates,
+authority and evidence. `git diff --check` passes. Evidence remains under
+3 GB and all started jobs have exited. No GPU run, Snes9x process, cached-av,
+continuous live replay, full library suite, protected-cache/shared-ledger
+write, cargo fmt, commit or push was used. P2 and classifier/matcher logic
+are unchanged; the only new environment switch is the diagnostic accessed
+through `crate::debug_env`.

@@ -327,8 +327,8 @@ mod tests {
             CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
         let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../saves/zelda3.sfc")).unwrap();
-        for line in [0u16, 191, 192, 225, 255, 256, 261] {
-          for h in [0u16, 1200, 1320, 1339, 1340, 1363] {
+        for line in [0u16, 191, 192, 225, 255, 256, 257, 261] {
+          for h in [0u16, 306, 1200, 1320, 1322, 1339, 1340, 1363] {
             let mut machine = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom)
                 .unwrap().machine().snes().clone();
             machine.cpu.e = false;
@@ -348,13 +348,22 @@ mod tests {
                 snes::Snes9xApuClockCheckpoint::new(source.timeline().clock_master_cycles(), 0, 0).unwrap(),
             ).unwrap()).unwrap();
             let mut wall = 0;
+            let mut passes = 0;
             while source.snes().cpu.pc != 0xf3b4 {
+                passes += u64::from(source.snes().cpu.pc == 0xf3a3);
                 let step = source.step().unwrap();
                 assert!(step.accepted_interrupt.is_none());
                 wall += step.ended_at.master_cycles() - step.started_at.master_cycles();
             }
             let elapsed = (u64::from(line) + 262 - 225) % 262 * 1364 + u64::from(h);
             let model = raster_poll_wait(elapsed, 192, 0xff, 24, 178) + 172;
+            // The generic barrier estimates elapsed wall time, not CPU pass
+            // count: refresh (and a leased HDMA program in production) owns
+            // some of that interval. At hunt 4's native arrival it must exit
+            // immediately; at the source arrival it must cross the field wrap.
+            if line == 255 && h == 1322 { assert_eq!(passes, 1); assert_eq!(model, 172); }
+            if line == 257 && h == 306 { assert!(passes > 1); }
+            eprintln!("raster-fixture v={line} h={h} passes={passes} source_wall={wall} model_wall={model}");
             assert!(model.abs_diff(wall) <= 178 + 40 + 4,
                 "V={line} H={h} model={model} source={wall}");
             if line >= 256 { assert!(wall > 192 * 1364); }

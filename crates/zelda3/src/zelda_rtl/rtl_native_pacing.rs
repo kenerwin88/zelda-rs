@@ -311,6 +311,14 @@ impl ZeldaState {
         if !self.native_pacing.accounting { return; }
         let main = self.native_main_work();
         let elapsed = self.native_cost_elapsed(main);
+        if crate::debug_env::is_set("ZELDA3_DEBUG_NATIVE_RASTER_WAIT") {
+            let raster = (225 * 1364 + elapsed[2]) % (1364 * 262);
+            eprintln!("native-raster-wait main={main} entry={} lag={} elapsed={} v={} h={} sample={sample_master} loop={loop_master} wait={} lease={}",
+                self.native_pacing.entry_handler, self.native_pacing.entry_lag_handler,
+                elapsed[2], raster / 1364, raster % 1364,
+                raster_poll_wait(elapsed[2], line, mask, sample_master, loop_master),
+                self.native_bus_lease_decline());
+        }
         self.native_pacing.raster_barriers.push((main, line, mask, sample_master, loop_master));
         for (i, work) in elapsed.into_iter().enumerate() {
             self.native_pacing.wait_wall[i] += raster_poll_wait(work, line, mask, sample_master, loop_master);

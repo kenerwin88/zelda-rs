@@ -42,9 +42,19 @@ fn object_tail_prices_match_executed_rom_paths() {
         0x78, 0x7b, 0x89, 0x3e, 0x4b, 0x3c, 0x88,
         0x22, 0x5f, 0x69, 0x8a, 0xc3, 0xd7,
         0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd1, 0xd2, 0xd9,
-        0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8];
-    for (extended, idx) in ids.into_iter().map(|idx| (false, idx))
-        .chain((0x08..=0x0f).map(|idx| (true, idx))) {
+        0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8,
+        0x4c, 0x4d, 0x4e, 0x4f, 0x6a, 0x6b, 0x79, 0x7a, 0x8d, 0x8e,
+        0x76, 0x77, 0x8f, 0xdd, 0xa0, 0xa1, 0xa2, 0xa3, 0xcd];
+    // Complete calls include independent children exactly once. Every encoded
+    // width/height and both planes exercise the loop and plane branch paths.
+    for (kind, idx, fixed_entry) in ids.into_iter().map(|idx| (1, idx, 0))
+        .chain((0x08..=0x0f).map(|idx| (2, idx, 0x019813)))
+        .chain([(2,0x1d,0x018f30),(2,0x21,0x018f30),(2,0x26,0x018f30),
+            (2,0x3e,0x019a0c),(2,0x31,0x01a26d),(2,0x38,0x01a4b4),
+            (2,0x3b,0x01a584),(3,0x1c,0x01a31c),(3,0x4d,0x019a0c),
+            (3,0x5d,0x019a0c),(3,0x55,0x01a194),(3,0x5b,0x01a194),
+            (3,0x5a,0x019d6c)]) {
+        let extended = kind != 1;
         for width in 0..4u8 {
             for height in 0..4u8 {
                 for plane in [0x2000u16, 0x4000] {
@@ -53,9 +63,12 @@ fn object_tail_prices_match_executed_rom_paths() {
                     } else { &[0] };
                     for &initial_tile in corners {
                         let mut state = template.clone();
-                        let dsto = if (0x09..=0x20).contains(&idx) { 0x640u16 } else { 0x40 };
-                        let src = if extended { objects::object_subtype2_param(idx) }
-                            else { objects::object_subtype1_param(idx) }.unwrap() as u16;
+                        let dsto = if kind == 1 && ((0x09..=0x20).contains(&idx) || idx == 0xa3) {
+                            0x640u16
+                        } else { 0x140 };
+                        let src = match kind { 2 => objects::object_subtype2_param(idx),
+                            3 => objects::object_subtype3_param(idx),
+                            _ => objects::object_subtype1_param(idx) }.unwrap() as u16;
                         // $01:8719 supplies four columns followed by the next
                         // rows for BG2. The other plane subtracts $2000.
                         for row in 0..11 {
@@ -74,7 +87,7 @@ fn object_tail_prices_match_executed_rom_paths() {
                         state.ram[corner_address..corner_address + 2].copy_from_slice(&initial_tile.to_le_bytes());
                         state.sync_native_game_state_from_ram();
                         let target = lorom_offset(0x01_8200 + u32::from(idx) * 2).unwrap();
-                        let entry = if extended { 0x01_9813 } else {
+                        let entry = if extended { fixed_entry } else {
                             0x01_0000 | u32::from(u16::from_le_bytes([rom[target], rom[target + 1]]))
                         };
                         let checkpoint = RomCpuCheckpoint {
@@ -98,8 +111,9 @@ fn object_tail_prices_match_executed_rom_paths() {
                             assert!(instructions < 10_000, "object {idx:02x} failed to return");
                         }
                         let before = crate::cycle_ledger::master();
-                        if extended { state.LoadType1ObjectSubtype2(idx, dsto); }
-                        else { state.LoadType1ObjectSubtype1(idx, width, height, dsto); }
+                        match kind { 2 => state.LoadType1ObjectSubtype2(idx, dsto),
+                            3 => state.LoadType1ObjectSubtype3(idx, dsto),
+                            _ => state.LoadType1ObjectSubtype1(idx, width, height, dsto) }
                         assert_eq!(crate::cycle_ledger::master() - before, cycles,
                             "extended={extended} object={idx:02x} width={width} height={height} plane={plane:04x} corner={initial_tile:04x}");
                         let actual = state.wram_image();

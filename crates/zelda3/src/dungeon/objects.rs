@@ -385,22 +385,41 @@ impl ZeldaState {
                 self.room_draw_downwards4x2_variable_spacing(4, src, dsto, count);
             }
             0x4c => {
+                // $01:94BD..94DE: size child, cap calls, repeated bars and tail JMP.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x0194bd);
+                self.price_room_draw_size_1to16();
+                b.block(0x0194c0);
                 let count = size_1to16(width, height) * 2;
                 let mut dst = self.room_draw_rightward_bar_segment(src, dsto) + 1;
-                for _ in 0..count {
+                b.block(0x0194c5);
+                for i in 0..count {
+                    b.block(0x0194cd);
                     dst = self.room_draw_rightward_bar_segment(src + 6, dst) + 1;
+                    b.block(0x0194d0);
+                    if i + 1 < count { b.taken(0x0194d4); }
                 }
+                b.block(0x0194d6);
                 self.room_draw_rightward_bar_segment(src + 12, dst);
             }
             0x4d..=0x4f => {
+                // $01:94DF..9500; Nx4 and shelf-end bodies own their work.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x0194df);
+                self.price_room_draw_size_1to16();
+                b.block(0x0194e2);
                 let count = size_1to16(width, height);
                 let mut dst = dsto;
                 self.room_draw_object_nx4(1, src, dst);
                 dst += 1;
-                for _ in 0..count {
+                for i in 0..count {
+                    b.block(0x0194e8);
                     self.room_draw_object_nx4(2, src + 8, dst);
+                    b.block(0x0194ee);
+                    if i + 1 < count { b.taken(0x0194f6); }
                     dst += 2;
                 }
+                b.block(0x0194f8);
                 self.room_draw_rightward_shelf_end(src + 24, dst);
             }
             0x50 => {
@@ -602,11 +621,18 @@ impl ZeldaState {
                 }
             }
             0x6a | 0x6b | 0x79 | 0x7a | 0x8d | 0x8e => {
+                // $01:8F8A..8F9C: size child followed by the direct-store loop.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x018f8a);
+                self.price_room_draw_size_1to16();
                 let count = size_1to16(width, height);
                 let tile = self.tile_word(src, 0);
                 for i in 0..count {
+                    b.block(0x018f8d);
                     self.room_write_current(dsto + i * 64, tile);
+                    if i + 1 < count { b.taken(0x018f9a); }
                 }
+                b.block(0x018f9c);
             }
             0x6c => {
                 let count = size_a_to_a_plus_15(width, height, 10);
@@ -674,10 +700,18 @@ impl ZeldaState {
                 }
             }
             0x76 | 0x77 => {
+                // $01:939F..93B6: spaced Nx4 calls; child bodies excluded.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x01939f);
+                self.price_room_draw_size_1to16();
                 let count = size_1to16(width, height);
                 for i in 0..count {
+                    b.block(0x0193a4);
                     self.room_draw_object_nx4(3, src, dsto + i * 8 * 64);
+                    b.block(0x0193ac);
+                    if i + 1 < count { b.taken(0x0193b4); }
                 }
+                b.block(0x0193b6);
             }
             0x78 | 0x7b => {
                 let count = size_1to16(width, height);
@@ -754,15 +788,23 @@ impl ZeldaState {
                 }
             }
             0x8f => {
+                // $01:97B5..97DB: size child, top pair, repeated lower pairs.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x0197b5);
+                self.price_room_draw_size_ato_aplus15();
+                b.block(0x0197bb);
                 let count = size_a_to_a_plus_15(width, height, 2) * 2;
                 let mut dst = dsto;
                 self.room_write_current(dst, self.tile_word(src, 0));
                 self.room_write_current(dst + 1, self.tile_word(src, 1));
-                for _ in 0..count {
+                for i in 0..count {
+                    b.block(0x0197c7);
                     self.room_write_current(dst + 64, self.tile_word(src, 2));
                     self.room_write_current(dst + 65, self.tile_word(src, 3));
                     dst = dst.wrapping_add(64);
+                    if i + 1 < count { b.taken(0x0197d9); }
                 }
+                b.block(0x0197db);
             }
             0x95 => {
                 let count = size_1to16(width, height);
@@ -781,37 +823,70 @@ impl ZeldaState {
                 }
             }
             0xa0 | 0xa5 | 0xa9 => {
+                // $01:8BE0..8BF3; the B0AF and B2CE bodies are children.
+                let b = crate::cycle_ledger::blocks(self.lag_free && idx == 0xa0);
+                b.block(0x018be0);
+                if idx == 0xa0 { self.price_room_draw_size_ato_aplus15(); }
                 let mut count = size_a_to_a_plus_15(width, height, 4);
                 let mut dst = dsto;
                 while count != 0 {
+                    b.block(0x018be6);
                     self.room_object_fill_row_width(count, src, dst);
+                    b.block(0x018be9);
                     dst = dst.wrapping_add(64);
                     count -= 1;
+                    if count != 0 { b.taken(0x018bf1); }
                 }
+                b.block(0x018bf3);
             }
             0xa1 | 0xa6 | 0xaa => {
+                // $01:8BF4..8C0D, with a growing B2D0 child on each row.
+                let b = crate::cycle_ledger::blocks(self.lag_free && idx == 0xa1);
+                b.block(0x018bf4);
+                if idx == 0xa1 { self.price_room_draw_size_ato_aplus15(); }
+                b.block(0x018bfa);
                 let count = size_a_to_a_plus_15(width, height, 4);
                 for y in 0..count {
+                    b.block(0x018bfc);
                     self.room_object_fill_row_a(y + 1, src, dsto + y * 64);
+                    b.block(0x018c01);
+                    if y + 1 < count { b.taken(0x018c0b); }
                 }
+                b.block(0x018c0d);
             }
             0xa2 | 0xa7 | 0xab => {
+                // $01:8C0E..8C21; size and row-store children excluded.
+                let b = crate::cycle_ledger::blocks(self.lag_free && idx == 0xa2);
+                b.block(0x018c0e);
+                if idx == 0xa2 { self.price_room_draw_size_ato_aplus15(); }
                 let mut count = size_a_to_a_plus_15(width, height, 4);
                 let mut dst = dsto;
                 while count != 0 {
+                    b.block(0x018c14);
                     self.room_object_fill_row_width(count, src, dst);
+                    b.block(0x018c17);
                     dst = dst.wrapping_add(65);
                     count -= 1;
+                    if count != 0 { b.taken(0x018c1f); }
                 }
+                b.block(0x018c21);
             }
             0xa3 | 0xa8 | 0xac => {
+                // $01:8C22..8C36; size and row-store children excluded.
+                let b = crate::cycle_ledger::blocks(self.lag_free && idx == 0xa3);
+                b.block(0x018c22);
+                if idx == 0xa3 { self.price_room_draw_size_ato_aplus15(); }
                 let mut count = size_a_to_a_plus_15(width, height, 4);
                 let mut dst = dsto;
                 while count != 0 {
+                    b.block(0x018c28);
                     self.room_object_fill_row_width(count, src, dst);
+                    b.block(0x018c2b);
                     dst = dst.wrapping_sub(63);
                     count -= 1;
+                    if count != 0 { b.taken(0x018c34); }
                 }
+                b.block(0x018c36);
             }
             0xa4 => self.object_hole(src, dsto, width, height),
             0xb0 | 0xb1 => {
@@ -1054,13 +1129,28 @@ impl ZeldaState {
             0xdd => {
                 #[cfg(feature = "rom-shadow-audit")]
                 let _scope = crate::rom_shadow_audit::local_scope(0x0193dc,None);
+                // $01:93DC..93F6, then the final $93F7 fallthrough (no JSR).
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x0193dc);
                 let width = width as u16 + 1;
                 let height = height as u16 * 2 + 2;
                 self.object_table_helper_observed(src, dsto, width, 0x0193ff);
+                b.block(0x0193e5);
                 for y in 1..height {
+                    b.block(0x0193ed);
                     self.object_table_helper_observed(src + 8, dsto + y * 64, width, 0x0193ff);
+                    b.block(0x0193f0);
+                    if y + 1 < height { b.taken(0x0193f2); }
                 }
+                b.block(0x0193f4);
                 self.object_table_helper_observed(src + 16, dsto + height * 64, width, 0x0193f7);
+                b.block(0x0193f7);
+                b.block(0x0193ff);
+                for i in 0..width {
+                    b.block(0x019408);
+                    if i + 1 < width { b.taken(0x019418); }
+                }
+                b.block(0x01941a);
                 self.object_table_helper(src + 24, dsto + (height + 1) * 64, width);
             }
             0xdc => {
@@ -1183,6 +1273,14 @@ impl ZeldaState {
                 self.object_draw_nx4_both_bgs(4, src, dsto);
             }
             0x1c => {
+                // $01:A31C..A369: list append and four inline dual-plane columns.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x01a31c);
+                for column in 0..4 {
+                    b.block(0x01a331);
+                    if column < 3 { b.taken(0x01a367); }
+                }
+                b.block(0x01a369);
                 self.dungeon_stair_lists_mut()
                     .append_stair_table_position(DungeonStairList::Stairs2, dsto);
                 self.object_draw_nx4_both_bgs(4, src, dsto);
@@ -1342,20 +1440,30 @@ impl ZeldaState {
             0x48 | 0x66 | 0x6b | 0x7a => self.room_draw_4x4_by_jump(src, dsto),
             0x4b | 0x76 | 0x77 => self.room_draw_1x3_rightwards(src, dsto, 8),
             0x4c => self.room_draw_some_big_decors(6, 0x1f92, dsto),
-            0x4d | 0x5d => self.room_draw_1x3_rightwards(src, dsto, 6),
+            0x4d | 0x5d => {
+                // $01:9A0C..9A11: LDA #6 and tail JMP; drawer owns its body.
+                crate::cycle_ledger::blocks(self.lag_free).block(0x019a0c);
+                self.room_draw_1x3_rightwards(src, dsto, 6);
+            }
             0x54 => self.room_draw_fortune_teller_room(dsto),
             0x55 | 0x5b => {
+                // $01:A194..A1D0: three direct rows between top and bottom.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x01a194);
                 for x in 0..3 {
                     self.room_write_current(dsto + x, self.tile_word(src, x as usize));
                 }
                 for y in 1..=3 {
+                    b.block(0x01a1a8);
                     for x in 0..3 {
                         self.room_write_current(
                             dsto + y * 64 + x,
                             self.tile_word(src, (3 + x) as usize),
                         );
                     }
+                    if y < 3 { b.taken(0x01a1bf); }
                 }
+                b.block(0x01a1c1);
                 for x in 0..3 {
                     self.room_write_current(
                         dsto + x + 4 * 64,
@@ -1363,7 +1471,11 @@ impl ZeldaState {
                     );
                 }
             }
-            0x5a => self.room_draw_water_holding_object(2, src, dsto),
+            0x5a => {
+                // $01:9D6C LDA #2; shared $9D6F body already owns its work.
+                crate::cycle_ledger::blocks(self.lag_free).block(0x019d6c);
+                self.room_draw_water_holding_object(2, src, dsto);
+            }
             0x60 | 0x61 => {
                 self.room_draw_1x3_rightwards(src, dsto, 3);
                 self.room_draw_1x3_rightwards(src + 18, dsto + 3 * 64, 3);
@@ -1445,7 +1557,11 @@ impl ZeldaState {
             0x10..=0x13 => self.room_data_draw_object_nx4_both_bgs(src, dsto, 3),
             0x14..=0x17 => self.object_draw_nx3_both_bgs(4, src, dsto),
             0x18..=0x1b | 0x27 | 0x2b | 0x34 => self.room_draw_rightwards2x2(src, dsto),
-            0x1d | 0x21 | 0x26 => self.room_draw_1x3_rightwards(src, dsto, 2),
+            0x1d | 0x21 | 0x26 => {
+                // $01:8F30..8F35: LDA #2 and tail JMP; drawer owns its body.
+                crate::cycle_ledger::blocks(self.lag_free).block(0x018f30);
+                self.room_draw_1x3_rightwards(src, dsto, 2);
+            }
             0x1e => self.room_draw_rightwards2x2(src, dsto),
             0x1f => {
                 let plane = self.room_plane_offset();
@@ -1518,6 +1634,14 @@ impl ZeldaState {
                 let next = self
                     .dungeon_stair_lists_mut()
                     .append_bg1_stair_table_position(DungeonStairList::InRoomSouthDown, dsto);
+                // $01:A26D..A2C0: list append and four inline dual-plane columns.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x01a26d);
+                for column in 0..4 {
+                    b.block(0x01a288);
+                    if column < 3 { b.taken(0x01a2be); }
+                }
+                b.block(0x01a2c0);
                 self.dungeon_stair_lists_mut().sync_stair_list_counts(
                     &[
                         DungeonStairList::WaterLadders,
@@ -1629,6 +1753,11 @@ impl ZeldaState {
             }
             0x38 => {
                 let plane = self.room_plane_offset();
+                // $01:A4B4..A4F4: actual plane branch and list stores.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x01a4b4);
+                if plane != 0 { b.block(0x01a4c7); } else { b.taken(0x01a4c5); }
+                b.block(0x01a4d3);
                 let next = self.dungeon_stair_lists_mut().append_interroom_staircase(
                     DungeonStairList::WallUpNorthSpiral,
                     dsto.wrapping_sub(0x40) | plane,
@@ -1647,7 +1776,10 @@ impl ZeldaState {
                     ],
                     next,
                 );
+                // $01:A563 JSR owns only the call; $A569 owns edge flags/RTS.
+                b.block(0x01a563);
                 self.room_draw_1x3_rightwards(0x1148, dsto, 4);
+                b.block(0x01a569);
                 let left = self.room_read_bg2(dsto.wrapping_sub(1)) | 0x2000;
                 self.room_write_bg2(dsto.wrapping_sub(1), left);
                 let right = self.room_read_bg2(dsto + 4) | 0x2000;
@@ -1701,6 +1833,11 @@ impl ZeldaState {
             }
             0x3b => {
                 let plane = self.room_plane_offset();
+                // $01:A584..A5D1: plane branch, list stores, child, edge flags.
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x01a584);
+                if plane != 0 { b.block(0x01a597); } else { b.taken(0x01a595); }
+                b.block(0x01a5a3);
                 let next = self.dungeon_stair_lists_mut().append_interroom_staircase(
                     DungeonStairList::WallDownNorthSpiralBg1,
                     dsto.wrapping_sub(0x40) | plane,
@@ -1714,6 +1851,7 @@ impl ZeldaState {
                     next,
                 );
                 self.room_draw_1x3_rightwards(0x1190, dsto, 4);
+                b.block(0x01a5b7);
                 let left = self.room_read_bg1(dsto.wrapping_sub(1)) | 0x2000;
                 self.room_write_bg1(dsto.wrapping_sub(1), left);
                 let right = self.room_read_bg1(dsto + 4) | 0x2000;
@@ -1742,7 +1880,11 @@ impl ZeldaState {
                 }
                 self.room_draw_1x3_rightwards(src + 24, dsto + 10, 4);
             }
-            0x3e => self.room_draw_1x3_rightwards(src, dsto, 6),
+            0x3e => {
+                // $01:9A0C..9A11: six-column tail wrapper.
+                crate::cycle_ledger::blocks(self.lag_free).block(0x019a0c);
+                self.room_draw_1x3_rightwards(src, dsto, 6);
+            }
             0x3f => {
                 let mut dst = dsto | self.room_plane_offset();
                 let mut s = src;

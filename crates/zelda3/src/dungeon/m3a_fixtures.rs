@@ -1,6 +1,79 @@
 //! CPU-only fixtures for equal-cost scalar replacements and entry aliases.
 use super::*;
 
+#[test]
+fn prefix_hunt4_moving_wall_guards_and_replacement_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut template = ZeldaState::new();
+    template.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    template.set_lag_free(true);
+    for width in 0..4u8 {
+     for height in 0..4u8 {
+      for tag in [0,0x1b,0x1c,0x1f,0x20] {
+       for tags in [[tag,0],[0,tag],[tag,0x1c]] {
+        for flags in [0u16,0x800,0x1000,0x1800] {
+         for dsto in [0x140u16,0x160] {
+            let mut state = template.clone();
+            state.ram[0xae..0xb0].copy_from_slice(&tags);
+            for (offset,value) in [(0xb2,u16::from(width)),(0xb4,u16::from(height)),
+                (0x402,flags),(8,dsto*2)] {
+                state.ram[offset..offset+2].copy_from_slice(&value.to_le_bytes());
+            }
+            for (offset,delta) in [(0xbf,0),(0xcb,128),(0xc2,2),(0xce,130),
+                (0xc5,4),(0xd1,132),(0xd7,256)] {
+                let address = 0x7e2000u32 + delta;
+                state.ram[offset..offset+3].copy_from_slice(&address.to_le_bytes()[..3]);
+            }
+            state.sync_native_game_state_from_ram();
+            let expected = source_work(&state.wram_image(),0x019190,false,false,false,dsto*2,0,dsto*2);
+            let before = crate::cycle_ledger::master();
+            state.room_draw_moving_wall_right(width,height,dsto);
+            assert_eq!(crate::cycle_ledger::master()-before,expected,
+                "width={width} height={height} tags={tags:x?} flags={flags:x} dst={dsto:x}");
+         }
+        }
+       }
+      }
+     }
+    }
+}
+
+#[test]
+fn prefix_hunt4_chest_branches_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut template = ZeldaState::new();
+    template.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    template.set_lag_free(true);
+    for module in [7, 26] {
+      for plane in [0x2000u32, 0x4000] {
+       for index in 0..DUNGEON_CHEST_OPEN_MASKS.len() {
+        for flags in [0, DUNGEON_CHEST_OPEN_MASKS[index], 0x3000, 0xffff] {
+         for tag in [0, 0x26, 0x27, 0x28, 0x29, 0x32, 0x33, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f] {
+          for tags in [[tag,0], [0,tag], [tag,0x27]] {
+            let mut state = template.clone();
+            state.ram[0x10] = module;
+            state.ram[0xae..0xb0].copy_from_slice(&tags);
+            state.ram[0x496..0x498].copy_from_slice(&((index * 2) as u16).to_le_bytes());
+            state.ram[0x402..0x404].copy_from_slice(&flags.to_le_bytes());
+            state.ram[8..10].copy_from_slice(&0x280u16.to_le_bytes());
+            for (offset,delta) in [(0xbf,0),(0xcb,128),(0xc2,2),(0xce,130)] {
+                let address = 0x7e0000 + plane + delta;
+                state.ram[offset..offset+3].copy_from_slice(&address.to_le_bytes()[..3]);
+            }
+            state.sync_native_game_state_from_ram();
+            let expected = source_work(&state.wram_image(),0x0198d0,false,false,false,0x280,0x149c,0x280);
+            let before = crate::cycle_ledger::master();
+            state.room_draw_chest(0x140);
+            assert_eq!(crate::cycle_ledger::master()-before, expected,
+                "module={module} plane={plane:x} index={index} flags={flags:x} tags={tags:x?}");
+          }
+         }
+        }
+       }
+      }
+    }
+}
+
 pub(crate) fn source_work(ram: &[u8], entry: u32, rtl: bool, m8: bool, x8: bool,
     a: u16, x: u16, y: u16) -> u64 {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
