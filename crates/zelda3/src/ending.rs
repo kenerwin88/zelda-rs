@@ -3424,12 +3424,22 @@ impl ZeldaState {
             self.run_native_intro_clear_until_boundary();
             return;
         }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cc404));
+        // $0C:C404..C411: bank save/restore, counter, two calls and RTL;
+        // each called body retains its own instruction ownership.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0cc404);
         self.attract_scene_mut().increment_intro_frame_counter();
         self.intro_animate_triforce();
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0cc40d);
         self.scene_animate_every_sprite();
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0cc410);
     }
 
     pub(super) fn intro_animate_triforce(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cc435));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $0C:C435..C447: enable worker, test GO, optional step/copy, RTS.
+        b.block(0x0cc435);
         self.activate_nmi_thread();
         if self.rom_startup_timing()
             && self.intro_memory_darken_frame_delay == 0
@@ -3440,63 +3450,106 @@ impl ZeldaState {
             return;
         }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
+            b.block(0x0cc43f);
             self.intro_run_step();
+            b.block(0x0cc442);
             self.mark_poly_thread_go();
+        } else {
+            b.taken(0x0cc43d);
         }
+        b.block(0x0cc447);
     }
 
     pub(super) fn intro_run_step(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cc448));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $0C:C448..C44E dispatches through the six-word inline table.
+        // JumpTableLocal pops its call frame at $00:8783: its tail belongs
+        // to this caller. Never decode the table as instructions.
+        b.block(0x0cc448);
+        {
+            let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        b.block(0x008784);
+        b.block(0x008799);
         match self.game_state.ending.attract_scene.intro_step_index() {
             0 => {
+                b.block(0x0cc45b);
                 self.attract_scene_mut().increment_intro_step_timer();
                 if self.game_state.ending.attract_scene.intro_step_timer() == 64 {
+                    b.block(0x0cc465);
                     self.attract_scene_mut().increment_intro_step_index();
-                }
+                } else { b.taken(0x0cc463); }
+                b.block(0x0cc468);
                 self.poly_runtime_mut().add_angle_b(5);
                 self.poly_runtime_mut().add_angle_a(3);
             }
             1 => {
+                b.block(0x0cc47b);
                 if self.game_state.poly.runtime.config1() < 2 {
+                    b.block(0x0cc482);
                     self.poly_runtime_mut().clear_config1();
                     self.attract_scene_mut().increment_intro_step_index();
                     self.attract_scene_mut().set_intro_step_timer(64);
                     return;
                 }
+                b.taken(0x0cc480);
+                b.block(0x0cc48e);
                 self.poly_runtime_mut().subtract_config1(2);
                 self.poly_runtime_mut().add_angle_b(5);
                 self.poly_runtime_mut().add_angle_a(3);
                 if self.game_state.poly.runtime.config1() < 225 {
+                    b.block(0x0cc4ac);
                     self.set_submodule(4);
-                }
+                } else { b.taken(0x0cc4aa); }
+                b.block(0x0cc4b0);
                 if self.game_state.poly.runtime.config1() == 113 {
+                    b.block(0x0cc4b4);
                     self.set_music_control(1);
-                }
+                } else { b.taken(0x0cc4b2); }
+                b.block(0x0cc4b9);
             }
             2 => {
+                b.block(0x0cc4ba);
                 self.attract_scene_mut().decrement_intro_step_timer();
                 if self.game_state.ending.attract_scene.intro_step_timer() == 0 {
+                    b.block(0x0cc4bf);
                     self.attract_scene_mut().increment_intro_step_index();
                 } else {
+                    b.taken(0x0cc4bd);
+                    b.block(0x0cc4c3);
                     self.poly_runtime_mut().add_angle_b(5);
                     self.poly_runtime_mut().add_angle_a(3);
                 }
             }
             3 => {
+                b.block(0x0cc4d6);
+                if self.game_state.poly.runtime.angle_b() < 250 {
+                    b.taken(0x0cc4db);
+                } else {
+                    b.block(0x0cc4dd);
+                    if self.game_state.poly.runtime.angle_a() < 252 { b.taken(0x0cc4e2); }
+                }
                 if self.game_state.poly.runtime.angle_b() >= 250
                     && self.game_state.poly.runtime.angle_a() >= 252
                 {
+                    b.block(0x0cc4e4);
                     self.attract_scene_mut().increment_intro_step_index();
                     self.attract_scene_mut().set_intro_step_timer(32);
                 } else {
+                    b.block(0x0cc4ed);
                     self.poly_runtime_mut().add_angle_b(5);
                     self.poly_runtime_mut().add_angle_a(3);
                 }
             }
             4 => {
+                b.block(0x0cc500);
                 self.poly_runtime_mut().set_angle_b(0);
                 self.poly_runtime_mut().set_angle_a(0);
                 self.attract_scene_mut().decrement_intro_step_timer();
                 if self.game_state.ending.attract_scene.intro_step_timer() == 0 {
+                    b.block(0x0cc50b);
                     self.attract_scene_mut().increment_intro_step_index();
                     self.intro_actor_mut(5).set_init_phase(1);
                     self.intro_actor_mut(5).set_subtype(3);
@@ -3508,17 +3561,27 @@ impl ZeldaState {
                     self.increment_cgram_update_flag();
                     self.set_bg_vram_load_mode(3);
                     self.increment_submodule();
-                }
+                } else { b.taken(0x0cc509); }
+                b.block(0x0cc532);
             }
+            5 => b.block(0x0cc533),
             _ => {}
         }
     }
 
     pub(super) fn scene_animate_every_sprite(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0cc412));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $0C:C412..C424: OAM cursor, eight descending calls and RTS.
+        b.block(0x0cc412);
         self.reset_intro_sprite_oam_cursor();
         for k in (0..8).rev() {
+            b.block(0x0cc41e);
             self.intro_anim_one_obj(k);
+            b.block(0x0cc421);
+            if k != 0 { b.taken(0x0cc422); }
         }
+        b.block(0x0cc424);
     }
 
     pub(super) fn intro_anim_one_obj(&mut self, k: usize) {
@@ -3750,6 +3813,61 @@ mod lag7_price_tests {
         machine.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
         if far { machine.ram[0x1ff] = machine.cpu.k; }
         machine
+    }
+
+    #[test]
+    fn lag9_intro_wrappers_cover_go_branches_and_all_actor_calls() {
+        for go in [0, 1, 255] {
+            for timer in [0, 63, 255] {
+                for entry in [0x0cc404, 0x0cc412, 0x0cc435] {
+                    let mut native = ZeldaState::new();
+                    native.ram.fill(0);
+                    native.ram[0x1f00] = go;
+                    native.ram[0x1e01] = timer;
+                    native.sync_native_game_state_from_ram();
+                    native.set_lag_free(true);
+                    let end = match entry { 0x0cc404 => 0xc412, 0x0cc412 => 0xc425, _ => 0xc448 };
+                    let source = crate::cycle_ledger::assert_rom_marker_work(entry,
+                        machine(&native, entry, entry == 0x0cc404),
+                        |s| s.cpu.k == 12 && (entry as u16..end).contains(&s.cpu.pc),
+                        || match entry {
+                            0x0cc404 => native.intro_handle_all_triforce_animations(),
+                            0x0cc412 => native.scene_animate_every_sprite(),
+                            _ => native.intro_animate_triforce(),
+                        });
+                    for range in [0x1e00..0x1e0b, 0x1f00..0x1f09, 0x12a..0x12b] {
+                        assert_eq!(native.wram_image()[range.clone()], source.snes().ram[range.clone()],
+                            "entry={entry:x} go={go} timer={timer} range={range:x?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lag9_intro_step_all_dispatch_arms_and_branch_boundaries() {
+        for phase in 0..6 {
+            for value in 0..256u16 {
+                let mut native = ZeldaState::new();
+                native.ram.fill(0);
+                native.ram[0x1e00] = phase;
+                native.ram[0x1e01] = value as u8;
+                native.ram[0x1f02] = value as u8;
+                native.ram[0x1f04] = [251, 252, 255, 0][value as usize % 4];
+                native.ram[0x1f05] = value as u8;
+                native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x0cc448,
+                    machine(&native, 0x0cc448, false),
+                    |s| s.cpu.k == 12 || (s.cpu.k == 0 && (0x8784..0x879c).contains(&s.cpu.pc)),
+                    || native.intro_run_step());
+                for range in [0x1e00..0x1e20, 0x1f00..0x1f09, 0x11..0x16,
+                    0x1c..0x1e, 0x99..0x9b, 0xb0..0xb1, 0x12c..0x12d] {
+                    assert_eq!(native.wram_image()[range.clone()], source.snes().ram[range.clone()],
+                        "phase={phase} value={value} range={range:x?}");
+                }
+            }
+        }
     }
 
     #[test]

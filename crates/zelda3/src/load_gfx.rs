@@ -3162,6 +3162,16 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn charge_file_select_sprite_decompression(&self, sheet: usize) {
+        if !self.lag_free { return; }
+        let _scope = crate::cycle_ledger::routine(0x00e766);
+        // $00:E766..E771 sets the primary destination; $E772..E852 is
+        // the existing instruction-derived decoder, including $E843 children.
+        crate::cycle_ledger::blocks(true).block(0x00e766);
+        self.charge_sheet_decompression(DecompressEntry::Sprite, 64, sheet,
+            GraphicsDecompressionScratch::primary_buffer_offset());
+    }
+
     fn sprite_decompression_cursor(&self, sheet: usize, destination: usize) -> Option<GraphicsDecompressionCursor> {
         // The port's special handling of sheets 0..11 reads stale WRAM during
         // back-references. Those sheets need a live-buffer decoder cursor.

@@ -56,6 +56,51 @@ fn prefix1_file_graphics_caller_markers_exclude_conversion_and_decoder_children(
 }
 
 #[test]
+fn lag9_file_select_decoder_prices_match_complete_rom_calls() {
+    use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, SourcePpuReadState};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).expect("asset fixture");
+    for sheet in [0x5e, 0x5f, 0x6b] {
+        let mut native = ZeldaState::new();
+        native.set_assets(&assets).unwrap();
+        native.set_lag_free(true);
+        let mut machine = prefix1_machine(&native, 0x00e766);
+        machine.cpu.y = sheet as u16;
+        let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+        let mut source = RomCpuTimingProbe::new(machine, clock, SourcePpuReadState::snes9x_reset()).unwrap();
+        let mut expected = 0u64;
+        for _ in 0..1_000_000 {
+            expected += source.step().unwrap().transactions.iter()
+                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+            if source.snes().cpu.pc == 0x8000 { break; }
+        }
+        assert_eq!(source.snes().cpu.pc, 0x8000);
+        let before = crate::cycle_ledger::master();
+        native.charge_file_select_sprite_decompression(sheet);
+        assert_eq!(crate::cycle_ledger::master() - before, expected, "sheet={sheet:x}");
+        let data = native.decompressed_sprite_graphics_data(sheet).unwrap();
+        assert_eq!(&data[..], &source.snes().ram[0x14000..0x14000 + data.len()]);
+    }
+}
+
+#[test]
+fn lag9_enemy_damage_expansion_caller_matches_rom_work_and_all_outputs() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).expect("asset fixture");
+    let mut native = ZeldaState::new();
+    native.set_assets(&assets).unwrap();
+    native.set_lag_free(true);
+    let machine = prefix1_machine(&native, 0x02fe71);
+    let source = crate::cycle_ledger::assert_rom_marker_work(0x02fe71, machine,
+        |s| s.cpu.k == 2 && (0xfe71..0xfebb).contains(&s.cpu.pc),
+        || native.decompress_enemy_damage_subclasses());
+    assert_eq!(&native.wram_image()[0x14000..0x14800], &source.snes().ram[0x14000..0x14800]);
+    assert_eq!(&native.wram_image()[0x16000..0x17000], &source.snes().ram[0x16000..0x17000]);
+}
+
+#[test]
 fn prefix1_checkerboard_markers_match_rom_and_upload_words() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let rom = std::fs::read(root.join("saves/zelda3.sfc")).expect("ROM fixture");

@@ -8589,15 +8589,26 @@ impl ZeldaState {
 
 impl ZeldaState {
     pub(super) fn decompress_enemy_damage_subclasses(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02fe71));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $02:FE71..FEBA: source/destination setup and the complete nibble
+        // expansion. The bank-02 decoder child remains a separate owner.
+        b.block(0x02fe71);
         let data = self
             .asset_raw(56)
             .expect("decompress_enemy_damage_subclasses missing kEnemyDamageData asset")
             .to_vec();
         self.copy_overworld_map16_decode_source_from(&data);
+        b.block(0x02fe8c);
         let packed_damage =
             self.graphics_primary_decompression_buffer(PACKED_ENEMY_DAMAGE_SOURCE_BYTES);
         self.enemy_damage_subclass_table_mut()
             .load_from_packed_nibbles(&packed_damage);
+        for byte in 0..PACKED_ENEMY_DAMAGE_SOURCE_BYTES {
+            b.block(0x02fe9e);
+            if byte + 1 != PACKED_ENEMY_DAMAGE_SOURCE_BYTES { b.taken(0x02feb6); }
+        }
+        b.block(0x02feb8);
     }
 
     pub(super) fn conditional_mosaic_control(&mut self) {

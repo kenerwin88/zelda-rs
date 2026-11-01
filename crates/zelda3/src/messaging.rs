@@ -5379,6 +5379,9 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_dungeon_map_room_drawing(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ae384));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ae384); // $0A:E384..E3B0: bank, scratch and floor selection.
         self.clear_dungeon_map_floor_scroll_step();
         self.clear_dungeon_map_idx();
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
@@ -5386,9 +5389,12 @@ impl ZeldaState {
         let t =
             (-(i16::from((DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[dung] & 0x0f) as u8)) as u16) as u8;
         if self.game_state.dungeon.stair_movement.current_floor_word() != u16::from(t) {
+            b.block(0x0ae3b1);
             let dung_cur_floor = u16::from(self.game_state.dungeon.stair_movement.current_floor());
             self.set_dungeon_map_current_floor(dung_cur_floor);
         } else {
+            b.taken(0x0ae3af);
+            b.block(0x0ae3bb);
             let dung_cur_floor = self
                 .game_state
                 .dungeon
@@ -5403,13 +5409,33 @@ impl ZeldaState {
             self.set_dungeon_map_current_floor(dung_cur_floor);
             self.set_dungeon_map_idx(dungmap_idx);
         }
+        b.block(0x0ae3c7); // $0A:E3C7..E3DA: both mask-selection paths store $EFFF.
+        if self.game_state.dungeon_map_display.dungmap_cur_floor() & 0x50 != 0 {
+            b.taken(0x0ae3cd);
+            b.block(0x0ae3d6);
+        } else { b.block(0x0ae3cf); }
+        b.block(0x0ae3db); // Calls own their JSRs; all drawing children stay separate.
         self.dungeon_map_draw_floor_numbers_by_room(0, !0x1000);
+        b.block(0x0ae3de); // Floor-number, border and layout children return M8/X8.
         self.dungeon_map_draw_border_for_rooms(0, !0x1000);
+        b.block(0x0ae3e1);
         self.dungeon_map_draw_dungeon_layout(0);
+        b.block(0x0ae3e4); // Byte DEC, then REP #$30 restores the caller widths.
         self.decrement_dungeon_map_current_floor_byte();
+        if self.game_state.dungeon_map_display.dungmap_idx() != 0 { b.taken(0x0ae3f1); }
+        else { b.block(0x0ae3f3); }
+        b.block(0x0ae3f5);
+        if self.game_state.dungeon_map_display.dungmap_cur_floor() & 0x50 != 0 {
+            b.taken(0x0ae3fb);
+            b.block(0x0ae404);
+        } else { b.block(0x0ae3fd); }
+        b.block(0x0ae409); // $0A:E409..E428: second row calls, restoration and RTL.
         self.dungeon_map_draw_floor_numbers_by_room(0x0300, !0x1000);
+        b.block(0x0ae40c);
         self.dungeon_map_draw_border_for_rooms(0x0300, !0x1000);
+        b.block(0x0ae40f);
         self.dungeon_map_draw_dungeon_layout(0x0300);
+        b.block(0x0ae412);
         let dungmap_cur_floor = self
             .game_state
             .dungeon_map_display
@@ -10363,6 +10389,42 @@ fn route1_dungeon_map_floor_markers_match_rom() {
         }
     }
     eprintln!("route1 map floors: {cases} ROM cases");
+}
+
+#[test]
+fn lag10_dungeon_map_room_caller_matches_rom_floor_branches() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for dungeon in 0..13u16 {
+        let basement = DUNGEON_MAP_FLOOR_RANGE_BY_DUNGEON[usize::from(dungeon)] & 15;
+        let bottom = u16::from((0u8).wrapping_sub(basement as u8));
+        for floor in [bottom, bottom.wrapping_add(1) & 255] {
+            for map in [0, 0xffff] {
+                let mut native = ZeldaState::new();
+                native.set_assets(&assets).unwrap();
+                native.write_wram_word(0x40c, dungeon * 2);
+                native.write_wram_word(0xa4, floor);
+                native.write_wram_word(0xf368, map);
+                native.sync_native_game_state_from_ram();
+                native.set_lag_free(true);
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                machine.ram.copy_from_slice(&native.wram_image());
+                machine.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0x0a]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x30);
+                machine.cpu.k = 0x0a;
+                machine.cpu.db = 0;
+                machine.cpu.dp = 0;
+                machine.cpu.pc = 0xe384;
+                machine.cpu.sp = 0x1fc;
+                crate::cycle_ledger::assert_rom_marker_work(0x0ae384, machine,
+                    |s| s.cpu.k == 0x0a && (0xe384..0xe429).contains(&s.cpu.pc),
+                    || native.complete_dungeon_map_room_drawing());
+            }
+        }
+    }
 }
 
 #[test]

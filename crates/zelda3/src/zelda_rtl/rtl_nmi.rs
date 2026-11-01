@@ -136,6 +136,7 @@ impl ZeldaState {
             self.native_checkpoint_worker_ownership();
         }
         self.display_core_mut().deactivate_nmi_thread();
+        self.native_retire_thread_handler();
     }
 
     pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {

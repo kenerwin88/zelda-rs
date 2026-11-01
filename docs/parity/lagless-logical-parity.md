@@ -2527,3 +2527,186 @@ This is a verified partial repair and revised-rule admission, with **2,256
 ROM missing holds still open**, not full sound or exact A/V acceptance. No GPU,
 Snes9x process, continuous live replay, full library suite, protected-cache or
 shared-ledger write, formatting pass, commit or push was performed.
+
+## Lagless missing-hold owners 10
+
+CPU-only continuation on `codex/lag10`, base `66f745f8`. Evidence is under
+`target/lag10/`; the oracle cache and shared `full-v2` ledger remain read-only.
+Admission uses owners 9's revised rule: ROM excess/FP must remain zero, and
+every changed live-only hold row must have an observed poll episode and a
+bounded execution/reseed explanation. No classifier or matcher is changed.
+
+### Later file-select overcharge: retained handler, not main prices
+
+The ordered source profile at **696,237** accounts for every clock in the
+rejected candidate's **+2,670,232** main-work increase:
+
+| Executed source owner | Added native clocks | Executed source clocks |
+| --- | ---: | ---: |
+| `$00:E500` call to `$E766`, sheet `$5E` | 555,206 | 555,206 |
+| `$00:E50C` call to `$E766`, sheet `$5F` | 583,258 | 583,258 |
+| `$00:E53E` call to `$E766`, sheet `$6B` | 839,018 | 839,018 |
+| Enemy-damage caller `$02:FE71..FEBA` | 692,750 | 692,750 |
+| Intro wrappers/dispatcher on this visit | 0 | 0 |
+| **Total** | **2,670,232** | **2,670,232** |
+
+Native main rises **17,302,916 → 19,973,148**, still below source
+**20,507,004**. The remaining 533,856-clock deficit includes the separate
+bank-02 decoder children (**383,678 + 146,870**). The `$E583/$E6B7` signed
+aliases cancel (**−366,550 / +366,550**); neither is another price. All three
+file-select decodes execute on this later visit. No correct price is removed.
+`overcharge-investigation.json`, `source-profile.json` and the extracted
+`source-696237.bin` retain this breakdown. The slice conserves **688,833
+instructions / 20,507,004 clocks** and matches the retained source sequence
+digest; it was read from the existing ordered matcher evidence.
+
+The overcharge is the preceding threaded NMI's **polygon-upload tail**, which
+the predictor continued repeating after main cleared `$012A`. Source's 60 lag
+handlers total **186,836 wall clocks**, with **zero DMA**; the preceding entry
+really does contain **20,788 DMA clocks**, and its worker slice is real too.
+The repair preserves that opening handler and completed prefix. It retains
+the measured threaded-tail boundary, checkpoints the current segment before
+deactivation, then selects the ordinary `$00:8144..822C` register tail for
+future lag handlers. Each segment retains its own handler budget under the
+existing P2 rule. There is no source-count lookup, phase reset or new timing
+threshold.
+
+At both **696,237** and **898,078**, the opening native budget remains
+**26,164**. The repeated handler changes **20,070 → 3,040 wall clocks**:
+the retained 976-clock head plus the ordinary 1,984-clock tail replaces the
+2,084-clock threaded tail and 16,410-clock polygon DMA. These values are
+observations of the generic ownership repair, not installed scene prices.
+Main prices remain unchanged; native holds become **58**, versus source
+**60**, rather than the rejected 61. Both 4,000-iteration seeded windows are
+logically clean with zero excess/FP.
+
+One regression fixture executes a threaded NMI with a real pending polygon
+upload, advances main before deactivation, and proves that the completed
+prefix and opening handler are unchanged. A second checks the shared ordinary
+tail against unmodified ROM execution for **12 mode/IRQ combinations**. The
+ROM CPU fixture runs in-process; no Snes9x process is launched.
+
+The corrected six-owner checkpoint passes the full eight-slice ROM census:
+**2,229 missing / 0 excess / 0 FP**, unexplained zero, and no P2 disagreement.
+Its prefix deficits are **58 / 94 / 223 / 377 / 456**. The continuous
+0–148,000 prefix also passes (**104 / 0 / 0**). This checkpoint is preserved
+separately in `six-owner-verified.patch`, `six-owner-rom-counts.json` and
+`rom-census/`; no full-live census was spent on it.
+
+### Earliest-first map caller
+
+The 42-cluster `early-cluster-worklist.json` now includes a signed source
+partition for each cluster's first iteration. The first owner is the complete
+two-row dungeon-map caller **`$0A:E384..E428`**, first needed at **12,996**
+and again at **16,237**. Its executed source work is **1,834 clocks**. The
+aggregate `$F89A` delta of 1,782 is not used as a price: another 52 clocks are
+attributed to the jump helper, and the `$80B5/$F800` parent aliases cancel.
+The signed `$8034` residual remains **−22** and is not absorbed into this
+caller's price.
+
+ROM block markers follow both floor-selection branches, mask branches, row
+calls and restoration. Each drawing child keeps its existing price. The
+generator entries split at child returns because those children return
+**M8/X8**, even when called from a **M16/X16** portion of the parent. The
+executed-ROM fixture covers **52 dungeon/floor/map combinations**. The final
+generator audit adds **56 blocks** across the restored owners and this caller,
+without changing or removing any of the **4,025** existing block prices.
+
+The complete map-owner trial is admitted on the ROM lane: **2,227 missing /
+0 excess / 0 FP** over **1,473,123 iterations**, gate PASS/unexplained zero,
+with every runtime hold equal to P2. Relative to the corrected six-owner
+checkpoint, only the holds at 12,996 and 16,237 change. The final continuous
+0–148,000 prefix passes with **102 / 0 / 0**. The next unresolved cluster is
+**15,313**; its dungeon/sprite caller and child aliases remain signed in the
+worklist, without converting their aggregate difference into a price.
+
+The final default executable is SHA-256
+`d75103e9acc985569950e1a250d673ebc7963af9504b0dc8f87135b6c4802356`.
+`final-rom-census/`, `final-carried-prefix.csv` and the three bounded final
+windows use that executable. The fresh default and `--no-default-features`
+product builds are warning-free, and rebuilding default restores the same
+binary hash. All **37 focused Rust tests** and **seven generator tests** pass;
+the library-test build retains pre-existing unrelated dead-code warnings.
+
+### Final live census and poll partition
+
+The **one single full seeded live census** completes **1,473,123 iterations**,
+gate PASS/unexplained zero, with no P2 disagreement. Live totals are
+**2,702 missing / 446 excess / 83 FP**, versus baseline **2,511 / 251 / 72**.
+This is a **worse live total**, despite the 29-hold ROM improvement. Admission
+uses the requested poll-episode rule, not a claim that live timing improved.
+
+`live.csv`, `live-partition.json` and `live-partition-bounds.json` retain all
+baseline/candidate values and the observed poll witnesses. The table gives
+the candidate's live-minus-ROM contribution, not the change from baseline:
+
+| Origin poll | Candidate hold-difference rows | Added missing | Added excess | Added FP | Changed rows versus baseline |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 94,853 (removed) | 0 | 0 | 0 | 0 | 6 removed |
+| 142,087 (new) | 5 | 9 | 9 | 2 | 5 |
+| 229,034 (new) | 4 | 9 | 9 | 2 | 4 |
+| 380,880 (new) | 15 | 114 | 90 | 5 | 15 |
+| 462,627 (inherited) | 6 | 13 | 13 | 3 | 0 |
+| 881,733 (inherited) | 135 | 234 | 230 | 67 | 0 |
+| 1,064,733 (new) | 12 | 96 | 95 | 4 | 12 |
+| **Total** | **177** | **475** | **446** | **83** | **42** |
+
+All six candidate poll witnesses are native **zero** versus source **`$13`**
+at `$08:C606..C610`. The removed episode is witnessed in the baseline log;
+its six formerly different hold rows now equal the ROM lane. The two inherited
+episodes retain every hold differential. Every changed live-only hold row is
+inside one of the following observed execution/reseed bounds; none is merely
+accepted because some earlier poll existed:
+
+* **94,853 removal:** changed holds 94,854–94,860; the baseline main-work
+  differences end at 94,887.
+* **142,087:** changed holds 142,088–142,094; changed main work starts at the
+  poll and ends at 142,121.
+* **229,034:** changed holds 229,035–229,041; changed main work starts at the
+  poll and ends at 229,068.
+* **380,880:** changed main work starts at the poll; hold differences end at
+  **383,635**, with actual reseeds at **382,000** and **383,636**.
+* **462,627:** inherited hold differences end at 463,180, before the actual
+  reseed at 464,000.
+* **881,733:** inherited hold differences end at 884,324; actual reseeds are
+  882,000, 884,000 and 884,327.
+* **1,064,733:** changed main work starts at the poll; hold differences end
+  at **1,066,961**, main differences at 1,066,962, and actual reseeds occur at
+  **1,066,000** and **1,066,963**.
+
+The secondary cost comparison separately retains **1,889 main-work**,
+**1,267 opening-handler** and **1,232 lag-handler** changed differentials.
+Some budget-only differences outlive reseeds, reaching 1,469,218. They are
+not relabeled as hold differences or assigned causality merely by the nearest
+preceding poll. The admission check concerns the 42 changed hold rows; it
+does not establish source-equal SPC phase, delivered-command timing, chip
+state or waveform. Those strict sound proofs were not recaptured.
+
+| Before window starting | Baseline ROM missing | Final ROM missing | Baseline live missing | Final live missing |
+| --- | ---: | ---: | ---: | ---: |
+| 94,334 | 67 | 56 | 67 | 56 |
+| 141,568 | 103 | 92 | 111 | 92 |
+| 228,499 | 240 | 221 | 248 | 230 |
+| 380,243 | 394 | 375 | 402 | 393 |
+| 461,989 | 473 | 454 | 481 | 586 |
+
+These are cumulative missing-hold contributions, not measured net SPC phase.
+
+The required **single full CPU picture census**, on the ROM-answer lane,
+completes **1,473,123 iterations**, gate PASS/unexplained zero. It preserves
+**1,462,997 exact pictures**; all **1,473,123 RGB hashes** are identical to
+`target/lag9/picture-hashes.txt`, with no exact picture lost. This does not
+claim matching live pictures through the newly observed poll episodes.
+
+`verification.json`, `artifact-hashes.json`, `final-candidate.patch` and
+`picture-identity.json` bind the final sources, executable and evidence.
+The active default product binary has the same hash as all final censuses.
+Evidence remains below **3 GB**, and `git diff --check` passes. No GPU run,
+Snes9x process launch, continuous live replay, full library suite,
+protected-cache/shared-ledger write, formatting pass, commit or push was
+performed.
+
+This is a verified partial repair under the revised admission rule, with
+**2,227 ROM missing holds still open** and worse live totals. The next
+earliest unresolved cluster is **15,313**; strict sound and exact A/V
+acceptance remain open.

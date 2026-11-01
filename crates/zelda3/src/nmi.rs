@@ -146,6 +146,16 @@ fn debug_hardware_frame_matches(frame: u32) -> bool {
 }
 
 impl ZeldaState {
+    pub(super) fn ordinary_nmi_register_tail_work(&self) -> u64 {
+        // Existing $00:8144..822C instruction price, shared by the executing
+        // handler and its retained successor after the threaded path ends.
+        let bg_mode_7 = self.game_state.display.bg_mode & 7 == 7;
+        let irq = self.game_state.display.has_irq_control_flag();
+        54 + if bg_mode_7 { 1516 + 368 } else { 1522 }
+            + if irq { 48 + 212 } else { 54 }
+            + 354
+    }
+
     /// Record the two DMA-channel registers that select how channel 0 writes
     /// the PPU B-bus. The semantic NMI implementation performs transfers in
     /// bulk, but these registers remain hardware state between transfers.
@@ -771,6 +781,8 @@ impl ZeldaState {
             self.native_note_handler_updates(cpu + dma + (434 - 310));
         }
 
+        let thread_tail_start = self.game_state.display.nmi_thread_active.then(||
+            (crate::cycle_ledger::master(), self.nmi_dma_accounting.unwrap_or_default().master_cycles()));
         if self.game_state.display.nmi_thread_active && context.is_none() {
             let frame = self.game_state.frame;
             let timed_intro_poly_worker = self.rom_startup_timing()
@@ -837,11 +849,7 @@ impl ZeldaState {
         crate::cycle_ledger::charge(if self.game_state.display.nmi_thread_active {
             48 + 24 + 2012
         } else {
-            let bg_mode_7 = self.game_state.display.bg_mode & 7 == 7;
-            let irq = self.game_state.display.has_irq_control_flag();
-            54 + if bg_mode_7 { 1516 + 368 } else { 1522 }
-                + if irq { 48 + 212 } else { 54 }
-                + 354
+            self.ordinary_nmi_register_tail_work()
         });
         }
         if let Some(context) = context.as_deref_mut() {
@@ -874,6 +882,9 @@ impl ZeldaState {
         } else if !thread_holds_registers {
             self.write_ppu_registers();
         }
+        self.native_note_thread_handler_tail(thread_tail_start.map(|(cpu, dma)|
+            crate::cycle_ledger::master() - cpu
+                + self.nmi_dma_accounting.unwrap_or_default().master_cycles() - dma));
         if !forced_blank_at_entry && self.ppu.forced_blank {
             if let Some(start) = prior_active_display_blanking.suffix_start_scanline {
                 self.ppu.forced_blank_from_scanline = Some(start);

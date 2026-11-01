@@ -38,7 +38,10 @@ pub(crate) struct NativePacing {
     entry_handler: u64,
     entry_worker: u64,
     entry_lag_handler: u64,
-    worker_segments: Vec<(u64, u64, bool)>,
+    worker_segments: Vec<(u64, u64, bool, u64)>,
+    handler_thread_tail: Option<u64>,
+    closing_thread_head: Option<u64>,
+    entry_thread_head: Option<u64>,
     pub(super) worker_after_irq: bool,
     irq_initialized: bool,
     irq_enabled: bool,
@@ -92,6 +95,7 @@ impl ZeldaState {
         self.native_pacing.entry_handler = self.native_previous_closing_handler();
         self.native_pacing.entry_lag_handler = self.native_pacing.closing_lag_handler
             .unwrap_or(self.native_pacing.last_lag_handler);
+        self.native_pacing.entry_thread_head = self.native_pacing.closing_thread_head;
         if self.lag_free {
             self.native_pacing.entry_handler = nmi_handler_wall(self.native_pacing.entry_handler);
             self.native_pacing.entry_lag_handler = nmi_handler_wall(self.native_pacing.entry_lag_handler);
@@ -124,6 +128,8 @@ impl ZeldaState {
         if self.native_pacing.record_closing_handler {
             self.native_pacing.closing_handler = self.last_nmi_handler_master_cycles().map(u64::from);
             self.native_pacing.closing_lag_handler = Some(self.native_pacing.last_lag_handler);
+            self.native_pacing.closing_thread_head = self.native_pacing.handler_thread_tail
+                .map(|tail| self.native_pacing.last_lag_handler.saturating_sub(tail));
             self.native_pacing.closing_poly_upload = self.lag_free_nmi_uploaded_poly;
             // $00:8230..823A programs $FF/A1 on the thread path. The
             // ordinary $00:8200..8218 path only reprograms with $0128 set;
@@ -163,6 +169,21 @@ impl ZeldaState {
         }
     }
 
+    pub(crate) fn native_note_thread_handler_tail(&mut self, tail: Option<u64>) {
+        if self.lag_free { self.native_pacing.handler_thread_tail = tail; }
+    }
+
+    pub(crate) fn native_retire_thread_handler(&mut self) {
+        if !self.native_pacing.accounting { return; }
+        // $00:8144 samples $012A again at each NMI. A preceding threaded
+        // handler's upload and stack-exchange tail cannot survive STZ $012A.
+        // Its already executed entry and the checkpointed prefix stay intact.
+        if let Some(head) = self.native_pacing.entry_thread_head.take() {
+            self.native_pacing.entry_lag_handler = nmi_handler_wall(head
+                + self.ordinary_nmi_register_tail_work());
+        }
+    }
+
     pub(crate) fn native_checkpoint_worker_ownership(&mut self) {
         if !self.native_pacing.accounting { return; }
         // $00:8144 samples $012A at each NMI, not at the end of main.
@@ -170,7 +191,8 @@ impl ZeldaState {
         // before a caller changes it. Already elapsed NMIs keep their owner.
         let main = self.native_main_work();
         let worker = self.native_pacing_worker_share(self.native_pacing.entry_lag_handler);
-        self.native_pacing.worker_segments.push((main, worker, self.native_pacing.worker_after_irq));
+        self.native_pacing.worker_segments.push((main, worker, self.native_pacing.worker_after_irq,
+            self.native_pacing.entry_lag_handler));
     }
 
     pub(crate) fn native_activate_worker_ownership(&mut self) {
@@ -248,12 +270,12 @@ impl ZeldaState {
         // the source's latched NMI path, excluding NMI_DoUpdates and joypads.
         let mut elapsed = [handler + worker; 2];
         let mut previous = [0; 2];
-        for (end, share, after_irq) in self.native_pacing.worker_segments.iter().copied()
-            .chain(std::iter::once((main, lag_worker, self.native_pacing.worker_after_irq))) {
+        for (end, share, after_irq, segment_handler) in self.native_pacing.worker_segments.iter().copied()
+            .chain(std::iter::once((main, lag_worker, self.native_pacing.worker_after_irq, lag_handler))) {
             if end > main { break; }
             let work = [end, end + end.div_ceil(1324) * 40];
             for i in 0..2 {
-                elapsed[i] = advance_main_cost(work[i] - previous[i], elapsed[i], lag_handler, share, after_irq);
+                elapsed[i] = advance_main_cost(work[i] - previous[i], elapsed[i], segment_handler.min(FIELD - 1), share, after_irq);
             }
             previous = work;
         }
@@ -933,6 +955,77 @@ mod tests {
         game.native_begin_main_cost();
         assert_eq!(game.native_cost_lag_handler(), nmi_handler_wall(stripped));
         assert_eq!(game.native_cost_entry_handler(), nmi_handler_wall(ordinary));
+    }
+
+    #[test]
+    fn lag10_disabled_thread_retires_upload_tail_without_repricing_elapsed_prefix() {
+        let mut game = ZeldaState::default();
+        game.set_lag_free(true);
+        game.lag_free_intro_schedule = None;
+        game.lag_free_lag_phases_run = true;
+        game.game_state.display.nmi_thread_active = true;
+        game.request_polyhedral_nmi_update();
+        game.clear_nmi_update_latch();
+        game.interrupt_nmi(0, None, false);
+        game.native_pacing.record_closing_handler = true;
+        game.native_record_closing_handler();
+        let head = game.native_pacing.closing_thread_head.unwrap();
+        let tail = game.native_pacing.handler_thread_tail.unwrap();
+        assert!(tail > 0x800 * 8, "the preceding handler includes a real polygon DMA");
+        game.lag_free_frame_master_start = crate::cycle_ledger::master();
+        game.native_begin_main_cost();
+        crate::cycle_ledger::charge(800_000);
+        let entry = game.native_cost_entry_handler();
+        let before = game.native_cost_elapsed(800_000);
+        game.deactivate_nmi_thread();
+        assert_eq!(game.native_cost_entry_handler(), entry);
+        assert_eq!(game.native_cost_elapsed(800_000), before);
+        assert_eq!(game.native_cost_lag_handler(), nmi_handler_wall(head
+            + game.ordinary_nmi_register_tail_work()));
+        assert!(game.native_cost_lag_handler() < nmi_handler_wall(head + tail));
+        let repaired = game.native_cost_elapsed(2_000_000);
+        game.native_pacing.entry_lag_handler = nmi_handler_wall(head + tail);
+        assert!(repaired[2] < game.native_cost_elapsed(2_000_000)[2]);
+    }
+
+    #[test]
+    fn lag10_ordinary_handler_tail_matches_original_rom_branches() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        for mode in [0, 1, 7, 0x17] {
+            for irq in [0, 1, 0x80] {
+                let mut game = ZeldaState::default();
+                game.game_state.display.bg_mode = mode;
+                game.game_state.display.irq_control_flag = irq;
+                let mut machine = snes::Snes::new();
+                machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                machine.ram[0x94] = mode;
+                machine.ram[0x128] = irq;
+                machine.ram[0x12a] = 0;
+                // Unmodified $8144 tail restores DB,D,Y,X,A,P,PC,PB.
+                machine.ram[0x1f3..0x200].copy_from_slice(&[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0x30, 0, 0x80, 0]);
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x34);
+                machine.cpu.k = 0;
+                machine.cpu.db = 0;
+                machine.cpu.dp = 0;
+                machine.cpu.pc = 0x8144;
+                machine.cpu.sp = 0x1f2;
+                let mut source = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+                source.rebase_private_timing_state_at(source.machine().timestamp(),
+                    &machine.cpu, &machine.ram, &machine.cart.ram).unwrap();
+                let mut expected = 0;
+                for _ in 0..200 {
+                    expected += source.step().unwrap().transactions.iter()
+                        .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                    if source.machine().snes().cpu.pc == 0x8000 { break; }
+                }
+                assert_eq!(source.machine().snes().cpu.pc, 0x8000);
+                assert_eq!(game.ordinary_nmi_register_tail_work(), expected,
+                    "mode={mode:x} irq={irq:x}");
+            }
+        }
     }
 
     #[test]

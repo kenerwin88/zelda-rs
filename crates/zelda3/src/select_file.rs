@@ -245,8 +245,9 @@ impl ZeldaState {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00e4e9));
         let b = crate::cycle_ledger::blocks(self.lag_free);
         // $00:E4E9..E555: caller and inline font/2bpp copies only. Existing
-        // conversion children own their complete work; decompression stays open.
+        // conversion and decompression children own their complete work.
         b.block(0x00e4e9);
+        self.charge_file_select_sprite_decompression(0x5e);
         let data = self
             .decompressed_sprite_graphics_data(0x5e)
             .expect("file select sprite sheet 0x5e must decompress");
@@ -256,6 +257,7 @@ impl ZeldaState {
 
         // Do3To4High returns M8/X8, including the second caller entry.
         b.block(0x00e50a);
+        self.charge_file_select_sprite_decompression(0x5f);
         let data = self
             .decompressed_sprite_graphics_data(0x5f)
             .expect("file select sprite sheet 0x5f must decompress");
@@ -274,6 +276,7 @@ impl ZeldaState {
         crate::cycle_ledger::muted(|| self.transfer_font_to_vram());
 
         b.block(0x00e537);
+        self.charge_file_select_sprite_decompression(0x6b);
         let data = self
             .decompressed_sprite_graphics_data(0x6b)
             .expect("file select sprite sheet 0x6b must decompress");
