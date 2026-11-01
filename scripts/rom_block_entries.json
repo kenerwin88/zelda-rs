@@ -1,4 +1,8 @@
 [
+  {"entry":"09c6f5","end":"09c72e"},
+  {"entry":"09c730","end":"09c731"},
+  {"entry":"09c452","end":"09c47b"},
+  {"entry":"09c482","end":"09c499","m8":true,"x8":false},
   {"entry":"00df4f","end":"00dfb8","m8":false,"x8":false},
   {"entry":"02f691","end":"02f7ad","m8":false,"x8":false,"data_bank":127},
   {"entry":"02f7ad","end":"02f7b7","m8":false,"x8":false,"data_bank":127,"index_max":7},

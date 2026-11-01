@@ -4214,3 +4214,191 @@ library suite, protected cache/shared-ledger write, new environment switch,
 formatting, commit or push was used. Evidence remains below 3 GB and all
 started jobs have exited. This is a verified ordering improvement; complete
 attribution and repair of the remaining missing holds is still open.
+
+## Lagless prefix hunt 3
+
+CPU-only investigation on `codex/prefix-hunt3`, base `852053ee`. Evidence is
+under `target/prefix-hunt3/`. **Verified partial ordering stop:** the three
+sheet entries, the map-row parent/child and reset owner now pair completely
+on both retained cohorts. Proximity is reduced to its explicitly retained
+width-dependent scalar boundary. Object-tail pricing and spotlight phase are
+not fully resolved; this is not completion of the whole requested worklist.
+No new price or gameplay correction is admitted and no holds recover.
+
+### Sheet call lifetime, widths and ordering
+
+`SheetWork` already emitted the correct suffix/conversion instructions and
+widths. At row 729, the source and native PC/clock/width streams agree, but
+several low-plane suffixes are identical. The observer opened a new routine
+scope per instruction. Its nearest mapped ancestor was consequently too
+broad to distinguish those identical suffix occurrences.
+
+The audit-only `OrderedCallPath` retains the actual native composition's
+parent and child scopes through their returns. `$E583/$E609/$E60D` remain
+owners of their tail-jumped conversion, and decompression plus `$E843` byte
+reads retain their own children. The ordinary aggregate/profile lane is
+unchanged. No instruction or width is inferred from the sampled deficits.
+The complete sheet ROM fixture and complete tileset-initializer fixture
+pass, including conversion branches, destinations, ordered instruction
+clocks, publications and return. A dedicated observer fixture distinguishes
+repeated sheets while retaining the parent across child calls.
+
+After correct call ordering, **none** of the sampled sheet source work
+remains unmatched. There is no remaining sheet residual to price. The
+masked song uploader `$00:8888` is untouched.
+
+### Map, reset and proximity boundaries
+
+* `$02:FD87` retains one call per row and one actual `$FDF7` JSR child;
+  the second `$FDF7` body is a fallthrough in the parent's frame. The existing
+  `$FDEB..FDF6` marker moves after the first child's RTS, where it executes
+  in the ROM. The all-path map fixture covers both destination branches,
+  wrap edges, source pages, loop outcomes and exclusive parent/child work.
+* `$09:C452` now has an observable scope. Its existing prefix and suffix
+  scalars become generated markers around the unchanged 4,096-pass clear,
+  512 loaded-mask clears and eight history stores. Ten complete ROM cases
+  cover both follower decisions and cleared/nonzero storage, with resulting
+  storage equality. No clear work was missing or added.
+* `$09:C6F5` emits generated markers for X/Y bounds, the in-bounds index
+  work, JSR, post-child PLX and RTS. Proxima remains separately charged.
+  The old aggregate placed the post-child work before the child; that order
+  is corrected. One hundred ROM cases cover zero/nonzero bounds, equality,
+  wrapping and all three outcomes. The `$C72E SEP #$20` is deliberately still
+  a 22-clock scalar: guard returns enter it with M16, the child-return path
+  with M8. The unchanged single-width marker format cannot claim both entry
+  widths. Its residual is exactly one already-priced SEP per call, not
+  omitted work.
+
+Thirteen generated blocks are added; all 4,208 existing block rows are
+unchanged. The generator reads the unmodified ROM whose hash equals the
+protected cache manifest. Children are excluded and scalars are replaced,
+not charged alongside their markers. Source-address comments and the
+native branch outcomes own every marker.
+
+### Ordered accounting
+
+The unchanged matcher is rerun after the sheet change, after the map change,
+and on the final reset/proximity candidate, for both original cohorts.
+The last two owners share the final capture. The source projections and
+original-ID maps remain read-only from hunt 1; source identities and
+independent instruction/path digests are checked by the matcher. All three
+142,000-row audit predictor CSVs are byte-identical to hunt 2's final audit.
+
+| Cohort / stage | Source S | Native N | Paired P=Q | Source U | Native O |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 52 / before | 159,058,210 | 140,777,896 | 108,704,320 | 50,353,890 | 32,073,576 |
+| 52 / sheets | 159,058,210 | 140,777,896 | 119,104,576 | 39,953,634 | 21,673,320 |
+| 52 / map | 159,058,210 | 140,777,896 | 121,265,920 | 37,792,290 | 19,511,976 |
+| 52 / final | 159,058,210 | 140,777,896 | 123,270,120 | 35,788,090 | 17,507,776 |
+| 88 / before | 257,529,042 | 214,200,176 | 163,648,464 | 93,880,578 | 50,551,712 |
+| 88 / sheets | 257,529,042 | 214,200,176 | 179,600,838 | 77,928,204 | 34,599,338 |
+| 88 / map | 257,529,042 | 214,200,176 | 182,842,854 | 74,686,188 | 31,357,322 |
+| 88 / final | 257,529,042 | 214,200,176 | 185,702,544 | 71,826,498 | 28,497,632 |
+
+Every row conserves `S=P+U`, `N=Q+O`, and `S-N=U-O`; paired cost errors,
+source/native frame failures and automatic class-c admissions remain zero.
+The source-owner residuals are:
+
+| Owner | U before, 52 | U after, 52 | U before, 88 | U after, 88 |
+| --- | ---: | ---: | ---: | ---: |
+| `$00:E583` | 3,552,552 | 0 | 5,131,464 | 0 |
+| `$00:E609` | 4,480,848 | 0 | 7,073,460 | 0 |
+| `$00:E60D` | 2,366,856 | 0 | 3,747,450 | 0 |
+| `$02:FD87` | 1,414,080 | 0 | 2,121,120 | 0 |
+| `$02:FDF7` | 747,264 | 0 | 1,120,896 | 0 |
+| `$09:C452` | 702,620 | 0 | 1,053,930 | 0 |
+| `$09:C6F5` | 1,209,784 | 33,880 | 1,646,680 | 46,948 |
+| `$01:893C` | 2,504,882 | 2,504,882 | 3,449,216 | 3,449,216 |
+| `$00:F312` | 881,640 | 881,640 | 2,222,068 | 2,222,068 |
+
+`owner-before-after.json` also retains native O before/after per owner.
+Native residual groups can mix call owners: their O is reported as bounds,
+not a fabricated exact split. The three sheet owners together have exact
+before U/O **10,400,256 / 10,400,256** on 52 rows and
+**15,952,374 / 15,952,374** on 88; after U/O is zero. Map parent/child O
+individually equals their displayed U before, and is zero afterward.
+Proximity O equals U both before and after. Reset's native scope O goes
+**822,680 -> 0** / **1,254,030 -> 0**; source `$C44E` fallthrough aliases also
+pair, so that native scope is not identical to the exclusive `$C452` source
+label. The artifact retains the mixed groups and per-owner lower/upper
+bounds rather than hiding alias uncertainty.
+
+The final 52- and 88-row `gap-table.csv`, `owners-by-reason.json`,
+`missing-source-gaps.json` and `missing-native-gaps.json` preserve all
+remaining source spans and grouped native residuals. The latter remain
+grouped rejections, not complete per-occurrence native certificates.
+
+### Remaining object and spotlight work
+
+`object-inclusive-comparison.json` compares 977 ordered `$01893C` calls in
+the 88-row cohort. **All 977 dispatcher prefixes have exact instruction
+costs.** Including their object bodies and descendants, 863 complete calls
+have equal costs; 114 have positive gaps totaling 198,876 clocks and none
+has a negative gap. Source dispatcher targets and ordinal spans are retained
+for every call. Examples include `$01:A31C`, `$01:A26D`, `$01:93DC`,
+`$01:94BD` and `$01:97B5`. This inclusive difference is not an exclusive
+all-path body proof and was not added as a price. The remaining tail/child
+omission or mispricing investigation is unfinished.
+
+`spotlight-residual-proof.json` isolates all five `$00:F312` calls in the
+88 rows. Their native self costs exactly equal source self costs after
+excluding the source's extra raster-wait passes. The 52-row U/O difference
+is **503,028 clocks = 2,826 extra passes x 178**; the 88-row difference is
+**1,264,334 clocks**. The final 172-clock wait pass is already included on
+both sides. The native wait is an independently owned raster-dependent
+budget, not a missing fixed main price: at 59,213 it is zero, while at
+68,801 it is 266,644 clocks. Source wait phase and native entry phase remain
+different. No source loop count, threshold or per-scene correction was
+installed. Equal non-wait totals do not establish ordered retirement equality
+or resolve the upstream phase deficit.
+
+### Admission and verification
+
+The continuous 0–96,000 ROM prefix passes with **51 / 0 / 0**, including 50
+missing holds before 94,334; its predictor CSV is byte-identical to baseline.
+The eight-chunk seeded ROM census completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,183 missing / 0 excess / 0 FP**. Every runtime
+hold equals P2. Every predictor column is unchanged across the complete route.
+
+| Before iteration | Before | After |
+| --- | ---: | ---: |
+| 94,334 | 50 | 50 |
+| 141,568 | 86 | 86 |
+| 228,499 | 213 | 213 |
+| 380,243 | 364 | 364 |
+| 461,989 | 442 | 442 |
+
+One full seeded live-APU census completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,447 / 260 / 74**, unchanged. Its CSV is
+byte-identical to hunt 2. Every hold equals P2. All current live-only hold
+rows remain in the observed poll episodes and execution/reseed aftermath;
+changed and unattributed current/changed hold rows are zero.
+
+| Observed poll origin | Current live-versus-ROM hold rows | Changed rows | Added missing / excess / FP |
+| --- | ---: | ---: | --- |
+| 94,853 | 6 | 0 | 8 / 8 / 2 |
+| 142,087 | 5 | 0 | 9 / 9 / 2 |
+| 462,626 | 6 | 0 | 13 / 13 / 3 |
+| 881,733 | 135 | 0 | 234 / 230 / 67 |
+
+`live-partition.json` retains fresh poll observations, actual reseeds and
+row values. The retained original-ledger read-episode inventory is reused
+with its identity. Secondary budget changes are recorded separately and
+are also zero; none is assigned to an arbitrary preceding poll.
+
+
+The sheet, tileset, map, two sprite fixtures and nine observer tests pass
+(14 filtered Rust tests), as do eight generator tests. Default,
+`--no-default-features`, audit and restored-default product builds are
+warning-free; existing unrelated library-test dead-code warnings remain
+separate. The restored default binary equals the census candidate.
+No gameplay behavior changes, so **1,462,997 exact CPU pictures remains
+prior evidence**, not a newly run picture census.
+
+These deficits are missing-hold contributions, not measured net SPC phase.
+Delivered-command, chip-state and waveform equality were not recaptured.
+`verification.json` binds source, binaries, authority and evidence;
+`git diff --check` passes. Evidence is below 2 GB and all started jobs have
+exited. No GPU, Snes9x process, continuous live replay, full library suite,
+protected-cache/shared-ledger write, new environment switch, cargo fmt,
+commit or push was used. The matcher, classifiers and P2 source are unchanged.

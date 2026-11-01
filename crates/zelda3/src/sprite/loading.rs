@@ -647,7 +647,7 @@ impl ZeldaState {
     //   memset(dungeon_room_history, 0xff, 8);
     // }
     pub(in crate::zelda_rtl) fn sprite_reset_all_no_disable(&mut self) {
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::profile_routine(0x09_c452, true));
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09_c452));
         self.sprite_reset_all_no_disable_fixed_prefix();
         self.sprite_reset_all_no_disable_after_fixed_prefix();
     }
@@ -658,7 +658,11 @@ impl ZeldaState {
         if self.lag_free {
             // $09:C452..C479: seven clears, follower test/branch, M8/X8
             // then REP #$10, LDX #$0FFF, LDA #0 before the bulk clear.
-            crate::cycle_ledger::charge(296 + if self.game_state.sprites.follower_runtime.indicator() == 13 { 6 } else { 48 } + 62);
+            let b = crate::cycle_ledger::blocks(true);
+            b.block(0x09c452);
+            if self.game_state.sprites.follower_runtime.indicator() == 13 { b.taken(0x09c46d); }
+            else { b.block(0x09c46f); }
+            b.block(0x09c474);
         }
         self.garnish_state_mut()
             .clear_haunted_grove_flute_event_latch();
@@ -691,8 +695,18 @@ impl ZeldaState {
         if self.lag_free {
             // $09:C482..C498: 512 loaded-mask clears, SEP #$10,
             // eight room-history stores and RTL; actual taken loop branches.
-            crate::cycle_ledger::charge(24 + 512 * 70 + 511 * 6 + 54
-                + 8 * 68 + 7 * 6 + 44);
+            let b = crate::cycle_ledger::blocks(true);
+            b.block(0x09c482);
+            for byte in 0..512 {
+                b.block(0x09c485);
+                if byte < 511 { b.taken(0x09c48a); }
+            }
+            b.block(0x09c48c);
+            for byte in 0..8 {
+                b.block(0x09c492);
+                if byte < 7 { b.taken(0x09c496); }
+            }
+            b.block(0x09c498);
         }
         self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
@@ -1118,22 +1132,33 @@ impl ZeldaState {
         let sprcoll_y_base = self.game_state.sprites.garnish_runtime.sprcoll_y_word();
         let xt = x.wrapping_sub(sprcoll_x_base);
         let yt = y.wrapping_sub(sprcoll_y_base);
-        if self.lag_free {
-            // $09:C6F5..C730: X bounds; conditional Y bounds; block-index/call
-            // only in bounds. Proxima child's body remains independently owned.
-            let suffix = if xt >= self.game_state.sprites.garnish_runtime.sprcoll_x_size() { 6 }
-                else { 194 + if yt >= self.game_state.sprites.garnish_runtime.sprcoll_y_size() { 6 } else { 406 } };
-            crate::cycle_ledger::charge(164 + suffix + 64);
-        }
-        if xt >= self.game_state.sprites.garnish_runtime.sprcoll_x_size()
-            || yt >= self.game_state.sprites.garnish_runtime.sprcoll_y_size()
-        {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // $09:C6F5..C700: REP and X bound, entering M8/X8.
+        b.block(0x09c6f5);
+        if xt >= self.game_state.sprites.garnish_runtime.sprcoll_x_size() {
+            b.taken(0x09c700);
+            // $09:C72E SEP has two incoming M widths. Keep its exact scalar
+            // until the marker format can express that contract; no alias.
+            if self.lag_free { crate::cycle_ledger::charge(22); }
+            b.block(0x09c730);
             return false;
         }
-
+        // $09:C702..C70E: the Y bound executes only after the X guard.
+        b.block(0x09c702);
+        if yt >= self.game_state.sprites.garnish_runtime.sprcoll_y_size() {
+            b.taken(0x09c70e);
+            if self.lag_free { crate::cycle_ledger::charge(22); }
+            b.block(0x09c730);
+            return false;
+        }
+        // $09:C710..C72A owns only the child JSR, never Proxima's body.
+        b.block(0x09c710);
         let r1 = (((yt >> 8) * 4) | (xt >> 8)) as u8;
         let r0 = ((y & 0x00f0) | ((x >> 4) & 0x000f)) as u8;
         self.overworld_load_proxima_sprite_if_alive((u16::from(r1) << 8) | u16::from(r0));
+        b.block(0x09c72d); // PLX after the actual child return.
+        if self.lag_free { crate::cycle_ledger::charge(22); } // $09:C72E SEP #$20.
+        b.block(0x09c730);
         true
     }
 

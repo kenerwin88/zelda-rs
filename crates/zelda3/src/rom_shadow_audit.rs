@@ -418,6 +418,40 @@ impl Drop for LocalScope {
 #[cfg(test)]
 mod ordered_tests {
     #[test]
+    fn sheet_call_paths_retain_parent_across_child_and_distinguish_repeated_sheets() {
+        let path=std::env::temp_dir().join(format!("sheet-call-path-{}",std::process::id()));
+        super::ORDERED.with(|o|*o.borrow_mut()=Some(super::Ordered {
+            chunks:None,out:super::event_writer(path.clone()),active:false,
+            sequence:0,next_call:0,calls:Vec::new(),clocks:0,marker:None,model:None,
+            range:(0,0),selected:None,compact:None,
+        }));
+        super::iteration(Some(0));
+        let before=crate::cycle_ledger::master();super::main_begin(before);
+        {
+            let _root=crate::cycle_ledger::routine(0xe19b);
+            let mut calls=crate::cycle_ledger::OrderedCallPath::default();
+            for _ in 0..2 {
+                for path in [&[0xe583][..],&[0xe583,0xe772],&[0xe583,0xe772,0xe843],
+                    &[0xe583,0xe772],&[0xe583],&[]] {
+                    calls.retire(path,||crate::cycle_ledger::charge(10));
+                }
+            }
+        }
+        super::main_end(crate::cycle_ledger::master());
+        super::ORDERED.with(|o|*o.borrow_mut()=None);super::iteration(None);
+        let rows:Vec<serde_json::Value>=std::fs::read_to_string(&path).unwrap().lines()
+            .map(|l|serde_json::from_str(l).unwrap()).collect();
+        let sheets:Vec<_>=rows.iter().filter(|r|r["event"]=="enter" && r["pc"]==0xe583).collect();
+        assert_eq!(sheets.len(),2);
+        let charges:Vec<_>=rows.iter().filter(|r|r["event"]=="charge").collect();
+        assert_eq!(charges[0]["call"],charges[4]["call"]);
+        assert_eq!(charges[6]["call"],charges[10]["call"]);
+        assert_ne!(charges[0]["call"],charges[6]["call"]);
+        assert_eq!(crate::cycle_ledger::master()-before,120);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn chunked_observer_seals_partial_stream_once_and_keeps_zero_events() {
         let dir=std::env::temp_dir().join(format!("shadow-chunk-test-{}",std::process::id()));std::fs::create_dir(&dir).unwrap();
         super::ORDERED.with(|o|*o.borrow_mut()=Some(super::Ordered {

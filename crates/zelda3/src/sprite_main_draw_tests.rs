@@ -6129,3 +6129,59 @@ fn prefix_hunt1_armos_guard_and_caller_match_rom() {
     }
     eprintln!("prefix hunt 1 Armos: {cases} complete ROM cases");
 }
+
+#[test]
+fn prefix_hunt3_sprite_reset_markers_match_rom_all_branches_and_clear_loops() {
+    for follower in [0u8, 12, 13, 14, 255] {
+        for fill in [0u8, 0xa5] {
+            let mut n = marker29_state();
+            n.ram[0x1df80..0x1f180].fill(fill);
+            n.ram[0xb80..0xb88].fill(fill);
+            n.write_wram_byte(0xf3cc, follower);
+            n.sync_native_game_state_from_ram();
+            let Some(mut s) = marker29_machine(&n, 0x09c452, 0) else { return };
+            s.cpu.sp = 0x1fc;
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x09c452, s,
+                |s| s.cpu.k == 9 && (0xc452..0xc499).contains(&s.cpu.pc),
+                || n.sprite_reset_all_no_disable());
+            for range in [0x1df80..0x1f180, 0xb80..0xb88, 0x4b4..0x4b5] {
+                assert_eq!(&n.ram[range.clone()], &source.snes().ram[range]);
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix_hunt3_proximity_markers_match_rom_bounds_and_child_exclusion() {
+    let mut cases = 0;
+    for base in [0u16, 0xff00] {
+        for size in [0u16, 0x200] {
+            for dx in [0u16, 0x100, 0x1ff, 0x200, 0xffff] {
+                for dy in [0u16, 0x100, 0x1ff, 0x200, 0xffff] {
+                    let mut n = marker29_state();
+                    for (a, value) in [(0xfb8, size), (0xfba, size), (0xfbc, base), (0xfbe, base)] {
+                        n.write_wram_word(a, value);
+                    }
+                    let x = base.wrapping_add(dx);
+                    let y = base.wrapping_add(dy);
+                    n.write_wram_word(0xe, x);
+                    n.write_wram_word(0xc, y);
+                    n.sync_native_game_state_from_ram();
+                    let Some(s) = marker29_machine(&n, 0x09c6f5, 0) else { return };
+                    let mut native_self = 0;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(0x09c6f5, s,
+                        |s| s.cpu.k == 9 && (0xc6f5..0xc731).contains(&s.cpu.pc) && s.cpu.pc != 0xc72e,
+                        || { native_self = crate::cycle_ledger::measure_routine_self_work(0x09c6f5, || {
+                            assert_eq!(n.sprite_overworld_proximity_motivated_load(x, y), dx < size && dy < size);
+                        }); });
+                    let expected = if dx >= size { 164 + 6 + 64 }
+                        else if dy >= size { 164 + 194 + 6 + 64 } else { 164 + 194 + 406 + 64 };
+                    assert_eq!(native_self, expected);
+                    assert_eq!(source.snes().cpu.x, 0);
+                    cases += 1;
+                }
+            }
+        }
+    }
+    eprintln!("proximity bounds: {cases} ROM cases; only C72E's 22-clock SEP remains scalar");
+}

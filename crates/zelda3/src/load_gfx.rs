@@ -2853,10 +2853,21 @@ impl ZeldaState {
     pub(super) fn initialize_tilesets(&mut self) {
         let _scope = crate::cycle_ledger::routine(0x00_e19b);
         let Some(mut work) = self.native_initialize_tilesets_work() else { return };
+        #[cfg(feature = "rom-shadow-audit")]
+        let mut ordered_calls = crate::cycle_ledger::OrderedCallPath::default();
         while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
             let path = work.profile_call_path(&instruction);
+            #[cfg(feature = "rom-shadow-audit")]
+            if crate::rom_shadow_audit::observing() {
+                // The enclosing routine owns path[0]; children retain their
+                // actual call lifetime through the loader/converter RTS.
+                ordered_calls.retire(&path[1..], || self.retire_tileset_instruction(instruction));
+                continue;
+            }
             crate::cycle_ledger::with_profile_call_path(&path, || self.retire_tileset_instruction(instruction));
         }
+        #[cfg(feature = "rom-shadow-audit")]
+        drop(ordered_calls);
         self.record_common_sprite_provenance();
         for slot in 0..4 {
             let pack = self.game_state.sprites.workspace.graphics_subset(slot);
@@ -2875,10 +2886,21 @@ impl ZeldaState {
         let misc = self.game_state.world.palette_theme.misc_sprites_graphics_index();
         let Some(mut work) = crate::cycle_models::tilesets::TilesetWork::common(module, misc,
             |sheet| self.sprite_graphics_decompression_stream(sheet as usize)) else { return };
+        #[cfg(feature = "rom-shadow-audit")]
+        let mut ordered_calls = crate::cycle_ledger::OrderedCallPath::default();
         while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
             let path = work.profile_call_path(&instruction);
+            #[cfg(feature = "rom-shadow-audit")]
+            if crate::rom_shadow_audit::observing() {
+                // The enclosing routine owns path[0]; children retain their
+                // actual call lifetime through the loader/converter RTS.
+                ordered_calls.retire(&path[1..], || self.retire_tileset_instruction(instruction));
+                continue;
+            }
             crate::cycle_ledger::with_profile_call_path(&path, || self.retire_tileset_instruction(instruction));
         }
+        #[cfg(feature = "rom-shadow-audit")]
+        drop(ordered_calls);
         self.record_common_sprite_provenance();
     }
 
@@ -2982,10 +3004,21 @@ impl ZeldaState {
     ) {
         self.vram_chr_source.record_tiles(dst, 64, kind, pack as u16);
         self.vram_chr_preview_source.record_tiles(dst, 64, kind, pack as u16);
+        #[cfg(feature = "rom-shadow-audit")]
+        let mut ordered_calls = crate::cycle_ledger::OrderedCallPath::default();
         while let Some(instruction) = work.step(|address| self.read_wram_byte(address)) {
             let path = work.profile_call_path(instruction.routine);
+            #[cfg(feature = "rom-shadow-audit")]
+            if crate::rom_shadow_audit::observing() {
+                // The enclosing routine owns path[0]; children retain their
+                // actual call lifetime through the loader/converter RTS.
+                ordered_calls.retire(&path[1..], || self.retire_sheet_load_instruction(dst, instruction));
+                continue;
+            }
             crate::cycle_ledger::with_profile_call_path(&path, || self.retire_sheet_load_instruction(dst, instruction));
         }
+        #[cfg(feature = "rom-shadow-audit")]
+        drop(ordered_calls);
         self.tag_stream_content_hash(dst, 64);
     }
 

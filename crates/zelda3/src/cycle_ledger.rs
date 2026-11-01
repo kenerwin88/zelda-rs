@@ -489,6 +489,31 @@ pub(crate) fn profiling() -> bool {
     PROFILE.with(|profile| profile.borrow().as_ref().is_some_and(|p| p.active))
 }
 
+/// Audit a flattened continuation with the same call lifetime as its native
+/// composition. In particular, identical sheet suffixes belong to different
+/// calls; opening a scope per instruction loses that occurrence evidence.
+#[cfg(feature = "rom-shadow-audit")]
+#[derive(Default)]
+pub(crate) struct OrderedCallPath(Vec<RoutineScope>);
+
+#[cfg(feature = "rom-shadow-audit")]
+impl OrderedCallPath {
+    pub(crate) fn retire<R>(&mut self, path: &[u32], retire: impl FnOnce() -> R) -> R {
+        let common = self.0.iter().zip(path).take_while(|(scope, address)| scope.address == **address).count();
+        while self.0.len() > common { self.0.pop(); }
+        for &address in &path[common..] { self.0.push(routine(address)); }
+        retire()
+    }
+}
+
+#[cfg(feature = "rom-shadow-audit")]
+impl Drop for OrderedCallPath {
+    fn drop(&mut self) {
+        // Scope stacks must unwind inside out, unlike Vec's element drop order.
+        while self.0.pop().is_some() {}
+    }
+}
+
 /// Append this host's routine charges to `<dir>/ledger.csv` when
 /// `ZELDA3_DEBUG_CYCLE_LEDGER` is set, then forget them.
 pub fn flush_host(host: u32) {

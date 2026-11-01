@@ -6415,9 +6415,13 @@ impl ZeldaState {
     ) {
         assert!(cursor.completed_steps <= target && target <= OVERWORLD_MAP8_TOTAL_STEPS);
         let map8 = self.GetMap16toMap8Table();
+        #[cfg(feature = "rom-shadow-audit")]
+        let mut ordered_calls = crate::cycle_ledger::OrderedCallPath::default();
         while cursor.completed_steps < target {
             let row = usize::from(cursor.completed_steps / OVERWORLD_MAP8_ROW_STEPS);
             let step = cursor.completed_steps % OVERWORLD_MAP8_ROW_STEPS;
+            #[cfg(feature = "rom-shadow-audit")]
+            if step >= 162 { ordered_calls.retire(&[], || {}); }
             match step {
                 162 => {
                     // $02:FD5C..FD62 or FD6F..FD75: row source advance.
@@ -6436,6 +6440,8 @@ impl ZeldaState {
                 _ => self.write_overworld_map8_row_step(
                     cursor.source_page, cursor.upload_base, row * 0x100,
                     WORD_7F4000_OVERWORLD + row * 4, step, &map8,
+                    #[cfg(feature = "rom-shadow-audit")]
+                    &mut ordered_calls,
                 ),
             }
             cursor.completed_steps += 1;
@@ -6451,18 +6457,33 @@ impl ZeldaState {
         r10: usize,
     ) {
         let map8 = self.GetMap16toMap8Table();
+        #[cfg(feature = "rom-shadow-audit")]
+        let mut ordered_calls = crate::cycle_ledger::OrderedCallPath::default();
         for step in 0..162 {
-            self.write_overworld_map8_row_step(source_page, r20, r14 as usize, r10, step, &map8);
+            self.write_overworld_map8_row_step(source_page, r20, r14 as usize, r10, step, &map8,
+                #[cfg(feature = "rom-shadow-audit")]
+                &mut ordered_calls);
         }
     }
 
     fn write_overworld_map8_row_step(
         &mut self, source_page: OverworldMap16SourcePage, upload_base: u16,
         output: usize, header: usize, step: u16, map8: &[u8],
+        #[cfg(feature = "rom-shadow-audit")]
+        ordered_calls: &mut crate::cycle_ledger::OrderedCallPath,
     ) {
         // $02:FD59/FD6C's JSR belongs to Map16ToMap8, before FD87.
         if self.lag_free && step == 0 { crate::cycle_ledger::charge(46); }
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::profile_routine(0x02_fd87, step == 0));
+        #[cfg(feature = "rom-shadow-audit")]
+        if self.lag_free && crate::rom_shadow_audit::observing() {
+            ordered_calls.retire(if (33..97).contains(&step) { &[0x02fd87, 0x02fdf7] }
+                else { &[0x02fd87] }, || {});
+        }
+        let _scope = self.lag_free.then(|| {
+            #[cfg(feature = "rom-shadow-audit")]
+            if crate::rom_shadow_audit::observing() { return None; }
+            crate::cycle_ledger::profile_routine(0x02_fd87, step == 0)
+        });
         if self.lag_free {
             let markers = crate::cycle_ledger::blocks(true);
             // $02:FD87..FDC2: 16 paired stripe copies.
@@ -6476,12 +6497,23 @@ impl ZeldaState {
                 if self.overworld_map16_y_unit() < 16 { markers.taken(0x02fdcb); }
                 else { markers.block(0x02fdcd); }
                 markers.block(0x02fdd7);
+            }
+            if step == 97 {
+                // $02:FDEB..FDF6 resumes only after the first FDF7 RTS.
                 markers.block(0x02fdeb);
+            }
+            #[cfg(feature = "rom-shadow-audit")]
+            if step == 32 && crate::rom_shadow_audit::observing() {
+                ordered_calls.retire(&[0x02fd87, 0x02fdf7], || {});
             }
             // $02:FDE8 calls FDF7 for the first half. The second half
             // falls through FDF3 into the same body in FD87's call frame.
             let _child = (32..97).contains(&step)
-                .then(|| crate::cycle_ledger::profile_routine(0x02_fdf7, step == 32));
+                .then(|| {
+                    #[cfg(feature = "rom-shadow-audit")]
+                    if crate::rom_shadow_audit::observing() { return None; }
+                    crate::cycle_ledger::profile_routine(0x02_fdf7, step == 32)
+                });
             if step == 32 || step == 97 {
                 // $02:FDF7..FE0C: header + 16-tile loop setup.
                 markers.block(0x02fdf7);

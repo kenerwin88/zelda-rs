@@ -77,7 +77,12 @@ impl TilesetWork {
     /// The current operation is retained until the next step, so ancestry
     /// comes from native call composition, never an observed clock deficit.
     pub(crate) fn profile_call_path(&self, instruction: &Instruction) -> Vec<u32> {
-        if !crate::cycle_ledger::profiling() { return Vec::new(); }
+        if !crate::cycle_ledger::profiling() {
+            #[cfg(feature = "rom-shadow-audit")]
+            if !crate::rom_shadow_audit::observing() { return Vec::new(); }
+            #[cfg(not(feature = "rom-shadow-audit"))]
+            return Vec::new();
+        }
         let root = match &self.operations[0] {
             Operation::Caller { instructions, .. } => instructions[0].routine,
             _ => unreachable!(),

@@ -66,11 +66,15 @@ fn coverage5_map8_markers_match_rom_exclusive_parent_and_child() {
                     let map8 = n.GetMap16toMap8Table();
                     crate::cycle_ledger::profile_iteration(true);
                     crate::cycle_ledger::profile_main_begin();
+                    #[cfg(feature = "rom-shadow-audit")]
+                    let mut ordered_calls = crate::cycle_ledger::OrderedCallPath::default();
                     let source = crate::cycle_ledger::assert_rom_marker_work(owner, s,
                         |s| s.cpu.k == 2 && (0xfd87..0xfe47).contains(&s.cpu.pc)
                             && (if owner == 0x02fd87 { s.cpu.sp == 0x1fc } else { s.cpu.sp == 0x1fa }),
                         || for step in 0..162 {
-                            n.write_overworld_map8_row_step(page, 0, 0, 0x14000, step, &map8);
+                            n.write_overworld_map8_row_step(page, 0, 0, 0x14000, step, &map8,
+                                #[cfg(feature = "rom-shadow-audit")]
+                                &mut ordered_calls);
                         });
                     crate::cycle_ledger::profile_main_end();
                     crate::cycle_ledger::profile_iteration(false);

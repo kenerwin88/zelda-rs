@@ -46,7 +46,12 @@ struct Progress {
 
 impl SheetWork {
     pub(crate) fn profile_call_path(&self, routine: u32) -> Vec<u32> {
-        if !crate::cycle_ledger::profiling() { return Vec::new(); }
+        if !crate::cycle_ledger::profiling() {
+            #[cfg(feature = "rom-shadow-audit")]
+            if !crate::rom_shadow_audit::observing() { return Vec::new(); }
+            #[cfg(not(feature = "rom-shadow-audit"))]
+            return Vec::new();
+        }
         let mut path = vec![self.prefix[0].routine];
         if routine == 0xe772 || routine == 0xe78f || routine == 0xe843 {
             path.push(self.decompressor);
