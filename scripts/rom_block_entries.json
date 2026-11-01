@@ -1,4 +1,8 @@
 [
+  {"entry": "01af8b", "end": "01afc8", "m8": false, "x8": false},
+  {"entry": "01afd4", "end": "01b00d", "m8": false, "x8": false},
+  {"entry": "01b017", "end": "01b050", "m8": false, "x8": false},
+  {"entry": "01b05c", "end": "01b092", "m8": false, "x8": false},
   {"entry": "0ae384", "end": "0ae3de"},
   {"entry": "0ae3de", "end": "0ae3e1"},
   {"entry": "0ae3e1", "end": "0ae3e4"},

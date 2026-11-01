@@ -2710,3 +2710,111 @@ This is a verified partial repair under the revised admission rule, with
 **2,227 ROM missing holds still open** and worse live totals. The next
 earliest unresolved cluster is **15,313**; strict sound and exact A/V
 acceptance remain open.
+
+## Lagless missing-hold owners 11
+
+CPU-only continuation on `codex/lag11`, base `caa943ff`. Evidence is under
+`target/lag11/`; the authoritative oracle cache and shared `full-v2` ledger
+remain read-only. This batch prices four complete door-priority leaves from
+the earliest unresolved cluster. It does **not** close that cluster or reduce
+the five song-window prefix deficits.
+
+The ordered inputs are `target/lag10/early-cluster-worklist.json` and
+`target/lag7/prefix-clusters-before.json`. The admitted source boundaries are
+`$01:AF8B..AFC7` (north), `$01:AFD4..B00C` (south), `$01:B017..B04F` (west),
+and `$01:B05C..B091` (east). Each is a real JSR leaf with no children. Generated
+ROM markers charge setup, every executed four-tile pass, actual taken loop
+branches, and RTS. No aggregate caller delta supplies a price.
+
+At **15,313**, south/west/east contribute exactly **3,010 / 2,916 / 2,890**
+source clocks; north is not called. The native profile adds exactly those
+**8,816 clocks**, with no other exclusive owner changing. Main work rises
+**4,962,046 → 4,970,862**, still below source **5,002,268**. The signed residual
+is **31,406**, and the diagnostic main-work shortfall to the next hold falls
+**18,146 → 9,330**. Neither residual is used as a price. The caller/JMP and
+sprite aliases remain explicit in `first-owner-partition.json`; they are not
+absorbed by these leaves. `source-partitions.json` also retains the witnesses
+at 72,710 and 81,253. The updated ordered worklist keeps all three clusters open.
+
+The executed-ROM fixture covers **504 cases**: every terminating north/west
+distance and south/east loop length, across four tilemap quadrants. It checks
+instruction clocks and complete BG2 tile output. The first fixture attempt
+failed because its setup did not import raw RAM into the native tilemap owner;
+correcting that test setup requires no gameplay change. The final fixture,
+**nine marker-ownership tests**, and **seven generator tests** pass. The audit
+adds **81 instructions / 12 blocks**, preserving all **16,760 instructions /
+4,081 blocks** already priced.
+
+The full eight-slice seeded ROM census completes **1,473,123 iterations**,
+gate **PASS**, unexplained zero, with **2,226 missing / 0 excess / 0 FP**,
+versus **2,227 / 0 / 0** before. Every runtime hold equals P2. Only iteration
+**577,651** changes its hold count, **14 → 15**, equal to source; its main work
+rises **4,976,592 → 4,988,204**. A focused 576,000–578,000 ROM window is
+logically clean; the recovered iteration's profile assigns the entire
+**11,612-clock** increase to two west and two east leaf calls, with no child
+work. No later overcharge was observed.
+
+| Before window starting | Baseline ROM missing | Candidate ROM missing |
+| --- | ---: | ---: |
+| 94,334 | 56 | 56 |
+| 141,568 | 92 | 92 |
+| 228,499 | 221 | 221 |
+| 380,243 | 375 | 375 |
+| 461,989 | 454 | 454 |
+
+The continuous **0–148,000** recorded-answer prefix also passes, unexplained
+zero, with unchanged **102 / 0 / 0**. The bounded 14,000–16,000 trial is
+logically clean with zero excess/FP; its nonzero start is not a complete-route
+summary-gate pass.
+
+The **one full seeded live census** completes **1,473,123 iterations**,
+gate **PASS**, unexplained zero, with no P2 disagreements. Live totals are
+**2,728 missing / 473 excess / 88 FP**, versus **2,702 / 446 / 83** before.
+This is a worse live total. Admission uses owners 9's poll-episode rule;
+it does not establish improved live timing or source-equal sound phase.
+
+| Origin poll | Candidate live-versus-ROM hold rows | Added missing | Added excess | Added FP | Changed rows versus baseline |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 142,087 | 5 | 9 | 9 | 2 | 0 |
+| 229,034 | 4 | 9 | 9 | 2 | 0 |
+| 380,880 | 15 | 114 | 90 | 5 | 0 |
+| 462,627 | 6 | 13 | 13 | 3 | 0 |
+| 627,255 (new) | 10 | 27 | 27 | 5 | 10 |
+| 881,733 | 135 | 234 | 230 | 67 | 0 |
+| 1,064,733 | 12 | 96 | 95 | 4 | 0 |
+| **Total** | **187** | **502** | **473** | **88** | **10** |
+
+All ten changed live-only hold rows belong to the new observed song-end
+poll: native **zero** versus source **`$13`** at **627,255**, on the existing
+`$08:C606..C610` path. Changed main work starts at that poll and ends at
+**629,601**; changed holds run **627,316–629,462**. Actual reseeds at
+**628,000** and **629,845** bound the execution aftermath. All six inherited
+episodes retain their complete hold differentials. `live-partition.json`
+contains every baseline/candidate row, poll witness and reseed, with **zero
+unattributed changed rows**. The recovered hold at 577,651 changes both ROM
+and live equally and is not a live-only change.
+
+The secondary partition retains **960 main-work**, **723 opening-handler**
+and **712 lag-handler** changed differentials separately. Budget-only changes
+extend from 565,444 to 744,395; they are not called hold changes or attributed
+to the nearest preceding poll. The five live prefix deficits remain
+**56 / 92 / 230 / 393 / 586**, unchanged from lag10. Delivered-command,
+chip-state and waveform proofs were not recaptured; their prior limitations
+remain open.
+
+Default and `--no-default-features` product builds are warning-free. The
+library-test build retains 24 existing unrelated dead-code warnings. The
+restored default executable is byte-identical to the census candidate,
+SHA-256 `024f3525d22f466562cfdf65112dd1efe795819b86e660c7769947d2dbaa4b54`.
+`verification.json`, `identity.json`, the source partitions and artifact
+hashes bind the retained result. `git diff --check` passes; evidence is below
+3 GB. Only prices, generated entries, fixtures and this documentation change.
+No classifier, matcher, P2 rule, environment switch or gameplay behavior was
+changed. The conditional CPU picture census was therefore not rerun; no new
+picture or exact A/V proof is claimed.
+
+This is a **verified partial pricing stop**, admitted under owners 9's rule,
+with **2,226 ROM missing holds** and all five prefix deficits still open.
+Iteration **15,313** remains the next unresolved cluster. No GPU run,
+Snes9x process, continuous live replay, full library suite, protected-cache
+or shared-ledger write, formatting pass, commit or push was performed.

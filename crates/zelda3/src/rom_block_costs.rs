@@ -430,6 +430,30 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x01aee3, 0x01aef0, false, false, 198, 0x000000, &[]),
     // $01:AF72: fixed cost
     (0x01af72, 0x01af7f, false, false, 198, 0x000000, &[]),
+    // $01:AF8B: fixed cost
+    (0x01af8b, 0x01af91, false, false, 70, 0x000000, &[]),
+    // $01:AF91: 01afc5 taken +6
+    (0x01af91, 0x01afc7, false, false, 594, 0x01afc5, &[]),
+    // $01:AFC7: fixed cost
+    (0x01afc7, 0x01afc8, false, false, 42, 0x000000, &[]),
+    // $01:AFD4: fixed cost
+    (0x01afd4, 0x01afd5, false, false, 14, 0x000000, &[]),
+    // $01:AFD5: 01b00a taken +6
+    (0x01afd5, 0x01b00c, false, false, 586, 0x01b00a, &[]),
+    // $01:B00C: fixed cost
+    (0x01b00c, 0x01b00d, false, false, 42, 0x000000, &[]),
+    // $01:B017: fixed cost
+    (0x01b017, 0x01b01d, false, false, 70, 0x000000, &[]),
+    // $01:B01D: 01b04d taken +6
+    (0x01b01d, 0x01b04f, false, false, 556, 0x01b04d, &[]),
+    // $01:B04F: fixed cost
+    (0x01b04f, 0x01b050, false, false, 42, 0x000000, &[]),
+    // $01:B05C: fixed cost
+    (0x01b05c, 0x01b05d, false, false, 14, 0x000000, &[]),
+    // $01:B05D: 01b08f taken +6
+    (0x01b05d, 0x01b091, false, false, 562, 0x01b08f, &[]),
+    // $01:B091: fixed cost
+    (0x01b091, 0x01b092, false, false, 42, 0x000000, &[]),
     // $01:B0AC: fixed cost
     (0x01b0ac, 0x01b0af, false, false, 24, 0x000000, &[]),
     // $01:B0AF: fixed cost

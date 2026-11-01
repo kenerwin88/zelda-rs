@@ -906,37 +906,56 @@ impl ZeldaState {
 
     /// ROM: `RoomDraw_MakeDoorHighPriority_North`
     pub(super) fn room_draw_make_door_high_priority_north(&mut self, dsto_org: u16) {
+        // $01:AF8B..AFC7: complete leaf, M16/X16; no children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01af8b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01af8b);
         let mut dsto = dsto_org & (0xf07f >> 1);
         loop {
+            b.block(0x01af91);
             for x in 0..4 {
                 let tile = self.room_read_bg2(dsto + x) | 0x2000;
                 self.room_write_bg2(dsto + x, tile);
             }
             dsto += 64;
             if dsto == dsto_org {
+                b.block(0x01afc7);
                 break;
             }
+            b.taken(0x01afc5);
         }
     }
 
     /// ROM: `RoomDraw_MakeDoorHighPriority_South`
     pub(super) fn room_draw_make_door_high_priority_south(&mut self, mut dsto: u16) {
+        // $01:AFD4..B00C: complete leaf, M16/X16; no children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01afd4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01afd4);
         loop {
+            b.block(0x01afd5);
             for x in 0..4 {
                 let tile = self.room_read_bg2(dsto + x) | 0x2000;
                 self.room_write_bg2(dsto + x, tile);
             }
             dsto += 64;
             if dsto & 0x07c0 == 0 {
+                b.block(0x01b00c);
                 break;
             }
+            b.taken(0x01b00a);
         }
     }
 
     /// ROM: `RoomDraw_MakeDoorHighPriority_West`
     pub(super) fn room_draw_make_door_high_priority_west(&mut self, dsto_org: u16) {
+        // $01:B017..B04F: complete leaf, M16/X16; no children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b017));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b017);
         let mut dsto = dsto_org & 0xffe0;
         loop {
+            b.block(0x01b01d);
             for y in 0..4 {
                 let pos = dsto + y * 64;
                 let tile = self.room_read_bg2(pos) | 0x2000;
@@ -944,14 +963,21 @@ impl ZeldaState {
             }
             dsto += 1;
             if dsto == dsto_org {
+                b.block(0x01b04f);
                 break;
             }
+            b.taken(0x01b04d);
         }
     }
 
     /// ROM: `RoomDraw_MakeDoorHighPriority_East`
     pub(super) fn room_draw_make_door_high_priority_east(&mut self, mut dsto: u16) {
+        // $01:B05C..B091: complete leaf, M16/X16; no children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b05c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b05c);
         loop {
+            b.block(0x01b05d);
             for y in 0..4 {
                 let pos = dsto + y * 64;
                 let tile = self.room_read_bg2(pos) | 0x2000;
@@ -959,8 +985,10 @@ impl ZeldaState {
             }
             dsto += 1;
             if dsto & 0x1f == 0 {
+                b.block(0x01b091);
                 break;
             }
+            b.taken(0x01b08f);
         }
     }
 
@@ -2486,5 +2514,56 @@ impl ZeldaState {
             self.clear_modal_pause_flag();
         }
         self.set_nmi_copy_packets_request(3);
+    }
+}
+
+#[cfg(test)]
+mod lag11_price_tests {
+    use super::*;
+
+    #[test]
+    fn door_priority_leaves_match_all_terminating_loop_lengths() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        // North/west compare against the original coordinate: zero distance
+        // is not a terminating valid door. South/east include the full span.
+        for (entry, end, direction) in [(0x01af8b, 0xafc8, 0),
+            (0x01afd4, 0xb00d, 1), (0x01b017, 0xb050, 2),
+            (0x01b05c, 0xb092, 3)] {
+            for offset in 0..32u16 {
+                if direction % 2 == 0 && offset == 0 { continue; }
+                for quadrant in [0, 0x20, 0x800, 0x820] {
+                    let dsto = quadrant + if direction < 2 { offset * 64 } else { offset };
+                    let mut native = ZeldaState::new();
+                    for i in 0x2000..0x4000usize {
+                        native.ram[i] = (i as u8).wrapping_mul(37);
+                    }
+                    native.sync_native_game_state_from_ram();
+                    native.set_lag_free(true);
+                    let mut machine = snes::Snes::new();
+                    machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    machine.ram.copy_from_slice(&native.wram_image());
+                    machine.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0);
+                    machine.cpu.k = 1;
+                    machine.cpu.db = 1;
+                    machine.cpu.dp = 0;
+                    machine.cpu.pc = entry as u16;
+                    machine.cpu.sp = 0x1fd;
+                    machine.cpu.a = dsto * 2;
+                    let source = crate::cycle_ledger::assert_rom_marker_work(entry, machine,
+                        |s| s.cpu.k == 1 && ((entry as u16)..end).contains(&s.cpu.pc),
+                        || match direction {
+                            0 => native.room_draw_make_door_high_priority_north(dsto),
+                            1 => native.room_draw_make_door_high_priority_south(dsto),
+                            2 => native.room_draw_make_door_high_priority_west(dsto),
+                            _ => native.room_draw_make_door_high_priority_east(dsto),
+                        });
+                    assert_eq!(&source.snes().ram[0x2000..0x4000],
+                        &native.wram_image()[0x2000..0x4000], "{entry:06x} coordinate {dsto:04x}");
+                }
+            }
+        }
     }
 }
