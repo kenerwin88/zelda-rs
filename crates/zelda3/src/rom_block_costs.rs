@@ -90,6 +90,14 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x00e024, 0x00e030, false, false, 168, 0x00e02e, &[]),
     // $00:E030: fixed cost
     (0x00e030, 0x00e031, false, false, 42, 0x000000, &[]),
+    // $00:E33B: fixed cost
+    (0x00e33b, 0x00e33e, true, true, 46, 0x000000, &[]),
+    // $00:E33E: fixed cost
+    (0x00e33e, 0x00e343, true, true, 46, 0x000000, &[]),
+    // $00:E343: 00e368 taken +6
+    (0x00e343, 0x00e36a, false, false, 830, 0x00e368, &[]),
+    // $00:E36A: fixed cost
+    (0x00e36a, 0x00e36d, false, false, 64, 0x000000, &[]),
     // $00:E4E9: fixed cost
     (0x00e4e9, 0x00e503, true, true, 302, 0x000000, &[]),
     // $00:E503: fixed cost
@@ -272,6 +280,16 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x00ffb4, 0x00ffb7, true, true, 66, 0x000000, &[]),
     // $01:8916: fixed cost
     (0x018916, 0x01893c, false, false, 506, 0x000000, &[]),
+    // $01:893C: 018942 taken +6
+    (0x01893c, 0x018944, false, false, 70, 0x018942, &[]),
+    // $01:8944: 018970 taken +6
+    (0x018944, 0x018972, true, false, 582, 0x018970, &[]),
+    // $01:8972: fixed cost
+    (0x018972, 0x018983, false, false, 228, 0x000000, &[]),
+    // $01:8983: fixed cost
+    (0x018983, 0x0189b8, true, false, 766, 0x000000, &[]),
+    // $01:89B8: fixed cost
+    (0x0189b8, 0x0189dc, false, false, 518, 0x000000, &[]),
     // $01:8A44: fixed cost
     (0x018a44, 0x018a46, false, false, 32, 0x000000, &[]),
     // $01:8A46: fixed cost
@@ -500,6 +518,8 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x0197f2, 0x019812, false, false, 572, 0x019810, &[]),
     // $01:9812: fixed cost
     (0x019812, 0x019813, false, false, 42, 0x000000, &[]),
+    // $01:9895: fixed cost
+    (0x019895, 0x0198ae, false, false, 506, 0x000000, &[]),
     // $01:98CF: fixed cost
     (0x0198cf, 0x0198d0, false, false, 42, 0x000000, &[]),
     // $01:98D0: 0198d8 taken +6
@@ -800,6 +820,8 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x01b1ed, 0x01b21f, false, false, 578, 0x01b21d, &[]),
     // $01:B21F: fixed cost
     (0x01b21f, 0x01b220, false, false, 42, 0x000000, &[]),
+    // $01:B2AF: fixed cost
+    (0x01b2af, 0x01b2ca, false, false, 516, 0x000000, &[]),
     // $01:B2CA: fixed cost
     (0x01b2ca, 0x01b2ce, false, false, 56, 0x000000, &[]),
     // $01:B2CE: fixed cost

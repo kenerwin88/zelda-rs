@@ -218,8 +218,8 @@ impl ZeldaState {
 
     /// ROM: `Object_Table_Helper`
     pub(super) fn object_table_helper_observed(&mut self, src: usize, dsto: u16, width: u16, _entry: u32) {
-        #[cfg(feature = "rom-shadow-audit")]
-        let _scope = crate::rom_shadow_audit::local_scope(_entry,Some(width));
+        // One actual JSR has one scope; nesting a second observer scope at
+        // the same entry defeats the ordered call-occurrence bijection.
         let _work = self.lag_free.then(|| crate::cycle_ledger::routine(_entry));
         let b = crate::cycle_ledger::blocks(self.lag_free);
         // $01:93F7..9428, M16/X16, DP=0: only the caller's actual JSR
@@ -1487,21 +1487,16 @@ impl ZeldaState {
     /// ROM: `RoomDraw_Rightwards2x2`
     pub(super) fn room_draw_rightwards2x2(&mut self, src: usize, dsto: u16) {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_9895));
-        if self.lag_free {
-            // $01:9895..98AD: four load/store pairs, four INYs, RTS.
-            crate::cycle_ledger::charge(506);
-        }
+        // $01:9895..98AD: four load/store pairs, four INYs, RTS.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x019895);
         self.room_draw_2x2_tiles(src, dsto);
     }
 
     /// ROM: `RoomDraw_Object_2x2_downwards`
     pub(super) fn room_draw_downwards2x2(&mut self, src: usize, dsto: u16) {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01_b2af));
-        if self.lag_free {
-            // $01:B2AF..B2C9: four load/store pairs, TYA/CLC/ADC/TAY,
-            // RTS. Its pointer return costs 10 more than $9895's INYs.
-            crate::cycle_ledger::charge(516);
-        }
+        // $01:B2AF..B2C9: four stores, pointer advance and RTS.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x01b2af);
         self.room_draw_2x2_tiles(src, dsto);
     }
 

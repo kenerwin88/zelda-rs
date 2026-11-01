@@ -5328,6 +5328,7 @@ fn bypass1_far_wrappers_match_rom_and_split_return() {
 
 #[test]
 fn bypass1_default_shadow_prefix_excludes_shared_child() {
+    for entry in [SpriteShadowEntry::Rom06DC54Default, SpriteShadowEntry::Rom06DC54] {
     for owner in [0x06dc54,0x06dc64,0x06dc66] {
         let mut n=marker29_state();
         n.write_wram_byte(0xdd0,9); n.write_wram_byte(0xd00,0x40);
@@ -5339,7 +5340,8 @@ fn bypass1_default_shadow_prefix_excludes_shared_child() {
                 0x06dc54=>(0xdc54..0xdc5c).contains(&s.cpu.pc),
                 0x06dc64=>s.cpu.pc==0xdc64,
                 _=>(0xdc66..0xdcef).contains(&s.cpu.pc),
-            },||n.sprite_draw_shadow_custom(0,&mut info,10,SpriteShadowEntry::Rom06DC54Default));
+            },||n.sprite_draw_shadow_custom(0,&mut info,10,entry));
+    }
     }
 }
 

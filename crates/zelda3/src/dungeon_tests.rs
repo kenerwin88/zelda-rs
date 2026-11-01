@@ -1,6 +1,67 @@
 use super::*;
 
 #[test]
+fn prefix5_object_dispatch_all_paths_exclude_selected_children() {
+    use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, SourcePpuReadState};
+    for subtype2 in [false, true] {
+        for idx in [0u8, 0x3f, 0xf7, 0xf8, 0xff] {
+            for width in 0..4u16 {
+                for height in 0..4u16 {
+                    let raw = (height << 8) | width | if subtype2 { 0xfc } else { 0x40 };
+                    let n = ZeldaState::new();
+                    let mut machine = load4_rom_machine(&n, 0x01893c, 0);
+                    machine.cpu.db = 0; machine.cpu.a = raw; machine.cpu.y = 0;
+                    machine.ram[0..2].copy_from_slice(&raw.to_le_bytes());
+                    machine.ram[0xb7..0xba].copy_from_slice(&[0, 0x10, 0x7e]);
+                    machine.ram[0x1002] = idx;
+                    let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                    let mut source = RomCpuTimingProbe::new(machine, clock,
+                        SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut expected = 0;
+                    let mut dispatched = false;
+                    for _ in 0..100 {
+                        let tail = matches!(source.snes().cpu.pc, 0x8980 | 0x89b5 | 0x89d9);
+                        let step = source.step().unwrap();
+                        expected += step.transactions.iter()
+                            .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                        if tail { dispatched = true; break; }
+                    }
+                    assert!(dispatched, "dispatcher must end at its indirect JMP");
+                    let before = crate::cycle_ledger::master();
+                    n.price_room_object_dispatch(raw, idx);
+                    assert_eq!(crate::cycle_ledger::master() - before, expected,
+                        "raw={raw:04x} idx={idx:02x}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix5_four_tile_leaf_markers_match_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for entry in [0x019895u32, 0x01b2af] {
+        for plane in [0x2000u16, 0x4000] {
+            let mut n = ZeldaState::new();
+            n.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+            n.set_lag_free(true);
+            for (address, value) in [(0xbf, plane), (0xc2, plane + 0x80)] {
+                n.write_wram_word(address, value); n.write_wram_byte(address + 2, 0x7e);
+            }
+            n.sync_native_game_state_from_ram();
+            let mut source = load4_rom_machine(&n, entry, 0);
+            source.cpu.db = 0; source.cpu.x = 0x110; source.cpu.y = 0x200;
+            crate::cycle_ledger::assert_rom_marker_work(entry, source,
+                |s| s.cpu.k == 1 && (entry as u16..if entry == 0x019895 { 0x98ae } else { 0xb2ca }).contains(&s.cpu.pc),
+                || if entry == 0x019895 { n.room_draw_rightwards2x2(0x110, 0x100); }
+                    else { n.room_draw_downwards2x2(0x110, 0x100); });
+        }
+    }
+}
+
+#[test]
 fn vertical_2x2_calls_keep_their_rom_scope_without_duplicate_tiles_cost() {
     use crate::cycle_ledger as ledger;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

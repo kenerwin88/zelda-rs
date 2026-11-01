@@ -4621,3 +4621,231 @@ continuous live replay, full library suite, protected-cache/shared-ledger
 write, cargo fmt, commit or push was used. P2 and classifier/matcher logic
 are unchanged; the only new environment switch is the diagnostic accessed
 through `crate::debug_env`.
+
+
+## Lagless prefix hunt 5
+
+2026-11-01, `codex/prefix-hunt5`, base `212e0b40` (main at start).
+Evidence: `target/prefix-hunt5/`. **Verified partial pricing and ordered
+stop: one omitted instruction is priced, four holds recover, and several
+already-priced object/upload spans now pair. Remaining owners are not all
+resolved.** The oracle cache and shared `full-v2` ledger stayed read-only.
+
+### Source instruction and ordered boundaries
+
+* `$06:DC54` calls `$DC64`, whose `LDA #10` precedes the shared `$DC66`
+  shadow body. The far-wrapper path omitted that **16-clock instruction**.
+  It now uses the existing generated `$06:DC64` marker in its actual child
+  scope, retaining the scope through the shared body. All callers already
+  pass 10; no gameplay argument, call count or loop count changes. The two
+  far-entry fixtures independently exclude wrapper, selector and shared-body
+  instructions; the unconditional selector has one source path. Parent
+  wrappers and the shared body are not charged twice.
+* `$01:893C..89DB`: the M16-to-M8 decode, size/position setup, branch back to
+  M16 and three indirect-JMP paths replace their exact existing scalars
+  with generated markers. The dispatcher fixture executes all branch paths
+  and all encoded width/height pairs (160 cases), stopping at the real JMP
+  before the selected child. No object-tail cost is included in its price.
+* Hidden `$01:B0AC` and `$B0AF` size-child prices are split out of their
+  inclusive object scalars, subtracting the same 286/262 clocks from those
+  parents. Their actual helper scopes now participate in the occurrence
+  bijection. This repairs the hunt-4 `$B0AF` grouping without adding work.
+* `$01:93F7/$93FF`: remove the duplicate observer scope around each already
+  scoped JSR helper. The `$93DC` JMP alias still belongs to `$893C`; the last
+  `$93F7` execution remains caller-owned fallthrough. Actual children and
+  fallthrough now pair without a matcher exception.
+* `$01:9895..98AD` and `$01:B2AF..B2C9`: generated four-store leaf markers
+  replace the existing 506/516-clock scalars. Both planes pass executed-ROM
+  leaf fixtures. The complete object fixture checks all encoded dimensions;
+  all **977/977** ordered complete calls and dispatcher prefixes still have
+  exact inclusive costs, with zero positive or negative gaps.
+* `$00:E33B..E36C`: expose the already-priced JSR, child decompression,
+  width/index setup, 256 four-word CPU-copy passes, 255 taken BPLs and return
+  in their source order. The child remains separate. The complete executed
+  ROM upload fixture passes; the prior total is unchanged.
+
+The unchanged block generator adds **11 blocks**, preserving all **4,347**
+old rows exactly. `generated-table-proof.json` binds the ROM, cache manifest,
+SRAM, inputs and table. Prices come from decoded instructions, never sampled
+counts, deficits or thresholds. Only the shadow selector adds instruction
+work; the other changes expose existing prices and ownership.
+
+### Ordered cohorts and remaining owners
+
+The original 52/88 source projections are reused read-only. The unchanged
+matcher verifies their manifests and instruction/path digests. Every row
+conserves S=P+U and N=Q+O; signed pair error, unequal pairs and call-frame
+failures remain zero. New generated footprints are supplied to the matcher;
+its logic and classifiers are unchanged.
+
+| Cohort | U before → after | O before → after | Paired source before → after |
+| --- | ---: | ---: | ---: |
+| 52 | 35,801,752 → 33,135,384 | 17,647,986 → 14,982,754 | 123,256,458 → 125,922,826 |
+| 88 | 71,840,160 → 68,407,440 | 28,710,170 → 25,278,858 | 185,688,882 → 189,121,602 |
+
+| Selected source owner | 52 U before → after | 88 U before → after |
+| --- | ---: | ---: |
+| `$01:893C` | 2,519,330 → 1,672,462 | 3,463,664 → 2,353,458 |
+| `$01:93F7` | 14,448 → 0 | 14,448 → 0 |
+| `$01:93FF` | 26,208 → 0 | 26,208 → 0 |
+| `$01:B0AC` | 43,472 → 0 | 52,910 → 0 |
+| `$01:B0AF` | 0 → 0 | 4,978 → 0 |
+| `$01:9895` | 516,120 → 0 | 791,384 → 0 |
+| `$01:B2AF` | 501,036 → 0 | 679,572 → 0 |
+| `$00:E33B` | 642,498 → 0 | 642,498 → 0 |
+| `$06:DC64` | 74,706 → 0 | 95,344 → 0 |
+
+`owner-before-after.json` preserves exclusive source U, native scope O and
+explicit O bounds for mixed rejection groups. The remaining `$893C` O is
+[1,630,562, 1,682,922] / [2,317,414, 2,384,054]; these bounds are not
+independent quantities to sum. Remaining object-tail scalars are not newly
+unpriced bodies: the complete-call equality above remains intact.
+
+`owner-ranking-after-52.csv/json` and `owner-ranking-after-88.csv/json`
+re-rank every residual owner, retain reasons and first ordinal-span witnesses,
+and exclude `$00:8888`. Its unchanged U is 16,302,856 / 40,019,900 clocks;
+the proven upload total is not reopened as an additive main price.
+The largest remaining owners are:
+
+| Owner | 52 U | 88 U | Remaining boundary |
+| --- | ---: | ---: | --- |
+| `$01:893C` | 1,672,462 | 2,353,458 | Object-tail scalar and call aliases |
+| `$07:EA27` | 0 | 2,656,926 | Desert-prayer iris loop scalar retirements |
+| `$00:F312` | 881,640 | 2,222,068 | Raster-wait and spotlight scalar boundary; non-wait self cost is exact |
+| `$0d:A18E` | 600,792 | 1,086,172 | Link OAM call/model retirement mapping |
+| `$00:882E` | 570,408 | 633,536 | Tile-attribute scalar footprint |
+| `$02:FEBB` | 500,454 | 558,842 | Decompression scalar/call mapping |
+| `$06:84E2` | 472,844 | 717,116 | Sprite dispatch and selected body/tail ownership |
+| `$01:873A` | 452,328 | 624,196 | Room-loader scalar/call ownership |
+
+These are unresolved spans, not admitted missing prices. Their per-PC gaps,
+native grouped rejections and original ordered events are retained in each
+`final-audit` cohort. No aggregate equality is promoted to full retirement
+or sound equivalence.
+
+### Spotlight arrival and upstream remainder
+
+| Iteration | Upstream deficit before → after | Final native V/H | Wait wall clocks |
+| --- | ---: | ---: | ---: |
+| 59,213 | 1,588 → 1,540 | 256/46 | 270,026 |
+| 68,801 | 324 → 292 | 258/772 | 266,644 |
+| 101,031 | 402 → 402 | 255/892 | 0 |
+| 109,016 | 2,322 → 2,306 | 254/566 | 0 |
+| 112,191 | 1,442 → 1,442 | 255/994 | 0 |
+
+At **59,213**, three newly priced selectors add 48 instruction clocks. The
+native arrival moves from **V255/H1322 to V256/H46**, crossing the masked
+V-counter wrap and restoring the source's second hold. Source arrival remains
+the retained, authority-verified **V257/H306**. The arrival separation is now
+**1,624 wall clocks = 1,540 instruction clocks + 84 bus/coordinate clocks**,
+versus 1,712 = 1,588 + 124 before. The wrap symptom is repaired; upstream
+retirement and bus phase are not exact.
+
+68,801 already entered after the wrap and still does. At 101,031, 109,016 and
+112,191, native still exits before the wrap while the retained source spins.
+Only 59,213 has the prior exact source V/H trace; the other rows retain their
+source instruction prefixes and wait-pass evidence, not newly captured source
+rasters. The wait formula and fixed wait price are unchanged.
+
+`upstream-before-after.json` names every remaining signed source/native owner
+and its charge sites. Its diagnostic family sums conserve each deficit and
+retain negative balances; they are not new price admissions:
+
+* **59,213:** slot dispatch `$06:84E2/$8510`; DrinkingGuy `$1A:F88C`,
+  FluteBoyFather `$0D:C3E1`, InnKeeper `$05:E3DC`, and their `$05:E3A7/E3AF`,
+  `$0D:C2D1/C2D9` callers; inactive guards `$05:F94E/$1E:FE78/$0D:D49F`
+  against native `$06:D9EC`; bank dispatch `$1E:8B19`; JumpTableLocal
+  `$00:8781`; and the explicit negative `$06:EAD1/EAE8` position-helper
+  balances. Shadow, module and coordinate-preparation alias families cancel.
+* **68,801:** inactive-guard family (280 clocks) and `$05:B5D3` bank
+  dispatch (12). These are signed family balances, not a fitted repair.
+* **101,031:** slot dispatch, inactive guards, `$05:FBEF` BonkItem,
+  `$00:8781`, and negative `$05:FBF7/$05:B5D3` balances. Single-large/shadow
+  and module aliases cancel; 402 clocks remain.
+* **109,016:** slot dispatch, BigFaerie `$1D:C5D0`, inactive guards,
+  `$1D:C222` dispatch, `$1D:8549` draw wrapper and WishPond `$06:C4B5`.
+* **112,191:** slot dispatch, inactive guards and `$05:B5D3` dispatch.
+
+### ROM, live and verification boundary
+
+The eight-chunk seeded ROM census completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,155 / 0 / 0**, versus **2,159 / 0 / 0**.
+Every runtime hold equals P2. Exactly four rows recover one hold:
+59,213; 729,856; 923,691; 1,152,377. No row adds excess or FP.
+The continuous 0–96,000 prefix passes at **48 / 0 / 0**, versus 49 / 0 / 0.
+
+| Before iteration | Missing before | Missing after |
+| --- | ---: | ---: |
+| 94,334 | 48 | 47 |
+| 141,568 | 83 | 82 |
+| 228,499 | 205 | 204 |
+| 380,243 | 354 | 353 |
+| 461,989 | 431 | 430 |
+
+One single full seeded `--live-apu-reads --pacing-predictor` census completes
+**1,473,123 iterations**, gate **PASS / unexplained 0**, at
+**2,756 / 482 / 89**, versus **2,556 / 369 / 82**.
+This worsens live missing/excess/FP by **200 / 113 / 7** despite four
+recovered ROM holds. Poll-episode contributions grow from **397 / 369 / 82**
+to **601 / 482 / 89**; this is not a live pacing improvement.
+Every hold equals P2. Changed live-only hold rows: **36**;
+unattributed current and changed hold rows are both **zero**.
+
+| Observed poll origin | Current live-versus-ROM hold rows | Changed differential rows | Added missing / excess / FP |
+| --- | ---: | ---: | --- |
+| 142,087 | 0 | 5 | 0 / 0 / 0 |
+| 380,880 | 15 | 0 | 114 / 90 / 5 |
+| 462,627 | 6 | 0 | 13 / 13 / 3 |
+| 627,255 | 10 | 0 | 27 / 27 / 5 |
+| 881,732 | 135 | 4 | 234 / 230 / 67 |
+| 1,064,733 | 12 | 12 | 96 / 95 / 4 |
+| 1,318,334 | 15 | 15 | 117 / 27 / 5 |
+
+The partition uses observed original read episodes and actual execution/reseed
+bounds. The reused source inventory was freshly hash-verified against the
+read-only ledger. `live-partition.json` retains row values and poll/reseed
+witnesses; secondary budget changes are reported separately rather than
+silently treated as recovered holds.
+
+Secondary budget accounting (separate from hold admission):
+
+| Field | Changed rows | Outside observed poll bounds |
+| --- | ---: | ---: |
+| `main_master` | 1950 | 0 |
+| `cost_entry_handler` | 1411 | 114 |
+| `cost_lag_handler` | 1347 | 114 |
+| `cost_main_dma` | 0 | 0 |
+| `cost_main_hdma` | 1556 | 8 |
+| `cost_raster_wait` | 18 | 11 |
+
+Outside budget-only rows remain explicitly unresolved in `live-secondary-attribution.json`; no nearest-poll attribution is inferred.
+
+The newly observed **1,318,334** native-zero/source-`$13` poll lies in the
+original read episode **1,317,697–1,318,335**. Changed main work starts at
+that poll. Segment 1,318,000 reports song divergence and rearming; the new
+seed at **1,320,000** enters a poly-thread sequence with 692 divergent rows.
+The baseline continued through both segments with no song or poly divergence.
+The next actual seed at **1,320,900** restores exact hold pacing for all
+1,100 remaining rows in that segment. Changed holds end at 1,320,899;
+`new-poll-execution-bound.txt` retains both runs' segment witnesses. This
+is a bounded execution/reseed aftermath, not a new exception in the gate.
+Budget-only differences at the reseed remain outside the hold proof.
+
+Fourteen filtered Rust tests and eight generator tests pass. Default,
+reduced-feature, audit and restored-default product builds are warning-free;
+existing library-test dead-code warnings remain separate. All 142,000 audit
+predictor rows equal the ordinary ROM census. The first diagnostic capture
+had only the library audit feature enabled and produced no ordered events;
+it is retained under `stage1/audit` and is not used as ordered evidence.
+The corrected executable-feature capture supplies both final joins.
+
+Gameplay operations and call/loop counts do not change, so **1,462,997 exact
+CPU pictures remains prior evidence**, not a new picture census. Hold recovery
+is not measured net SPC phase improvement. Delivered commands, chip state and
+waveform equality were not recaptured; no cold A/V or sound-parity claim follows.
+
+`verification.json` binds source, binaries, unchanged matcher/gates, authority
+and evidence. `git diff --check` passes. Evidence remains below 3 GB and all
+started jobs have exited. No GPU, Snes9x, cached-av, continuous live replay,
+full library suite, protected-cache/shared-ledger write, new environment
+switch, cargo fmt, commit or push was used. P2 is unchanged.

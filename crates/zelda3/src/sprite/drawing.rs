@@ -986,11 +986,18 @@ impl ZeldaState {
 
             }
             SpriteShadowEntry::Rom06DC54 => {
-                // $06:DC54..DC5B is a far wrapper; DC64/DC66 remain unchanged.
+                // $06:DC54 JSRs $DC64, whose LDA #10 precedes $DC66.
+                // The merged native helper already receives 10 from every
+                // far caller; this previously omitted instruction is separate
+                // from both the bank wrapper and the shared shadow body.
                 let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dc54));
                 let b = crate::cycle_ledger::blocks(self.lag_free);
                 b.block(0x06dc54);
-                self.sprite_draw_shadow_custom(k, info, a, SpriteShadowEntry::Unpriced);
+                {
+                    let _body = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dc64));
+                    b.block(0x06dc64);
+                    self.sprite_draw_shadow_custom(k, info, a, SpriteShadowEntry::Unpriced);
+                }
                 b.block(0x06dc5a);
 
             }

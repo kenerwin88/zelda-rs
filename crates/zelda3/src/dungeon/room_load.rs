@@ -1480,12 +1480,12 @@ impl ZeldaState {
                 | (((raw >> 8) as u8 & 3) << 2) | (raw as u8 & 3)) };
         let _object_profile = crate::cycle_ledger::dungeon_object_profile(object);
         let _scope = crate::cycle_ledger::routine(0x01_893c);
+        self.price_room_object_dispatch(raw, idx);
         if raw & 0xfc != 0xfc {
             // $01893C-$018942: SEP #$20, AND #$FC, CMP #$FC, BEQ not taken (70),
             // then $018944-$018970: width/height, the third byte, $BA += 3,
             // the position word, REP #$20, ASL, CMP #$01F0 with BCS priced not
             // taken (582).
-            crate::cycle_ledger::charge(652);
             let width = (raw & 3) as u8;
             let height = ((raw >> 8) & 3) as u8;
             self.dungeon_room_load_mut()
@@ -1495,12 +1495,10 @@ impl ZeldaState {
             let dsto = y * 64 + x;
             if idx < 0xf8 {
                 // $018972-$018980: subtype-1 table lookup and JMP ($0E).
-                crate::cycle_ledger::charge(228);
                 self.LoadType1ObjectSubtype1(idx, width, height, dsto);
             } else {
                 // BCS $0189B8 taken (+6), then $0189B8-$0189D9: the subtype-3
                 // index from bits 1-3, width and height, table lookup, JMP ($0E).
-                crate::cycle_ledger::charge(524);
                 let object = ((idx & 7) << 4) | (((raw >> 8) as u8 & 3) << 2) | (raw as u8 & 3);
                 self.LoadType1ObjectSubtype3(object, dsto);
             }
@@ -1508,11 +1506,26 @@ impl ZeldaState {
             // $01893C-$018942 with BEQ $018983 taken (70 + 6), then
             // $018983-$0189B5: the subtype-2 position from both words, $BA += 3,
             // table lookup and JMP ($0E) (766).
-            crate::cycle_ledger::charge(842);
             let x = ((raw & 3) << 4) | ((raw >> 12) & 0x0f);
             let y = (((raw >> 8) & 0x0f) << 2) | ((idx as u16) >> 6);
             let dsto = y * 64 + x;
             self.LoadType1ObjectSubtype2(idx & 0x3f, dsto);
+        }
+    }
+
+    /// ROM: `RoomData_DrawObject` decode, excluding the selected tail.
+    pub(super) fn price_room_object_dispatch(&self, raw: u16, idx: u8) {
+        // $01:893C..89DB: decode and indirect JMP only. The selected
+        // object tail retains this source frame and owns its own blocks.
+        let b = crate::cycle_ledger::blocks(true);
+        b.block(0x01893c);
+        if raw & 0xfc == 0xfc {
+            b.taken(0x018942);
+            b.block(0x018983);
+        } else {
+            b.block(0x018944);
+            if idx < 0xf8 { b.block(0x018972); }
+            else { b.taken(0x018970); b.block(0x0189b8); }
         }
     }
 

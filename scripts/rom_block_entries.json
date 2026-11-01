@@ -1,4 +1,10 @@
 [
+  {"entry":"01893c","end":"018983","m8":false,"x8":false,"terminal_dispatch":true},
+  {"entry":"018983","end":"0189b8","m8":true,"x8":false,"terminal_dispatch":true},
+  {"entry":"0189b8","end":"0189dc","m8":false,"x8":false,"terminal_dispatch":true},
+  {"entry":"019895","end":"0198ae","m8":false,"x8":false},
+  {"entry":"01b2af","end":"01b2ca","m8":false,"x8":false},
+  {"entry":"00e33b","end":"00e36d","data_bank":0},
   {"entry":"019190","end":"01921c","m8":false,"x8":false},
   {"entry":"019216","end":"01921c","m8":false,"x8":false},
   {"entry":"019298","end":"0192d1","m8":false,"x8":false,"index_max":2},

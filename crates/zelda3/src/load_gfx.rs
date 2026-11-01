@@ -2640,10 +2640,10 @@ impl ZeldaState {
         let Some(data) = self.decompressed_sprite_graphics_data(pack) else {
             return;
         };
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         if self.lag_free {
-            // $00:E33B..E36C: JSR, width/index setup, 256 four-word CPU
-            // stores and pointer increments, taken BPLs and return.
-            crate::cycle_ledger::charge(92 + 256 * 830 + 255 * 6 + 64);
+            // $00:E33B JSR: retire the child before the copy-loop setup.
+            b.block(0x00e33b);
             let _child = crate::cycle_ledger::routine(0x00_e766);
             // $00:E766..E770 destination setup; E772 decoder owns its bytes.
             crate::cycle_ledger::charge(128);
@@ -2651,9 +2651,14 @@ impl ZeldaState {
                 GraphicsDecompressionScratch::primary_buffer_offset());
         }
         self.copy_to_primary_decompression_buffer(&data);
+        // $00:E33E..E36C: M16/X16 four-word CPU stores, not DMA.
+        b.block(0x00e33e);
         for i in 0..0x400 {
+            if i % 4 == 0 { b.block(0x00e343); }
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
+            if i % 4 == 3 && i + 1 < 0x400 { b.taken(0x00e368); }
         }
+        b.block(0x00e36a);
     }
 
     fn native_tileset_decompression_operations(&self) -> NativeTilesetGraphicsPublication {
