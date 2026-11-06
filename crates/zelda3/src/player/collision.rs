@@ -1522,6 +1522,8 @@ impl ZeldaState {
         self.tile_detect_position_mut()
             .set_liftable_action_index_primary(liftable_primary);
 
+        self.outdoor_response_guard_markers(CollisionAxis::Vertical);
+
         if self.game_state.player.tile_detection.deepwater() & 2 != 0
             && !self.game_state.player.follower_link.is_in_deep_water()
             && !self.game_state.player.follower_link.has_auxiliary_state()
@@ -1837,6 +1839,8 @@ impl ZeldaState {
         self.tile_detect_position_mut()
             .set_liftable_action_index_secondary(liftable_secondary);
 
+        self.outdoor_response_guard_markers(CollisionAxis::Horizontal);
+
         if self.game_state.player.tile_detection.deepwater() & 4 != 0
             && !self.game_state.player.follower_link.is_in_deep_water()
             && !self.game_state.player.follower_link.has_auxiliary_state()
@@ -2083,6 +2087,224 @@ impl ZeldaState {
             }
         }
         self.handle_pushing_bonking_snaps_x();
+    }
+
+    /// Guard instructions after the separately priced liftable setup. Stop at
+    /// the first child call: its result and subsequent response remain owned
+    /// by the executing semantic path, never by a speculative guard walk.
+    /// The no-child path includes the final BRL to the bonk/snap owner.
+    fn outdoor_response_guard_markers(&self, axis: CollisionAxis) {
+        if !self.lag_free { return; }
+        let vertical = matches!(axis, CollisionAxis::Vertical);
+        // The selector's admitted setup ends before this response fragment.
+        // Keep its independently priced continuation out of selector self-work.
+        let _scope = crate::cycle_ledger::routine(if vertical { 0x07bef8 } else { 0x07c92f });
+        let b = crate::cycle_ledger::blocks(true);
+        let p = &self.game_state.player.follower_link;
+        let t = &self.game_state.player.tile_detection;
+        let (entry, water, aux, swim) = if vertical {
+            (0x07bef8, 0x07bf0a, 0x07bf0f, 0x07bf64)
+        } else { (0x07c92f, 0x07c941, 0x07c946, 0x07c99b) };
+        b.block(entry);
+        if t.deepwater() & if vertical { 2 } else { 4 } == 0 {
+            b.taken(entry + 5);
+        } else {
+            b.block(entry + 7);
+            b.block(water);
+            if p.is_in_deep_water() { b.taken(water + 3); }
+            else {
+                b.block(aux);
+                if p.has_auxiliary_state() { b.taken(aux + 2); }
+                else { return; } // first reset/dash child
+            }
+        }
+        b.block(swim);
+        if vertical {
+            if !p.is_in_deep_water() { b.taken(0x07bf67); }
+            else {
+                b.block(0x07bf69);
+                if t.vertical_ledge() & 7 != 0 { b.block(0x07bf70); return; }
+                b.taken(0x07bf6e); b.block(0x07bf75);
+                if t.stair_tile() & 7 == 7 { b.taken(0x07bf7b); return; }
+                b.block(0x07bf7d);
+                if t.normal_tiles() & 7 == 7 { return; }
+                b.taken(0x07bf84);
+            }
+            b.block(0x07bfa5);
+            if t.horizontal_ledge() & 2 != 0 { b.taken(0x07bfaa); b.block(0x07bfb3); return; }
+            b.block(0x07bfac);
+            if t.diagonal_ledge_tiles() & 0x22 != 0 { b.block(0x07bfb3); return; }
+            b.taken(0x07bfb1); b.block(0x07bfba);
+            if t.vertical_ledge() & 0x70 != 0 { return; }
+            b.taken(0x07bfbf); b.block(0x07bff8);
+            if t.vertical_ledge() & 7 != 0 { return; }
+            b.taken(0x07bffd); b.block(0x07c018);
+            if p.is_in_deep_water() { b.block(0x07c01d); }
+            else {
+                b.taken(0x07c01b); b.block(0x07c020);
+                if t.ledges_down_leftright() & 7 == 0 { b.taken(0x07c025); }
+                else {
+                    b.block(0x07c027);
+                    if t.vertical_ledge() & 0x77 != 0 { b.taken(0x07c02c); }
+                    else {
+                        b.block(0x07c02e);
+                        let mask = if t.interacting_tile() == 0x2f { b.taken(0x07c034); 4 }
+                            else { b.block(0x07c036); 1 };
+                        b.block(0x07c038);
+                        if t.ledges_down_leftright() & mask != 0 { return; }
+                        b.taken(0x07c03c);
+                    }
+                }
+                b.block(0x07c07e);
+                if t.horizontal_ledge() & 0x70 == 0 { b.taken(0x07c083); }
+                else {
+                    b.block(0x07c085);
+                    if t.vertical_ledge() & 0x77 == 0 { return; }
+                    b.taken(0x07c08a);
+                }
+            }
+            b.block(0x07c0b2);
+            if t.stair_tile() & 7 != 7 { b.taken(0x07c0b8); }
+            else {
+                b.block(0x07c0ba);
+                if p.incapacitated_timer() != 0 { b.block(0x07c0be); return; }
+                b.taken(0x07c0bc); b.block(0x07c0c7);
+                if p.last_direction_moved_towards() & 2 == 0 { b.block(0x07c0cd); return; }
+                b.taken(0x07c0cb);
+            }
+            b.block(0x07c0d6);
+            if p.speed_setting() != 2 { b.taken(0x07c0da); }
+            else {
+                b.block(0x07c0dc);
+                if p.running_state() != 0 { b.taken(0x07c0e1); }
+                else { b.block(0x07c0e3); }
+                b.block(0x07c0e5);
+            }
+            b.block(0x07c0e7);
+            if p.speed_modifier() != 1 { b.taken(0x07c0eb); }
+            else { b.block(0x07c0ed); }
+            b.block(0x07c0f1);
+            if t.slope_collision_bits() & 5 == 0 { b.taken(0x07c0f5); }
+            else {
+                b.block(0x07c0f7);
+                if t.collision_bits() & 7 == 0 { return; }
+                b.taken(0x07c0fb);
+            }
+            b.block(0x07c107);
+            if t.key_lock_gravestones_low() & 2 == 0 { b.taken(0x07c10e); }
+            else {
+                b.block(0x07c110);
+                if p.last_direction_moved_towards() != 0 { b.taken(0x07c112); }
+                else {
+                    b.block(0x07c114);
+                    if p.is_running() { b.taken(0x07c117); return; }
+                    b.block(0x07c119);
+                    if (p.gravestone_push_timeout().wrapping_sub(1) as i8) < 0 { return; }
+                    b.taken(0x07c11b);
+                    self.outdoor_spike_guard_markers(true);
+                    return;
+                }
+            }
+            b.block(0x07c12b);
+        } else {
+            if p.is_in_deep_water() {
+                b.block(0x07c9a0);
+                if t.horizontal_ledge() & 7 == 7 { b.taken(0x07c9a7); b.block(0x07c9b2); return; }
+                b.block(0x07c9a9);
+            } else {
+                b.taken(0x07c99e); b.block(0x07c9ab);
+                if t.vertical_ledge() & 0x42 != 0 { b.block(0x07c9b2); return; }
+                b.taken(0x07c9b0);
+            }
+            b.block(0x07c9b9);
+            if t.normal_tiles() & 7 != 7 { b.taken(0x07c9c0); }
+            else {
+                b.block(0x07c9c2);
+                if p.is_in_deep_water() { return; }
+                b.taken(0x07c9c5);
+            }
+            b.block(0x07c9e6);
+            if t.horizontal_ledge() & 7 != 0 { return; }
+            b.taken(0x07c9eb); b.block(0x07ca58);
+            if t.diagonal_ledge_tiles() & 0x77 != 0 { return; }
+            b.taken(0x07ca5d); b.block(0x07caa1);
+            if t.horizontal_ledge() & 0x70 == 0 { b.taken(0x07caa6); }
+            else {
+                b.block(0x07caa8);
+                if t.horizontal_ledge() & 7 != 0 { b.taken(0x07caad); }
+                else {
+                    b.block(0x07caaf);
+                    if t.diagonal_ledge_tiles() & 0x77 != 0 { b.taken(0x07cab4); }
+                    else {
+                        b.block(0x07cab6);
+                        if p.handler_state() != 13 { return; }
+                        b.taken(0x07caba);
+                    }
+                }
+            }
+            b.block(0x07cad5);
+            if t.ledges_down_leftright() & 7 == 0 { b.taken(0x07cada); }
+            else {
+                b.block(0x07cadc);
+                if t.horizontal_ledge() & 7 != 0 { b.taken(0x07cae1); }
+                else {
+                    b.block(0x07cae3);
+                    if t.diagonal_ledge_tiles() & 0x77 == 0 { return; }
+                    b.taken(0x07cae8);
+                }
+            }
+            b.block(0x07cb24);
+            if t.collision_bits() & 2 != 0 { b.taken(0x07cb28); }
+            else {
+                b.block(0x07cb2a);
+                if t.slope_collision_bits() & 5 == 0 { b.taken(0x07cb2e); }
+                else {
+                    b.block(0x07cb30);
+                    if !p.is_running() { b.taken(0x07cb33); return; }
+                    b.block(0x07cb35);
+                    if p.facing() & 4 != 0 { return; }
+                    b.taken(0x07cb39);
+                }
+            }
+        }
+        self.outdoor_spike_guard_markers(vertical);
+    }
+
+    fn outdoor_spike_guard_markers(&self, vertical: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let p = &self.game_state.player.follower_link;
+        let t = &self.game_state.player.tile_detection;
+        let pc = if vertical { 0x07c12f } else { 0x07cb45 };
+        b.block(pc);
+        let branch = if vertical { 0x07c134 } else { 0x07cb4c };
+        if t.spike_cactus_tiles() & 7 == 0 { b.taken(branch); }
+        else {
+            let guard = if vertical { 0x07c136 } else { 0x07cb4e };
+            b.block(guard);
+            if p.incapacitated_timer() | p.blink_countdown() | u8::from(p.is_cape_active()) != 0 {
+                b.taken(guard + 7);
+                b.block(if vertical { 0x07c163 } else { 0x07cb7a });
+            } else {
+                let test = if vertical { 0x07c13f } else { 0x07cb57 };
+                b.block(test);
+                let positive = p.last_direction_moved_towards() == if vertical { 0 } else { 2 };
+                let coord = if vertical { p.y() } else { p.x() };
+                if positive {
+                    b.block(if vertical { 0x07c145 } else { 0x07cb5f });
+                    if coord & 4 == 0 {
+                        b.taken(if vertical { 0x07c147 } else { 0x07cb61 });
+                        return;
+                    }
+                    b.block(if vertical { 0x07c149 } else { 0x07cb63 });
+                } else {
+                    b.taken(if vertical { 0x07c143 } else { 0x07cb5d });
+                    b.block(if vertical { 0x07c14b } else { 0x07cb65 });
+                    if coord & 4 != 0 { return; }
+                    b.taken(if vertical { 0x07c14d } else { 0x07cb67 });
+                }
+            }
+        }
+        b.block(if vertical { 0x07c16a } else { 0x07cb81 });
     }
 
     fn start_falling_into_hole(&mut self) {
@@ -4103,5 +4325,74 @@ mod response_price_tests {
                 assert_eq!(actual, own, "entry={entry:06x} case={index}");
             }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod prefix11_tests {
+    use super::*;
+    use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        RomCpuTimingProbe, SourcePpuReadState};
+
+    #[test]
+    fn prefix11_outdoor_response_guards_match_every_admitted_path() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).expect("unmodified ROM");
+        // Single-field paths plus interacting guard pairs; stop at the first
+        // unpriced child, never execute a surrogate child or patch the ROM.
+        let fields = [0x341, 0x345, 0x4d, 0x36d, 0x36e, 0x370, 0x36f,
+            0x58, 0x343, 0x46, 0x66, 0x5e, 0x57, 0xc, 0xe,
+            0x2e7, 0x372, 0x61, 0x2e8, 0x31f, 0x55, 0x20, 0x22, 0x5d, 0x2f, 0x76];
+        let values = [0, 1, 2, 4, 5, 7, 0x10, 0x20, 0x40, 0x70, 0x77, 0x80, 0xff];
+        let mut cases = 0;
+        let mut stops = std::collections::BTreeSet::new();
+        for axis in [CollisionAxis::Vertical, CollisionAxis::Horizontal] {
+            let vertical = matches!(axis, CollisionAxis::Vertical);
+            for first in 0..fields.len() {
+                for second in first..fields.len() {
+                    for value in values {
+                        let mut n = ZeldaState::new();
+                        n.write_wram_byte(fields[first], value);
+                        n.write_wram_byte(fields[second], value);
+                        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                        let mut machine = snes::Snes::new();
+                        machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                        machine.ram.copy_from_slice(&n.wram_image());
+                        machine.ram[0x1fb..0x200].copy_from_slice(&[0xff, 0x7f, 0xff, 0x7f, 0]);
+                        machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+                        machine.cpu.k = 7; machine.cpu.db = 7;
+                        machine.cpu.pc = if vertical { 0xbef8 } else { 0xc92f };
+                        machine.cpu.sp = 0x1fa;
+                        let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
+                            CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+                        let mut source = RomCpuTimingProbe::new(machine, clock,
+                            SourcePpuReadState::snes9x_reset()).unwrap();
+                        let cuts = [0xbf13, 0xbf86, 0xbfc1, 0xbfff, 0xc03e, 0xc08c,
+                            0xc0fd, 0xc11d, 0xc14f, 0xc94a, 0xc9c7, 0xc9ed, 0xca5f,
+                            0xcabc, 0xcaea, 0xcb3b, 0xcb69, 0xbdb1, 0xc7fc, 0x8000];
+                        let mut expected = 0;
+                        for _ in 0..200 {
+                            let pc = source.snes().cpu.pc;
+                            if cuts.contains(&pc) { stops.insert((vertical, pc)); break; }
+                            expected += source.step().unwrap().transactions.iter()
+                                .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
+                        }
+                        assert!(cuts.contains(&source.snes().cpu.pc), "unterminated guard fixture");
+                        crate::cycle_ledger::profile_iteration(true);
+                        crate::cycle_ledger::profile_main_begin();
+                        n.outdoor_response_guard_markers(axis);
+                        crate::cycle_ledger::profile_main_end();
+                        let actual = crate::cycle_ledger::take_block_profile().values().map(|r| r[1]).sum::<u64>();
+                        crate::cycle_ledger::take_routine_profile();
+                        assert_eq!(actual, expected,
+                            "axis={axis:?} first={:x} second={:x} value={value:x} cut={:x}",
+                            fields[first], fields[second], source.snes().cpu.pc);
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        eprintln!("prefix11 outdoor response: {cases} unmodified-ROM guard fixtures, stops {stops:x?}");
     }
 }

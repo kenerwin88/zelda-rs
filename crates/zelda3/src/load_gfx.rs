@@ -7049,15 +7049,21 @@ impl ZeldaState {
         // $02:C769: setup, 32 interleaved eight-word copies, loop branches,
         // and the final CGRAM publication/return. Partial-copy callers own
         // their instruction progress separately.
-        self.advance_palette_cache_copy(0, 257);
+        // Atomic callers also use this copy in the exact-work ledger outside
+        // lagless timing. Retire the same ROM blocks once for that whole call.
+        self.advance_palette_cache_copy_priced(0, 257, true);
     }
 
     /// The ROM interleaves eight 32-word palette columns. The final cursor
     /// step publishes the CGRAM update only after all 256 words are stored.
     pub(super) fn advance_palette_cache_copy(&mut self, start: u16, end: u16) {
+        self.advance_palette_cache_copy_priced(start, end, self.lag_free);
+    }
+
+    fn advance_palette_cache_copy_priced(&mut self, start: u16, end: u16, priced: bool) {
         assert!(start <= end && end <= 257);
-        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c769));
-        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let _scope = priced.then(|| crate::cycle_ledger::routine(0x02c769));
+        let b = crate::cycle_ledger::blocks(priced);
         if start == 0 && end != 0 { b.block(0x02c769); }
         for ordinal in start..end {
             if ordinal == 256 {

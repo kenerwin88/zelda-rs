@@ -5,15 +5,23 @@ use crate::game_state::{CollisionAxis, CollisionDirection, MovementProbeKind};
 
 impl ZeldaState {
     pub(in crate::zelda_rtl) fn link_state_recoil(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0786b5);
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
         self.store_link_safe_return_position(old_x, old_y);
 
         self.link_handle_change_in_z_velocity();
+        b.block(0x0786c8);
         self.follower_link_state_mut().clear_direction_lock();
         self.follower_link_state_mut()
             .clear_water_ripple_or_grass_state();
 
+        if !self.game_state.player.follower_link.is_z_low_negative() { b.taken(0x0786cf); }
+        else {
+            b.block(0x0786d1);
+            if self.game_state.player.follower_link.actual_z_velocity() & 0x80 == 0 { b.taken(0x0786d3); }
+        }
         if self.game_state.player.follower_link.is_z_low_negative()
             && (self.game_state.player.follower_link.actual_z_velocity() as i8).is_negative()
         {
@@ -1288,105 +1296,202 @@ impl ZeldaState {
     }
 
     pub(super) fn link_check_for_sword_swing(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079cd9));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x079cd9);
         if self.game_state.player.follower_link.y_button_action_flags() & 0x10 != 0 {
+            b.taken(0x079cdd); b.block(0x079cbe);
             return;
         }
+        b.block(0x079cdf);
         if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
+            b.block(0x079ce3);
             if self.game_state.player.follower_link.filtered_joypad_h() & 0x80 == 0 {
+                b.taken(0x079ce5); b.block(0x079cbe);
                 return;
             }
+            b.block(0x079ce7);
             if self.game_state.player.follower_link.doorway_state() != 0 {
+                b.block(0x079ceb);
                 self.tile_detect_sword_swing_deep_in_door(
                     self.game_state.player.follower_link.doorway_state(),
                 );
+                b.block(0x079cee);
                 if self.game_state.player.tile_detection.collision_bits_low() & 0x30 == 0x30 {
+                    b.taken(0x079cf4); b.block(0x079cbe);
                     return;
                 }
-            }
+            } else { b.taken(0x079ce9); }
+            b.block(0x079cf6);
             self.follower_link_state_mut()
                 .add_button_mask_b_y_bits(0x80);
             self.handle_sword_sfx_and_beam();
+            b.block(0x079cfd);
             self.follower_link_state_mut().set_direction_lock_bits(1);
             self.follower_link_state_mut().clear_animation_step();
-        }
+        } else { b.taken(0x079ce1); }
 
+        b.block(0x079d03);
         if self.game_state.player.follower_link.joypad1h_last() & 0x80 == 0 {
+            b.block(0x079d07);
             self.follower_link_state_mut().add_button_mask_b_y_bits(1);
-        }
+        } else { b.taken(0x079d05); }
+        b.block(0x079d0b);
         self.halt_link_when_using_items();
+        b.block(0x079d0e);
         self.follower_link_state_mut().clear_direction_flags(0x0f);
         if (self
             .follower_link_state_mut()
             .decrement_spin_attack_delay_timer() as i8)
             .is_negative()
         {
+            b.block(0x079d18);
             let frames = self.follower_link_state_mut().increment_button_b_frames();
             if frames >= 9 {
+                b.taken(0x079d1e);
                 self.handle_sword_controls();
                 return;
             }
+            b.block(0x079d20);
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(spin_attack_delay_for_frames(frames));
             let sword = self.game_state.inventory.items.sword_type();
             if frames == 5 {
+                b.block(0x079d2a);
+                if sword == 0 { b.taken(0x079d2e); }
+                else {
+                    b.block(0x079d30);
+                    if sword == 1 { b.taken(0x079d32); }
+                    else {
+                        b.block(0x079d34);
+                        if sword == 0xff { b.taken(0x079d36); }
+                        else { b.block(0x079d38); }
+                    }
+                }
                 if sword != 0 && sword != 1 && sword != 0xff {
                     self.ancilla_add_sword_swing_sparkle(0x26, 4);
                 }
+                b.block(0x079d40);
                 if sword != 0 && sword != 0xff {
+                    b.block(0x079d48); b.block(0x079d4c);
+                    if sword == 1 { b.taken(0x079d4e); }
+                    else { b.block(0x079d50); }
+                    b.block(0x079d52);
                     self.tile_detect_main_handler(if sword == 1 { 1 } else { 6 });
+                    b.block(0x079d55);
+                } else if sword == 0 { b.taken(0x079d46); }
+                else { b.block(0x079d48); b.taken(0x079d4a); }
+            } else {
+                b.taken(0x079d28); b.block(0x079d57);
+                if frames < 4 { b.taken(0x079d59); }
+                else {
+                    b.block(0x079d5b);
+                    if self.game_state.player.follower_link.button_mask_b_y() & 1 == 0 { b.taken(0x079d5f); }
+                    else {
+                        b.block(0x079d61);
+                        if self.game_state.player.follower_link.joypad1h_last() & 0x80 == 0 { b.taken(0x079d63); }
+                        else {
+                            b.block(0x079d65);
+                            self.follower_link_state_mut().clear_button_mask_b_y_bits(1);
+                            self.handle_sword_sfx_and_beam();
+                            return;
+                        }
+                    }
                 }
-            } else if frames >= 4
-                && self.game_state.player.follower_link.button_mask_b_y() & 1 != 0
-                && self.game_state.player.follower_link.joypad1h_last() & 0x80 != 0
-            {
-                self.follower_link_state_mut().clear_button_mask_b_y_bits(1);
-                self.handle_sword_sfx_and_beam();
-                return;
             }
-        }
+        } else { b.taken(0x079d16); }
+        b.block(0x079d6e);
         self.calculate_sword_hit_box();
+        b.block(0x079d71);
     }
 
     pub(super) fn handle_sword_controls(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079d72));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x079d72);
         if self.game_state.player.follower_link.joypad1h_last() & 0x80 != 0 {
+            b.taken(0x079d74);
             self.player_sword_spin_attack_jerks_hold_down();
-        } else if self
+        } else {
+            b.block(0x079d76);
+            if self
             .game_state
             .player
             .follower_link
             .spin_attack_step_counter()
             < 48
         {
+            b.taken(0x079d7a);
             self.link_reset_sword_and_item_usage();
         } else {
+            b.block(0x079d7c);
             self.link_reset_sword_and_item_usage();
+            b.block(0x079d7f);
             self.follower_link_state_mut()
                 .clear_spin_attack_step_counter();
             self.link_activate_spin_attack();
         }
+        }
     }
 
     pub(super) fn player_sword_spin_attack_jerks_hold_down(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079d9f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x079d9f);
+        let defense = self.game_state.player.follower_link.defense_flags();
+        if defense & 0x80 != 0 { b.taken(0x079da1); }
+        else {
+            b.block(0x079da3);
+            if defense & 9 != 0 { b.taken(0x079da7); }
+        }
         if self.game_state.player.follower_link.defense_flags() & 0x80 != 0
             || self.game_state.player.follower_link.defense_flags() & 9 == 0
         {
+            b.block(0x079da9);
             if self.game_state.sprite_battle.damaging_enemies_timer() == 0 {
+                b.taken(0x079dab); b.block(0x079e05);
                 self.follower_link_state_mut().set_button_b_frames(9);
                 self.follower_link_state_mut().set_direction_lock_bits(1);
                 self.follower_link_state_mut()
                     .set_spin_attack_delay_timer(0);
+                let speed = self.game_state.player.follower_link.speed_setting();
+                if speed == 4 { b.taken(0x079e13); }
+                else {
+                    b.block(0x079e15);
+                    if speed == 16 { b.taken(0x079e17); }
+                }
                 if self.game_state.player.follower_link.speed_setting() != 4
                     && self.game_state.player.follower_link.speed_setting() != 16
                 {
+                    b.block(0x079e19);
                     self.follower_link_state_mut().set_speed_setting(12);
                     if self.game_state.inventory.items.sword_type().wrapping_add(1) & !1 == 0 {
+                        b.taken(0x079e24); b.block(0x079e62);
                         return;
+                    }
+                    b.block(0x079e26);
+                    for slot in (0..5).rev() {
+                        b.block(0x079e28);
+                        let kind = self.ancilla_slot_view(slot).ancilla_type();
+                        if kind == 0x30 { b.taken(0x079e2d); break; }
+                        b.block(0x079e2f);
+                        if kind == 0x31 { b.taken(0x079e31); break; }
+                        b.block(0x079e33);
+                        if slot != 0 { b.taken(0x079e34); }
                     }
                     if (0..5)
                         .rev()
                         .any(|i| matches!(self.ancilla_slot_view(i).ancilla_type(), 0x30 | 0x31))
                     {
+                        b.block(0x079e62);
                         return;
+                    }
+                    b.block(0x079e36);
+                    if self.game_state.player.follower_link.spin_attack_step_counter() < 6 { b.taken(0x079e3a); }
+                    else {
+                        b.block(0x079e3c);
+                        if self.game_state.frame.frame_counter & 3 != 0 { b.taken(0x079e40); }
+                        else { b.block(0x079e42); }
                     }
                     if self
                         .game_state
@@ -1397,6 +1502,13 @@ impl ZeldaState {
                         && self.game_state.frame.frame_counter & 3 == 0
                     {
                         self.ancilla_spawn_sword_charge_sparkle();
+                    }
+                    b.block(0x079e46);
+                    if self.game_state.player.follower_link.spin_attack_step_counter() >= 64 { b.taken(0x079e4a); }
+                    else {
+                        b.block(0x079e4c);
+                        if self.game_state.player.follower_link.spin_attack_step_counter().wrapping_add(1) != 48 { b.taken(0x079e52); }
+                        else { b.block(0x079e54); }
                     }
                     if self
                         .game_state
@@ -1410,27 +1522,39 @@ impl ZeldaState {
                             == 48
                     {
                         self.ancilla_sfx2_near(55);
+                        b.block(0x079e59);
                         self.ancilla_add_charged_spin_attack_sparkle();
+                        b.block(0x079e5d);
                     }
+                    b.block(0x079e62);
                 } else {
+                    b.block(0x079e5f);
                     self.calculate_sword_hit_box();
+                    b.block(0x079e62);
                 }
                 return;
-            } else if self.game_state.sprite_battle.damaging_enemies_timer() == 1 {
+            }
+            b.block(0x079dad);
+            if self.game_state.sprite_battle.damaging_enemies_timer() == 1 {
+                b.taken(0x079daf);
                 self.link_reset_sword_and_item_usage();
                 return;
             }
         }
+        b.block(0x079db1);
         if self.game_state.player.follower_link.button_b_frames() == 9 {
+            b.block(0x079db7);
             self.follower_link_state_mut().set_button_b_frames(10);
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(SPIN_ATTACK_DELAYS[10]);
-        }
+        } else { b.taken(0x079db5); }
+        b.block(0x079dc0);
         if (self
             .follower_link_state_mut()
             .decrement_spin_attack_delay_timer() as i8)
             .is_negative()
         {
+            b.block(0x079dc4);
             let mut frames = self
                 .game_state
                 .player
@@ -1438,10 +1562,21 @@ impl ZeldaState {
                 .button_b_frames()
                 .wrapping_add(1);
             if frames == 13 {
+                b.block(0x079dcb);
+                if self.game_state.inventory.items.sword_type().wrapping_add(1) & !1 == 0 { b.taken(0x079dd2); }
+                else {
+                    b.block(0x079dd4);
+                    if self.game_state.player.follower_link.defense_flags() & 9 == 0 { b.taken(0x079dd8); }
+                }
                 if self.game_state.inventory.items.sword_type().wrapping_add(1) & !1 != 0
                     && self.game_state.player.follower_link.defense_flags() & 9 != 0
                 {
+                    b.block(0x079dda);
                     self.ancilla_add_wall_tap_spark(27, 1);
+                    b.block(0x079de2);
+                    if self.game_state.player.follower_link.defense_flags() & 8 != 0 {
+                        b.taken(0x079de6); b.block(0x079def);
+                    } else { b.block(0x079de8); }
                     self.ancilla_sfx2_near(
                         if self.game_state.player.follower_link.defense_flags() & 8 != 0 {
                             6
@@ -1449,15 +1584,21 @@ impl ZeldaState {
                             5
                         },
                     );
+                    if self.game_state.player.follower_link.defense_flags() & 8 == 0 { b.block(0x079ded); }
+                    b.block(0x079df4);
                     self.tile_detect_main_handler(1);
                 }
+                b.block(0x079df9);
                 frames = 10;
-            }
+            } else { b.taken(0x079dc9); }
+            b.block(0x079dfb);
             self.follower_link_state_mut().set_button_b_frames(frames);
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(spin_attack_delay_for_frames(frames));
-        }
+        } else { b.taken(0x079dc2); }
+        b.block(0x079e03); b.block(0x079e5f);
         self.calculate_sword_hit_box();
+        b.block(0x079e62);
     }
 
     pub(super) fn link_activate_spin_attack(&mut self) {
@@ -1583,16 +1724,20 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_recoil_and_timer(&mut self, jump_into_middle: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         if !jump_into_middle {
+            b.block(0x078711);
             self.follower_link_state_mut().clear_page_movement_deltas();
             self.follower_link_state_mut()
                 .clear_orthogonal_direction_count();
             self.link_handle_recoiling();
+            b.block(0x07871a);
             if self
                 .follower_link_state_mut()
                 .decrement_incapacitated_timer()
                 == 0
             {
+                b.taken(0x07871e);
                 self.follower_link_state_mut()
                     .reset_elapsed_incapacitated_timer();
                 if self
@@ -1659,46 +1804,80 @@ impl ZeldaState {
                     self.follower_link_state_mut().clear_animation_step();
                     self.follower_link_state_mut().set_incapacitated_timer(0);
                 }
-            }
+            } else { b.block(0x078720); }
         } else {
             self.finish_recoil_landing();
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().set_incapacitated_timer(0);
         }
 
+        b.block(0x07880d);
+        if self.game_state.player.follower_link.handler_state() == 5 { b.taken(0x078811); }
+        else {
+            b.block(0x078813);
+            if self.game_state.player.follower_link.incapacitated_timer() < 33 { b.taken(0x078817); }
+        }
         if self.game_state.player.follower_link.handler_state() != 5
             && self.game_state.player.follower_link.incapacitated_timer() >= 33
         {
+            b.block(0x078819);
             if (self
                 .follower_link_state_mut()
                 .decrement_incapacitated_camera_timer() as i8)
                 >= 0
             {
+                b.taken(0x07881c);
+                b.block(0x078851);
                 self.handle_indoor_camera_and_doors();
+                // The original shared tail still probes Z after the camera;
+                // this early semantic return has no such child admission.
                 self.follower_link_state_mut().clear_z_high();
                 return;
             }
+            b.block(0x07881e);
             self.follower_link_state_mut()
                 .reset_incapacitated_camera_timer_from_incapacitated();
         }
 
+        b.block(0x078825);
         self.flag67_with_directions();
+        b.block(0x078828);
         if self.game_state.player.follower_link.handler_state() != 6 {
+            b.block(0x07882e);
             self.link_handle_diagonal_collision();
+            b.block(0x078831);
             if self.game_state.player.follower_link.direction() & 3 == 0 {
+                b.block(0x078837);
                 self.follower_link_state_mut().clear_actual_x_velocity();
-            }
+            } else { b.taken(0x078835); }
+            b.block(0x078839);
             if self.game_state.player.follower_link.direction() & 0x0c == 0 {
+                b.block(0x07883f);
                 self.follower_link_state_mut().clear_actual_y_velocity();
-            }
+            } else { b.taken(0x07883d); }
+        } else { b.taken(0x07882c); }
+        b.block(0x078841);
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07e370));
+            b.block(0x07e370);
+            self.link_move_position();
         }
-        self.link_move_position();
 
+        b.block(0x078845);
         if self.game_state.player.follower_link.handler_state() != 6 {
+            b.block(0x07884b);
             self.link_handle_cardinal_collision();
+            b.block(0x07884e);
             self.follower_link_state_mut().clear_pit_correction();
-        }
+        } else { b.taken(0x078849); }
+        b.block(0x078851);
         self.handle_indoor_camera_and_doors();
+        b.block(0x078854);
+        if self.game_state.player.follower_link.z_low() == 0 { b.taken(0x078856); }
+        else {
+            b.block(0x078858);
+            if self.game_state.player.follower_link.z_low() < 0xe0 { b.taken(0x07885a); }
+        }
         if self
             .game_state
             .player
@@ -1706,18 +1885,26 @@ impl ZeldaState {
             .should_probe_recoil_landing_tile()
         {
             // ROM $07:885C
+            b.block(0x07885c);
             self.player_tile_detect_nearby_marked();
+            b.block(0x07885f);
             if self.game_state.player.tile_detection.pit_tile() & 0x0f == 0x0f {
+                b.block(0x078867);
                 self.follower_link_state_mut().set_handler_state(1);
                 self.follower_link_state_mut().set_speed_setting(4);
-            }
+            } else { b.taken(0x078865); }
         }
+        b.block(0x07886f);
         self.follower_link_state_mut().clear_z_high();
     }
 
     pub(super) fn link_handle_recoiling(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07e1be));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07e1be);
         self.follower_link_state_mut().set_direction(0);
         if self.game_state.player.follower_link.actual_y_velocity() != 0 {
+            b.block(0x07e1c6);
             let direction = if self
                 .game_state
                 .player
@@ -1725,17 +1912,24 @@ impl ZeldaState {
                 .actual_y_velocity_signed()
                 .is_negative()
             {
+                b.taken(0x07e1c6);
                 8
             } else {
+                b.block(0x07e1c8);
                 4
             };
+            b.block(0x07e1ca);
             self.follower_link_state_mut()
                 .add_direction_flags(direction);
             self.follower_link_state_mut()
                 .set_last_direction_from_current_direction();
+            let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x07e1d7));
+            b.block(0x07e1d7);
             self.player_handle_incapacitated_inner2();
-        }
+        } else { b.taken(0x07e1c4); }
+        b.block(0x07e1cd);
         if self.game_state.player.follower_link.actual_x_velocity() != 0 {
+            b.block(0x07e1d3);
             let direction = if self
                 .game_state
                 .player
@@ -1743,19 +1937,35 @@ impl ZeldaState {
                 .actual_x_velocity_signed()
                 .is_negative()
             {
+                b.taken(0x07e1d3);
                 2
             } else {
+                b.block(0x07e1d5);
                 1
             };
+            b.block(0x07e1d7);
             self.follower_link_state_mut()
                 .add_direction_flags(direction);
             self.follower_link_state_mut()
                 .set_last_direction_from_current_direction();
-        }
+        } else { b.taken(0x07e1d1); }
         self.player_handle_incapacitated_inner2();
     }
 
     pub(super) fn player_handle_incapacitated_inner2(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let diag = self.game_state.player.follower_link.moving_against_diag_tile();
+        b.block(0x07e1de);
+        if diag & 0x0c == 0 { b.taken(0x07e1e2); }
+        else {
+            b.block(0x07e1e4);
+            if diag & 3 == 0 { b.taken(0x07e1e8); }
+            else {
+                b.block(0x07e1ea);
+                if self.game_state.player.follower_link.handler_state() != 2 { b.taken(0x07e1ee); }
+                else { b.block(0x07e1f0); }
+            }
+        }
         if self
             .game_state
             .player
@@ -1765,15 +1975,21 @@ impl ZeldaState {
         {
             self.follower_link_state_mut().invert_actual_velocity_xy();
         }
+        b.block(0x07e1fe);
         if self.game_state.player.follower_link.doorway_state() == 1 {
+            b.block(0x07e204);
             self.follower_link_state_mut().mask_last_direction(0x0c);
             self.follower_link_state_mut().mask_direction(0x0c);
             self.follower_link_state_mut().clear_actual_x_velocity();
-        } else if self.game_state.player.follower_link.doorway_state() == 2 {
+        } else { b.taken(0x07e202); }
+        b.block(0x07e212);
+        if self.game_state.player.follower_link.doorway_state() == 2 {
+            b.block(0x07e218);
             self.follower_link_state_mut().mask_last_direction(3);
             self.follower_link_state_mut().mask_direction(3);
             self.follower_link_state_mut().clear_actual_y_velocity();
-        }
+        } else { b.taken(0x07e216); }
+        b.block(0x07e226);
     }
 
     pub(in crate::zelda_rtl) fn handle_layer_of_destination(&mut self) {

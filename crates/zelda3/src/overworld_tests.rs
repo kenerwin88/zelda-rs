@@ -1,5 +1,29 @@
 use super::*;
 
+#[test]
+fn prefix11_map_scroll_dispatch_all_directions_and_empty_stripes_match_rom() {
+    let assets = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../zelda3_assets.dat")).unwrap();
+    for dir in [1, 2, 4, 5, 6, 8, 9, 10] {
+        for src in [0, 0x7e, 0x80, 0x17fe, 0x1800, 0x187e] {
+            for small in [false, true] {
+                let mut n = ZeldaState::new();
+                n.set_assets(&assets).unwrap();
+                n.set_lag_free(true);
+                n.set_screen_transition_direction_bits(dir);
+                n.set_overworld_map16_src_off(src);
+                let screen = (0..128).find(|&screen| (n.asset_u8(107, screen) != 0) == small).unwrap();
+                n.set_overworld_screen(screen as u8);
+                let mut s = coverage5_rom_machine(&n, 0xf273, 2);
+                s.cpu.unpack_flags(0x30);
+                crate::cycle_ledger::assert_rom_marker_work(0x02f273, s,
+                    |s| s.cpu.k == 2 && (0xf273..0xf2a2).contains(&s.cpu.pc),
+                    || n.OverworldHandleMapScroll());
+            }
+        }
+    }
+}
+
 fn coverage5_rom_machine(n: &ZeldaState, entry: u16, db: u8) -> snes::Snes {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut s = snes::Snes::new();

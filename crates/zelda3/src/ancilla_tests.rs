@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+fn prefix11_ancilla_oam_caller_all_paths_match_rom() {
+    for slot in [0usize, 9] {
+        for sorting in [0, 1] {
+            for floor in [0, 1, 2] {
+                for size in [0, 4, 32] {
+                    let mut n = marker29_state();
+                    n.write_wram_byte(0xfb3, sorting);
+                    n.write_wram_byte(0xc7c + slot, floor);
+                    n.sync_native_game_state_from_ram();
+                    let mut s = marker29_machine(&n, 0x08fb2b, slot).expect("unmodified ROM");
+                    s.cpu.a = u16::from(size);
+                    crate::cycle_ledger::assert_rom_marker_work(0x08fb2b, s,
+                        |s| s.cpu.k == 8 && (0xfb2b..0xfb44).contains(&s.cpu.pc),
+                        || { n.ancilla_allocate_oam_from_region_a_or_d_or_f(slot, size); });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix11_sword_charge_sparkle_all_paths_match_rom() {
+    for free in 0..=10usize {
+        for facing in [0, 2, 4, 6] {
+            for step in [0, 1, 4, 47, 48, 63, 64, 255] {
+                let mut n = marker29_state();
+                for slot in 0..10 { n.write_wram_byte(0xc4a + slot, 1); }
+                if free < 10 { n.write_wram_byte(0xc4a + free, 0); }
+                n.write_wram_byte(0x2f, facing); n.write_wram_byte(0x79, step);
+                n.sync_native_game_state_from_ram();
+                let mut s = marker29_machine(&n, 0x0ff979, 0).expect("unmodified ROM");
+                s.cpu.sp = 0x1fc;
+                s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0x0f]);
+                crate::cycle_ledger::assert_rom_marker_work(0x0ff979, s,
+                    |s| s.cpu.k == 15 && (0xf979..0xfa37).contains(&s.cpu.pc),
+                    || n.ancilla_spawn_sword_charge_sparkle());
+            }
+        }
+    }
+}
+
+#[test]
 fn ancilla_axis_movement_matches_source_carry_sign_and_indexed_page_costs() {
     let rom = item_receipt_test_rom().expect("movement source fixture needs the test ROM");
     for slot in 0..10 {

@@ -1011,16 +1011,24 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_attempt_damage_to_link_with_collision_check(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06f3ca);
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 1) != 0 {
+            b.taken(0x06f3ce); b.block(0x06f41e);
             return;
         }
+        b.block(0x06f3d0);
         let mut hb = empty_sprite_hit_box();
         self.sprite_do_hit_boxes_fast_marked(k, &mut hb);
+        b.block(0x06f3d3);
         self.link_setup_hit_box_conditional(&mut hb);
+        b.block(0x06f3d6);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
+        b.block(0x06f3d9);
         if overlap {
             self.sprite_attempt_damage_to_link_plus_recoil(k);
-        }
+        } else { b.taken(0x06f3d9); }
+        b.block(0x06f41e);
     }
 
     // void Guard_ParrySwordAttacks(int k) {  // 86eb5e
@@ -1049,16 +1057,34 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn guard_parry_sword_attacks(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06eb76);
+        if self.game_state.player.follower_link.lower_level_state() != self.sprite_slot_view(k).floor() {
+            b.taken(0x06eb7b);
+        } else { b.block(0x06eb7d); }
+        b.block(0x06eb81);
         if self.game_state.player.follower_link.lower_level_state()
             != self.sprite_slot_view(k).floor()
             || self.game_state.player.follower_link.incapacitated_timer() != 0
             || self.game_state.player.follower_link.has_auxiliary_state()
             || sign8(self.sprite_slot_view(k).hit_timer())
         {
+            if self.game_state.player.follower_link.lower_level_state() != self.sprite_slot_view(k).floor()
+                || self.game_state.player.follower_link.incapacitated_timer() != 0
+                || self.game_state.player.follower_link.has_auxiliary_state() { b.taken(0x06eb81); }
+            else { b.block(0x06eb83); b.taken(0x06eb86); }
+            b.block(0x06ebf5);
             return;
         }
+        b.block(0x06eb83); b.block(0x06eb88);
         let mut hb = empty_sprite_hit_box();
         self.sprite_do_hit_boxes_fast_marked(k, &mut hb);
+        b.block(0x06eb8b);
+        if self.game_state.player.follower_link.position_mode_has(0x10) { b.taken(0x06eb90); }
+        else {
+            b.block(0x06eb92); b.block(0x06eb94);
+            if self.game_state.player.follower_link.has_disabled_oam_offsets() { b.taken(0x06eb96); }
+        }
         if self.game_state.player.follower_link.position_mode_has(0x10)
             || self
                 .game_state
@@ -1066,6 +1092,7 @@ impl ZeldaState {
                 .follower_link
                 .has_disabled_oam_offsets()
         {
+            b.block(0x06ebfe);
             self.sprite_attempt_damage_to_link_with_collision_check(k);
             return;
         }
@@ -1077,25 +1104,43 @@ impl ZeldaState {
         k: usize,
         mut hb: SpriteHitBox,
     ) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06eb98);
         self.player_setup_action_hit_box(&mut hb);
+        b.block(0x06eb9b);
         let button_neg = sign8(self.game_state.player.follower_link.button_b_frames());
-        let action_overlap = self.check_if_hit_boxes_overlap(&hb);
+        let action_overlap = !button_neg && self.check_if_hit_boxes_overlap(&hb);
+        if button_neg { b.taken(0x06eb9d); }
+        else {
+            b.block(0x06eb9f); b.block(0x06eba2);
+            if !action_overlap { b.taken(0x06eba2); }
+        }
         if button_neg || !action_overlap {
+            b.block(0x06ebf6);
             self.sprite_setup_hit_box(k, &mut hb, SpriteHitBoxEntry::Unpriced);
+            b.block(0x06ebf9);
             let body_overlap = self.check_if_hit_boxes_overlap(&hb);
+            b.block(0x06ebfc);
             if !body_overlap {
+                b.block(0x06ebfe);
                 self.sprite_attempt_damage_to_link_with_collision_check(k);
             } else {
+                b.taken(0x06ebfc);
                 self.sprite_attempt_zap_damage(k);
             }
             return;
         }
+        b.block(0x06eba4);
         if self.sprite_slot_view(k).sprite_type() != 0x6a {
+            b.block(0x06ebab);
             let j = usize::from(self.get_random_number() & 7);
+            b.block(0x06ebaf);
             let value = GUARD_PARRY_SWORD_ATTACKS_GUARD_PARRY_HITBOX_SIZE_BY_DIRECTION[j];
             self.sprite_slot_view_mut(k).set_f(value);
-        }
+        } else { b.taken(0x06eba9); }
+        b.block(0x06ebb8);
         let j = usize::from(self.get_random_number() & 7);
+        b.block(0x06ebbc);
         self.follower_link_state_mut().set_incapacitated_timer(
             GUARD_PARRY_SWORD_ATTACKS_GUARD_PARRY_SWORD_STEP_BY_DIRECTION[j],
         );
@@ -1106,14 +1151,24 @@ impl ZeldaState {
                 .button_b_frames()
                 .wrapping_sub(9),
         );
+        if fast_sword { b.block(0x06ebcc); }
+        else { b.taken(0x06ebca); }
+        b.block(0x06ebce);
         let pt = self.sprite_project_speed_towards_link(k, if fast_sword { 32 } else { 24 });
+        b.block(0x06ebd1);
         let value = 0u8.wrapping_sub(pt.x);
         self.sprite_slot_view_mut(k).set_x_recoil(value);
         let value = 0u8.wrapping_sub(pt.y);
         self.sprite_slot_view_mut(k).set_y_recoil(value);
+        if fast_sword { b.block(0x06ebe9); }
+        else { b.taken(0x06ebe7); }
+        b.block(0x06ebeb);
         self.sprite_apply_recoil_to_link(k, if fast_sword { 8 } else { 16 });
+        b.block(0x06ebee);
         self.link_place_weapon_tink();
+        b.block(0x06ebf1);
         self.sprite_battle_mut().set_damaging_enemies_timer(0x90);
+        b.block(0x06ebf5);
     }
 
     // void Sprite_AttemptDamageToLinkPlusRecoil(int k) {  // 86f3db
@@ -2209,10 +2264,18 @@ impl ZeldaState {
         entry: SpriteRecoilEntry,
     ) -> bool {
         let axis = match entry {
-            SpriteRecoilEntry::Unpriced => None,
+            SpriteRecoilEntry::Unpriced | SpriteRecoilEntry::Rom05F971 | SpriteRecoilEntry::Rom06FF78 => None,
             SpriteRecoilEntry::Rom1EFE9B => Some(SpriteMoveEntry::Rom1EFF34),
             SpriteRecoilEntry::Rom1DE8C5 => Some(SpriteMoveEntry::Rom1DE95D),
         };
+        if matches!(entry, SpriteRecoilEntry::Rom05F971 | SpriteRecoilEntry::Rom06FF78) {
+            let (pc, ret) = if entry == SpriteRecoilEntry::Rom05F971 { (0x05f971, 0x05f9e8) }
+                else { (0x06ff78, 0x06fff3) };
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(pc));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(pc);
+            if self.sprite_slot_view(k).f() == 0 { b.taken(pc + 3); b.block(ret); return false; }
+        }
         // $1E:FE9B..FF1D / $1D:E8C5..E947 enter their same-bank XY body
         // at $1E:FF05 / $1D:E92F. Only that real movement call is newly priced.
         // $1D:E93D exempts Blind ($CE); bank-1E $FF13 exempts $7A.

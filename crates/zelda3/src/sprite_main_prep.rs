@@ -1691,10 +1691,16 @@ impl ZeldaState {
     }
 
     pub(super) fn octorok_fire_loogie(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d4cd));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d4cd);
         let mut info = SpriteSpawnInfo::default();
         self.sprite_sfx_queue_sfx2_with_pan(k, 7);
+        b.block(0x06d4d3);
         let j = self.sprite_spawn_dynamically(k, 0x0c, &mut info);
+        b.block(0x06d4d9);
         if j >= 0 {
+            b.block(0x06d4db);
             let j = j as usize;
             let i = self.sprite_slot_view(k).direction() as usize;
             self.sprite_set_x(
@@ -1711,7 +1717,8 @@ impl ZeldaState {
                 .set_x_velocity(OCTOROK_FIRE_LOOGIE_X_VELOCITIES[i] as u8);
             self.sprite_slot_view_mut(j)
                 .set_y_velocity(OCTOROK_FIRE_LOOGIE_Y_VELOCITIES[i] as u8);
-        }
+        } else { b.taken(0x06d4d9); }
+        b.block(0x06d513);
     }
 
     pub(super) fn moblin_materialize_spear(&mut self, k: usize) {

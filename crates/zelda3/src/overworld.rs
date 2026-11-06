@@ -6924,7 +6924,14 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldHandleMapScroll(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f273));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02f273);
         let dir = self.screen_transition_direction_bits();
+        let entry = match dir { 1 => 0x02f2a5, 2 => 0x02f2ac, 4 => 0x02f2b3,
+            5 | 6 => 0x02f2ba, 8 => 0x02f2c8, 9 | 10 => 0x02f2cf, _ => 0 };
+        let dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(entry));
+        if entry != 0 { b.block(entry); }
         let dst = match dir {
             1 => {
                 let dst = self.check_for_newly_loaded_map_areas_east(0);
@@ -6961,11 +6968,17 @@ impl ZeldaState {
                 panic!("OverworldHandleMapScroll invalid direction {dir}");
             }
         };
+        // Area checks return with M16/X16, including their empty-stripe path.
+        b.block(entry + 3);
+        drop(dispatch);
+        b.block(0x02f281);
         self.write_overworld_vram_word(dst, 0xffff);
         self.write_overworld_vram_word(dst + 1, 0xffff);
         if dst != 0 {
+            b.block(0x02f293);
             self.set_pending_nmi_subroutine(3);
-        }
+        } else { b.taken(0x02f291); }
+        b.block(0x02f299);
         let screen_transition = self.screen_transition_direction_bits();
         self.set_screen_transition(screen_transition);
     }

@@ -201,9 +201,20 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn ancilla_spawn_sword_charge_sparkle(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ff979));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ff979);
+        for slot in (0..10).rev() {
+            b.block(0x0ff97e);
+            if self.ancilla_slot_view(slot).ancilla_type() == 0 { b.taken(0x0ff981); break; }
+            b.block(0x0ff983);
+            if slot != 0 { b.taken(0x0ff984); }
+        }
         let Some(k) = self.ancilla_alloc_high() else {
+            b.block(0x0ff986); b.block(0x0ffa35);
             return;
         };
+        b.block(0x0ff989);
         {
             let mut sparkle = self.ancilla_slot_view_mut(k);
             sparkle.set_ancilla_type(0x3c);
@@ -217,6 +228,7 @@ impl ZeldaState {
         let mut y = 0i8;
         let m0 = ANCILLA_SPAWN_SWORD_CHARGE_SPARKLE_SWORD_CHARGE_SPARKLE_A[j];
         if m0 == 0 {
+            b.block(0x0ff9a8);
             y = (self
                 .game_state
                 .player
@@ -224,11 +236,15 @@ impl ZeldaState {
                 .spin_attack_step_counter()
                 >> 2) as i8;
             if j == 0 {
+                b.block(0x0ff9b1);
                 y = -y;
-            }
-        }
+            } else { b.taken(0x0ff9af); }
+            b.block(0x0ff9b4);
+        } else { b.taken(0x0ff9a6); }
+        b.block(0x0ff9b8);
         let m1 = ANCILLA_SPAWN_SWORD_CHARGE_SPARKLE_SWORD_CHARGE_SPARKLE_B[j];
         if m1 == 0 {
+            b.block(0x0ff9bf);
             x = (self
                 .game_state
                 .player
@@ -236,10 +252,20 @@ impl ZeldaState {
                 .spin_attack_step_counter()
                 >> 2) as i8;
             if j == 2 {
+                b.block(0x0ff9c8);
                 x = -x;
-            }
-        }
+            } else { b.taken(0x0ff9c6); }
+            b.block(0x0ff9cb);
+        } else { b.taken(0x0ff9bd); }
+        b.block(0x0ff9cf);
         let r = self.get_random_number();
+        b.block(0x0ff9d5);
+        if y >= 0 { b.taken(0x0ff9f5); }
+        else { b.block(0x0ff9f7); }
+        b.block(0x0ff9fa);
+        if x >= 0 { b.taken(0x0ffa0e); }
+        else { b.block(0x0ffa10); }
+        b.block(0x0ffa13);
         let dst_x = self
             .game_state
             .player
@@ -257,6 +283,7 @@ impl ZeldaState {
             .wrapping_add(ANCILLA_SPAWN_SWORD_CHARGE_SPARKLE_SWORD_CHARGE_SPARKLE_Y[j] as u16)
             .wrapping_add((r & m0) as u16);
         self.ancilla_set_xy(k, dst_x, dst_y);
+        b.block(0x0ffa35);
     }
 
     pub(in crate::zelda_rtl) fn ancilla_add_sword_charge_sparkle_from_ancilla(&mut self, source: usize) {

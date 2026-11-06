@@ -1025,6 +1025,11 @@ impl ZeldaState {
         let value = bak0;
         self.sprite_slot_view_mut(k).set_flags4(value);
 
+        {
+            let _entry = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 b.block(0x05e8f7);

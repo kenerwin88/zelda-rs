@@ -1861,11 +1861,17 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BA_Whirlpool(int k) {  // 9eee5a
     pub(super) fn sprite_ba_whirlpool(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1eee5a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eee5a);
         if self.game_state.world.location.overworld_screen_index() == 0x1b {
+            b.block(0x1eee60);
             self.sprite_prep_oam_coord(k);
+            b.block(0x1eee64);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
+            b.block(0x1eee67);
             let x = self
                 .game_state
                 .sprites
@@ -1880,7 +1886,13 @@ impl ZeldaState {
                 .current_sprite_y()
                 .wrapping_sub(self.game_state.player.follower_link.y())
                 .wrapping_add(0x0f);
+            if x >= 0x51 { b.taken(0x1eee76); }
+            else {
+                b.block(0x1eee78);
+                if y >= 0x12 { b.taken(0x1eee85); }
+            }
             if x < 0x51 && y < 0x12 {
+                b.block(0x1eee87);
                 self.set_submodule(35);
                 self.follower_link_state_mut().set_whirlpool_trigger();
                 self.set_subsubmodule(0);
@@ -1890,12 +1902,15 @@ impl ZeldaState {
                 self.world_palette_theme_mut()
                     .set_last_light_vs_dark_world(screen_bits);
             }
+            b.block(0x1eeea2);
         } else {
+            b.taken(0x1eee5e); b.block(0x1eeea5);
             let j = usize::from((self.game_state.frame.frame_counter >> 3) & 3);
             let value =
                 (self.sprite_slot_view(k).oam_flags() & 0x3f) | SPRITE_BA_WHIRLPOOL_OAM_FLAGS[j];
             self.sprite_slot_view_mut(k).set_oam_flags(value);
             self.oam_allocate_from_region_b(4);
+            b.block(0x1eeec4);
             let cur_x = self
                 .game_state
                 .sprites
@@ -1905,16 +1920,24 @@ impl ZeldaState {
             self.sprite_workspace_mut().set_current_sprite_x(cur_x);
             // ROM $1E:EED2 JSL $06:DBF0
             self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+            b.block(0x1eeed6);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
             // ROM $1E:EED9
-            if self.sprite_check_damage_same_layer_long_marked(k) {
+            b.block(0x1eeed9);
+            let hit = self.sprite_check_damage_same_layer_long_marked(k);
+            b.block(0x1eeedd);
+            if hit {
+                b.block(0x1eeedf);
                 if self.sprite_slot_view(k).a() == 0 {
+                    b.block(0x1eeee4);
                     self.set_submodule(46);
                     self.set_subsubmodule(0);
-                }
+                } else { b.taken(0x1eeee2); }
+                b.block(0x1eeeea);
             } else {
+                b.taken(0x1eeedd); b.block(0x1eeeeb);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_a(value);
             }

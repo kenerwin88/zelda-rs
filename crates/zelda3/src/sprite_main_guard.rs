@@ -745,10 +745,16 @@ impl ZeldaState {
         hitbox: SpriteHitBox,
         disabled_oam_offsets: bool,
     ) {
-        if disabled_oam_offsets {
-            self.sprite_attempt_damage_to_link_with_collision_check(k);
-        } else {
-            self.guard_parry_sword_attacks_after_hitbox(k, hitbox);
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb76));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(0x06eb94);
+            if disabled_oam_offsets {
+                b.taken(0x06eb96); b.block(0x06ebfe);
+                self.sprite_attempt_damage_to_link_with_collision_check(k);
+            } else {
+                self.guard_parry_sword_attacks_after_hitbox(k, hitbox);
+            }
         }
         self.guard_parry_far_return();
         self.guard_main_after_parry(k);
@@ -842,7 +848,7 @@ impl ZeldaState {
             }
         }
         b.block(0x05c291);
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom05F971) {
             return false;
         }
         b.block(0x05c294);
@@ -948,22 +954,40 @@ impl ZeldaState {
                 }
             }
             3 => {
-                self.sprite_zero_velocity_xy(k);
-                let direction = self.sprite_direction_to_face_link(k);
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x05c4c1);
+                {
+                    let _zero = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c4f9));
+                    b.block(0x05c4f9); self.sprite_zero_velocity_xy(k);
+                }
+                b.block(0x05c4c4);
+                let direction = self.guard_direction_to_face_link_marked(k);
+                b.block(0x05c4c7);
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x05c4d0);
                     self.sprite_slot_view_mut(k).set_ai_state(4);
                     self.guard_set_timer_and_assert_tile_hit_box(k, 255);
-                }
+                } else { b.taken(0x05c4ce); }
+                b.block(0x05c4e7);
             }
             4 => {
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x05c4e8);
                 if self.sprite_slot_view(k).delay_main() != 0 {
+                    b.taken(0x05c4eb);
                     self.soldier_func12_for_guard(k);
                 } else {
+                    b.block(0x05c4ed);
                     let dir = self.sprite_slot_view(k).direction() as usize & 3;
                     self.sprite_slot_view_mut(k)
                         .set_anim_clock(SOLDIER_REACQUIRE_ANIM_CLOCK_BY_DIRECTION[dir]);
-                    self.sprite_zero_velocity_xy(k);
+                    b.block(0x05c417);
+                    {
+                        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c4f9));
+                        b.block(0x05c4f9); self.sprite_zero_velocity_xy(k);
+                    }
+                    b.block(0x05c41a);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(2);
                     sprite.set_delay_main(160);
@@ -1148,19 +1172,43 @@ impl ZeldaState {
     //   sprite_y_vel[k] = kSoldier_SetTowardsVel[i + 2];
     // }
     pub(super) fn guard_apply_speed_in_direction(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c542));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c542);
         let wall_collision = self.sprite_slot_view(k).wall_collision();
         if wall_collision == 0 {
+            b.taken(0x05c548); b.block(0x05c564);
             return;
         }
+        b.block(0x05c54a);
         let i: usize = if wall_collision & 3 != 0 {
-            2 + self.sprite_is_below_link(k).a as usize
+            b.block(0x05c54e);
+            let result = self.sprite_is_below_link(k).a as usize;
+            b.block(0x05c551);
+            2 + result
         } else {
+            b.taken(0x05c54c); b.block(0x05c555);
             self.sprite_is_right_of_link(k).a as usize
         };
+        b.block(0x05c558); b.block(0x05c564);
         let i = i & 7;
         let mut sprite = self.sprite_slot_view_mut(k);
         sprite.set_x_velocity(SOLDIER_CHASE_VELOCITY_COMPONENTS[i.min(5)] as u8);
         sprite.set_y_velocity(SOLDIER_CHASE_VELOCITY_COMPONENTS[(i + 2).min(5)] as u8);
+    }
+
+    fn guard_direction_to_face_link_marked(&mut self, k: usize) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05f93f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05f93f);
+        let direction = {
+            let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eaa0));
+            b.block(0x06eaa0);
+            let result = self.sprite_direction_to_face_link(k);
+            b.block(0x06eaa3); result
+        };
+        b.block(0x05f943);
+        direction
     }
 
     // ------------------------------------------------------------------
@@ -1415,20 +1463,33 @@ impl ZeldaState {
     }
 
     fn soldier_func12_for_guard(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c500);
         if ((k as u8) ^ self.game_state.frame.frame_counter) & 0x1f == 0 {
+            b.block(0x05c507);
             if self.sprite_slot_view(k).g() == 0 {
+                b.block(0x05c50c);
                 self.sprite_slot_view_mut(k).set_g(1);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 4);
-            }
+                b.block(0x05c512);
+            } else { b.taken(0x05c50a); }
+            b.block(0x05c515);
+            if self.sprite_slot_view(k).sprite_type() == 0x42 { b.taken(0x05c51e); }
+            b.block(0x05c520);
             self.sprite_apply_speed_towards_link(k, 16);
-            let face = self.sprite_direction_to_face_link(k);
+            b.block(0x05c527);
+            let face = self.guard_direction_to_face_link_marked(k);
+            b.block(0x05c52a);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_direction(face);
             sprite.set_head_direction(face);
-        }
+        } else { b.taken(0x05c505); }
+        b.block(0x05c531);
         self.guard_apply_speed_in_direction(k);
+        b.block(0x05c535);
         self.sprite_slot_view_mut(k).increment_subtype2();
         self.guard_tick_and_update_body(k);
+        b.block(0x05c53b);
     }
 
     // ------------------------------------------------------------------
@@ -1452,32 +1513,52 @@ impl ZeldaState {
     // ------------------------------------------------------------------
     // void SoldierThrowing_Common(int k) {  // 85ce23
     pub(super) fn soldier_throwing_common(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05ce23);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // $05:CE26 JSR $05:AB93: both complete damage calls.
-        if (self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93)
-            || self.game_state.sprites.system.alert_flag() != 0)
+        b.block(0x05ce26);
+        let hit = self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
+        let alert = self.game_state.sprites.system.alert_flag() != 0;
+        b.block(0x05ce29);
+        if hit { b.taken(0x05ce29); }
+        else { b.block(0x05ce2b); if !alert { b.taken(0x05ce2e); } }
+        if hit || alert {
+            b.block(0x05ce30);
+            if self.sprite_slot_view(k).ai_state() >= 3 { b.taken(0x05ce35); }
+        }
+        if (hit || alert)
             && self.sprite_slot_view(k).ai_state() < 3
         {
+            b.block(0x05ce37);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_ai_state(3);
             sprite.set_delay_main(32);
         }
+        b.block(0x05ce41);
+        if self.sprite_slot_view(k).f() == 0 { b.taken(0x05ce44); }
+        else { b.block(0x05ce46); if self.sprite_slot_view(k).f() < 4 { b.taken(0x05ce48); } }
         if self.sprite_slot_view(k).f() >= 4 {
+            b.block(0x05ce4a);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_ai_state(4);
             sprite.set_delay_main(60);
             sprite.set_subtype2(0);
         }
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        b.block(0x05ce4d);
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom05F971) {
             return;
         }
+        b.block(0x05ce50);
         if self.sprite_slot_view(k).wall_collision() == 0 {
             self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
         }
         // ROM $05:CE53 -> $05:B88D -> $06:E496
-        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+        b.block(0x05ce53);
+        self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
+        b.block(0x05ce56);
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {

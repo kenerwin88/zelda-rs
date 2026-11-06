@@ -231,14 +231,24 @@ impl ZeldaState {
         k: usize,
         size: u8,
     ) -> u16 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08fb2b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08fb2b);
         if self.game_state.oam.has_sprite_sorting() {
+            b.taken(0x08fb2e); b.block(0x08fb35);
             if self.ancilla_slot_view(k).floor() != 0 {
-                self.oam_allocate_from_region_f(size)
+                b.taken(0x08fb38); b.block(0x08fb3f);
+                let result = self.oam_allocate_from_region_f(size);
+                b.block(0x08fb43); result
             } else {
-                self.oam_allocate_from_region_d(size)
+                b.block(0x08fb3a);
+                let result = self.oam_allocate_from_region_d(size);
+                b.block(0x08fb3e); result
             }
         } else {
-            self.oam_allocate_from_region_a(size)
+            b.block(0x08fb30);
+            let result = self.oam_allocate_from_region_a(size);
+            b.block(0x08fb34); result
         }
     }
 

@@ -5,6 +5,117 @@ use crate::game_state::constants::{
 };
 
 #[test]
+fn prefix11_lamp_caller_all_paths_match_rom() {
+    for door in [0, 1] {
+        for incapacitated in [0, 1] {
+            for pressed in [0, 0x40] {
+                for mask in [0, 0x40] {
+                    for torch in [0, 1] {
+                        for magic in [0, 1, 128] {
+                            let mut n = ZeldaState::new();
+                            for (a, v) in [(0x6c, door), (0x46, incapacitated),
+                                (0xf4, pressed), (0x3a, mask), (0x303, 9), (0x304, 9),
+                                (0xf34a, torch), (0xf36e, magic)] {
+                                n.write_wram_byte(a, v);
+                            }
+                            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                            let s = marker36_player_machine(&n, 0x07a24d).expect("unmodified ROM");
+                            crate::cycle_ledger::assert_rom_marker_work(0x079b0e, s,
+                                |s| s.cpu.k == 7 && (0xa24d..0xa289).contains(&s.cpu.pc), || {
+                                    let _scope = crate::cycle_ledger::routine(0x079b0e);
+                                    n.link_item_lamp();
+                                });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix11_sword_swing_caller_all_paths_match_rom() {
+    for action in [0, 0x10] {
+        for mask in [0, 1, 0x80, 0x81] {
+            for pressed in [0, 0x80] {
+                for down in [0, 0x80] {
+                    for timer in [0, 1, 0x80, 0xff] {
+                        for frames in [0, 3, 4, 8, 9] {
+                            let mut n = ZeldaState::new();
+                            for (a, v) in [(0x3b, action), (0x3a, mask), (0xf4, pressed),
+                                (0xf0, down), (0x3d, timer), (0x3c, frames), (0x1b, 1)] {
+                                n.write_wram_byte(a, v);
+                            }
+                            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                            let s = marker36_player_machine(&n, 0x079cd9).expect("unmodified ROM");
+                            let sfx_tail = std::cell::Cell::new(false);
+                            crate::cycle_ledger::assert_rom_marker_work(0x079cd9, s,
+                                |s| {
+                                    if s.cpu.k == 7 && s.cpu.sp == 0x1fa && s.cpu.pc == 0x9c66 { sfx_tail.set(true); }
+                                    s.cpu.k == 7 && s.cpu.sp == 0x1fa
+                                        && ((s.cpu.pc == 0x9cbe && !sfx_tail.get())
+                                            || (0x9cd9..0x9d72).contains(&s.cpu.pc))
+                                }, || n.link_check_for_sword_swing());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix11_z_acceleration_all_paths_match_rom() {
+    for state in [0, 2, 5, 19] {
+        for velocity in [0, 1, 0x7f, 0x80, 0xff] {
+            for z in [0, 1, 0x7f, 0x80, 0xff] {
+                let mut n = ZeldaState::new();
+                for (a, v) in [(0x5d, state), (0x29, velocity), (0x24, z), (0x25, 0x12)] {
+                    n.write_wram_byte(a, v);
+                }
+                n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                let s = marker36_player_machine(&n, 0x078926).expect("unmodified ROM");
+                let source = crate::cycle_ledger::assert_rom_marker_work(0x078926, s,
+                    |s| s.cpu.k == 7 && (0x8926..0x894e).contains(&s.cpu.pc),
+                    || n.link_handle_change_in_z_velocity());
+                for a in [0x24, 0x25, 0x29] { assert_eq!(n.wram_image()[a], source.snes().ram[a]); }
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix11_direction_and_recoil_all_paths_match_rom() {
+    for y in [0, 1, 0x7f, 0x80, 0xff] {
+        for x in [0, 1, 0x7f, 0x80, 0xff] {
+            for diagonal in [0, 1, 4, 5, 15] {
+                for state in [0, 2] {
+                    for door in [0, 1, 2, 3] {
+                        for entry in [0x0792a0, 0x07e1be] {
+                            let mut n = ZeldaState::new();
+                            for (a, v) in [(0x27, y), (0x28, x), (0x6b, diagonal),
+                                (0x5d, state), (0x6c, door)] { n.write_wram_byte(a, v); }
+                            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                            let s = marker36_player_machine(&n, entry).expect("unmodified ROM");
+                            let source = crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                                |s| s.cpu.k == 7 && s.cpu.sp == 0x1fa && if entry == 0x0792a0 {
+                                    (0x92a0..0x92bf).contains(&s.cpu.pc)
+                                } else { (0xe1be..0xe227).contains(&s.cpu.pc) }, || {
+                                    if entry == 0x0792a0 { n.flag67_with_directions(); }
+                                    else { n.link_handle_recoiling(); }
+                                });
+                            for a in [0x26, 0x27, 0x28, 0x67] {
+                                assert_eq!(n.wram_image()[a], source.snes().ram[a], "entry={entry:x} addr={a:x}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn coverage3_toss_and_y_press_all_paths_match_rom() {
     for entry in [0x07b5d6, 0x07b073] {
         for first in [0, 0x40, 0x80, 0xff] {
@@ -471,7 +582,9 @@ fn marker39_ground_control_body_matches_rom() {
         native.sync_native_game_state_from_ram(); native.set_lag_free(true);
         let Some(machine)=marker36_player_machine(&native,0x0781a0) else {return};
         crate::cycle_ledger::assert_rom_marker_work(0x07807f,machine,
-            |s|s.cpu.k==7 && (0x81a0..0x82da).contains(&s.cpu.pc), || {
+            |s|s.cpu.k==7 && ((0x81a0..0x82da).contains(&s.cpu.pc)
+                || (0x8711..0x8723).contains(&s.cpu.pc)
+                || (0x880d..0x8872).contains(&s.cpu.pc)), || {
                 let _parent=crate::cycle_ledger::routine(0x07807f);
                 native.player_handler_00_ground_3();
             });
@@ -518,5 +631,122 @@ fn bypass1_new_a_press_matches_rom_all_branches() {
                 assert_eq!(n.wram_image()[0x3b],source.snes().ram[0x3b]);
             }
         }
+    }
+}
+
+
+#[test]
+fn prefix11_sword_controls_and_hold_all_paths_match_rom() {
+    for defense in [0, 1, 8, 9, 0x80] {
+        for damage in [0, 1, 2] {
+            for speed in [0, 4, 16] {
+                for step in [0, 5, 6, 47, 48, 63, 64] {
+                    for obstruction in [0, 0x30, 0x31] {
+                        for entry in [0x079d72, 0x079d9f, 0x079d84] {
+                            let mut n = ZeldaState::new();
+                            for (a, v) in [(0x48, defense), (0x47, damage), (0x5e, speed),
+                                (0x79, step), (0xc4a, obstruction), (0xf0, 0x80),
+                                (0x3c, 12), (0x1b, 1), (0x2f, 2)] { n.write_wram_byte(a, v); }
+                            n.write_wram_byte(0xf359, 1);
+                            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                            let s = marker36_player_machine(&n, entry).expect("unmodified ROM");
+                            let reset_tail = std::cell::Cell::new(false);
+                            crate::cycle_ledger::assert_rom_marker_work(entry, s,
+                                |s| {
+                                    if entry != 0x079d84 && s.cpu.k == 7 && s.cpu.sp == 0x1fa && s.cpu.pc == 0x9d84 {
+                                        reset_tail.set(true);
+                                    }
+                                    s.cpu.k == 7 && s.cpu.sp == 0x1fa && match entry {
+                                    0x079d72 => (0x9d72..0x9d84).contains(&s.cpu.pc),
+                                    0x079d84 => (0x9d84..0x9d9f).contains(&s.cpu.pc) || s.cpu.pc == 0x9e62,
+                                    _ => (0x9d9f..0x9e63).contains(&s.cpu.pc)
+                                        && !(s.cpu.pc == 0x9e62 && reset_tail.get()),
+                                    }
+                                }, || match entry {
+                                    0x079d72 => n.handle_sword_controls(),
+                                    0x079d84 => n.link_reset_sword_and_item_usage(),
+                                    _ => n.player_sword_spin_attack_jerks_hold_down(),
+                                });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+#[test]
+fn prefix11_boomerang_caller_all_paths_match_rom() {
+    for mask in [0, 0x40, 0xc0] {
+        for hand in [0, 0x80] {
+            for door in [0, 1] {
+                for pressed in [0, 0x40] {
+                    for timer in [0, 1, 0x80] {
+                        for step in [0, 1, 2] {
+                            let mut n = ZeldaState::new();
+                            for (a, v) in [(0x3a, mask), (0x301, hand), (0x6c, door),
+                                (0xf4, pressed), (0x3d, timer), (0x300, step)] { n.write_wram_byte(a, v); }
+                            n.write_wram_byte(0xf341, 1);
+                            n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                            let s = marker36_player_machine(&n, 0x07a0bb).unwrap();
+                            crate::cycle_ledger::assert_rom_marker_work(0x079b0e, s,
+                                |s| s.cpu.k == 7 && (0xa0ba..0xa138).contains(&s.cpu.pc), || {
+                                    let _owner = crate::cycle_ledger::routine(0x079b0e);
+                                    n.link_item_boomerang();
+                                });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+#[test]
+fn prefix11_recoil_caller_admitted_fragments_match_rom() {
+    for timer in [2, 32, 33, 34, 127] {
+        for camera in [0, 1, 0x80, 0xff] {
+            for state in [2, 5, 6] {
+                for velocity in [0, 16, 0xf0] {
+                    let mut n = ZeldaState::new();
+                    for (a, v) in [(0x10, 7), (0x1b, 1), (0x5d, state), (0x46, timer),
+                        (0x2c5, camera), (0x27, velocity), (0x28, velocity),
+                        (0x29, 2), (0x24, 0x20)] { n.write_wram_byte(a, v); }
+                    n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+                    let s = marker36_player_machine(&n, 0x0786b5).unwrap();
+                    let camera_return = std::cell::Cell::new(false);
+                    crate::cycle_ledger::assert_rom_marker_work(0x07807f, s,
+                        |s| {
+                            if s.cpu.k == 7 && s.cpu.pc == 0x881c && !s.cpu.n { camera_return.set(true); }
+                            s.cpu.k == 7 && s.cpu.sp == 0x1fa
+                                && ((0x86b5..0x86d5).contains(&s.cpu.pc)
+                                    || (0x8711..0x8723).contains(&s.cpu.pc)
+                                    || (0x880d..0x881e).contains(&s.cpu.pc)
+                                    || if camera_return.get() { s.cpu.pc == 0x8851 }
+                                        else { (0x881e..0x8872).contains(&s.cpu.pc) })
+                        }, || {
+                            let _owner = crate::cycle_ledger::routine(0x07807f);
+                            n.link_state_recoil();
+                        });
+                }
+            }
+        }
+    }
+}
+
+
+#[test]
+fn prefix11_sword_control_release_and_activation_match_rom() {
+    for step in [0, 47, 48, 63] {
+        let mut n = ZeldaState::new();
+        n.write_wram_byte(0x79, step); n.write_wram_byte(0xf359, 1);
+        n.write_wram_byte(0x10, 7); n.write_wram_byte(0x1b, 1);
+        n.sync_native_game_state_from_ram(); n.set_lag_free(true);
+        let s = marker36_player_machine(&n, 0x079d72).unwrap();
+        crate::cycle_ledger::assert_rom_marker_work(0x079d72, s,
+            |s| s.cpu.k == 7 && (0x9d72..0x9d84).contains(&s.cpu.pc),
+            || n.handle_sword_controls());
     }
 }

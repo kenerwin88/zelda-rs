@@ -423,56 +423,80 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_item_boomerang(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07a0bb);
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
-            if self.game_state.player.follower_link.doorway_state() != 0
-                || !self.check_y_button_press()
-                || self.game_state.minigame.flag_boomerang_in_place() != 0
-            {
+            b.block(0x07a0bf);
+            if self.game_state.player.follower_link.doorway_state() != 0 {
+                b.taken(0x07a0c1); b.block(0x07a0ba);
                 return;
             }
+            b.block(0x07a0c3);
+            let pressed = self.check_y_button_press();
+            b.block(0x07a0c6);
+            if !pressed { b.taken(0x07a0c6); b.block(0x07a137); return; }
+            b.block(0x07a0c8);
+            if self.game_state.minigame.flag_boomerang_in_place() != 0 {
+                b.taken(0x07a0cb); b.block(0x07a137); return;
+            }
+            b.block(0x07a0cd);
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().set_item_in_hand(0x80);
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(7);
             let s0 = self.ancilla_add_boomerang(5, 0);
+            b.block(0x07a0e8);
             if self.game_state.player.follower_link.button_b_frames() >= 9 {
+                b.taken(0x07a0ec);
                 self.link_reset_boomerang_y_stuff();
                 return;
             }
+            b.block(0x07a0ee);
             if s0 == 0 {
+                b.block(0x07a0f2);
                 let last_direction = self.game_state.player.follower_link.joypad1h_last() & 0x0f;
                 self.follower_link_state_mut()
                     .set_last_direction(last_direction);
             } else {
+                b.taken(0x07a0f0); b.block(0x07a0fa);
                 self.follower_link_state_mut().set_direction_lock_bits(1);
             }
         } else {
+            b.taken(0x07a0bd); b.block(0x07a0fa);
             self.follower_link_state_mut().set_direction_lock_bits(1);
         }
 
+        b.block(0x07a0fe);
         if self.game_state.player.follower_link.has_item_in_hand() {
+            b.block(0x07a103);
             self.halt_link_when_using_items();
+            b.block(0x07a106);
             self.follower_link_state_mut().clear_direction_flags(0x0f);
             if (self
                 .follower_link_state_mut()
                 .decrement_spin_attack_delay_timer() as i8)
                 >= 0
             {
+                b.taken(0x07a10e); b.block(0x07a137);
                 return;
             }
+            b.block(0x07a110);
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(5);
             self.follower_link_state_mut()
                 .increment_action_handler_timer();
             if self.game_state.player.follower_link.action_handler_timer() != 2 {
+                b.taken(0x07a11d); b.block(0x07a137);
                 return;
             }
-        }
+        } else { b.taken(0x07a101); }
         self.link_reset_boomerang_y_stuff();
     }
 
     pub(super) fn link_reset_boomerang_y_stuff(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07a11f);
         self.follower_link_state_mut().clear_item_in_hand();
         self.follower_link_state_mut().clear_action_handler_timer();
         self.follower_link_state_mut()
@@ -480,8 +504,10 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .clear_button_mask_b_y_bits(0x40);
         if self.game_state.player.follower_link.button_mask_b_y() & 0x80 == 0 {
+            b.block(0x07a131);
             self.follower_link_state_mut().clear_direction_lock_bits(1);
-        }
+        } else { b.taken(0x07a12f); }
+        b.block(0x07a137);
     }
 
     pub(in crate::zelda_rtl) fn link_item_bombs(&mut self) {
@@ -632,25 +658,56 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_item_lamp(&mut self) {
-        if self.game_state.player.follower_link.doorway_state() != 0 || !self.check_y_button_press()
-        {
+        // JMP-dispatched items retain their selector's near return frame.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07a24d);
+        if self.game_state.player.follower_link.doorway_state() != 0 {
+            b.taken(0x07a24f); b.block(0x07a288);
             return;
         }
-        if self.game_state.inventory.items.torch() != 0 && self.link_check_magic_cost(6) {
-            self.ancilla_add_magic_powder(0x1a, 0);
-            self.dungeon_light_torch();
-            self.ancilla_add_lamp_flame(0x2f, 2);
-        }
+        b.block(0x07a251);
+        let pressed = self.check_y_button_press();
+        b.block(0x07a254);
+        if !pressed { b.taken(0x07a254); b.block(0x07a288); return; }
+        b.block(0x07a256);
+        if self.game_state.inventory.items.torch() != 0 {
+            b.block(0x07a25c);
+            let paid = self.link_check_magic_cost(6);
+            b.block(0x07a261);
+            if paid {
+                b.block(0x07a263);
+                self.ancilla_add_magic_powder(0x1a, 0);
+                b.block(0x07a26b);
+                self.dungeon_light_torch();
+                b.block(0x07a26f);
+                self.ancilla_add_lamp_flame(0x2f, 2);
+            } else { b.taken(0x07a261); }
+        } else { b.taken(0x07a25a); }
+        self.finish_lamp_item_marked();
+    }
+
+    fn finish_lamp_item_marked(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07a277);
         self.finish_lamp_item();
+        // The ROM rereads the just-cleared B-frame byte, so BNE is taken.
+        b.taken(0x07a284); b.block(0x07a288);
     }
 
     pub(super) fn link_item_lamp_after_native_magic_entry(&mut self) {
-        if self.link_check_magic_cost(6) {
+        // The retained CPU owns through JSR A25E; only its return executes here.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let paid = self.link_check_magic_cost(6);
+        b.block(0x07a261);
+        if paid {
+            b.block(0x07a263);
             self.ancilla_add_magic_powder(0x1a, 0);
+            b.block(0x07a26b);
             self.dungeon_light_torch();
+            b.block(0x07a26f);
             self.ancilla_add_lamp_flame(0x2f, 2);
-        }
-        self.finish_lamp_item();
+        } else { b.taken(0x07a261); }
+        self.finish_lamp_item_marked();
     }
 
     fn finish_lamp_item(&mut self) {
@@ -2074,6 +2131,9 @@ impl ZeldaState {
     }
 
     pub(super) fn link_reset_sword_and_item_usage(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079d84));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x079d84); b.block(0x079e62);
         self.follower_link_state_mut().cancel_sword_and_item_usage();
     }
 }

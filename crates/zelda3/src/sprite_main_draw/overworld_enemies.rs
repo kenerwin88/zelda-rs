@@ -958,7 +958,7 @@ impl ZeldaState {
             return;
         }
         b.block(0x06d3aa);
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom06FF78) {
             return;
         }
         b.block(0x06d3ad);
@@ -1002,7 +1002,10 @@ impl ZeldaState {
         }
 
         b.taken(0x06d3b8); b.block(0x06d406);
-        self.sprite_zero_velocity_xy(k);
+        {
+            let _zero = self.lag_free.then(|| crate::cycle_ledger::routine(0x06cf5d));
+            b.block(0x06cf5d); self.sprite_zero_velocity_xy(k);
+        }
         b.block(0x06d409);
         if self.sprite_slot_view(k).delay_main() == 0 {
             b.block(0x06d40e);

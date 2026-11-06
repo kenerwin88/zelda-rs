@@ -350,18 +350,34 @@ impl ZeldaState {
     //   Runtime for enemy arrows, including embedded / ricochet states.
     // }
     pub(super) fn sprite_1_b_arrow(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06b754));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06b754);
         self.enemy_arrow_draw(k);
+        b.block(0x06b757);
         if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
             return;
         }
+        b.block(0x06b75a);
         if self.sprite_slot_view(k).state() == 9 {
+            b.block(0x06b761);
             let mut j = self.sprite_slot_view(k).delay_main();
             if j != 0 {
+                b.block(0x06b766);
                 j = j.wrapping_sub(1);
                 if j == 0 {
+                    b.block(0x06b769);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_state(value);
-                } else if j >= 32 && (j & 1) == 0 {
+                } else {
+                    b.taken(0x06b767); b.block(0x06b76d);
+                    if j < 32 { b.taken(0x06b76f); }
+                    else {
+                        b.block(0x06b771);
+                        if j & 1 != 0 { b.taken(0x06b773); }
+                    }
+                    if j >= 32 && (j & 1) == 0 {
+                    b.block(0x06b775);
                     let idx = (((u16::from(self.game_state.frame.frame_counter) << 1) & 4)
                         | u16::from(self.sprite_slot_view(k).direction()))
                         as usize;
@@ -369,29 +385,30 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                     let value = ENEMY_ARROW_Y_VELOCITIES[idx];
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
-                    self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                    self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
+                    }
+                    b.block(0x06b78d);
                 }
                 return;
             }
-            self.sprite_check_damage_to_link_same_layer(k);
-            if self.sprite_slot_view(k).e() == 0 && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0 {
-                if self.sprite_slot_view(k).a() != 0 {
-                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x5);
-                    self.sprite_schedule_for_breakage(k);
-                    self.sprite_place_weapon_tink(k);
-                } else {
-                    let value = 48;
-                    self.sprite_slot_view_mut(k).set_delay_main(value);
-                    let value = 2;
-                    self.sprite_slot_view_mut(k).set_a(value);
-                    self.sprite_sfx_queue_sfx2_with_pan(k, 0x8);
-                }
+            b.taken(0x06b764); b.block(0x06b78e);
+            self.sprite_check_damage_to_link_same_layer_marked(k);
+            b.block(0x06b791);
+            if self.sprite_slot_view(k).e() == 0 {
+                b.block(0x06b796);
+                let collided = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0;
+                self.arrow_after_tile_collision(k, collided);
             } else {
-                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                b.taken(0x06b794);
+                b.block(0x06b7c0);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
             }
         } else {
+            b.taken(0x06b75f); b.block(0x06b7c7);
             if self.sprite_slot_view(k).ai_state() == 0 {
+                b.block(0x06b7cc);
                 self.sprite_apply_ricochet(k);
+                b.block(0x06b7cf);
                 let value = 24;
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
                 let value = 255;
@@ -399,17 +416,49 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).add_ai_state(1);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_hit_timer(value);
-            }
+            } else { b.taken(0x06b7ca); }
+            b.block(0x06b7df);
             let value =
                 ENEMY_ARROW_DIRECTIONS[((self.sprite_slot_view(k).delay_main() >> 3) & 3) as usize];
             self.sprite_slot_view_mut(k).set_direction(value);
             // ROM $06:B7EE
             self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
-            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+            b.block(0x06b7f1);
+            self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
+            b.block(0x06b7f4);
             self.sprite_slot_view_mut(k).subtract_z_velocity(2);
             if sign8(self.sprite_slot_view(k).z()) {
+                b.block(0x06b802);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
+            } else { b.taken(0x06b800); }
+            b.block(0x06b805);
+        }
+    }
+
+    /// The actual tile child has returned to $06:B799. This disjoint suffix
+    /// also permits ROM fixtures for both collision results without replacing
+    /// or predicting the production tile probe.
+    pub(super) fn arrow_after_tile_collision(&mut self, k: usize, collided: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06b799);
+        if !collided {
+            b.taken(0x06b79c); b.block(0x06b7c0);
+            self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
+        } else {
+            b.block(0x06b79e);
+            if self.sprite_slot_view(k).a() != 0 {
+                b.block(0x06b7a3);
+                self.sprite_sfx_queue_sfx2_with_pan(k, 0x5);
+                self.sprite_schedule_for_breakage(k);
+                self.sprite_place_weapon_tink(k);
+                b.block(0x06b7a7);
+            } else {
+                b.taken(0x06b7a1); b.block(0x06b7a8);
+                self.sprite_slot_view_mut(k).set_delay_main(48);
+                self.sprite_slot_view_mut(k).set_a(2);
+                self.sprite_sfx_queue_sfx2_with_pan(k, 0x8);
+                b.block(0x06b7b8);
             }
         }
     }
@@ -592,9 +641,13 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void ArcherSoldier_Draw(int k) {  // 85d38c
     pub(super) fn archer_soldier_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05d38c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05d38c);
         let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x05d38f);
         let info = PrepOamCoordsRet::from_tuple(tuple);
         let guard_info = PrepOamCoordsRet {
             x: tuple.0,
@@ -604,21 +657,26 @@ impl ZeldaState {
         };
         let d = usize::from(self.sprite_slot_view(k).direction() & 3);
         self.guard_animate_head(k, ARCHER_SOLDIER_DRAW_HEAD_OAM_OFFS[d] >> 2, &guard_info);
+        b.block(0x05d399);
         self.guard_animate_body(k, ARCHER_SOLDIER_DRAW_BODY_OAM_OFFS[d] >> 2, &guard_info);
+        b.block(0x05d3a3);
         self.sprite_draw_archer_weapon(
             k,
             i32::from(ARCHER_SOLDIER_DRAW_WEAPON_OAM_OFFS[d] >> 2),
             &info,
         );
+        b.block(0x05d3ad); b.block(0x05c68c);
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
+            b.block(0x05c693);
             let mut shadow_info = PrepOamCoordsRet {
                 x: info.x,
                 y: info.y,
                 r4: info.r4,
                 flags: info.flags,
             };
-            self.sprite_draw_shadow_custom(k, &mut shadow_info, ARCHER_SOLDIER_DRAW_SHADOW[d], SpriteShadowEntry::Unpriced);
-        }
+            self.sprite_draw_shadow_custom(k, &mut shadow_info, ARCHER_SOLDIER_DRAW_SHADOW[d], SpriteShadowEntry::Rom06DC5C);
+        } else { b.taken(0x05c691); }
+        b.block(0x05c69d);
     }
 
     // -----------------------------------------------------------------------
@@ -785,15 +843,20 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_46_BlueArcher(int k) {  // 85cdff
     pub(super) fn sprite_46_blue_archer(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05cdff);
         let bak0 = self.sprite_slot_view(k).graphics();
         let j = usize::from(self.sprite_slot_view(k).direction() & 3);
         if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.block(0x05ce0c);
             let value = SPRITE_46_BLUE_ARCHER_DIR_LOCK[j];
             self.sprite_slot_view_mut(k).set_direction(value);
             let value = SPRITE_46_BLUE_ARCHER_LOCAL_GRAPHICS[j];
             self.sprite_slot_view_mut(k).set_graphics(value);
-        }
+        } else { b.taken(0x05ce0a); }
+        b.block(0x05ce18);
         self.archer_soldier_draw(k);
+        b.block(0x05ce1b);
         let value = j as u8;
         self.sprite_slot_view_mut(k).set_direction(value);
         let value = bak0;

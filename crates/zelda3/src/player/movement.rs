@@ -916,6 +916,28 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn flag67_with_directions(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0792a0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let p = &self.game_state.player.follower_link;
+        b.block(0x0792a0);
+        if p.actual_y_velocity() == 0 { b.taken(0x0792a6); }
+        else {
+            b.block(0x0792a8);
+            if p.actual_y_velocity_signed() < 0 { b.taken(0x0792a8); }
+            else { b.block(0x0792aa); }
+            b.block(0x0792ac);
+            let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x0792b9));
+            b.block(0x0792b9); b.block(0x0792be);
+        }
+        b.block(0x0792af);
+        if p.actual_x_velocity() == 0 { b.taken(0x0792b3); }
+        else {
+            b.block(0x0792b5);
+            if p.actual_x_velocity_signed() < 0 { b.taken(0x0792b5); }
+            else { b.block(0x0792b7); }
+            b.block(0x0792b9);
+        }
+        b.block(0x0792be);
         self.follower_link_state_mut()
             .derive_direction_from_actual_velocity();
     }
@@ -1364,8 +1386,27 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_change_in_z_velocity(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x078926));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let p = &self.game_state.player.follower_link;
+        b.block(0x078926);
+        if p.handler_state() != 5 { b.taken(0x07892c); }
+        else { b.block(0x07892e); }
+        b.block(0x078930);
+        if p.actual_z_velocity() & 0x80 == 0 {
+            b.taken(0x078934); b.block(0x078946);
+        } else {
+            b.block(0x078936);
+            if p.z_low() == 0 { b.taken(0x078938); }
+            else {
+                b.block(0x07893a);
+                if p.z_low() & 0x80 == 0 { b.taken(0x07893a); b.block(0x078946); }
+                else { b.block(0x07893c); }
+            }
+        }
+        b.block(0x07894d);
         self.player_change_z(
-            if self.game_state.player.follower_link.handler_state() == 19 {
+            if self.game_state.player.follower_link.handler_state() == 5 {
                 1
             } else {
                 2

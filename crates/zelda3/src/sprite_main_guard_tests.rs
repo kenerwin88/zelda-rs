@@ -244,3 +244,112 @@ fn guard_shoot_probe_writes_vel_dir_and_gfx() {
     // tick_and_update bumped subtype2.
     assert_eq!(sprite.subtype2(), 1);
 }
+
+
+#[test]
+fn prefix11_guard_chase_and_speed_callers_match_rom() {
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")).unwrap();
+    for slot in [0usize, 15] {
+        for delay in [0, 1, 128] {
+            for frame in [0, 15, 31, 32] {
+                for wall in [0, 1, 4, 15] {
+                    for g in [0, 1] {
+                        let mut n = fresh_state();
+                        n.set_lag_free(true); n.write_wram_byte(0x10, 7); n.write_wram_byte(0x1b, 1);
+                        for (a, v) in [(0xdd0, 9), (0xe20, 0x42), (0xd80, 4),
+                            (0xdf0, delay), (0xde0, 2), (0xed0, g), (0xe70, wall),
+                            (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a + slot, v); }
+                        n.write_wram_byte(0xfa0, slot as u8); n.write_wram_byte(0x1a, frame);
+                        n.write_wram_word(0x20, 0x1000); n.write_wram_word(0x22, 0x1000);
+                        n.sync_native_game_state_from_ram();
+                        let mut s = snes::Snes::new(); s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                        s.ram.copy_from_slice(&n.wram_image());
+                        s.cpu.e = false; s.cpu.unpack_flags(0x30); s.cpu.k = 5; s.cpu.db = 5;
+                        s.cpu.pc = 0xc4e8; s.cpu.x = slot as u16; s.cpu.sp = 0x1fa;
+                        s.ram[0x1fb..0x200].copy_from_slice(&[0xff, 0x7f, 0xff, 0x7f, 0]);
+                        crate::cycle_ledger::assert_rom_marker_work(0x05c4e8, s,
+                            |s| s.cpu.k == 5 && ((0xc4e8..0xc4f9).contains(&s.cpu.pc)
+                                || (0xc500..0xc53c).contains(&s.cpu.pc)
+                                || (0xc417..0xc425).contains(&s.cpu.pc)), || {
+                                let _owner = crate::cycle_ledger::routine(0x05c4e8);
+                                n.guard_main_ai(slot);
+                            });
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+#[test]
+fn prefix11_parry_guards_and_callers_all_paths_match_rom() {
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    for slot in [0usize, 15] {
+        for variant in 0..128u8 {
+            for frames in [0, 9, 0x80] {
+                for near in [false, true] {
+                    let mut n = fresh_state(); n.set_lag_free(true);
+                    for (a, v) in [(0xdd0, 9), (0xe20, if variant & 64 == 0 { 0x42 } else { 0x6a }), (0xf20, variant & 1),
+                        (0xef0, if variant & 2 != 0 { 0x80 } else { 0 }),
+                        (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a + slot, v); }
+                    for (a, v) in [(0x10, 7), (0x1b, 1), (0x46, (variant >> 2) & 1),
+                        (0x4d, (variant >> 3) & 1), (0x37a, if variant & 16 != 0 { 0x10 } else { 0 }),
+                        (0x44, if variant & 32 != 0 { 0x80 } else { 0 }), (0x3c, frames),
+                        (0xfa0, slot as u8), (0x1a, 0)] { n.write_wram_byte(a, v); }
+                    n.write_wram_word(0x20, if near { 0x40 } else { 0x1000 });
+                    n.write_wram_word(0x22, if near { 0x40 } else { 0x1000 });
+                    n.write_wram_byte(0xf359, 1);
+                    n.sync_native_game_state_from_ram();
+                    let mut s = snes::Snes::new(); s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    s.ram.copy_from_slice(&n.wram_image()); s.cpu.e = false; s.cpu.unpack_flags(0x30);
+                    s.cpu.k = 6; s.cpu.db = 6; s.cpu.pc = 0xeb76; s.cpu.x = slot as u16;
+                    s.cpu.sp = 0x1fa; s.ram[0x1fb..0x200].copy_from_slice(&[0xff, 0x7f, 0xff, 0x7f, 0]);
+                    crate::cycle_ledger::assert_rom_marker_work(0x06eb76, s,
+                        |s| s.cpu.k == 6 && s.cpu.sp == 0x1fa
+                            && ((0xeb76..0xec02).contains(&s.cpu.pc)
+                                || (0xf3ca..0xf3db).contains(&s.cpu.pc) || s.cpu.pc == 0xf41e), || {
+                            let _owner = crate::cycle_ledger::routine(0x06eb76);
+                            n.guard_parry_sword_attacks(slot);
+                        });
+                }
+            }
+        }
+    }
+}
+
+
+#[test]
+fn prefix11_guard_facing_state_all_paths_match_rom() {
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    for slot in [0usize, 15] {
+        for delay in [0, 1, 128] {
+            for near in [false, true] {
+                for owner in [0x05c4c1, 0x05f93f, 0x06eaa0] {
+                    let mut n = fresh_state(); n.set_lag_free(true);
+                    for (a, v) in [(0xdd0, 9), (0xe20, 0x42), (0xd80, 3), (0xdf0, delay),
+                        (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a + slot, v); }
+                    n.write_wram_byte(0xfa0, slot as u8);
+                    n.write_wram_word(0x20, if near { 0x40 } else { 0x1000 });
+                    n.write_wram_word(0x22, if near { 0x40 } else { 0x1000 });
+                    n.sync_native_game_state_from_ram();
+                    let mut s = snes::Snes::new(); s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    s.ram.copy_from_slice(&n.wram_image()); s.cpu.e = false; s.cpu.unpack_flags(0x30);
+                    s.cpu.k = 5; s.cpu.db = 5; s.cpu.pc = 0xc4c1; s.cpu.x = slot as u16;
+                    s.cpu.sp = 0x1fa; s.ram[0x1fb..0x200].copy_from_slice(&[0xff, 0x7f, 0xff, 0x7f, 0]);
+                    crate::cycle_ledger::assert_rom_marker_work(owner, s,
+                        |s| match owner {
+                            0x05c4c1 => s.cpu.k == 5 && (0xc4c1..0xc4e8).contains(&s.cpu.pc),
+                            0x05f93f => s.cpu.k == 5 && (0xf93f..0xf944).contains(&s.cpu.pc),
+                            _ => s.cpu.k == 6 && (0xeaa0..0xeaa4).contains(&s.cpu.pc),
+                        }, || {
+                            let _owner = crate::cycle_ledger::routine(0x05c4c1);
+                            n.guard_main_ai(slot);
+                        });
+                }
+            }
+        }
+    }
+}
