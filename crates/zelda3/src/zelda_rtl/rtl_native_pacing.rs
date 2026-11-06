@@ -505,6 +505,9 @@ impl ZeldaState {
         // Capture at the command, not at main's return: any later ordinary
         // instruction work belongs after the masked transfer.
         let elapsed = self.native_cost_elapsed(main)[2];
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some() {
+            eprintln!("song_upload_defer bank={bank} main={main} elapsed={elapsed}");
+        }
         // Bank 0 already owns elapsed callbacks on main. Preserve that lane
         // while the newly presented runtime banks retain their command phase.
         self.native_pacing.positioned_upload = bank != 0;
@@ -544,6 +547,10 @@ impl ZeldaState {
         self.capture_display_snapshot();
         self.native_start_deferred_song();
         let returned = self.native_lagless_song_upload_return();
+        if crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some()
+            && let Some(master) = returned {
+            eprintln!("song_upload_return master={master} pending={}", self.native_pacing.pending);
+        }
         if returned.is_none() {
             self.native_pacing.masked_callback = true;
         } else {

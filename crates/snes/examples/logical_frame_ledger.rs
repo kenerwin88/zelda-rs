@@ -495,6 +495,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         writeln!(output, "iteration,event,pc,master,line,cycle")?;
         Ok::<_, std::io::Error>(output)
     }).transpose()?;
+    let mut apu_bus = timing_audit.as_ref().map(|_| {
+        let mut output = BufWriter::new(fs::File::create(out_dir.join("apu-bus.csv"))?);
+        writeln!(output, "iteration,pc,master,address,kind,value,width,spc_pc,spc_cycle,input,output")?;
+        Ok::<_, std::io::Error>(output)
+    }).transpose()?;
     let mut profile_output = (!profile_iterations.is_empty()).then(|| {
         let mut writer = BufWriter::new(fs::File::create(out_dir.join("routine-profile.csv"))?);
         writeln!(writer, "iteration,routine,calls,inclusive,exclusive")?;
@@ -649,6 +654,41 @@ fn main() -> Result<(), Box<dyn Error>> {
             |step, exec| -> Result<(), snes::SourceCpuError> {
                 if failure.is_some() {
                     return Ok(());
+                }
+                if let Some(iteration) = opening.as_ref().or(current.as_ref())
+                    && profile_iterations.iter().any(|&(lo, hi)| (lo..=hi).contains(&iteration.index))
+                    && let Some(output) = apu_bus.as_mut()
+                {
+                    for access in &step.accesses {
+                        if system_bank(access.address) && ((0x2140..=0x2143).contains(&(access.address & 0xffff))
+                            || access.address & 0xffff == 0x4200) {
+                            let (kind, value, width) = match access.kind {
+                                SourceCpuBusAccessKind::Read { value, width } => ("read", value, width),
+                                SourceCpuBusAccessKind::Write { value, width } => ("write", value, width),
+                                _ => continue,
+                            };
+                            let apu = &exec.machine().snes().apu;
+                            writeln!(output, "{},{:06x},{},{:04x},{kind},{value},{width},{:04x},{},{:08x},{:08x}",
+                                iteration.index, step.origin_pc, access.timestamp.master_cycles(),
+                                access.address & 0xffff, apu.spc.pc, apu.cycles,
+                                u32::from_le_bytes(apu.in_ports[..4].try_into().unwrap()),
+                                u32::from_le_bytes(apu.out_ports)).expect("APUI timing receipt");
+                            if kind == "write" && access.address & 0xffff == 0x2140 && value == 255
+                                && !(0x8888..=0x8900).contains(&(step.origin_pc & 0xffff)) {
+                                let path = out_dir.join(format!("apu-command-{}-{:06x}.json.zst", iteration.index, step.origin_pc));
+                                let mut snapshot = zstd::stream::write::Encoder::new(fs::File::create(path).expect("APU command snapshot"), 3)
+                                    .expect("APU command compression");
+                                serde_json::to_writer(&mut snapshot, apu).expect("APU command state");
+                                snapshot.finish().expect("APU command state flush");
+                                let path = out_dir.join(format!("receiver-{}-{:06x}.json.zst", iteration.index, step.origin_pc));
+                                let mut checkpoint = zstd::stream::write::Encoder::new(fs::File::create(path).expect("receiver checkpoint"), 3)
+                                    .expect("receiver checkpoint compression");
+                                serde_json::to_writer(&mut checkpoint, &exec.capture_quiescent_checkpoint()
+                                    .expect("quiescent upload command")).expect("receiver continuation");
+                                checkpoint.finish().expect("receiver continuation flush");
+                            }
+                        }
+                    }
                 }
                 if let Some(SourceCpuAcceptedInterrupt::Nmi { started_at, interrupted_pc, .. }) = step.accepted_interrupt
                     && opens_iteration(interrupted_pc, exec.machine().snes().ram[NMI_BOOLEAN])

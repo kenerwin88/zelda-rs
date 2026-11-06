@@ -3273,6 +3273,18 @@ impl ApuState {
 
     fn record_debug_mmio(&mut self, write: bool, address: u16, value: u8) {
         if !(0xf0..=0xff).contains(&address) { return; }
+        if (0xf4..=0xf7).contains(&address) {
+            static WINDOWS: std::sync::OnceLock<Vec<(u32, u32)>> = std::sync::OnceLock::new();
+            let windows = WINDOWS.get_or_init(|| crate::debug_env::var!("ZELDA3_DEBUG_SPC_MMIO_CYCLES")
+                .ok().map(|ranges| ranges.split(',').map(|range| {
+                    let (lo, hi) = range.split_once('-').unwrap_or((range, range));
+                    (lo.parse().expect("SPC MMIO window start"), hi.parse().expect("SPC MMIO window end"))
+                }).collect()).unwrap_or_default());
+            if windows.iter().any(|&(lo, hi)| (lo..=hi).contains(&self.cycles)) {
+                eprintln!("spc_mmio cycle={} pc={:04x} write={} address={address:04x} value={value:02x}",
+                    self.cycles, self.spc.pc, u8::from(write));
+            }
+        }
         if let Some(instruction) = self.debug_spc_instruction_trace.as_mut().and_then(|trace| trace.last_mut()) {
             assert!(instruction.mmio_count < instruction.mmio.len(), "SPC MMIO trace overflow");
             instruction.mmio[instruction.mmio_count] = [self.cycles, u32::from(write), u32::from(address), u32::from(value)];

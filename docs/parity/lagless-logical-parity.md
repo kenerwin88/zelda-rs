@@ -6245,3 +6245,180 @@ The final target is **2.94 GB allocated**, below 3 GB; cleanup and joined
 process receipts are recorded with verification.
 These results do not establish equal live SPC phase, waveform or cold exact
 A/V equality.
+
+## Lagless prefix hunt 12
+
+Diagnosis on `codex/prefix-hunt12`, base **b061a913**. Evidence is under
+`target/prefix-hunt12/`. **The milestone is not reached: no behavior fix is
+admitted, neither early upload row closes, and no continuous replay is attempted.**
+No owners are newly priced and no instruction clocks are recovered.
+
+### Upload protocol and receiver evidence
+
+The refreshed source CPU run reproduces the retained timing phases for both
+rows exactly. Its fresh routine totals are **22,096,698 / 22,055,900** clocks.
+Both uploads contain **11,694 bytes to $D000**, **1,672 bytes to $2B00**, and a
+zero-length **$0800** terminal header. All **26,748** native protocol writes
+equal source in order and value, including all four terminal clears. A missing
+transfer block does not explain these two observations.
+
+`source-final/apu-bus.csv.zst` retains every selected CPU APUI access, its PC,
+bus-start timestamp, value and receiver observation, together with `$4200`
+mask/restore stores. The two `source-final/receiver-*.json.zst` files retain
+complete source CPU/APU checkpoints, including the SMP continuation and clock
+remainder; the adjacent APU-only JSON files are observations, not resumable
+checkpoints. `final-protocol.log.zst` retains native protocol accesses and SPC
+port observations. `protocol-comparison.json` and
+`fresh-poll-conservation.json` bind the stream and instruction comparisons. The new diagnostic switch
+`ZELDA3_DEBUG_SPC_MMIO_CYCLES` selects inclusive local SPC-cycle windows
+through `crate::debug_env`; it only emits port observations. `commands.json`
+retains the source, native, ROM, live and test invocations.
+
+| Iteration | Ready polls, source / native ($00:8891) | Header polls, source / native ($00:88EC) | Byte polls, source / native ($00:88B3/$88C3) | Source minus native poll clocks | Remaining non-poll gap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 34,318 | 11,184 / 10,036 | 52 / 56 | 76,551 / 76,551 | 66,376 | 20,730 |
+| 48,556 | 7,122 / 6,137 | 51 / 50 | 76,551 / 76,552 | 57,130 | 20,684 |
+
+The ready loop executes a 16-bit compare, hence two APUI reads per poll.
+Taken ready loops cost 58 instruction clocks; taken header/byte loops cost
+52. These remain executed protocol work, not prices added to P2. The older
+hunt-10 native observation of **7,078** ready polls at 48,556 is stale against
+this base; the fresh diagnostic replay reproduces main's predictor rows exactly.
+
+The resident driver, not a fixed latency response, publishes ready. Its
+`MOV !$F4,A` at **$11E8** and `MOV !$F5,A` at **$11ED** publish `$AA/$BB` at the
+following SPC clocks. Trace PCs $11EB/$11F0 are the post-operand PCs at those
+bus operations. The first `$FF` read is at instruction **$08E5** (observed PC
+$08E8).
+
+| Iteration / lane | CPU command: source synchronized SPC clock / native scheduled target | First SPC `$FF` read | `$AA` store | `$BB` store |
+| --- | ---: | ---: | ---: | ---: |
+| 34,318 source | 642,512,165 | 642,527,398 | 642,544,073 | 642,544,080 |
+| 34,318 native | 641,145,312 | 641,157,586 | 641,173,948 | 641,173,955 |
+| 48,556 source | 925,119,059 | 925,122,447 | 925,139,379 | 925,139,386 |
+| 48,556 native | 923,708,480 | 923,711,096 | 923,725,992 | 923,725,999 |
+
+The clock epochs differ; the absolute values are not equal-phase assertions.
+Native command targets also do not prove their exact publication micro-step.
+Raw SPC MMIO logging observes return-preview clones as well as execution;
+`native-receiver.json` explicitly deduplicates identical timestamped ready
+stores. Retired native access counts come from the real transfer's audit.
+
+Source begins its first ready read **364 clocks after $02:855D's command
+store**, at **V31/H1196** and **V179/H44** respectively. Native bank 0 still
+uses its unpositioned output-window command and 386-clock first-read path.
+Source receiver PCs at the command are **$0854 / $08F5**, with timer-0
+remaining/divider/counter **91/8/1 / 45/2/0**, and `$43` **168 / 32**.
+The first native instruction boundary with `$FF` latched is **$0846** at
+**641,145,317**, timer-0 **17/3/2**, `$43=112`; the second is **$0876** at
+**923,708,483**, timer-0 **51/8/0**, `$43=80`. `native-command-state.json`
+identifies both witnesses. The 508 native before/after audio snapshots, DSP
+observations and SPC instruction traces are retained losslessly in
+`native-state/`; all **485,604,046** decompressed bytes have verified hashes.
+These are neighboring instruction-boundary observations, not matched
+source/native CPU/SMP checkpoints. Equal receiver state and an exact common
+arrival phase remain unproved.
+
+Each source row accepts **40 lag NMIs before masking**, then **one** in the
+post-upload suffix: **V251/H822 at $02:83C6** and **V225/H12 at $00:864F**.
+Native returns with zero pending instruction holds and retires its closing
+NMI. These witnesses identify a return/arrival ownership boundary to resolve;
+they do not establish a source-exact replacement scheduler.
+
+The rejected phase trial retained bank 0's remainder using the existing
+positioned-bank path. It changed ready polls to **8,830 / 8,033** and masked
+callbacks to **23 / 24**, but retained **40 versus 41** accepted holds on both
+rows. It is reverted. `phase-trial.json` and `phase-bus.log.zst` retain the
+bounded experiment. No fitted delay, forced hold, acknowledgement injection,
+sampled price, or ledger-driven polling is introduced. The upstream cause of
+the differing driver phase is still open; part B is unfinished.
+The lagless bootstrap restores its saved `logical_audio` after the native
+CPU/PPU bootstrap, so it does not retain that bootstrap's executing SPC
+state. This is an upstream discontinuity to investigate, not a demonstrated
+explanation of the two measured poll deficits or an admitted epoch fix.
+
+### ROM, live and prefix results
+
+The eight-slice ROM helper completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**. Its entire predictor CSV is byte-identical to
+main's `target/prefix-hunt11-fix/candidate/rom.csv`.
+
+| Before iteration | Missing before → after |
+| --- | ---: |
+| 94,334 | **2 → 2** |
+| 141,568 | **34 → 34** |
+| 228,499 | **142 → 142** |
+| 380,243 | **275 → 275** |
+| 461,989 | **334 → 334** |
+
+One single seeded live census also completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**. Its entire predictor CSV is byte-identical to main's
+`target/prefix-hunt11-fix/live.csv`.
+
+| Lane | Missing before → after | Excess before → after | FP before → after |
+| --- | ---: | ---: | ---: |
+| ROM | 1,864 → 1,864 | 0 → 0 | 0 → 0 |
+| Live | 2,276 → 2,276 | 318 → 318 | 85 → 85 |
+
+The fresh eight-slice `--cpu-video` census completes the same iteration count,
+gate **PASS / unexplained 0**. It retains **1,462,997 exact pictures**, 563
+early, 3,952 late, four during source lag, 905 polygon-thread and 4,702 torn,
+with zero other content differences. The complete result tally equals main;
+new per-picture hash streams were not recorded.
+
+### Second-song-end and poll attribution
+
+Both lanes retain **34 missing / 0 excess / 0 FP before 141,568**. In the
+second song-end episode, source first returns zero at **142,088**, while native
+returns zero at **142,087**. Through the exclusive 144,000 boundary, live adds
+**9 missing / 9 excess / 2 FP** over ROM, unchanged from main.
+
+| Iteration | Poll owner / origin | Source lag | ROM holds | Main live → current live |
+| --- | --- | ---: | ---: | ---: |
+| 142,088 | $08:C606 / 142,087 | 0 | 0 | 5 → 5 |
+| 142,089 | $08:C606 / 142,087 | 5 | 5 | 0 → 0 |
+| 142,091 | $08:C606 / 142,087 | 0 | 0 | 4 → 4 |
+| 142,092 | $08:C606 / 142,087 | 4 | 4 | 3 → 3 |
+| 142,094 | $08:C606 / 142,087 | 3 | 3 | 0 → 0 |
+
+There are **zero changed live hold rows**, **zero live-only changed rows**
+and **zero unattributed changed rows** versus main. The changed-row
+attribution table is empty, as recorded in `changed-live-holds.csv` and
+`live-comparison.json`. This is a numerical control, not a recovery or an
+assertion of equal CPU/SPC phase.
+
+### Verification boundary
+
+All **110 distinct filtered tests** pass: **43** SPC-driver, **28** native
+pacing, **36** APU and **3** source timing-audit tests. The existing cold-native
+bootstrap/source-clock fixture also passes independently. The product build
+is warning-free; library-test compilation retains **24 pre-existing dead-code
+warnings**, with no new warning message.
+
+The full default library suite runs **once**, after all implementation changes,
+with the requested assets path: **SNES 505 passed / 7 ignored**, **Zelda 3,008
+passed / 3 ignored**. Its only failure is the explicitly permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There are **zero unaccepted failures**. This suite is not all green;
+`tests-full-library.log` and `full-library-result.json` retain the complete
+execution receipt.
+
+Only diagnostic observation code and this report change. Classifier, matcher,
+P2 and instruction pricing remain unchanged. No GPU, `--video`, cached A/V,
+Snes9x process, continuous live replay, protected authority write, cargo fmt,
+commit or push occurs. Every product invocation uses `--logical-replay`; the
+fresh picture check additionally uses `--cpu-video`.
+
+`authority-before.json`, `authority-after.json`, `prior-hashes.json`,
+`prior-hashes-after.json`, `source.patch`, `binary.json` and
+`artifact-hashes.json` bind the source, controls and evidence. Final identities,
+joined process statuses, test results and resource readbacks are retained in
+`verification.json` and `resources.json`.
+
+The inherited target was **5.0 GiB**. Rebuildable caches and verified redundant
+representations were removed only inside this worktree's target. The inherited
+footprint and later rebuilds exceeded 3 GB, so the strict resource constraint
+was not maintained. The final target readback is **2.63 GB allocated**, below 3 GB;
+resource receipts retain the actual byte counts and observed over-budget samples. All
+prior evidence remains unchanged. These diagnostics do not establish a
+ROM-exact mechanism fix, equal live SPC phase, waveform or cold A/V equality.

@@ -362,6 +362,10 @@ impl SongBankHostTransfer {
     }
 
     fn perform_host_access(&mut self, in_ports: &mut [u8; 6], out_ports: [u8; 4]) -> bool {
+        if let Some(host) = self.observation_host.filter(|host| sound_owner_trace_selected(*host)) {
+            eprintln!("spc_bank_access host={host} master={} cycle={:?} phase={:?} input={:02x?} output={out_ports:02x?}",
+                self.next_host_access_master_clock.unwrap(), self.observation_cycle, self.phase, &in_ports[..4]);
+        }
         let audit_phase = match self.phase {
             SongBankHostTransferPhase::AwaitReceiverReadyLow => 0,
             SongBankHostTransferPhase::AwaitReceiverReadyHigh { .. } => 1,
@@ -839,6 +843,12 @@ impl AbsoluteDspEventClock {
         );
         host_port_events.extend(std::mem::take(&mut self.pending_timed_main_cpu_port_writes));
         if let Some(transfer) = self.song_bank_transfer.as_mut() {
+            if transfer.command_pending && !self.observation_silent
+                && crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some()
+            {
+                eprintln!("song_upload_receiver host={} command_cycle={frame_end_cycle} execution={} spc_pc={:04x} input={:02x?} output={:02x?}",
+                    self.host_frame_index, self.apu_cycle_origin + u64::from(self.apu.cycles), self.apu.spc.pc, &self.apu.in_ports[..4], self.apu.out_ports);
+            }
             transfer.mark_command_scheduled(frame_end_cycle);
         }
         host_port_events.sort_by_key(|&(target, port, _)| (target, port));
@@ -874,6 +884,11 @@ impl AbsoluteDspEventClock {
                         break;
                     }
                     let target = event_target.max(last_host_boundary);
+                    if port == 0 && value == 0xff && !self.observation_silent
+                        && crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some()
+                    {
+                        eprintln!("song_upload_command_state target={event_target} {}", self.debug_state_summary());
+                    }
                     let boundary = if target <= instruction_start {
                         instruction_start
                     } else {
