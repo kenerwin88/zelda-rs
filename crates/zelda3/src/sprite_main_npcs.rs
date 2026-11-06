@@ -1004,12 +1004,16 @@ impl ZeldaState {
     //   Sprite_DrawDistress_custom(info.x, info.y, frame_counter);
     // }
     pub(super) fn cucco_draw_panic(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a727);
         let Some(info) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        b.block(0x06a72a); b.block(0x06a72f);
         let time = self.game_state.frame.frame_counter;
         // $06:A60C JSR $A727 falls through into the complete $A733 writer.
         self.sprite_draw_distress_custom(info.0, info.1, time, SpriteDistressEntry::Rom06A733);
+        b.block(0x06a72e);
     }
 
     // ----- Internal helpers ported to back the above handlers -----------

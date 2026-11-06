@@ -490,6 +490,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let profile_iterations = merged;
     let mut timing_audit = env::var_os("ZELDA3_LEDGER_TIMING_AUDIT").map(|_| TimingAudit::default());
+    let mut timing_phases = timing_audit.as_ref().map(|_| {
+        let mut output = BufWriter::new(fs::File::create(out_dir.join("timing-phases.csv"))?);
+        writeln!(output, "iteration,event,pc,master,line,cycle")?;
+        Ok::<_, std::io::Error>(output)
+    }).transpose()?;
     let mut profile_output = (!profile_iterations.is_empty()).then(|| {
         let mut writer = BufWriter::new(fs::File::create(out_dir.join("routine-profile.csv"))?);
         writeln!(writer, "iteration,routine,calls,inclusive,exclusive")?;
@@ -644,6 +649,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             |step, exec| -> Result<(), snes::SourceCpuError> {
                 if failure.is_some() {
                     return Ok(());
+                }
+                if let Some(SourceCpuAcceptedInterrupt::Nmi { started_at, interrupted_pc, .. }) = step.accepted_interrupt
+                    && opens_iteration(interrupted_pc, exec.machine().snes().ram[NMI_BOOLEAN])
+                    && profile_iterations.iter().any(|&(lo, hi)| (lo..=hi).contains(&next_index))
+                    && let Some(output) = timing_phases.as_mut()
+                {
+                    let clock = snes::CpuMasterTimeline::new(started_at.master_cycles(),
+                        snes::CpuBusWorkload::default(), exec.machine().timeline().field_timing());
+                    let raster = clock.raster_position();
+                    writeln!(output, "{next_index},opening-nmi,{interrupted_pc:06x},{},{},{}",
+                        started_at.master_cycles(), raster.scanline(), raster.master_cycle())
+                        .expect("opening NMI phase receipt");
                 }
                 // Bus stores precede the interrupt accepted at retirement.
                 // Observe before handler_returned and the opening-NMI early return.
@@ -805,6 +822,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let end = profile_iterations.partition_point(|&(lo, _)| lo <= *index);
                         end != 0 && *index <= profile_iterations[end - 1].1
                     });
+                    if let (Some(index), Some(output)) = (selected, timing_phases.as_mut()) {
+                        let event = match step.origin_pc {
+                            0x008038 => Some("main-entry"),
+                            0x00805d => Some("main-done"),
+                            0x00f3a3 => Some("vcounter-latch"),
+                            0x00f3b4 => Some("vcounter-return"),
+                            _ => None,
+                        };
+                        if let Some(event) = event.filter(|_| profile_depth == 0 && main_stack) {
+                            let clock = snes::CpuMasterTimeline::new(step.started_at.master_cycles(),
+                                snes::CpuBusWorkload::default(), exec.machine().timeline().field_timing());
+                            let raster = clock.raster_position();
+                            writeln!(output, "{index},{event},{:06x},{},{},{}", step.origin_pc,
+                                step.started_at.master_cycles(), raster.scanline(), raster.master_cycle())
+                                .expect("timing phase receipt");
+                        }
+                        if let Some(SourceCpuAcceptedInterrupt::Nmi { started_at, interrupted_pc, .. }) = step.accepted_interrupt {
+                            let clock = snes::CpuMasterTimeline::new(started_at.master_cycles(),
+                                snes::CpuBusWorkload::default(), exec.machine().timeline().field_timing());
+                            let raster = clock.raster_position();
+                            writeln!(output, "{index},nmi-arrival,{interrupted_pc:06x},{},{},{}",
+                                started_at.master_cycles(), raster.scanline(), raster.master_cycle())
+                                .expect("NMI phase receipt");
+                        }
+                    }
                     if step.origin_pc == 0x00_8038 {
                         profile_block_entry = true;
                         profile_main_active = true;

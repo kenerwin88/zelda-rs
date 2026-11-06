@@ -202,6 +202,87 @@ fn cucco_draw_fixture(velocity: u8) -> ZeldaState {
 }
 
 #[test]
+fn prefix9_cucco_suffix_markers_follow_rom_branches_and_shared_tails() {
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let mut cases = vec![Vec::new()];
+    for (address, values) in [
+        (0xeb2, vec![0, 1]), (0xdd2, vec![8, 9, 10]),
+        (0xdb2, vec![0, 1]), (0xd82, vec![0, 1, 2, 3]),
+        (0xda2, vec![0, 34, 35]), (0xea2, vec![0, 1]),
+        (0x1a, vec![0, 1, 2, 15, 16, 31, 32]),
+        (0xdf2, vec![0, 1]), (0xf72, vec![0, 1, 127, 128, 255]),
+        (0xf82, vec![0, 1, 127, 128, 255]), (0x11, vec![0, 1]),
+    ] {
+        for value in values { cases.push(vec![(address, value)]); }
+    }
+    for ai in 0..4u8 {
+        for frame in [0u8, 1, 2, 15, 16, 31, 32] {
+            for z in [0u8, 1, 128, 255] {
+                for delay in [0u8, 1] {
+                    cases.push(vec![(0xd82, ai), (0x1a, frame), (0xf72, z),
+                        (0xf82, 0xf0), (0xdf2, delay)]);
+                }
+            }
+        }
+    }
+    for state in [8u8, 9, 10] {
+        for submodule in [0u8, 1] {
+            for frame in [0u8, 16, 17] {
+                cases.push(vec![(0xdd2, state), (0x11, submodule), (0x1a, frame)]);
+            }
+        }
+    }
+    for b in [0u8, 34, 35] {
+        for recoil in [0u8, 1] { cases.push(vec![(0xda2, b), (0xea2, recoil)]); }
+    }
+    for frame in [0u8, 2] { cases.push(vec![(0xdb2, 1), (0x1a, frame)]); }
+    for tile in [0u8, 1, 2] {
+        cases.push(vec![(0xd82, 1), (0x1a, 1), (0x1b, 1), (0x2000, tile)]);
+    }
+    let count = cases.len();
+    for changes in cases {
+        let mut native = cucco_draw_fixture(1);
+        native.write_wram_word(0x20, 0x1000);
+        native.write_wram_word(0x22, 0x1000);
+        native.write_wram_byte(0xfa0, 2); // children restore the executing slot
+        native.write_wram_byte(0x3c, 0x80); // no sword/lift contact
+        if let Some((_, tile)) = changes.iter().find(|(a, _)| *a == 0x2000) {
+            for address in 0x2000..0x4000 { native.write_wram_byte(address, *tile); }
+        }
+        for &(address, value) in &changes { native.write_wram_byte(address, value); }
+        native.sync_native_game_state_from_ram();
+        native.set_lag_free(true);
+        let mut work = native.begin_cucco_draw(2);
+        assert_eq!(native.advance_cucco_draw(&mut work, None), CpuWorkAdvance::Complete);
+        let machine = marker29_machine(&native, 0x06a5da, 2).expect("unmodified ROM fixture");
+        crate::cycle_ledger::assert_rom_marker_work(0x06a5da, machine,
+            |s| {
+                if s.cpu.k == 6 {
+                    let taken = match s.cpu.pc {
+                        0xa5dd | 0xa61e | 0xa652 | 0xa66f | 0xa673 | 0xa6ba => Some(s.cpu.z),
+                        0xa5fe | 0xa607 | 0xa613 | 0xa638 | 0xa677 | 0xa682 | 0xa6d3 | 0xa70a => Some(!s.cpu.z),
+                        0xa64a | 0xa6b5 => Some(!s.cpu.c),
+                        0xa65c => Some(s.cpu.c),
+                        0xa6cb => Some(!s.cpu.n),
+                        _ => None,
+                    };
+                    if let Some(taken) = taken { edges.borrow_mut().insert((s.cpu.pc, taken)); }
+                }
+                s.cpu.k == 6 && (0xa5da..0xa733).contains(&s.cpu.pc)
+            }, || {
+                let _owner = crate::cycle_ledger::routine(0x06a5da);
+                native.complete_cucco_draw(work);
+            });
+    }
+    for pc in [0xa5dd, 0xa5fe, 0xa607, 0xa613, 0xa61e, 0xa638, 0xa64a,
+        0xa652, 0xa65c, 0xa66f, 0xa673, 0xa677, 0xa682, 0xa6b5, 0xa6ba,
+        0xa6cb, 0xa6d3, 0xa70a] {
+        for taken in [false, true] { assert!(edges.borrow().contains(&(pc, taken)), "missing branch {pc:04x} {taken}"); }
+    }
+    eprintln!("prefix9 Cucco: {count} unmodified-ROM suffix fixtures");
+}
+
+#[test]
 fn cucco_draw_from_entry_matches_source_at_each_retained_instruction() {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
     let path = std::env::var_os("ZELDA3_ROM").map(std::path::PathBuf::from)

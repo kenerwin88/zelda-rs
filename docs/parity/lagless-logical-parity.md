@@ -5441,3 +5441,255 @@ The uploader's remaining wait-count difference and rejected Moldorm timing
 interaction remain explicit. Hold counts and CPU picture hashes do not
 establish delivered-command, chip-state, waveform, net SPC-phase or cold exact
 A/V equality.
+
+## Lagless prefix hunt 9
+
+CPU-only continuation on `codex/prefix-hunt9`, base `61b57842`. Evidence is
+under `target/prefix-hunt9/`. The fresh 94,334-iteration baseline matches
+every column of hunt 8's hash-verified admitted predictor. Authority hashes
+and all 1,499 retained seed identities agree. The cold source profiler
+regenerates all 41 early missing rows: its 5,080 routine rows match the
+retained source exactly. A second cold pass adds opening-NMI timestamps;
+routine, structural and timing-audit files are byte-identical between passes.
+No prior binary with an unverified identity supplies a new acceptance claim.
+
+### Classification of the 41 rows
+
+`classification.csv/json` retains every row's diagnostic hold-boundary inverse,
+signed instruction reconciliation, physical source opening-NMI and main-entry
+raster, native nominal entry, lag-NMI arrivals, executed APU polls, DMA,
+refresh and nonrefresh bus terms. `instruction-conservation.json` verifies
+exclusive-sum conservation independently on both sides of every row.
+The inverse is diagnostic only; no inverse, deficit or sampled loop count is
+used as a runtime price.
+
+| Class | Rows | Finding |
+| --- | ---: | --- |
+| (a) instruction shortfall | 38 | The remaining non-poll instruction gap alone reaches the diagnostic inverse, which already composes refresh and leased HDMA. |
+| (b) independently established inherited arrival cause | 0 | Arrival differences are retained, but no row is assigned an exclusive upstream cause without that proof. |
+| (c) executed upload poll/return phase | 2 | 34,318 and 48,556 have separately scheduled protocol instructions and unequal executed polling. |
+| (d) mixed NMI-entry/bus phase residual | 1 | At 63,995, 7,496 instruction clocks fall 10 short of the 7,506-clock inverse. Source CLI is 82 clocks later than P2's nominal entry and four earlier than the HDMA composer's nominal entry; the source lag NMI arrives at V225/H48 versus the composer's nominal H86. Source nonrefresh main bus time is 252 clocks greater. Their exclusive causal split is unresolved. |
+
+These are primary discrepancy classes, not a claim that an instruction-gap
+row has no arrival or bus difference. The source has **zero V-counter reads
+on all 41 rows**, and native raster-wait time is zero throughout. Neither the
+V255 exit nor the V257-to-1 wrap nor `$00:F312` executes here. There is no
+evidence for a spotlight-wait explanation of this early cohort. Opening
+handler wall time agrees on 39 rows; source exceeds native by 584 clocks at
+688 and 102 at 42,912. Actual source main-entry phase, the nominal P2 V225/H0
+origin, and the leased-HDMA V225/H86 origin remain separate columns.
+
+The complete cohort has 114,879,568 source instruction clocks, 98,007,002
+native main clocks and 16,245,528 native protocol clocks. The signed remainder
+is **627,038**; removing the **57,328** executed-poll difference leaves
+**569,710 non-poll instruction clocks**. These totals do not become prices.
+Main DMA agrees exactly at **393,840 clocks**. Source nonrefresh main bus
+residual is 370,132 versus 364,602 native leased-HDMA clocks; interrupt-edge
+refresh attribution remains explicit rather than being renamed a price.
+
+The uploader reconciliation is unchanged and individually hash-verified.
+The ready column counts 16-bit read pairs; header/byte columns count actual
+acknowledgement-loop observations. The native owner remains
+`SongBankHostTransfer`, outside main's routine ledger.
+
+| Iteration | Ready pairs source / native | Header ACK source / native | Byte ACK source / native | Signed total instruction gap after protocol attribution | Gap after executed-poll reconciliation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 34,318 | 11,184 / 7,385 | 52 / 57 | 76,551 / 76,550 | +246,430 | +26,296 |
+| 48,556 | 7,122 / 9,929 | 51 / 51 | 76,551 / 76,551 | −136,556 | +26,250 |
+
+The three wait-count terms remain +57,536 / −260 / +52 clocks, with zero
+unexplained protocol instruction remainder. Source/native masked callbacks
+are 23/23 and 24/23. In particular, 48,556 misses a hold while native executes
+more protocol work. Upload wait/return phase is not an omitted uploader unit
+price. This batch does not repair or certify equal SPC phase.
+
+### Cucco caller and shared-tail pricing
+
+Cucco is the largest active-sprite partition in the early cohort:
+**122 calls, 1,566,342 source clocks / 1,431,508 native before**. The retained
+draw prefix and existing coordinate, movement, collision, damage, RNG and
+lifted-child bodies already own their instructions. The missing work is in
+the caller suffix and shared native tails. `sprite-owner-ranking.json`
+retains the disjoint sprite-call ranking; raw routine label differences remain
+in `raw-owner-comparison.csv` and are not treated as omissions.
+
+| Source owner/range | Recovered cohort clocks | Affected rows |
+| --- | ---: | ---: |
+| `$06:A5DA..A67E` caller suffix and actual state dispatch | 67,206 | 19 |
+| `$06:A67F..A6AC` calm selection | 644 | 7 |
+| `$06:A6AD..A6B0` shared lifted-call opcode and actual return | 11,880 | 19 |
+| `$06:A6B1..A6E1` hopping caller | 4,662 | 10 |
+| `$06:A6E2..A6FB` subtype increments, graphics publication and tail | 42,780 | 19 |
+| `$06:A6FC..A726` flee and shared landing retarget | 3,952 | 13 |
+| `$06:A727..A72E` panic wrapper | 1,950 | 13 |
+| `$06:A72F..A732` distress entry | 624 | 13 |
+| **Total** | **133,698** | **19 distinct rows** |
+
+Markers retire native branch outcomes and actual child-call/return
+instructions. Three-, four- and five-increment entries retain their own ROM
+PCs, and suspended helpers resume after their retired increments. Graphics
+publication does not precharge the pending lifted call. The lifted helper's
+double return does not acquire the skipped caller RTS. The carried landing
+uses the same real retarget tail as flee; its other caller instructions remain
+unpriced. No complete-call price is attached to a partial publication.
+
+Every new per-row main-price addition equals the independent source receipts.
+Expanding the executed markers proves exact instruction counts and clocks on
+all **1,186 per-PC rows** in the newly owned ranges. Cucco's resulting whole
+calls total **1,565,206 clocks**, leaving **1,136** unresolved; no aggregate
+whole-call deficit is charged. `per-pc-reconciliation.json`,
+`cucco-whole-call-reconciliation.json` and `cohort-before-after.json` retain
+the proofs. The generator adds **60 blocks**, preserving all **4,550** old
+blocks exactly. The new fixture executes **291 unmodified-ROM cases** and
+observes both outcomes of all **18 conditional branches** in these ranges.
+
+### ROM admission
+
+The requested eight-slice helper completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,069 / 0 / 0** versus **2,084 / 0 / 0**.
+All runtime holds equal P2. Exactly 15 rows gain one correct hold, with no
+lost hold or new excess anywhere: 43,375; 50,605–50,608; 50,653; 50,655;
+50,657; 50,659; 50,765; 50,767; 50,771; 50,773; 50,775; and 51,029.
+The route-wide main increase is **50,153,806 clocks on 23,117 rows**, with
+zero negative clock differences. `rom-before-after.json` retains every
+changed hold and the complete comparisons.
+
+| Before iteration | Missing before → after |
+| --- | ---: |
+| 94,334 | 41 → 26 |
+| 141,568 | 75 → 60 |
+| 228,499 | 194 → 179 |
+| 380,243 | 337 → 322 |
+| 461,989 | 410 → 395 |
+
+The deferred Mini Moldorm price remains deferred. Class (c) does not dominate
+this cohort, and none of its rows executes the spotlight wait. Hunt 8's
+931,965 witness still identifies a separate wait-model problem; this batch
+does not claim to fix it or re-admit that owner.
+
+### CPU picture admission
+
+The fresh eight-slice `--cpu-video` census completes **1,473,123 iterations**,
+gate **PASS / unexplained 0**. **1,462,997 pictures remain exact**; 563 are
+early, 3,952 late, four show content during source lag and zero have other
+content differences. Every new per-iteration CPU hash file is byte-identical
+to its individually hash-verified baseline counterpart, including existing
+mismatch cases. `cpu-picture-hash-agreement.json` binds all eight comparisons.
+This is fresh CPU picture evidence, not an inherited acceptance or A/V claim.
+
+### Single seeded live admission and poll attribution
+
+One full, single-process seeded `--live-apu-reads --pacing-predictor` census
+completes **1,473,123 iterations**, gate **PASS / unexplained 0**. SPC state
+carries across the actual seeds. All runtime holds equal P2.
+
+| Lane | Missing before → after | Excess before → after | FP before → after |
+| --- | ---: | ---: | ---: |
+| ROM | 2,084 → 2,069 | 0 → 0 | 0 → 0 |
+| Live | 2,457 → 2,547 | 368 → 449 | 81 → 84 |
+| Live minus ROM | 373 → 478 | 368 → 449 | 81 → 84 |
+
+Live therefore worsens by **90 / 81 / 3**. Its phase-dependent contribution
+adds **105 / 81 / 3**, while the shared ROM prices recover 15 missing holds.
+The newly observed 380,880 episode contributes 114 / 90 / 5; removing the
+old 229,034 episode subtracts 9 / 9 / 2. The shifted 462,627 episode preserves
+its aggregate contribution. No equal-SPC-phase or live-improvement claim is
+made.
+
+There are **25 live-only differential hold changes**, all attributed to
+original `$08:C606` song-end episodes; **unattributed current and changed
+rows are zero**. The 40 raw live hold changes consist of those 25 and the
+15 shared ROM recoveries. Current live-versus-ROM hold rows number **179**,
+versus **168** on the baseline. `live-partition.json` conserves both runs'
+complete global live-minus-ROM totals and checks all four P2/runtime counts.
+
+| Observed poll origin before → after | Current hold-differential rows | Changed rows | Current added missing / excess / FP | Execution/reseed end, exclusive |
+| --- | ---: | ---: | --- | ---: |
+| 142,087 → 142,087 | 5 | 0 | 9 / 9 / 2 | 144,000 |
+| 229,034 → absent | 0 | 4 | 0 / 0 / 0 | baseline 230,000 |
+| absent → 380,880 | 15 | 15 | 114 / 90 / 5 | 383,636 |
+| 462,626 → 462,627 | 6 | 6 | 13 / 13 / 3 | 466,000 |
+| 735,866 → 735,866 | 6 | 0 | 12 / 12 / 3 | 738,000 |
+| 881,733 → 881,733 | 135 | 0 | 234 / 230 / 67 | 884,327 |
+| 1,064,733 → 1,064,733 | 12 | 0 | 96 / 95 / 4 | 1,066,963 |
+
+Every changed live-only row follows. Both ROM columns agree on all 25 rows.
+`changed-live-holds.csv` retains all four counts, signed differentials,
+original source interval, observed poll origins and execution endpoints.
+
+| Iteration | Poll episode | Source lag NMIs | ROM holds | Baseline live holds → candidate |
+| --- | --- | ---: | ---: | ---: |
+| 229,035 | removed 229,034 | 0 | 0 | 5 → 0 |
+| 229,036 | removed 229,034 | 5 | 5 | 0 → 5 |
+| 229,038 | removed 229,034 | 0 | 0 | 4 → 0 |
+| 229,041 | removed 229,034 | 4 | 4 | 0 → 4 |
+| 380,945 | new 380,880 | 0 | 0 | 0 → 1 |
+| 380,946 | new 380,880 | 1 | 1 | 1 → 0 |
+| 380,955 | new 380,880 | 0 | 0 | 0 → 4 |
+| 380,956 | new 380,880 | 5 | 4 | 4 → 0 |
+| 381,425 | new 380,880 | 0 | 0 | 0 → 8 |
+| 381,426 | new 380,880 | 8 | 8 | 8 → 0 |
+| 383,178 | new 380,880 | 0 | 0 | 0 → 7 |
+| 383,181 | new 380,880 | 7 | 7 | 7 → 0 |
+| 383,343 | new 380,880 | 7 | 7 | 7 → 0 |
+| 383,346 | new 380,880 | 0 | 0 | 0 → 7 |
+| 383,631 | new 380,880 | 59 | 59 | 59 → 0 |
+| 383,632 | new 380,880 | 6 | 6 | 6 → 0 |
+| 383,633 | new 380,880 | 23 | 22 | 22 → 0 |
+| 383,634 | new 380,880 | 1 | 1 | 1 → 59 |
+| 383,635 | new 380,880 | 1 | 1 | 1 → 6 |
+| 462,698 | 462,626 → 462,627 | 0 | 0 | 1 → 0 |
+| 462,699 | 462,626 → 462,627 | 0 | 0 | 0 → 1 |
+| 462,708 | 462,626 → 462,627 | 0 | 0 | 4 → 0 |
+| 462,709 | 462,626 → 462,627 | 0 | 0 | 0 → 4 |
+| 463,178 | 462,626 → 462,627 | 0 | 0 | 8 → 0 |
+| 463,179 | 462,626 → 462,627 | 0 | 0 | 0 → 8 |
+
+Bounds are derived from observed poll outcomes, independent main-budget
+differences, classified execution and actual census segments/reseeds; changed
+hold rows do not select them. The new native-zero/source-`$13` observation
+at 380,880 is inside the original **380,243–380,881** read episode, one
+iteration before source zero. Its 1,056 main-budget differences begin at
+380,880 and end at 383,635. Classified song-poll differences reach 381,999;
+the observed 382,000 reseed retains SPC state, and the remaining budget
+differences end at the actual 383,636 resync. This post-seed aftermath is
+retained explicitly rather than described as another source poll.
+
+The removed 229,034 episode's original baseline witness and 230,000 endpoint
+remain intact; the candidate instead observes zero with source at 229,035.
+The shifted 462,627 observation remains inside **461,989–462,628**. Its
+472 main-budget differences end at 464,051, after the actual 464,000 reseed,
+so the containing segment ends at 466,000. The baseline had 661 differences
+in that episode, with the same last iteration. All six changed hold rows
+are inside the independently retained bounds.
+
+The compressed timing stream records every iteration and confirms all ten
+actual reseeds: **382,000; 383,636; 464,000; 736,000; 738,000; 882,000;
+884,000; 884,327; 1,066,000; and 1,066,963**. Every main-budget difference
+group is anchored to an observed poll origin; unanchored groups are zero in
+both runs. `poll-witnesses.json` retains the original observations, including
+concordant zero reads and removed baseline episodes. These receipts establish
+the stated hold attribution, not equal chip state, waveform or A/V phase.
+
+### Verification boundary
+
+All **50 distinct filtered Rust tests** and **eight generator tests** pass.
+The Rust set covers the new all-branch ROM fixture, retained Cucco instruction
+and continuation fixtures, chicken hopping, both touched NPC modules and the
+source-profiler example. Product and source-profiler builds are warning-free;
+library-test compilation retains the same 24 unrelated dead-code warnings.
+The default product and censused candidate are byte-identical.
+
+`verification.json` and `artifact-hashes.json` bind source, binaries,
+authorities, helper identities and evidence. `git diff --check` passes.
+No matcher, classifier, P2, original-timing or environment-switch change is
+included. No GPU, `--video`, cached-av, Snes9x process, continuous live replay,
+full library suite, oracle-cache/shared-ledger write, cargo fmt, commit or push
+occurred. Rebuildable files were removed only from this worktree's own
+`target/`; hunt-7/8 evidence remains read-only. Target stays below 3 GB after
+the initial oversized cache cleanup, and all launched work is joined.
+
+The mixed 63,995 phase residual, two upload phase cases, remaining unpriced
+instructions and deferred Moldorm/wait interaction stay explicit. ROM hold
+recovery and exact CPU picture hashes do not establish delivered-command,
+chip-state, waveform, net SPC-phase or cold exact A/V equality.

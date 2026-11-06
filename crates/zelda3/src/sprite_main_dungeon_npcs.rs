@@ -2847,8 +2847,12 @@ impl ZeldaState {
     //   Sprite_ReturnIfLifted(k);
     // }
     pub(super) fn cucco_calm(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a67f);
         if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x06a684);
             let j = (self.get_random_number() & 0xf) as usize;
+            b.block(0x06a688);
             self.sprite_slot_view_mut(k)
                 .set_x_velocity(CUCCO_CALM_CIRCLE_X_VELOCITIES[j] as u8);
             self.sprite_slot_view_mut(k)
@@ -2857,11 +2861,14 @@ impl ZeldaState {
             // ADC #$10 without clearing carry. AND preserves the carry left by
             // the RNG routine, so consume the full typed RNG result here.
             let delay = self.get_random_number_with_carry().masked_adc(0x1f, 0x10);
+            b.block(0x06a6a0);
             self.sprite_slot_view_mut(k).set_delay_main(delay);
             self.sprite_slot_view_mut(k).increment_ai_state();
-        }
+        } else { b.taken(0x06a682); }
+        b.block(0x06a6aa);
         self.sprite_slot_view_mut(k).set_graphics(0);
-        self.sprite_return_if_lifted(k);
+        b.block(0x06a6ad);
+        if !self.sprite_return_if_lifted(k) { b.block(0x06a6b0); }
     }
 
     // void Chicken_Hopping(int k) {  // sprite_main.c:9379
@@ -2880,22 +2887,33 @@ impl ZeldaState {
     //   Chicken_IncrSubtype2(k, 4);
     // }
     pub(super) fn chicken_hopping(&mut self, k: usize, helper_ordinal: u8) {
-        if ((k as u8) ^ self.game_state.frame.frame_counter) & 1 != 0
-            && self.cucco_do_movement_xy(k) != 0
-        {
-            self.sprite_slot_view_mut(k).set_ai_state(0);
-        }
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a6b1);
+        if ((k as u8) ^ self.game_state.frame.frame_counter) & 1 != 0 {
+            b.block(0x06a6b7);
+            let collision = self.cucco_do_movement_xy(k);
+            b.block(0x06a6ba);
+            if collision != 0 {
+                b.block(0x06a6bc);
+                self.sprite_slot_view_mut(k).set_ai_state(0);
+            } else { b.taken(0x06a6ba); }
+        } else { b.taken(0x06a6b5); }
         // ROM $06:A6BF
+        b.block(0x06a6bf);
         self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
+        b.block(0x06a6c2);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         if (self.sprite_slot_view(k).z() as i8) < 0 {
+            b.block(0x06a6cd);
             self.sprite_slot_view_mut(k).set_z(0);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                b.block(0x06a6d5);
                 self.sprite_slot_view_mut(k).set_delay_main(32);
                 self.sprite_slot_view_mut(k).set_ai_state(0);
-            }
+            } else { b.taken(0x06a6d3); }
+            b.block(0x06a6dd);
             self.sprite_slot_view_mut(k).set_z_velocity(10);
-        }
+        } else { b.taken(0x06a6cb); }
         self.chicken_incr_subtype2_for_draw(
             k,
             4,
@@ -2916,7 +2934,10 @@ impl ZeldaState {
     //   Cucco_DrawPANIC(k);
     // }
     pub(super) fn cucco_flee(&mut self, k: usize, helper_ordinal: u8) {
-        self.sprite_return_if_lifted(k);
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a6fc); b.block(0x06a6ad);
+        if !self.sprite_return_if_lifted(k) { b.block(0x06a6b0); }
+        b.block(0x06a6ff);
         self.cucco_do_movement_xy(k);
         self.complete_cucco_flee_after_move_xy(k, helper_ordinal);
     }
@@ -2925,15 +2946,19 @@ impl ZeldaState {
     /// owns the source statements between movement and the shared subtype
     /// helper.
     pub(super) fn complete_cucco_flee_after_move_xy(&mut self, k: usize, helper_ordinal: u8) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a702);
         self.sprite_slot_view_mut(k).set_z(0);
         let fc = self.game_state.frame.frame_counter as usize;
         if (k ^ fc) & 0x1f == 0 {
+            b.block(0x06a70c);
             let pt = self.sprite_project_speed_towards_link(k, 16);
+            b.block(0x06a711);
             self.sprite_slot_view_mut(k)
                 .set_x_velocity(pt.x.wrapping_neg());
             self.sprite_slot_view_mut(k)
                 .set_y_velocity(pt.y.wrapping_neg());
-        }
+        } else { b.taken(0x06a70a); }
         if self.sprite_main_cpu_boundary
             == Some(SpriteMainCpuBoundary::AfterCuccoFleeMovement {
                 slot: k as u8,
@@ -3004,7 +3029,10 @@ impl ZeldaState {
         if (self.sprite_slot_view(k).z() as i8) < 0 {
             self.sprite_slot_view_mut(k).set_z(0);
             self.sprite_slot_view_mut(k).set_ai_state(2);
+            // The landing tail jumps to the same A70C retarget body as Flee.
+            crate::cycle_ledger::blocks(self.lag_free).block(0x06a70c);
             let pt = self.sprite_project_speed_towards_link(k, 16);
+            crate::cycle_ledger::blocks(self.lag_free).block(0x06a711);
             self.sprite_slot_view_mut(k)
                 .set_x_velocity(pt.x.wrapping_neg());
             self.sprite_slot_view_mut(k)
