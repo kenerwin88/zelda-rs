@@ -15277,7 +15277,9 @@ impl ZeldaState {
                 assets.asset_by_name("kSpcBootstrapUpload")).expect("cold upload asset").to_vec();
             self.import_wram_image(&vec![0x55; self.ram.len()]);
             self.sound_load_intro_song_bank();
-            let logical_audio = self.audio.clone();
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_LAGLESS_BOOTSTRAP").is_some() {
+                eprintln!("lagless-bootstrap standalone {:?}", self.zelda_spc_driver_clock_debug_summary());
+            }
             self.configure_spc_driver_clock_for_rom_bootstrap(&upload)
                 .expect("native lag-free bootstrap");
             let frame = self.frame_ctr_dbg;
@@ -15292,13 +15294,17 @@ impl ZeldaState {
             self.lag_free_intro_schedule = intro_schedule;
             self.boot_memory_initialized = true;
             self.reset_fill_pending = false;
+            let master = self.native_startup_cpu.as_ref().unwrap().timeline.clock_master_cycles();
+            if crate::debug_env::var_os!("ZELDA3_DEBUG_LAGLESS_BOOTSTRAP").is_some() {
+                eprintln!("lagless-bootstrap executed master={master} {:?}", self.zelda_spc_driver_clock_debug_summary());
+            }
+            self.begin_lagless_audio_after_bootstrap(master);
             self.native_startup_cpu = None;
             self.native_ppu = None;
             self.native_bg3_scroll_scanout = None;
-            // Logical playback starts its audio windows after the synchronous
-            // bank load. The reset clock above owns only the bootstrap's CPU
-            // and PPU handoff, not a second playback of its upload silence.
-            self.audio = logical_audio;
+            // The opening NMI and all later callbacks share this executing
+            // receiver. Upload silence precedes the output cursor; it does
+            // not justify replacing the SPC registers, timers or RAM.
             self.finish_rom_bootstrap_initialization();
             return;
         }

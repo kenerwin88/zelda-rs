@@ -1284,6 +1284,7 @@ pub(crate) fn run_logical_replay(args: &[String]) {
     let mut audio_timing: Option<Box<dyn std::io::Write>> = None;
     let mut audio_only = false;
     let mut audio_state_at: Vec<(u64, PathBuf)> = Vec::new();
+    let mut receiver_state_at: Vec<(u64, PathBuf)> = Vec::new();
     let mut audio_pairs = 0u64;
     #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
     let mut note_capture = crate::pcm_windows::NoteCapture::from_env();
@@ -1371,6 +1372,11 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                 let text = value(index);
                 let (at, dir) = text.split_once(':').expect("--audio-state-at ITERATION:DIR");
                 audio_state_at.push((at.parse().expect("audio state iteration"), PathBuf::from(dir)));
+            }
+            "--receiver-state-at" => {
+                let text = value(index);
+                let (at, dir) = text.split_once(':').expect("--receiver-state-at ITERATION:DIR");
+                receiver_state_at.push((at.parse().expect("receiver iteration"), PathBuf::from(dir)));
             }
             "--classification-trace" => {
                 classification_trace = Some(BufWriter::new(fs::File::create(value(index)).expect("create classification trace")));
@@ -1757,10 +1763,21 @@ pub(crate) fn run_logical_replay(args: &[String]) {
             loop {
                 let state_dir = audio_state_at.iter().find(|(at, _)|
                     iteration.is_some_and(|row| row.index == *at)).map(|(_, dir)| dir);
+                let receiver_dir = state_dir.or_else(|| receiver_state_at.iter().find(|(at, _)|
+                    iteration.is_some_and(|row| row.index == *at)).map(|(_, dir)| dir));
                 if let Some(dir) = state_dir {
                     fs::create_dir_all(dir).expect("create audio state directory");
                     fs::write(dir.join(format!("{audio_callbacks}-before.audio")), game.zelda_audio_snapshot_bytes()).expect("audio snapshot");
                     game.zelda_begin_spc_driver_instruction_trace();
+                }
+                if let Some(dir) = receiver_dir {
+                    fs::create_dir_all(dir).expect("create receiver observation directory");
+                    let output = fs::File::create(dir.join(format!("{audio_callbacks}-receiver-before.json.zst")))
+                        .expect("receiver observation");
+                    let mut output = zstd::stream::write::Encoder::new(output, 3).expect("receiver compression");
+                    serde_json::to_writer(&mut output, &game.zelda_spc_receiver_observation())
+                        .expect("receiver state");
+                    output.finish().expect("receiver observation flush");
                 }
                 #[cfg(all(feature = "parity-debug", feature = "rom-timing"))]
                 if note_capture.as_ref().is_some_and(|capture| capture.wants_instructions()) {
@@ -1854,6 +1871,14 @@ pub(crate) fn run_logical_replay(args: &[String]) {
                     fs::write(dir.join(format!("{audio_callbacks}-spc.txt")), format!("{:?}\n{:?}\n{:?}",
                         game.zelda_spc_driver_clock_debug_summary(), game.zelda_modern_audio_voice_debug_states(),
                         game.zelda_take_spc_driver_instruction_trace())).expect("SPC trace");
+                }
+                if let Some(dir) = receiver_dir {
+                    let output = fs::File::create(dir.join(format!("{audio_callbacks}-receiver-after.json.zst")))
+                        .expect("receiver observation");
+                    let mut output = zstd::stream::write::Encoder::new(output, 3).expect("receiver compression");
+                    serde_json::to_writer(&mut output, &game.zelda_spc_receiver_observation())
+                        .expect("receiver state");
+                    output.finish().expect("receiver observation flush");
                 }
                 audio_callbacks += 1;
                 if let Some(output) = audio_pcm.as_mut() {

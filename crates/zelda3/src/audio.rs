@@ -1492,12 +1492,25 @@ impl ZeldaState {
         Ok(())
     }
 
+    pub(crate) fn begin_lagless_audio_after_bootstrap(&mut self, master: u64) {
+        self.audio.modern.driver_clock.as_mut().expect("bootstrap SPC owner")
+            .begin_lagless_output_after_bootstrap(master);
+        self.audio.modern.lagless_sample_clock =
+            crate::spc_driver_clock::LaglessSampleClock::after_bootstrap(master);
+    }
+
     pub fn zelda_spc_driver_clock_debug_summary(&self) -> Option<String> {
         self.audio
             .modern
             .driver_clock
             .as_ref()
             .map(|clock| clock.debug_state_summary())
+    }
+
+    /// Diagnostic machine/clock observation, not a resumable SMP checkpoint.
+    pub fn zelda_spc_receiver_observation(&self)
+        -> Option<(snes::apu::ApuState, Option<snes::Snes9xApuClockCheckpoint>, u64, u64)> {
+        self.audio.modern.driver_clock.as_ref().map(|clock| clock.receiver_observation())
     }
 
     pub fn zelda_begin_spc_driver_instruction_trace(&mut self) {

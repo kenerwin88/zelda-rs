@@ -564,6 +564,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .transpose()?;
     let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram))?;
+    if timing_audit.is_some() {
+        let path = out_dir.join("receiver-reset.json.zst");
+        let mut output = zstd::stream::write::Encoder::new(fs::File::create(path)?, 3)?;
+        serde_json::to_writer(&mut output, &cpu.capture_quiescent_checkpoint()?)?;
+        output.finish()?;
+    }
     let render_every = env::var_os("ZELDA3_LEDGER_PICTURES").is_some();
     let render_pictures = !frame_hosts.is_empty() || !picture_hosts.is_empty() || render_every;
     // `ZELDA3_LEDGER_FRAMES` alone draws only from a few hosts before each
@@ -654,6 +660,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             |step, exec| -> Result<(), snes::SourceCpuError> {
                 if failure.is_some() {
                     return Ok(());
+                }
+                // Observations retain the complete cold receiver, including
+                // its suspended SMP instruction, DSP and conversion clock.
+                // No checkpoint is read back into this source execution.
+                let receiver_boundary = if current.is_none() && opening.is_none()
+                    && (exec.machine().snes().cpu.k, exec.machine().snes().cpu.pc) == (0, 0x802c) {
+                    Some("cold-upload-return".to_owned())
+                } else if step.origin_pc == 0x008038 {
+                    current.as_ref().filter(|iteration| profile_iterations.iter()
+                        .any(|&(lo, hi)| (lo..=hi).contains(&iteration.index)))
+                        .map(|iteration| format!("{}-main", iteration.index))
+                } else { None };
+                if timing_audit.is_some() && let Some(boundary) = receiver_boundary {
+                    let path = out_dir.join(format!("receiver-{boundary}.json.zst"));
+                    let mut output = zstd::stream::write::Encoder::new(fs::File::create(path)
+                        .expect("receiver observation"), 3).expect("receiver compression");
+                    serde_json::to_writer(&mut output, &exec.capture_quiescent_checkpoint()
+                        .expect("quiescent receiver boundary")).expect("receiver state");
+                    output.finish().expect("receiver observation flush");
                 }
                 if let Some(iteration) = opening.as_ref().or(current.as_ref())
                     && profile_iterations.iter().any(|&(lo, hi)| (lo..=hi).contains(&iteration.index))

@@ -49,6 +49,15 @@ pub(crate) struct LaglessSampleClock {
 }
 
 impl LaglessSampleClock {
+    pub(crate) fn after_bootstrap(master: u64) -> Self {
+        let denominator = SNES9X_APU_RATIO_DENOMINATOR * APU_CYCLES_PER_DSP_SAMPLE;
+        Self {
+            remainder: (u128::from(master) * u128::from(SNES9X_APU_RATIO_NUMERATOR)
+                % u128::from(denominator)) as u64,
+            frame: snes_frame_for_master_clock(master),
+        }
+    }
+
     pub(crate) fn last_window(&self) -> (u64, u64, u64) {
         let denominator = SNES9X_APU_RATIO_DENOMINATOR * APU_CYCLES_PER_DSP_SAMPLE;
         let duration = (snes_frame_start_master_clock(self.frame)
@@ -707,6 +716,17 @@ impl AbsoluteDspEventClock {
         self.apu.debug_dsp_write_trace = Some(Vec::new());
     }
 
+    /// The reset CPU has already executed the receiver and the opening NMI.
+    /// Start output on that same sample lattice without replacing, rebasing,
+    /// or finishing the retained SMP instruction. Its CPU clock still owns
+    /// the conversion remainder and any instruction credit.
+    pub(crate) fn begin_lagless_output_after_bootstrap(&mut self, master: u64) {
+        assert!(self.cpu_ports.is_some(), "bootstrap must retain its executing APU");
+        self.absolute_apu_cycle = snes_master_clock_to_apu_cycle(master)
+            / APU_CYCLES_PER_DSP_SAMPLE * APU_CYCLES_PER_DSP_SAMPLE;
+        self.host_frame_index = snes_frame_for_master_clock(master) + 1;
+    }
+
     pub(crate) fn advance(
         &mut self,
         commands: EngineAudioCommandBatch,
@@ -969,6 +989,12 @@ impl AbsoluteDspEventClock {
                     let (event_target, port, value) = host_port_events[next_host_port];
                     if event_target > execution_cycle {
                         break;
+                    }
+                    if port == 0 && value == 0xff && !self.observation_silent
+                        && crate::debug_env::var_os!("ZELDA3_DEBUG_SONG_UPLOAD").is_some()
+                    {
+                        eprintln!("song_upload_command_state target={event_target} delivery={execution_cycle} {}",
+                            self.debug_state_summary());
                     }
                     self.apu.in_ports[usize::from(port)] = value;
                     self.debug_host_port_write(execution_cycle, port, value, "instruction-return");
@@ -1300,7 +1326,7 @@ impl AbsoluteDspEventClock {
     pub(crate) fn debug_state_summary(&self) -> String {
         let apu = self.cpu_ports.as_ref().map_or(&self.apu, |owner| owner.machine());
         format!(
-            "abs={} origin={} local={} pc={:04x} sp={:02x} a={:02x} x={:02x} y={:02x} z={} c={} t0={},{},{},{},{} ram43={} in={:02x?} out={:02x?} transfer={:?}",
+            "abs={} origin={} local={} pc={:04x} sp={:02x} a={:02x} x={:02x} y={:02x} z={} c={} t0={},{},{},{},{} ram43={} in={:02x?} out={:02x?} transfer={:?} timers={:?} cpu_clock={:?} dsp_adr={} dsp_regs={:02x?}",
             self.absolute_apu_cycle,
             self.apu_cycle_origin,
             apu.cycles,
@@ -1322,7 +1348,19 @@ impl AbsoluteDspEventClock {
             self.song_bank_transfer
                 .as_ref()
                 .map(|transfer| transfer.phase),
+            apu.timer,
+            self.cpu_ports.as_ref().map(|owner| owner.clock().checkpoint()).or(self.cpu_port_clock.map(|(clock, _)| clock)),
+            apu.dsp_adr,
+            apu.dsp_regs,
         )
+    }
+
+    pub(crate) fn receiver_observation(&self)
+        -> (ApuState, Option<Snes9xApuClockCheckpoint>, u64, u64) {
+        let apu = self.cpu_ports.as_ref().map_or(&self.apu, |owner| owner.machine());
+        let clock = self.cpu_ports.as_ref().map(|owner| owner.clock().checkpoint())
+            .or(self.cpu_port_clock.map(|(clock, _)| clock));
+        (apu.clone(), clock, self.absolute_apu_cycle, self.apu_cycle_origin)
     }
 
     pub(crate) fn begin_debug_instruction_trace(&mut self) {

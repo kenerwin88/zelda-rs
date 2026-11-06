@@ -36,6 +36,52 @@ fn lag_free_bootstrap_uploads_match_first_rom_nmi() {
 
 #[test]
 #[cfg(feature = "rom-timing")]
+fn lag_free_bootstrap_keeps_the_continuous_cold_receiver() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut native = ZeldaState::new();
+    native.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    native.set_lag_free(true);
+    let mut source = snes::Snes9xColdCpuExecutor::from_lorom_reset_with_sram(
+        &rom, Some(&native.sram)).unwrap();
+    let mut steps = 0;
+    while (source.machine().snes().cpu.k, source.machine().snes().cpu.pc) != (0, 0x8056) {
+        source.step().unwrap();
+        steps += 1;
+        assert!(steps < 2_000_000);
+    }
+    native.zelda_initialization_code();
+    let mut actual = native.native_apu_port_owner_for_test();
+    let master = source.machine().timeline().clock_master_cycles();
+    source.run_until_main_loop_return().unwrap();
+    assert_eq!(source.machine().timeline().clock_master_cycles(), master,
+        "consume the pending host publication without executing another instruction");
+    let probe = snes::RomCpuTimingProbe::from_cold_cpu_executor(source).unwrap();
+    let mut expected = probe.apu_ports().unwrap().clone();
+    eprintln!("bootstrap native before sync: {:?} {:?} timers={:?} $43={}",
+        actual.clock().checkpoint(), actual.machine().spc, actual.machine().timer, actual.machine().ram[0x43]);
+    eprintln!("bootstrap source before sync: {:?} {:?} timers={:?} $43={}",
+        expected.clock().checkpoint(), expected.machine().spc, expected.machine().timer, expected.machine().ram[0x43]);
+    actual.sync_to(master).unwrap();
+    expected.sync_to(master).unwrap();
+    assert_eq!(actual.clock().checkpoint(), expected.clock().checkpoint(), "continuous reset clock");
+    assert_eq!(actual.machine().cycles, expected.machine().cycles);
+    assert_eq!(bincode::serialize(&actual.machine().timer).unwrap(),
+        bincode::serialize(&expected.machine().timer).unwrap());
+    assert_eq!(actual.machine().spc.save_c_saveload(), expected.machine().spc.save_c_saveload());
+    assert_eq!(actual.machine().in_ports, expected.machine().in_ports);
+    assert_eq!(actual.machine().out_ports, expected.machine().out_ports);
+    assert_eq!(actual.machine().ram, expected.machine().ram);
+    // The exact source DSP owns its live registers in its sidecar; the
+    // serialized legacy dsp_regs mirror is deliberately stale there. Compare
+    // the executed register-write stream, not those two different mirrors.
+    assert_eq!(actual.machine().dsp_write_history, expected.machine().dsp_write_history);
+    eprintln!("continuous receiver at main entry master={master}: {} SPC cycles, $43={}, timers={:?}, spc={:?}",
+        actual.machine().cycles, actual.machine().ram[0x43], actual.machine().timer, actual.machine().spc);
+}
+
+#[test]
+#[cfg(feature = "rom-timing")]
 fn link_dma_reads_live_wram_in_both_source_banks() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
