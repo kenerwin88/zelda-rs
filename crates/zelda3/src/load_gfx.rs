@@ -1506,12 +1506,16 @@ impl ZeldaState {
 
     /// ROM: `Palette_UpdateGlovesColor`
     pub(super) fn palette_update_gloves_color(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bee1b);
         let gloves = self.game_state.inventory.items.gloves();
         if gloves != 0 {
+            b.block(0x1bee26);
             let color = self.gloves_color(gloves.wrapping_sub(1) as usize);
             self.set_aux_color_asset(0xfd, color);
             self.set_main_color_asset(0xfd, color);
-        }
+        } else { b.taken(0x1bee24); }
+        b.block(0x1bee35);
         self.increment_cgram_update_flag();
     }
 
@@ -1695,8 +1699,12 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_fade_intro2(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x00ed8f);
         self.palette_filter_restore_additive(0x40, 0xc0);
+        b.block(0x00ed9a);
         self.palette_filter_restore_additive(0x40, 0xc0);
+        b.block(0x00eda3);
         self.decrement_countdown();
         self.increment_cgram_update_flag();
     }
@@ -2204,15 +2212,26 @@ impl ZeldaState {
 
     /// ROM: `Palette_Load_LinkArmorAndGloves`
     pub(super) fn palette_load_link_armor_and_gloves(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bedf9));
         let armor = self.game_state.inventory.items.armor() as usize;
         let Some(palette) = self.asset_raw(81).map(Vec::from) else {
             return;
         };
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bedf9);
         let src = armor * 15 * 2;
-        for i in 0..15 {
-            let color = read_word_from_slice(&palette, src + i * 2);
-            self.set_aux_color_asset((0x1e2 >> 1) + i, color);
-            self.set_main_color_asset((0x1e2 >> 1) + i, color);
+        {
+            // The source JSR owns the arbitrary two-bank copy separately.
+            let _copy = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bef7b));
+            b.block(0x1bef7b);
+            for i in 0..15 {
+                b.block(0x1bef82);
+                if i < 14 { b.taken(0x1bef93); }
+                let color = read_word_from_slice(&palette, src + i * 2);
+                self.set_aux_color_asset((0x1e2 >> 1) + i, color);
+                self.set_main_color_asset((0x1e2 >> 1) + i, color);
+            }
+            b.block(0x1bef95);
         }
         self.palette_update_gloves_color();
     }
@@ -4466,13 +4485,19 @@ impl ZeldaState {
 
     /// ROM: `Graphics_IncrementalVRAMUpload`
     pub(super) fn graphics_incremental_vram_upload(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x00deff));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x00deff);
         let k = self
             .game_state
             .display
             .incremental_vram_upload_counter_usize();
         if k == 16 {
+            b.taken(0x00df04);
+            b.block(0x00df19);
             return;
         }
+        b.block(0x00df06);
         self.queue_tilemap_update(
             INCREMENTAL_VRAM_UPLOAD_DESTINATIONS[k],
             INCREMENTAL_VRAM_UPLOAD_SOURCES[k],
@@ -4505,6 +4530,7 @@ impl ZeldaState {
             base_off,
         );
         self.increment_vram_upload_counter();
+        b.block(0x00df19);
     }
 
     pub(super) fn PrepTransAuxGfx(&mut self) {
@@ -7023,8 +7049,6 @@ impl ZeldaState {
         // $02:C769: setup, 32 interleaved eight-word copies, loop branches,
         // and the final CGRAM publication/return. Partial-copy callers own
         // their instruction progress separately.
-        let _scope = crate::cycle_ledger::routine(0x02_c769);
-        crate::cycle_ledger::charge(38 + 32 * 828 + 31 * 6 + 102);
         self.advance_palette_cache_copy(0, 257);
     }
 
@@ -7032,12 +7056,23 @@ impl ZeldaState {
     /// step publishes the CGRAM update only after all 256 words are stored.
     pub(super) fn advance_palette_cache_copy(&mut self, start: u16, end: u16) {
         assert!(start <= end && end <= 257);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c769));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        if start == 0 && end != 0 { b.block(0x02c769); }
         for ordinal in start..end {
             if ordinal == 256 {
+                b.block(0x02c7b3);
                 self.increment_cgram_update_flag();
             } else {
+                // Each retained cursor is one retired LDA/STA pair. The
+                // index/branch tail belongs only to the eighth pair.
+                b.block(0x02c76d + u32::from(ordinal % 8) * 8);
                 let index = usize::from(ordinal % 8) * 32 + usize::from(ordinal / 8);
                 self.copy_color((Bank::Aux, index), (Bank::Main, index));
+                if ordinal % 8 == 7 {
+                    b.block(0x02c7ad);
+                    if ordinal < 255 { b.taken(0x02c7b1); }
+                }
             }
         }
     }
@@ -7244,6 +7279,62 @@ mod system1_palette_tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn prefix10_armor_and_gloves_markers_match_rom() {
+        for armor in 0..3 {
+            for gloves in 0..3 {
+                let mut n = native();
+                n.write_wram_byte(0xf35b, armor);
+                n.write_wram_byte(0xf354, gloves);
+                n.sync_native_game_state_from_ram();
+                let s = source(&n, 0xedf9, true);
+                let result = crate::cycle_ledger::assert_rom_marker_work(0x1bedf9, s,
+                    |s| s.cpu.k == 0x1b && (0xedf9..0xee3a).contains(&s.cpu.pc),
+                    || n.palette_load_link_armor_and_gloves());
+                for range in [0xc300..0xc500, 0xc500..0xc700] {
+                    assert_eq!(&n.wram_image()[range.clone()], &result.snes().ram[range]);
+                }
+                assert_eq!(n.read_wram_byte(0x15), result.snes().ram[0x15]);
+            }
+        }
+    }
+
+    #[test]
+    fn prefix10_palette_cache_markers_resume_at_every_word() {
+        for cut in 0..=257 {
+            let mut n = native();
+            for i in 0..256 { n.set_aux_color_asset(i, (i as u16 * 31) & 0x7fff); }
+            let mut s = source(&n, 0xc769, true);
+            s.cpu.k = 2; s.cpu.db = 2; s.cpu.sp = 0x1fd;
+            s.ram[0x1fe..0x200].copy_from_slice(&[0xff, 0x7f]);
+            let result = crate::cycle_ledger::assert_rom_marker_work(0x02c769, s,
+                |s| s.cpu.k == 2 && (0xc769..0xc7b8).contains(&s.cpu.pc), || {
+                    n.advance_palette_cache_copy(0, cut);
+                    n.advance_palette_cache_copy(cut, cut);
+                    n.advance_palette_cache_copy(cut, 257);
+                });
+            assert_eq!(&n.wram_image()[0xc500..0xc700], &result.snes().ram[0xc500..0xc700]);
+            assert_eq!(n.read_wram_byte(0x15), result.snes().ram[0x15]);
+        }
+    }
+
+    #[test]
+    fn prefix10_incremental_graphics_upload_matches_rom() {
+        for counter in 0..=16 {
+            let mut n = native();
+            n.write_wram_byte(0x412, counter);
+            n.sync_native_game_state_from_ram();
+            let mut s = source(&n, 0xdeff, true);
+            s.cpu.k = 0; s.cpu.db = 0;
+            let result = crate::cycle_ledger::assert_rom_marker_work(0x00deff, s,
+                |s| s.cpu.k == 0 && (0xdeff..0xdf1a).contains(&s.cpu.pc),
+                || n.graphics_incremental_vram_upload());
+            for a in [0x19, 0x118, 0x119, 0x412] {
+                assert_eq!(n.read_wram_byte(a), result.snes().ram[a]);
             }
         }
     }

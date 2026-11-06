@@ -1903,25 +1903,39 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_51_ArmosStatue(int k) {  // 85b703
     pub(super) fn sprite_51_armos_statue(&mut self, k: usize) {
+        // $05:B703..B7DE: the dispatched caller, excluding every child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05b703));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05b703);
         self.armos_draw(k);
+        b.block(0x05b706);
         if self.sprite_slot_view(k).f() != 0 {
+            b.block(0x05b70b);
             self.sprite_zero_velocity_xy(k);
-        }
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+        } else { b.taken(0x05b709); }
+        b.block(0x05b70e);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
-        self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+        b.block(0x05b711);
+        self.sprite_move_z(k, SpriteMoveZEntry::Rom05FA2E);
+        b.block(0x05b714);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         if sign8(self.sprite_slot_view(k).z()) {
+            b.block(0x05b722);
             let value = 0;
             self.sprite_slot_view_mut(k).set_z(value);
             let value = 0;
             self.sprite_slot_view_mut(k).set_z_velocity(value);
             self.sprite_zero_velocity_xy(k);
-        }
+        } else { b.taken(0x05b720); }
+        b.block(0x05b72b);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.taken(0x05b72e);
+            b.block(0x05b733);
             self.sprite_slot_view_mut(k).or_flags3(0x40);
             if self.sprite_slot_view(k).delay_main() == 1 {
+                b.block(0x05b742);
                 self.sprite_slot_view_mut(k).and_flags3(!0x40);
                 self.sprite_slot_view_mut(k).add_ai_state(1);
                 self.sprite_slot_view_mut(k).and_flags2(!0x80);
@@ -1929,16 +1943,18 @@ impl ZeldaState {
                 let value = 0x0b;
                 self.sprite_slot_view_mut(k).set_oam_flags(value);
             } else {
-                if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0
-                    && self
+                b.taken(0x05b740);
+                b.block(0x05b75e);
+                let tick = ((k as u8) ^ self.game_state.frame.frame_counter) & 3 == 0;
+                let near_x = self
                         .game_state
                         .player
                         .follower_link
                         .x()
                         .wrapping_sub(self.game_state.sprites.workspace.current_sprite_x())
                         .wrapping_add(31)
-                        < 62
-                    && self
+                        < 62;
+                let near_y = self
                         .game_state
                         .player
                         .follower_link
@@ -1946,40 +1962,69 @@ impl ZeldaState {
                         .wrapping_add(8)
                         .wrapping_sub(self.game_state.sprites.workspace.current_sprite_y())
                         .wrapping_add(48)
-                        < 88
-                    && self.sprite_slot_view(k).delay_main() == 0
-                {
+                        < 88;
+                if !tick { b.taken(0x05b763); }
+                else {
+                    b.block(0x05b765);
+                    if !near_x { b.taken(0x05b774); }
+                    else {
+                        b.block(0x05b776);
+                        if !near_y { b.taken(0x05b787); }
+                        else {
+                            b.block(0x05b789);
+                            if self.sprite_slot_view(k).delay_main() != 0 { b.taken(0x05b78e); }
+                        }
+                    }
+                }
+                if tick && near_x && near_y && self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x05b790);
                     let value = 48;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x22);
                 }
+                b.block(0x05b79b);
                 // ROM $05:B79D
-                if self.sprite_check_damage_same_layer_long_marked(k) {
+                let damaged = self.sprite_check_damage_same_layer_long_marked(k);
+                b.block(0x05b7a1);
+                if damaged {
+                    b.block(0x05b7a3);
                     self.sprite_nullify_hookshot_drag();
+                    b.block(0x05b7a7);
                     self.sprite_repel_dash();
-                }
+                } else { b.taken(0x05b7a1); }
+                b.block(0x05b7ab);
                 if self.sprite_slot_view(k).delay_main() != 0 {
+                    b.block(0x05b7b0);
                     let value = (self.sprite_slot_view(k).delay_main() >> 1) & 0x0e;
                     self.sprite_slot_view_mut(k).xor_oam_flags(value);
-                }
+                } else { b.taken(0x05b7ae); }
+                b.block(0x05b7b9);
             }
         } else {
+            b.block(0x05b730);
+            b.block(0x05b7ba);
             // $05:B7BA JSR $05:AB93: both complete damage calls.
             self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
+            b.block(0x05b7bd);
             if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
                 return;
             }
             // ROM $05:B7C0
+            b.block(0x05b7c0);
             self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
             // ROM $05:B7C3 -> $05:B88D -> $06:E496
+            b.block(0x05b7c3);
             let _ = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
+            b.block(0x05b7c6);
             if (self.sprite_slot_view(k).delay_main() | self.sprite_slot_view(k).z()) == 0 {
+                b.block(0x05b7ce);
                 let value = 8;
                 self.sprite_slot_view_mut(k).set_delay_main(value);
                 let value = 16;
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
                 self.sprite_apply_speed_towards_link(k, 12);
-            }
+            } else { b.taken(0x05b7cc); }
+            b.block(0x05b7de);
         }
     }
 

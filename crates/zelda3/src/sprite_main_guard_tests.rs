@@ -5,6 +5,47 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn prefix10_guard_collision_caller_matches_rom() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    for slot in [0usize, 15] {
+        for ai in [0, 3, 4] {
+            for recoil in [0, 1, 4, 128] {
+                for subtype in [0, 5] {
+                    for alert in [0, 1] {
+                        let mut n = fresh_state();
+                        for (a, v) in [(0xdd0, 9), (0xe20, 0x42), (0xd80, ai),
+                            (0xea0, recoil), (0xe30, subtype), (0xd10, 0x40), (0xd00, 0x40)] {
+                            n.write_wram_byte(a + slot, v);
+                        }
+                        for (a, v) in [(0x10, 9), (0x1b, 0), (0xfdc, alert),
+                            (0xfa0, slot as u8), (0xf359, 1)] { n.write_wram_byte(a, v); }
+                        n.write_wram_word(0x20, 0x1000);
+                        n.write_wram_word(0x22, 0x1000);
+                        n.sync_native_game_state_from_ram();
+                        n.set_lag_free(true);
+                        let mut s = snes::Snes::new();
+                        s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                        s.ram.copy_from_slice(&n.wram_image());
+                        s.cpu.e = false; s.cpu.unpack_flags(0x30);
+                        s.cpu.k = 5; s.cpu.db = 5; s.cpu.pc = 0xc263;
+                        s.cpu.x = slot as u16; s.cpu.sp = 0x1fb;
+                        s.ram[0x1fc..0x200].copy_from_slice(&[0xff, 0x7f, 0, 0]);
+                        crate::cycle_ledger::assert_rom_marker_work(0x05c263, s,
+                            |s| s.cpu.k == 5 && (0xc263..0xc2c6).contains(&s.cpu.pc), || {
+                                let _scope = crate::cycle_ledger::routine(0x05c263);
+                                if n.guard_main_after_parry_through_collision(slot) {
+                                    n.guard_main_after_collision_before_ai(slot);
+                                }
+                            });
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn guard_probe_oam_boundary_commits_movement_without_replaying_it_on_resume() {
     let mut split = fresh_state();
     let probe_slot = 8;

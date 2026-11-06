@@ -1065,27 +1065,44 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_0C_OctorokStone(int k) {  // 86d5b9
     pub(super) fn sprite_0_c_octorok_stone(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06d5b9));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06d5b9);
         if self.sprite_slot_view(k).state() == 6 {
+            b.block(0x06d5c0);
             self.sprite_draw_octorok_stone_crumbling(k);
+            b.block(0x06d5c3);
             if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
                 return;
             }
+            b.block(0x06d5c6);
             if self.sprite_slot_view(k).delay_main() == 30 {
+                b.block(0x06d5cd);
                 self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
-            }
+            } else { b.taken(0x06d5cb); }
+            b.block(0x06d5d3);
         } else {
+            b.taken(0x06d5be);
+            b.block(0x06d5d4);
             self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
+            b.block(0x06d5d7);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
+            b.block(0x06d5da);
             self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced);
             // ROM $06:D5DD
+            b.block(0x06d5dd);
             self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
-            if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0
-                && self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0
-            {
-                self.sprite_func3(k);
-            }
+            b.block(0x06d5e0);
+            if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0 {
+                b.block(0x06d5e7);
+                let collided = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0;
+                b.block(0x06d5ea);
+                if collided { b.block(0x06d5ef); self.sprite_func3(k); }
+                else { b.taken(0x06d5ed); }
+            } else { b.taken(0x06d5e5); }
+            b.block(0x06d5f2);
         }
     }
 

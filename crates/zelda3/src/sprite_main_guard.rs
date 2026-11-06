@@ -808,26 +808,58 @@ impl ZeldaState {
 
     fn guard_main_after_parry_through_collision(&mut self, k: usize) -> bool {
         // $05:C263 JSL $06:F121, after the C25F far parry call returns.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c263);
         let dmg_link = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
         let alert = self.game_state.sprites.system.alert_flag() != 0;
-        if (dmg_link || alert) && self.sprite_slot_view(k).ai_state() < 3 {
-            self.sprite_slot_view_mut(k).set_ai_state(3);
-            self.guard_set_timer_and_assert_tile_hit_box(k, 0x20);
-        } else if self.sprite_slot_view(k).f() != 0 && self.sprite_slot_view(k).f() >= 4 {
-            self.sprite_slot_view_mut(k).set_ai_state(4);
-            self.guard_set_timer_and_assert_tile_hit_box(k, 0x80);
+        b.block(0x05c267);
+        if dmg_link { b.taken(0x05c267); }
+        else {
+            b.block(0x05c269);
+            if !alert { b.taken(0x05c26c); }
         }
+        if dmg_link || alert {
+            b.block(0x05c26e);
+            if self.sprite_slot_view(k).ai_state() >= 3 { b.taken(0x05c273); }
+        }
+        if (dmg_link || alert) && self.sprite_slot_view(k).ai_state() < 3 {
+            b.block(0x05c275);
+            self.sprite_slot_view_mut(k).set_ai_state(3);
+            b.block(0x05c28e);
+            self.guard_set_timer_and_assert_tile_hit_box(k, 0x20);
+        } else {
+            b.block(0x05c27e);
+            if self.sprite_slot_view(k).f() == 0 { b.taken(0x05c281); }
+            else {
+                b.block(0x05c283);
+                if self.sprite_slot_view(k).f() < 4 { b.taken(0x05c285); }
+            }
+            if self.sprite_slot_view(k).f() >= 4 {
+                b.block(0x05c287);
+                self.sprite_slot_view_mut(k).set_ai_state(4);
+                b.block(0x05c28e);
+                self.guard_set_timer_and_assert_tile_hit_box(k, 0x80);
+            }
+        }
+        b.block(0x05c291);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
             return false;
         }
+        b.block(0x05c294);
         if (self.sprite_slot_view(k).subtype() & 7) < 5 {
+            b.block(0x05c29d);
             if self.sprite_slot_view(k).wall_collision() == 0 {
+                b.block(0x05c2a2);
                 // $05:C2A2 / $05:C2AA JSR $F9ED: complete same-bank XY.
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
-            }
+            } else { b.taken(0x05c2a0); }
+            b.block(0x05c2a5);
             // $05:C2A5 JSR B88D, whose JSL selects E496; the E4AB body is separate.
-            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom06E496);
+            self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
+            b.block(0x05c2a8);
         } else {
+            b.taken(0x05c29b);
+            b.block(0x05c2aa);
             // $05:C2A2 / $05:C2AA JSR $F9ED: complete same-bank XY.
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         }
@@ -835,9 +867,13 @@ impl ZeldaState {
     }
 
     fn guard_main_after_collision_before_ai(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05c2ad);
         if self.sprite_slot_view(k).ai_state() != 4 {
+            b.block(0x05c2b4);
             self.sprite_slot_view_mut(k).set_g(0);
-        }
+        } else { b.taken(0x05c2b2); }
+        b.block(0x05c2b7);
     }
 
     pub(super) fn guard_main_until_tile_collision_return(&mut self, k: usize) {

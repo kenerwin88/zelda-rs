@@ -570,18 +570,28 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_E3_Fairy(int k) {  // 86cf94
     pub(super) fn sprite_e3_fairy(&mut self, k: usize) {
+        // CF94..CFAF: draw/touchability prefix through the inactive return.
+        // The AI dispatch and its bodies remain separate, unpriced work.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06cf94));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06cf94);
         let value = 1;
         self.sprite_slot_view_mut(k).set_ignore_projectile(value);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.block(0x06cf9e);
             if self.game_state.world.location.is_outdoors() {
+                b.block(0x06cfa2);
                 let value = 48;
                 self.sprite_slot_view_mut(k).set_object_priority(value);
-            }
+            } else { b.taken(0x06cfa0); }
+            b.block(0x06cfa7);
             if self.sprite_draw_absorbable_transient(k, true) {
                 return;
             }
-        }
+        } else { b.taken(0x06cf9c); }
+        b.block(0x06cfaa);
         self.fairy_check_if_touchable(k);
+        b.block(0x06cfad);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }

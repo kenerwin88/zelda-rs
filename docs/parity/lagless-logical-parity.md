@@ -5693,3 +5693,296 @@ The mixed 63,995 phase residual, two upload phase cases, remaining unpriced
 instructions and deferred Moldorm/wait interaction stay explicit. ROM hold
 recovery and exact CPU picture hashes do not establish delivered-command,
 chip-state, waveform, net SPC-phase or cold exact A/V equality.
+
+## Lagless prefix hunt 10
+
+Worktree `/Users/missingno/Documents/zelda3-rs-codex`, branch
+`codex/prefix-hunt10`, based on **24130104**. Evidence is retained in
+`target/prefix-hunt10/`. The full-v2 ledger and pinned oracle cache remain
+read-only. Every reused authority and evidence file is hash-checked; the
+fresh 94,334-iteration baseline predictor CSV equals hunt 9 byte for byte.
+
+### Reclassification and remaining owners
+
+The classification is refreshed against the new main, including hunt 9's
+Cucco additions. Before: **23 instruction-shortfall / 0 independently proved
+inherited arrival / 2 upload poll-return / 1 mixed entry-bus** rows. After:
+**13 / 0 / 2 / 1**, leaving **16 missing rows before 94,334**. Ten early rows
+recover; 49 recover over the complete ROM route. The 26-row cohort gains
+**159,536 instruction clocks**. Arrival and bus observations remain
+diagnostics; no deficit or inverse becomes a price.
+
+`classification.csv/json` names every remaining row and its specific blocker.
+`reconciled-owners-after.json` retains all signed owner buckets, including
+zero-sum aliases and the existing -22-clock main-return convention. Sprite
+partitions sum exclusive instruction work; raw overlapping inclusive gaps
+are never summed as omissions. The source has no V-counter reads on these
+26 rows, and native raster-wait time stays zero.
+
+| Iteration | Class | Instruction clocks to diagnostic hold boundary | Remaining non-poll instruction gap | Specific remaining blocker |
+| --- | --- | ---: | ---: | --- |
+| 34,318 | (c) | 265,206 | 20,730 | Executed upload polling/return phase; equal receiver state and first-poll phase unproved; remaining non-poll loaders/callers are insufficient alone |
+| 35,294 | (a) | 1,588 | 5,934 | $42/09 2,824, $ba/09 858; Y movement response 1,090, X movement response 850, Y item caller 150, sword caller 184 |
+| 35,300 | (a) | 5,714 | 5,934 | $42/09 2,824, $ba/09 858; Y movement response 1,090, X movement response 850, Y item caller 150, sword caller 184 |
+| 35,304 | (a) | 5,572 | 5,934 | $42/09 2,824, $ba/09 858; Y movement response 1,090, X movement response 850, Y item caller 150, sword caller 184 |
+| 35,306 | (a) | 2,048 | 6,922 | $42/09 3,812, $ba/09 858; Y movement response 1,090, X movement response 850, Y item caller 150, sword caller 184 |
+| 43,367 | (a) | 1,648 | 3,860 | $1d/09 268, $2a/09 64, $3c/09 68, $74/09 482; Y movement response 1,090, X movement response 850, Y item caller 150, sword caller 184, tile-interaction caller 726 |
+| 47,033 | (a) | 3,370 | 3,676 | $2a/09 56, $3c/09 60, $74/09 474, $da/09 108; Y movement response 1,090, X movement response 850, Y item caller 150, sword caller 184, tile-interaction caller 726 |
+| 48,247 | (a) | 5,888 | 7,580 | $2a/09 56, $3c/09 60, $74/09 474, $da/09 108; Y movement response 1,090, X movement response 850, Y item caller 150, tile-interaction caller 726, 079d72 1,468, 08fb2b 456, 0ff979 2,164 |
+| 48,556 | (c) | 70,310 | 20,684 | Executed upload polling/return phase; equal receiver state and first-poll phase unproved; remaining non-poll loaders/callers are insufficient alone |
+| 51,093 | (a) | 786 | 3,592 | $2a/09 64, $3c/09 68, $74/09 482; Y movement response 1,090, X movement response 850, Y item caller 150, sword caller 184, tile-interaction caller 598, 02f2a5 128 |
+| 63,077 | (a) | 7,412 | 8,912 | $1b/09 1,746, $41/09 816, $42/09 1,214, $46/09 2,844; Y movement response 1,090, X movement response 850, Y item caller 190, sword caller 184 |
+| 63,081 | (a) | 7,670 | 8,912 | $1b/09 1,746, $41/09 816, $42/09 1,214, $46/09 2,844; Y movement response 1,090, X movement response 850, Y item caller 190, sword caller 184 |
+| 63,974 | (a) | 3,160 | 4,804 | $08/09 2,186, $0a/09 214, $51/09 236; Y movement response 1,090, Y item caller 190, sword caller 184, tile-interaction caller 726 |
+| 63,995 | (d) | 2,708 | 2,698 | 2698 non-poll instruction clocks vs 2708 inverse; remaining Octorok and movement/Y-item/sword instructions plus unresolved 10-clock NMI-entry/bus split |
+| 64,003 | (a) | 2,228 | 3,360 | $08/09 192, $0a/09 96, $0c/06 780; Y movement response 1,090, X movement response 850, Y item caller 190, sword caller 184 |
+| 64,024 | (a) | 3,628 | 5,384 | $08/09 192, $0a/09 96, $51/09 118; Link state aliases 1,434, Y movement response 1,090, X movement response 850, 078926 230, 0792a0 348, 0792b9 112, 07e1be 550, 07e1d7 314, 07e370 3,100 |
+
+Sprite labels are type/state: `$42/$09` is guard; `$BA/$09` whirlpool;
+$1D/$09` flute quest; `$2A/$09` sweeping lady; `$3C/$09` Kakariko boy;
+$74/$09` running boy; `$DA/$09` rupee; `$1B/$09` arrow; `$41/$09` guard;
+$46/$09` blue archer; `$08/$0A` Octoroks; `$0C/$06` dying stone; and
+$51/$09` Armos. The movement buckets are the remaining Y/X response tails
+after their already-priced probe/setup children. Map-scroll, Y-item, sword
+and named hexadecimal caller residues remain unpriced; their per-row
+decomposition is retained rather than charged as an aggregate.
+
+### ROM-exact owners and fixtures
+
+| Owner | Added clocks on the 26-row cohort | Affected rows |
+| --- | ---: | ---: |
+| palette cache continuation | 80,466 | 3 |
+| armor/glove caller and armor copy | 27,830 | 5 |
+| Armos caller and Z movement | 18,536 | 7 |
+| guard collision caller and bank-5 wrapper | 16,216 | 7 |
+| Octorok-stone caller | 13,932 | 7 |
+| intro dispatch/fade | 1,386 | 1 |
+| fairy draw prefix | 1,056 | 3 |
+| incremental graphics uploader | 114 | 1 |
+| **Total** | **159,536** | **26-row cohort** |
+
+The cache copy now retires each actual LDA/STA pair and each completed
+eight-word loop tail, retaining its cursor over suspension. All 258 possible
+cuts, including empty/repeated slices and the final CGRAM publication, match
+the unmodified ROM. The atomic caller uses the same owner, replacing its
+existing 26,822-clock scalar without adding it again. Only three previously
+unpriced pre-dungeon continuations contribute the 80,466-clock increase.
+
+Armor/glove caller markers preserve the real 15-word arbitrary-copy child.
+The three-word sword and four-word shield calls remain explicit omissions:
+2,508 clocks on each of the five selected palette-load rows. The guard path
+owns its actual post-parry branches, movement/collision call opcodes and RTS
+dispatch, plus its bank-5 B88D wrapper. The blue-archer B88D calls remain
+unpriced. Armos owns its caller and actual bank-5 Z mover; selecting the real
+bank-5 inactive entry changes attribution without changing its total price.
+Octorok stones retain their actual crumbling/active branches. Fairy pricing
+ends at the draw/touchability/inactive prefix; it does not precharge the AI.
+The intro prices its executed module/JSL dispatcher and background-fade
+wrappers. Incremental graphics prices both the completed-counter return and
+the actual upload branch, with no scene or iteration selector.
+
+The generator adds **105 blocks** and preserves all **4,610** old blocks.
+The eight new tests execute **1,048 unmodified-ROM fixtures**. Expanded
+markers agree in count and clocks on **1,010 complete-owner per-PC rows**.
+Two shared-PC families retain intentional partial coverage: armor copies
+exclude sword/shield calls, and the bank-5 collision wrapper excludes three
+blue-archer calls. Those omissions are recorded in
+`per-pc-reconciliation.csv/json`; no full-coverage claim is made for them.
+`owner-ranking.json` and `cohort-before-after.json` conserve each row's
+entire price increase.
+
+### Upload poll/return phase
+
+Fresh recorded-APU prefix diagnostics observe these executed polls:
+
+| Iteration | Ready pairs source / native | Header ACK source / native | Byte ACK source / native | Remaining non-poll gap |
+| --- | ---: | ---: | ---: | ---: |
+| 34,318 | 11,184 / 10,036 | 52 / 56 | 76,551 / 76,551 | 20,730 |
+| 48,556 | 7,122 / 7,078 | 51 / 56 | 76,551 / 76,551 | 20,684 |
+
+`upload-phase-current.json` retains executed access counts, phase clocks,
+first reads, clears and return callbacks. Native masked callbacks remain
+23/23 versus source 23/24. The new ready counts differ from main's
+7,385/9,929 despite an unchanged protocol implementation; upstream restored
+holds change the receiver/arrival history even when gameplay reads replay
+the cartridge answers. All 24 filtered upload-return tests pass, including
+ready-poll bus timestamps, future-store visibility and return deadlines.
+This establishes no new protocol unit-price omission or ROM-exact native
+scheduling defect. Equal receiver state and first-poll phase are still
+unproved; scheduling versus SPC response timing is not exclusively resolved.
+No upload behavior change or fitted wait adjustment is admitted.
+
+### ROM admission
+
+The requested eight-slice helper completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,020 / 0 / 0**, versus main's **2,069 / 0 / 0**.
+All runtime holds equal P2. Exactly **49** rows gain one correct hold; no hold
+is lost and no excess appears. Route-wide main instruction pricing increases
+by **139,228,456 clocks on 200,440 rows**, with zero negative differences.
+
+| Before iteration | Missing before → after |
+| --- | ---: |
+| 94,334 | 26 → 16 |
+| 141,568 | 60 → 50 |
+| 228,499 | 179 → 167 |
+| 380,243 | 322 → 308 |
+| 461,989 | 395 → 376 |
+
+The ten early recoveries are **688; 42,912; 43,838; 45,521; 58,570;
+63,076; 64,004; 64,008; 64,020; and 83,186**.
+`rom-before-after.json` retains all 49 changed rows and the full comparison.
+
+### CPU picture admission
+
+The fresh eight-slice `--cpu-video` census completes **1,473,123 iterations**,
+gate **PASS / unexplained 0**. **1,462,997 pictures remain exact**; 563 are
+early, 3,952 late, four show content during source lag, and zero have other
+content differences. All eight per-iteration hash files equal their
+individually hash-verified hunt-9 baseline counterparts byte for byte.
+`cpu-picture-hash-agreement.json` binds these fresh comparisons.
+
+### Single seeded live admission and poll attribution
+
+One full, single-process `--live-apu-reads --pacing-predictor` census completes
+**1,473,123 iterations**, gate **PASS / unexplained 0**. SPC state carries
+across the actual seeds. All four predictor/runtime count comparisons agree.
+
+| Lane | Missing before → after | Excess before → after | FP before → after |
+| --- | ---: | ---: | ---: |
+| ROM | 2,069 → 2,020 | 0 → 0 | 0 → 0 |
+| Live | 2,547 → 2,516 | 449 → 401 | 84 → 86 |
+| Live minus ROM | 478 → 496 | 449 → 401 | 84 → 86 |
+
+Live improves by **31 missing / 48 excess**, while FP increases by **2**.
+The shared ROM prices recover 49 missing holds; the net phase contribution
+is **+18 / -48 / +2**. The two new episodes add 144 / 54 / 10, removing two
+baseline episodes subtracts 126 / 102 / 8, and the shifted episode preserves
+its aggregate contribution. No equal-SPC-phase claim is made.
+
+There are **52 live-only differential hold changes**, all attributed to
+original `$08:C606` song-end episodes. **Unattributed current/changed rows
+and unanchored main-budget differences are zero**. The 101 raw live hold
+changes comprise those 52 plus 49 shared ROM recoveries. Current live versus
+ROM hold-differential rows number **183**, versus **179** on main.
+`live-partition.json` conserves both complete live-minus-ROM totals and all
+four P2/runtime counts.
+
+| Observed poll origin before → after | Current hold-differential rows | Changed rows | Current added missing / excess / FP | End before → after, exclusive |
+| --- | ---: | ---: | --- | --- |
+| 142,087 → 142,087 | 5 | 0 | 9 / 9 / 2 | 144,000 → 144,000 |
+| 380,880 → absent | 0 | 15 | 0 / 0 / 0 | 383,636 → absent |
+| 462,627 → 462,626 | 6 | 6 | 13 / 13 / 3 | 466,000 → 466,000 |
+| absent → 627,255 | 10 | 10 | 27 / 27 / 5 | absent → 629,845 |
+| 735,866 → absent | 0 | 6 | 0 / 0 / 0 | 738,000 → absent |
+| 881,733 → 881,733 | 135 | 0 | 234 / 230 / 67 | 884,327 → 884,327 |
+| 1,064,733 → 1,064,733 | 12 | 0 | 96 / 95 / 4 | 1,066,963 → 1,066,963 |
+| absent → 1,318,334 | 15 | 15 | 117 / 27 / 5 | absent → 1,320,900 |
+
+Every changed live-only row follows. Both ROM columns agree on all 52 rows.
+`changed-live-holds.csv` retains all four hold counts, source lag and both
+observed poll origins, compared directly with main's hash-verified
+`target/prefix-hunt9/live.csv.zst` and ROM CSV.
+
+| Iteration | Poll episode before → after | Source lag NMIs | ROM holds | Main live holds → candidate |
+| --- | --- | ---: | ---: | ---: |
+| 380,945 | 380,880 → absent | 0 | 0 | 1 → 0 |
+| 380,946 | 380,880 → absent | 1 | 1 | 0 → 1 |
+| 380,955 | 380,880 → absent | 0 | 0 | 4 → 0 |
+| 380,956 | 380,880 → absent | 5 | 4 | 0 → 4 |
+| 381,425 | 380,880 → absent | 0 | 0 | 8 → 0 |
+| 381,426 | 380,880 → absent | 8 | 8 | 0 → 8 |
+| 383,178 | 380,880 → absent | 0 | 0 | 7 → 0 |
+| 383,181 | 380,880 → absent | 7 | 7 | 0 → 7 |
+| 383,343 | 380,880 → absent | 7 | 7 | 0 → 7 |
+| 383,346 | 380,880 → absent | 0 | 0 | 7 → 0 |
+| 383,631 | 380,880 → absent | 59 | 59 | 0 → 59 |
+| 383,632 | 380,880 → absent | 6 | 6 | 0 → 6 |
+| 383,633 | 380,880 → absent | 23 | 22 | 0 → 22 |
+| 383,634 | 380,880 → absent | 1 | 1 | 59 → 1 |
+| 383,635 | 380,880 → absent | 1 | 1 | 6 → 1 |
+| 462,698 | 462,627 → 462,626 | 0 | 0 | 0 → 1 |
+| 462,699 | 462,627 → 462,626 | 0 | 0 | 1 → 0 |
+| 462,708 | 462,627 → 462,626 | 0 | 0 | 0 → 4 |
+| 462,709 | 462,627 → 462,626 | 0 | 0 | 4 → 0 |
+| 463,178 | 462,627 → 462,626 | 0 | 0 | 0 → 8 |
+| 463,179 | 462,627 → 462,626 | 0 | 0 | 8 → 0 |
+| 627,316 | absent → 627,255 | 0 | 0 | 0 → 1 |
+| 627,317 | absent → 627,255 | 1 | 1 | 1 → 0 |
+| 627,326 | absent → 627,255 | 0 | 0 | 0 → 4 |
+| 627,327 | absent → 627,255 | 5 | 4 | 4 → 0 |
+| 627,799 | absent → 627,255 | 0 | 0 | 0 → 8 |
+| 627,800 | absent → 627,255 | 8 | 8 | 8 → 0 |
+| 629,325 | absent → 627,255 | 7 | 7 | 7 → 0 |
+| 629,327 | absent → 627,255 | 0 | 0 | 0 → 7 |
+| 629,458 | absent → 627,255 | 0 | 0 | 0 → 7 |
+| 629,462 | absent → 627,255 | 7 | 7 | 7 → 0 |
+| 735,936 | 735,866 → absent | 0 | 0 | 1 → 0 |
+| 735,937 | 735,866 → absent | 1 | 1 | 0 → 1 |
+| 735,946 | 735,866 → absent | 0 | 0 | 4 → 0 |
+| 735,947 | 735,866 → absent | 5 | 4 | 0 → 4 |
+| 736,420 | 735,866 → absent | 8 | 7 | 0 → 7 |
+| 736,422 | 735,866 → absent | 0 | 0 | 7 → 0 |
+| 1,318,395 | absent → 1,318,334 | 0 | 0 | 0 → 1 |
+| 1,318,396 | absent → 1,318,334 | 1 | 1 | 1 → 0 |
+| 1,318,405 | absent → 1,318,334 | 0 | 0 | 0 → 4 |
+| 1,318,406 | absent → 1,318,334 | 4 | 4 | 4 → 0 |
+| 1,318,877 | absent → 1,318,334 | 0 | 0 | 0 → 8 |
+| 1,318,878 | absent → 1,318,334 | 8 | 8 | 8 → 0 |
+| 1,320,353 | absent → 1,318,334 | 0 | 0 | 0 → 7 |
+| 1,320,357 | absent → 1,318,334 | 7 | 7 | 7 → 0 |
+| 1,320,542 | absent → 1,318,334 | 7 | 7 | 7 → 0 |
+| 1,320,544 | absent → 1,318,334 | 0 | 0 | 0 → 7 |
+| 1,320,895 | absent → 1,318,334 | 58 | 58 | 58 → 0 |
+| 1,320,896 | absent → 1,318,334 | 6 | 6 | 6 → 0 |
+| 1,320,897 | absent → 1,318,334 | 24 | 24 | 24 → 0 |
+| 1,320,898 | absent → 1,318,334 | 1 | 1 | 1 → 0 |
+| 1,320,899 | absent → 1,318,334 | 1 | 1 | 1 → 0 |
+
+Bounds come from observed native/source poll outcomes inside original source
+read episodes, independent main-budget differences, classified execution and
+the actual census segments. Changed hold rows do not select the bounds.
+The new native-zero/source-nonzero read at **627,255** lies inside
+**626,618–627,256**; the new **1,318,334** read lies inside
+**1,317,697–1,318,335**. Both precede the original source zero by one
+iteration. Their post-seed aftermath ends at actual resyncs **629,845** and
+**1,320,900**, retaining the **628,000** and **1,320,000** reseeds explicitly.
+The shifted **462,626** observation remains inside **461,989–462,628**.
+Its independent execution bound stays at 466,000. Removed **380,880** and
+**735,866** retain their original baseline witnesses and endpoints.
+
+The complete compressed timing stream records all ten actual reseeds:
+**464,000; 628,000; 629,845; 882,000; 884,000; 884,327; 1,066,000;
+1,066,963; 1,320,000; and 1,320,900**.
+`poll-witnesses.json` retains bounded original-episode observations, source
+intervals and derived execution bounds. The full `live-timing.jsonl.zst`
+remains intact. These receipts establish hold attribution; they do not
+establish equal receiver state, delivered-command phase, waveform or A/V.
+
+### Verification boundary
+
+All **137 distinct filtered Rust tests** and **eight generator tests** pass.
+The Rust set includes the eight new ROM fixtures, guard, Armos, Octorok,
+fairy, inactive/return, intro, palette/cache and graphics tests, plus 24
+upload-return scheduling tests. The 64-test intro filter passes with its
+required `ZELDA3_ASSETS` input. The final product build is warning-free;
+library-test compilation retains the same 24 unrelated dead-code warnings.
+
+`verification.json`, `artifact-hashes.json`, authority readbacks and the
+unchanged-control receipt bind source, binaries, helpers and evidence.
+`git diff --check` passes. Matcher, classifier, P2, original-timing code and
+environment-switch declarations are unchanged. No GPU, `--video`, cached-av,
+Snes9x process, continuous live replay, full library suite, authority write,
+cargo fmt, commit or push occurred. All launched work is joined.
+
+The inherited target cache started at 5.7 GB and was reduced by deleting
+only rebuildable files under this worktree's own `target/`. During report
+assembly, an overbroad derived witness export temporarily grew target to
+3.6 GB. That export was removed and replaced with bounded episode witnesses;
+the complete compressed timing stream was preserved. The final target is
+below 3 GB. Thus a strict never-exceeded-3-GB constraint was not met during
+that temporary export; `witness-export-cleanup.json` records it. Prior hunt
+evidence remains read-only.
+
+Sixteen early missing rows remain, including the two upload phase cases and
+the mixed 63,995 entry/bus residual. This batch does not establish continuous
+live replay through the second song end or cold exact A/V equality.

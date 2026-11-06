@@ -6,6 +6,120 @@ use crate::zelda_rtl::sprite::{
 use super::*;
 
 #[test]
+fn prefix10_intro_dispatch_and_fade_markers_match_rom() {
+    for countdown in [0, 1, 13] {
+        for frame in [0, 1] {
+            for timer in [1, 2] {
+                let mut n = marker29_state();
+                for (a, v) in [(0x10, 0), (0x11, 7), (0x1a, frame),
+                    (0xb0, timer), (0xc007, countdown)] { n.write_wram_byte(a, v); }
+                n.sync_native_game_state_from_ram();
+                let mut s = marker29_machine(&n, 0x0cc120, 0).expect("unmodified ROM");
+                s.cpu.sp = 0x1fc;
+                s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0x0c]);
+                crate::cycle_ledger::assert_rom_marker_work(0x0cc120, s,
+                    |s| (s.cpu.k == 0x0c && ((0xc120..0xc139).contains(&s.cpu.pc)
+                        || (0xc284..0xc2ae).contains(&s.cpu.pc)))
+                        || (s.cpu.k == 0 && ((0x879f..0x87c0).contains(&s.cpu.pc)
+                            || (0xed8f..0xedb1).contains(&s.cpu.pc))), || {
+                        let _owner = crate::cycle_ledger::routine(0x0cc120);
+                        n.module00_intro();
+                    });
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix10_octorok_stone_caller_markers_match_rom() {
+    for slot in [0usize, 15] {
+        for state in [6, 9] {
+            for frame in 0..4 {
+                for delay in [0, 1, 29, 30] {
+                    for submodule in [0, 1] {
+                        let mut n = marker29_state();
+                        for (a, v) in [(0xdd0, state), (0xe20, 0x0c),
+                            (0xdf0, delay), (0xd10, 0x40), (0xd00, 0x40)] {
+                            n.write_wram_byte(a + slot, v);
+                        }
+                        n.write_wram_byte(0xfa0, slot as u8);
+                        n.write_wram_byte(0x1a, frame);
+                        n.write_wram_byte(0x11, submodule);
+                        n.write_wram_word(0x20, 0x1000);
+                        n.write_wram_word(0x22, 0x1000);
+                        n.sync_native_game_state_from_ram();
+                        let s = marker29_machine(&n, 0x06d5b9, slot).expect("unmodified ROM");
+                        crate::cycle_ledger::assert_rom_marker_work(0x06d5b9, s,
+                            |s| s.cpu.k == 6 && (0xd5b9..0xd5f3).contains(&s.cpu.pc),
+                            || n.sprite_0_c_octorok_stone(slot));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix10_fairy_draw_prefix_matches_rom() {
+    for slot in [0usize, 15] {
+        for ai in [0, 1] {
+            for indoors in [0, 1] {
+                for lifted in [0, 1] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xdd0, 9), (0xe20, 0xe3), (0xd80, ai),
+                        (0xe90, lifted), (0xd10, 0x40), (0xd00, 0x40)] {
+                        n.write_wram_byte(a + slot, v);
+                    }
+                    n.write_wram_byte(0x11, 1); // stop at the real inactive return
+                    n.write_wram_byte(0x1b, indoors);
+                    n.write_wram_byte(0xfa0, slot as u8);
+                    n.sync_native_game_state_from_ram();
+                    let s = marker29_machine(&n, 0x06cf94, slot).expect("unmodified ROM");
+                    crate::cycle_ledger::assert_rom_marker_work(0x06cf94, s,
+                        |s| s.cpu.k == 6 && ((0xcf94..0xcfb0).contains(&s.cpu.pc)
+                            || (0xd288..0xd28a).contains(&s.cpu.pc)),
+                        || n.sprite_e3_fairy(slot));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn prefix10_armos_caller_markers_match_rom() {
+    let mut cases = 0;
+    for slot in [0usize, 15] {
+        for ai in [0, 1] {
+            for delay in [0, 1, 2, 48] {
+                for frame in 0..4 {
+                    for z in [0, 1, 128, 255] {
+                        for near in [false, true] {
+                            let mut n = marker29_state();
+                            for (a, v) in [(0xdd0, 9), (0xe20, 0x51), (0xd80, ai),
+                                (0xdf0, delay), (0xf70, z), (0xf80, 0xf0),
+                                (0xd10, 0x40), (0xd00, 0x40)] { n.write_wram_byte(a + slot, v); }
+                            n.write_wram_byte(0xfa0, slot as u8);
+                            n.write_wram_byte(0x1a, frame);
+                            n.write_wram_word(0x20, if near { 0x40 } else { 0x1000 });
+                            n.write_wram_word(0x22, if near { 0x40 } else { 0x1000 });
+                            n.write_wram_byte(0x3c, 0x80);
+                            n.write_wram_byte(0xf359, 1);
+                            n.sync_native_game_state_from_ram();
+                            let s = marker29_machine(&n, 0x05b703, slot).expect("unmodified ROM");
+                            crate::cycle_ledger::assert_rom_marker_work(0x05b703, s,
+                                |s| s.cpu.k == 5 && (0xb703..0xb7df).contains(&s.cpu.pc),
+                                || n.sprite_51_armos_statue(slot));
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("prefix10 Armos caller: {cases} unmodified-ROM fixtures");
+}
+
+#[test]
 fn prefix3_leever_draw_matches_rom() {
     let mut cases = 0;
     for k in [0usize, 15] {

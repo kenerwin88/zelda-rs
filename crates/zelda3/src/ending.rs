@@ -2811,15 +2811,27 @@ impl ZeldaState {
         } else {
             8
         };
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0cc120);
+        if self.game_state.frame.submodule < skip_at { b.taken(0x0cc124); }
+        else { b.block(0x0cc126); }
         if self.game_state.frame.submodule >= skip_at
             && (((self.game_state.player.follower_link.filtered_joypad_l() & 0xc0)
                 | self.game_state.player.follower_link.filtered_joypad_h())
                 & 0xd0)
                 != 0
         {
+            b.block(0x0cc130);
             self.fade_music_and_reset_sram_mirror();
             return;
         }
+        if self.game_state.frame.submodule >= skip_at { b.taken(0x0cc12e); }
+        b.block(0x0cc133);
+        {
+            let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x00879c));
+            b.block(0x00879c);
+        }
+        b.block(0x00879f);
 
         match self.game_state.frame.submodule {
             0 => self.intro_init(),
@@ -2915,7 +2927,10 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_fade_in_bg(&mut self) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0cc284);
         self.intro_periodic_sword_and_intro_flash();
+        b.block(0x0cc287);
         self.intro_handle_all_triforce_animations();
         if rom_intro_bg_fade_should_yield_suffix(
             self.intro_bg_fade_defer_suffix_this_frame,
@@ -2932,20 +2947,32 @@ impl ZeldaState {
 
     pub(super) fn complete_intro_bg_fade_suffix(&mut self) {
         self.intro_bg_fade_suffix_pending = false;
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0cc28b);
         if self.game_state.display.palette_filter.countdown() != 0 {
+            b.block(0x0cc291);
             if self.game_state.frame.frame_counter & 1 != 0 {
+                b.block(0x0cc296);
                 self.palette_fade_intro2();
-            }
-        } else if (((self.game_state.player.follower_link.filtered_joypad_l() & 0xc0)
-            | self.game_state.player.follower_link.filtered_joypad_h())
-            & 0xd0)
-            != 0
-        {
-            self.fade_music_and_reset_sram_mirror();
+            } else { b.taken(0x0cc294); b.block(0x0cc2ad); }
         } else {
-            self.decrement_subsubmodule();
-            if self.game_state.frame.subsubmodule == 0 {
-                self.increment_submodule();
+            b.taken(0x0cc28f);
+            b.block(0x0cc29a);
+            if (((self.game_state.player.follower_link.filtered_joypad_l() & 0xc0)
+                | self.game_state.player.follower_link.filtered_joypad_h())
+                & 0xd0) != 0
+            {
+                b.block(0x0cc2a4);
+                self.fade_music_and_reset_sram_mirror();
+            } else {
+                b.taken(0x0cc2a2);
+                b.block(0x0cc2a7);
+                self.decrement_subsubmodule();
+                if self.game_state.frame.subsubmodule == 0 {
+                    b.block(0x0cc2ab);
+                    self.increment_submodule();
+                } else { b.taken(0x0cc2a9); }
+                b.block(0x0cc2ad);
             }
         }
     }
