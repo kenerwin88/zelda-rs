@@ -3,6 +3,10 @@
 use super::*;
 
 #[cfg(test)]
+#[path = "loading_pricing_tests.rs"]
+mod loading_pricing_tests;
+
+#[cfg(test)]
 mod prefix1_tests {
     use super::*;
 
@@ -1714,6 +1718,10 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn dungeon_load_sprites(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09c290));
+        // $09:C290..C2BE: complete room-list entry, including pointer setup.
+        // Partial reset publications bypass this complete-entry marker.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x09c290);
         if let Some((sprites, start)) = self.dungeon_load_sprites_prefix() {
             self.dungeon_load_sprite_records(&sprites, start);
         }
@@ -1733,21 +1741,117 @@ impl ZeldaState {
     }
 
     fn dungeon_load_sprite_records(&mut self, sprites: &[u8], start: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine_continuation(0x09c290));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let room = usize::from(self.game_state.dungeon.room_tracking.room_index2_word());
+        let pointer = crate::cycle_models::sprite_reset_data::ROOM_POINTERS[room];
         let mut k = 0isize;
         let mut src = start + 1;
-        while src < sprites.len() && sprites[src] != 0xff {
+        while src < sprites.len() {
+            let record = (src - start) as u8;
+            b.block(0x09c2bf); // LDY cursor, read record/terminator, CMP/BEQ.
+            if (pointer & 255) + u16::from(record) > 255 { b.crossing(0x09c2c1); }
+            if sprites[src] == 0xff {
+                b.taken(0x09c2c5); b.block(0x09c2d4);
+                break;
+            }
             if src + 2 >= sprites.len() {
                 break;
             }
+            b.block(0x09c2c7); // JSR only; record and overlord bodies are children.
+            self.price_dungeon_sprite_record(k as usize, &sprites[src..src + 3], pointer, record);
             k = self.dungeon_load_single_sprite(
                 k as usize,
                 sprites[src],
                 sprites[src + 1],
                 sprites[src + 2],
             );
+            b.block(0x09c2ca); // Slot/cursor advances and BRA after the child.
             k += 1;
             src += 3;
         }
+    }
+
+    /// The translated loader publishes already-decoded records. Retire only
+    /// the omitted source instructions, using its live mask, free slots and
+    /// physical list cursor. Partial field publications never call this entry.
+    fn price_dungeon_sprite_record(&self, k: usize, src: &[u8], pointer: u16, record: u8) {
+        if !self.lag_free { return; }
+        let _scope = crate::cycle_ledger::routine(0x09c327);
+        let b = crate::cycle_ledger::blocks(true);
+        let cross = |pc, index: u8| {
+            if (pointer & 255) + u16::from(index) > 255 { b.crossing(pc); }
+        };
+        let (y, x, ty) = (src[0], src[1], src[2]);
+        b.block(0x09c327); cross(0x09c329, record.wrapping_add(2));
+        if ty == 0xe4 {
+            b.block(0x09c330); cross(0x09c332, record);
+            if y == 0xfe {
+                b.taken(0x09c338); b.block(0x09c345);
+                return;
+            }
+            b.block(0x09c33a);
+            if y == 0xfd {
+                b.block(0x09c33e); // JSR C345, separate real call frame.
+                { let _child = crate::cycle_ledger::routine(0x09c345); b.block(0x09c345); }
+                b.block(0x09c341);
+                return;
+            }
+            b.taken(0x09c33c);
+        } else {
+            b.taken(0x09c32e); b.block(0x09c34f);
+            cross(0x09c350, record.wrapping_add(1));
+            if x >= 0xe0 {
+                b.block(0x09c357);
+                self.price_dungeon_overlord_record(src, pointer, record);
+                b.block(0x09c35a);
+                return;
+            }
+            b.taken(0x09c355);
+        }
+        b.block(0x09c35d); // Deflection table and persistent-death gate.
+        if sprite_init_value(SPRITE_INIT_DEFL_BITS_TABLE, ty) & 1 != 0 {
+            b.taken(0x09c363);
+        } else {
+            b.block(0x09c365);
+            if self.sprite_where_in_room_mask(self.game_state.dungeon.room_tracking.room_index2_word())
+                & (1 << k) != 0 {
+                b.block(0x09c382);
+                return;
+            }
+            b.taken(0x09c380);
+        }
+        b.block(0x09c383); // Complete field writes through RTS, no child body.
+        for (pc, index) in [(0x09c38c, record), (0x09c398, record),
+            (0x09c3aa, record.wrapping_add(1)), (0x09c3bf, record.wrapping_add(2))] {
+            cross(pc, index);
+        }
+    }
+
+    fn price_dungeon_overlord_record(&self, src: &[u8], pointer: u16, record: u8) {
+        let _scope = crate::cycle_ledger::routine(0x09c3e8);
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09c3e8); // LDX #7; use the actual allocation search.
+        let free = self.alloc_overlord();
+        for slot in (0..8).rev() {
+            b.block(0x09c3ea);
+            if slot == free { b.taken(0x09c3ed); break; }
+            b.block(0x09c3ef);
+            if slot != 0 { b.taken(0x09c3f0); }
+        }
+        if free < 0 { b.block(0x09c3f2); return; }
+        b.block(0x09c3f3); // Field writes and JSR C871; initialization excluded.
+        for (pc, index) in [(0x09c3f3, record.wrapping_add(2)), (0x09c3fb, record),
+            (0x09c404, record), (0x09c416, record.wrapping_add(1))] {
+            if (pointer & 255) + u16::from(index) > 255 { b.crossing(pc); }
+        }
+        b.block(0x09c42a);
+        if src[2] == 10 { b.taken(0x09c42f); b.block(0x09c448); return; }
+        b.block(0x09c431);
+        if src[2] == 11 { b.taken(0x09c433); b.block(0x09c448); return; }
+        b.block(0x09c435);
+        if src[2] == 3 { b.block(0x09c439); } else { b.taken(0x09c437); }
+        b.block(0x09c447);
     }
 
     fn dungeon_sprite_records(&self) -> Option<(Vec<u8>, usize)> {

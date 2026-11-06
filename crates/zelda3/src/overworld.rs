@@ -7,6 +7,9 @@ use crate::types::{sign16, Point16U};
 mod overworld_shared;
 use overworld_shared::*;
 mod overworld_rain;
+#[cfg(test)]
+#[path = "bank02_pricing_tests.rs"]
+mod bank02_pricing_tests;
 pub(crate) use overworld_rain::OverworldRainContinuation;
 
 /// Each row owns 32 stripe stores, two headers, 128 map8 stores, and the
@@ -6052,102 +6055,129 @@ impl ZeldaState {
 
     fn decompress_bank02_into(dst: &mut [u8], src: &[u8], source: Option<u32>) -> usize {
         // $02:FEBB's byte reader is a child, not decompressor self work.
-        let _scope = source.is_some().then(|| crate::cycle_ledger::profile_routine(0x02_febb, true));
+        let _scope = source.is_some().then(|| crate::cycle_ledger::routine(0x02_febb));
         // $02:FEBB..FF6D. Preview decodes pass None: only live lagless
         // work charges. Keep the exact CPU's existing ledger unchanged.
-        let charge = |n| { if source.is_some() { crate::cycle_ledger::charge(n); } };
+        let b = crate::cycle_ledger::blocks(source.is_some());
         fn octet(src: &[u8], pos: &mut usize, source: Option<u32>) -> u8 {
             let value = src[*pos];
             if let Some(base) = source {
-                let _scope = crate::cycle_ledger::profile_routine(0x02_ff5f, true);
+                let _scope = crate::cycle_ledger::routine(0x02_ff5f);
                 // $02:FF5F..FF6D: pointer advance, including LoROM bank wrap.
                 let wraps = ((base & 0xffff) + *pos as u32 + 1) & 0x7fff == 0;
-                crate::cycle_ledger::charge(if wraps { 246 } else { 190 });
+                let b = crate::cycle_ledger::blocks(true);
+                b.block(0x02ff5f); // LDA source, increment pointer, BNE.
+                if wraps { b.block(0x02ff66); } else { b.taken(0x02ff64); }
+                b.block(0x02ff6b); // Publish pointer and RTS; excludes caller's JSR.
             }
             *pos += 1;
             value
         }
-        charge(46); // $02:FEBB..FEBF: REP, LDY.
+        b.block(0x02febb); // REP/LDY; byte-reader instructions are children.
         let mut written = 0usize;
         let mut src_pos = 0usize;
         loop {
+            b.block(0x02fec0); // JSR GetNextSourceOctet.
             let mut cmd = octet(src, &mut src_pos, source);
-            charge(78); // $02:FEC0..FEC5, including JSR, excluding octet body.
+            b.block(0x02fec3); // CMP #$FF : BNE.
             if cmd == 0xff {
-                charge(64); // $02:FEC7..FEC9.
+                b.block(0x02fec7); // SEP/RTS.
                 return written;
             }
-            charge(6 + 72); // $02:FEC5 taken, FECA..FED0.
+            b.taken(0x02fec5); b.block(0x02feca);
             let mut len;
             if cmd & 0xe0 != 0xe0 {
-                charge(114); // $02:FED2..FEDA.
+                b.block(0x02fed2); // Short command/length.
                 len = (cmd & 0x1f) as usize + 1;
                 cmd &= 0xe0;
             } else {
-                charge(6 + 232); // $02:FED0 taken, FEDC..FEEC.
+                b.taken(0x02fed0); b.block(0x02fedc); // Long command, through JSR.
                 let len_lo = octet(src, &mut src_pos, source);
+                b.block(0x02feec); // REP after the reader returns.
                 len = len_lo as usize + (((cmd & 3) as usize) << 8) + 1;
                 cmd = (cmd << 3) & 0xe0;
             }
 
-            charge(112); // $02:FEEE..FEF4.
+            b.block(0x02feee); // Length store and command dispatch.
             if cmd == 0 {
-                charge(6 + 22); // $02:FEF4 taken, FF19 BRA.
+                b.taken(0x02fef4);
                 while len != 0 {
-                    charge(202 + if len > 1 { 6 } else { 0 }); // $02:FF0C..FF17.
+                    b.block(0x02ff0c); // Literal's reader call.
                     let value = octet(src, &mut src_pos, source);
+                    b.block(0x02ff0f); // Store and actual loop branch.
+                    if len > 1 { b.taken(0x02ff17); }
                     dst[written] = value;
                     written += 1;
                     len -= 1;
                 }
+                b.block(0x02ff19);
             } else if cmd & 0x80 != 0 {
-                charge(22 + 126 + 24); // $02:FEF6 taken, FF42..FF49, FF5C.
+                b.block(0x02fef6); b.taken(0x02fef6);
+                b.block(0x02ff42);
                 let hi = octet(src, &mut src_pos, source) as usize;
+                b.block(0x02ff45);
                 let lo = octet(src, &mut src_pos, source) as usize;
+                b.block(0x02ff49);
                 let mut offs = (hi << 8) | lo;
                 while len != 0 {
-                    charge(332 + if len > 1 { 6 } else { 0 }); // $02:FF4A..FF5A.
+                    b.block(0x02ff4a);
+                    if len > 1 { b.taken(0x02ff5a); }
                     dst[written] = dst[offs];
                     written += 1;
                     offs += 1;
                     len -= 1;
                 }
+                b.block(0x02ff5c);
             } else if cmd & 0x40 == 0 {
-                charge(16 + 36 + 78 + 22); // $02:FEF6..FEF9, FF1B..FF1E, FF26.
+                b.block(0x02fef6); b.block(0x02fef8); b.taken(0x02fef9);
+                b.block(0x02ff1b);
                 let value = octet(src, &mut src_pos, source);
+                b.block(0x02ff1e);
                 while len != 0 {
-                    charge(92 + if len > 1 { 6 } else { 0 }); // $02:FF20..FF24.
+                    b.block(0x02ff20);
+                    if len > 1 { b.taken(0x02ff24); }
                     dst[written] = value;
                     written += 1;
                     len -= 1;
                 }
+                b.block(0x02ff26);
             } else if cmd & 0x20 == 0 {
-                charge(16 + 30 + 36 + 144 + 24); // $02:FEF6..FEFC, FF28..FF2F, FF3F.
+                b.block(0x02fef6); b.block(0x02fef8); b.block(0x02fefb);
+                b.taken(0x02fefc); b.block(0x02ff28);
                 let lo = octet(src, &mut src_pos, source);
+                b.block(0x02ff2b);
                 let hi = octet(src, &mut src_pos, source);
+                b.block(0x02ff2f);
                 while len != 0 {
-                    charge(112 + if len == 1 { 6 } else { 0 }); // $02:FF31..FF36.
+                    b.block(0x02ff31);
+                    if len == 1 { b.taken(0x02ff36); }
                     dst[written] = lo;
                     written += 1;
                     len -= 1;
                     if len == 0 {
                         break;
                     }
-                    charge(112 + if len > 1 { 6 } else { 0 }); // $02:FF38..FF3D.
+                    b.block(0x02ff38);
+                    if len > 1 { b.taken(0x02ff3d); }
                     dst[written] = hi;
                     written += 1;
                     len -= 1;
                 }
+                b.block(0x02ff3f);
             } else {
-                charge(16 + 30 + 30 + 78 + 22); // $02:FEF6..FF01, FF0A.
+                b.block(0x02fef6); b.block(0x02fef8); b.block(0x02fefb);
+                b.block(0x02fefe);
                 let mut value = octet(src, &mut src_pos, source);
+                b.block(0x02ff01);
                 while len != 0 {
                     dst[written] = value;
                     written += 1;
-                    charge(106 + if len > 1 { 6 } else { 0 }); // $02:FF03..FF08.
+                    b.block(0x02ff03);
+                    if len > 1 { b.taken(0x02ff08); }
                     value = value.wrapping_add(1);
                     len -= 1;
                 }
+                b.block(0x02ff0a);
             }
         }
     }
@@ -8640,6 +8670,19 @@ impl ZeldaState {
             .expect("decompress_enemy_damage_subclasses missing kEnemyDamageData asset")
             .to_vec();
         self.copy_overworld_map16_decode_source_from(&data);
+        if self.lag_free {
+            // $02:FE89 JSR $FEBB was already in the caller marker. The C
+            // port's asset copy replaces this decoder, but not its ROM work.
+            // Follow the encoded asset's commands into private scratch solely
+            // to retire the omitted decoder/reader instructions. No game state
+            // or original-timing model is changed by this pricing pass.
+            let encoded = self.assets.as_ref()
+                .and_then(|pack| pack.asset_by_name("kEnemyDamageCompressed"))
+                .expect("enemy damage pricing requires encoded asset");
+            let mut decoded = vec![0; PACKED_ENEMY_DAMAGE_SOURCE_BYTES];
+            let written = Self::decompress_bank02_into(&mut decoded, encoded, Some(0x03e800));
+            debug_assert_eq!(&decoded[..written], &data[..]);
+        }
         b.block(0x02fe8c);
         let packed_damage =
             self.graphics_primary_decompression_buffer(PACKED_ENEMY_DAMAGE_SOURCE_BYTES);
