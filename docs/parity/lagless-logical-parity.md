@@ -5191,3 +5191,253 @@ full library suite, oracle-cache/shared-ledger write, cargo fmt, commit or push
 was used. Evidence remains below 3 GB; all launched work is joined before the
 final receipt. Hold-count improvements do not establish delivered-command,
 chip-state, waveform, net SPC-phase or cold exact A/V equality.
+## Lagless prefix hunt 8
+
+CPU-only continuation on `codex/prefix-hunt8`, base `9eaa38b9`. Evidence is
+under `target/prefix-hunt8/`. The rebuilt baseline is byte-identical to hunt
+7's admitted candidate (`a87cae89…`). Prior artifacts were individually
+hash-checked before reuse. ROM, assets, SRAM, input, oracle hashes, ledger
+streams and all 1,499 retained seed identities match their protected receipts.
+The cold source profiler independently regenerates all 196 missing rows before
+228,499; its 43 remaining early rows agree exactly with the retained source
+routine profiles.
+
+### The uploader label, reconciled per iteration
+
+The whole-route percentage is not the proof for this cohort. Forty-one of the
+43 early rows execute no uploader. The other two have the following complete
+instruction-clock reconciliation (`uploader-reconciliation.csv/json`):
+
+| Iteration | Source `$00:8888` | Native main-profile label | Native protocol CPU work | Source minus native protocol |
+| --- | ---: | ---: | ---: | ---: |
+| 34,318 | 8,269,252 | 0 | 8,049,118 | +220,134 |
+| 48,556 | 8,033,604 | 0 | 8,196,410 | −162,806 |
+| Total | **16,302,856** | **0** | **16,245,528** | **+57,328** |
+
+The native owner is `SongBankHostTransfer` in `spc_driver_clock.rs`, advanced
+through `advance_host_cpu_until` during the upload's masked callbacks. It
+schedules real CPU bus accesses outside main's cycle ledger. The original
+completion observations bind each transfer to the same logical iteration as
+the source; no transfer moves into another iteration. Native command/clear
+hosts are 37,579–37,603 and 54,131–54,155. The two runs' physical host numbers
+are not an equality claim. Source/native masked-callback counts are 23/23 and
+24/23 respectively.
+
+The protocol audit includes the 116 CPU clocks before the first ready read and
+76 after the final clear. Source per-PC receipts independently recover each
+ready/header/byte loop. Both uploads transfer 13,366 bytes through two data
+headers and the terminal header. The signed source-minus-native remainder is:
+
+| Executed polling difference | Clocks |
+| --- | ---: |
+| Ready loops, 58 clocks each | +57,536 |
+| Header acknowledgement loops, 52 clocks each | −260 |
+| Byte acknowledgement loops, 52 clocks each | +52 |
+| Other instruction work / unexplained remainder | **0** |
+
+At 34,318, the three terms are +220,342 / −260 / +52; at 48,556 they are
+−162,806 / 0 / 0. Thus 16,245,528 clocks are present in the separate protocol
+owner, and 57,328 are a measured difference in executed waits against the
+native SPC. There is no unit-price shortfall or logical-iteration migration.
+The wait-count difference remains a physical protocol-phase difference; this
+batch does not certify equal SPC phase. Charging the uploader's source label
+to main would duplicate the protocol owner. No uploader surcharge is added.
+
+### Confirmed shortfalls before 228,499
+
+`raw-owner-comparison.csv/json` retains every signed label on the complete
+196-row cohort: **400,019,508 source / 324,464,024 native main clocks**, with
+**71,472,860** source clocks under the separately scheduled upload label.
+Source and native exclusive sums conserve their respective totals on every
+row. The fresh per-row reconciliations prove exact cancellation for
+`$00:E6B7/$E583` and `$06:E4AB/$E4DB`, and whole-call equality for `$06:DC64`.
+`$01:893C` has six equal active whole-call rows; four unequal rows retain their
+69,672-clock signed difference as unresolved work. Existing flattened scan,
+quadrant, VWF and inherited-tail prices do not become omissions merely because
+their source labels lack a native scope.
+
+The admitted ranking and per-row source/native proofs are retained in
+`owner-ranking.csv/json` and `owner-before-after.json`. Counts below refer to
+the frozen 196-row cohort, not all route calls. Each admitted owner now equals
+its source exclusive instructions on those rows. The overlay's native-before
+column includes its existing 106,420-clock ordinary-quadrant scaffold per call,
+even though that work previously had the caller's label.
+
+| Owner / omitted work | Native before → after | Recovered clocks | Affected rows | Recovered hold rows sharing this owner |
+| --- | ---: | ---: | ---: | --- |
+| `$06:AA48` covered-crab writer | 0 → 63,214 | 63,214 | 23 | none |
+| `$06:B867` arrow writer | 0 → 36,512 | 36,512 | 11 | 63,080 |
+| `$02:E4A3` dungeon-exit body | 0 → 22,116 | 22,116 | 3 | none |
+| `$09:C770` overworld sprite record | 0 → 18,930 | 18,930 | 4 | none |
+| `$02:F7CB` overlay-specific setup and traversal | 425,680 → 440,832 | 15,152 | 4 | 56,021 |
+| `$02:E5D4` cached-exit restoration | 0 → 3,220 | 3,220 | 1 | none |
+| `$09:C871` dungeon overlord initialization | 0 → 226 | 226 | 1 | none |
+
+The additions total **159,370 clocks on 43 affected cohort rows**. Memberships
+can overlap; they are not owner-alone counterfactual hold claims. Every row's
+main-price increase equals the sum of its independently regenerated omitted
+instructions. The non-upload signed remainder is **3,923,254 clocks** and is
+not an admitted price.
+
+### ROM paths, fixtures and rejected Moldorm trial
+
+The draw markers retire actual clipping, graphics, type and loop outcomes.
+Coordinate-preparation children keep their existing charges. The overlay
+entry uses its own pointer setup and 16-by-16 traversal, replacing the ordinary
+quadrant scaffold while preserving decoder/interlace/map-definition children.
+Its difference is 3,788 clocks per complete call. Dungeon exits price the
+actual descending table search, physical indexed page crossings, signed scroll
+branches, cached restoration and camera/graphics call instructions.
+
+The overworld record's allocation scan, reusable-slot condition and field
+stores are self work. `$09:C80B` is a real child on the overlord path, including
+its `$C871` fallthrough; dungeon's JSR to `$C871` gets a separate call frame.
+The `$C779` RTS after the real overworld child is priced separately. `$C80B`
+has no executions on this frozen cohort, but its complete allocation/type
+paths are covered by the same source fixtures. No partial publication acquires
+a complete-record price.
+
+The unchanged generator adds **74 blocks**, preserving all **4,476** old rows
+exactly. Five new tests execute **1,204 unmodified-ROM cases**: 192 arrow,
+480 crab, 281 record/overlord/initialization, 91 dungeon/cached-exit and all
+160 cartridge overlay screens. They independently observe both outcomes of
+all **31 reachable conditional branches**. `$C78A`'s taken equality is
+unreachable after the earlier identical comparison rejected it; the fixture
+checks that fact. Synthetic fixture data occupies WRAM; ROM instructions and
+data are unpatched.
+
+An additional Mini Moldorm trial passed 960 source cases but failed route
+admission at **931,965**: the exact 122-clock out-of-bounds return changed main
+from 408,614 to 408,736 clocks, tipped the existing spotlight raster wait from
+0 to 270,204, and produced two holds against source lag one. No existing charge
+for that return was proved. The complete owner is deferred, with its patch,
+binary, fixtures, **2,054 / 1 / 0** rejected census and row evidence retained
+under `rejected-moldorm/`. The final source has no Moldorm pricing change;
+931,965 returns to 408,614 clocks, zero raster wait and one hold. The admitted
+batch does not claim that timing interaction is repaired.
+
+### ROM and CPU picture admission
+
+The requested eight-slice ROM helper completes **1,473,123 iterations**, gate
+**PASS / unexplained 0**, at **2,084 / 0 / 0** versus **2,099 / 0 / 0**. All
+runtime holds equal P2. Exactly **15 rows recover 15 holds**, with no lost
+holds. Route-wide main price increases by **48,719,856 clocks on 16,852 rows**, with
+no negative clock differences. `rom-before-after.json` retains every changed
+hold row and both clock/count comparisons.
+
+| Before iteration | Missing before → after |
+| --- | ---: |
+| 94,334 | 43 → 41 |
+| 141,568 | 77 → 75 |
+| 228,499 | 196 → 194 |
+| 380,243 | 341 → 337 |
+| 461,989 | 415 → 410 |
+
+A fresh eight-slice **`--cpu-video`** census uses the admitted binary and
+completes all **1,473,123 iterations**, gate PASS with unexplained zero.
+**1,462,997 pictures are exact**; 563 are early, 3,952 late, four show content
+during source lag and zero have other content differences. Every new
+per-iteration CPU hash file is byte-identical to its individually hash-verified
+main counterpart, including existing mismatch cases. This is fresh CPU picture
+evidence, not inherited acceptance or an A/V claim.
+
+### Single seeded live admission and poll attribution
+
+One full, single-process seeded `--live-apu-reads --pacing-predictor` census
+completes **1,473,123 iterations**, gate **PASS / unexplained 0**, at
+**2,457 / 368 / 81**, versus main's hash-verified **2,451 / 347 / 76**.
+Every runtime hold equals P2. Live missing/excess/FP worsens by **6 / 21 / 5**.
+The live-minus-ROM contributions change from **352 / 347 / 76** to
+**373 / 368 / 81**: the two newly observed poll episodes add 21 missing and
+21 excess holds and five FP rows, while ROM pricing recovers 15 missing holds.
+The shifted 881,732 episode preserves its aggregate contribution.
+
+Exactly **14 live-only differential hold rows change**. All 14 are bound to
+original `$08:C606` read episodes and observed execution/reseed aftermath;
+**unattributed current and changed rows are both zero**. There are 168 current
+live-versus-ROM hold rows, versus 158 on main. The 29 raw live hold changes
+consist of these 14 plus the 15 shared ROM-price recoveries.
+
+Attribution uses native gameplay-poll observations to identify the original
+source read episodes. Execution bounds come from independent main instruction
+differences, recorded classified execution, and actual census segments/reseeds.
+Changed hold rows do not select those bounds. The compressed timing trace
+records every iteration and independently confirms all eight actual reseeds:
+464,000; 736,000; 738,000; 882,000; 884,000; 884,327; 1,066,000; and 1,066,963.
+All main-budget difference groups begin at their observed poll origin; neither
+run has an unanchored main-budget group.
+
+| Observed poll origin before → after | Current hold-differential rows | Changed rows | Current added missing / excess / FP | Execution/reseed end, exclusive |
+| --- | ---: | ---: | --- | ---: |
+| 142,087 → 142,087 | 5 | 0 | 9 / 9 / 2 | 144,000 |
+| absent → 229,034 | 4 | 4 | 9 / 9 / 2 | 230,000 |
+| 462,626 → 462,626 | 6 | 0 | 13 / 13 / 3 | 466,000 |
+| absent → 735,866 | 6 | 6 | 12 / 12 / 3 | 738,000 |
+| 881,732 → 881,733 | 135 | 4 | 234 / 230 / 67 | 884,327 |
+| 1,064,733 → 1,064,733 | 12 | 0 | 96 / 95 / 4 | 1,066,963 |
+
+Every changed live-only row is listed below. The ROM hold column is identical
+before and after on all 14 rows. `changed-live-holds.csv` retains all four
+ROM/live counts and their differentials; `live-partition.json` conserves both
+runs' global live-minus-ROM totals exactly.
+
+| Iteration | Poll episode | Source lag NMIs | ROM holds | Main live holds → candidate |
+| --- | --- | ---: | ---: | ---: |
+| 229,035 | new 229,034 | 0 | 0 | 0 → 5 |
+| 229,036 | new 229,034 | 5 | 5 | 5 → 0 |
+| 229,038 | new 229,034 | 0 | 0 | 0 → 4 |
+| 229,041 | new 229,034 | 4 | 4 | 4 → 0 |
+| 735,936 | new 735,866 | 0 | 0 | 0 → 1 |
+| 735,937 | new 735,866 | 1 | 1 | 1 → 0 |
+| 735,946 | new 735,866 | 0 | 0 | 0 → 4 |
+| 735,947 | new 735,866 | 5 | 4 | 4 → 0 |
+| 736,420 | new 735,866 | 8 | 7 | 7 → 0 |
+| 736,422 | new 735,866 | 0 | 0 | 0 → 7 |
+| 881,793 | 881,732 → 881,733 | 0 | 0 | 1 → 0 |
+| 881,794 | 881,732 → 881,733 | 0 | 0 | 0 → 1 |
+| 881,803 | 881,732 → 881,733 | 0 | 0 | 4 → 0 |
+| 881,804 | 881,732 → 881,733 | 0 | 0 | 0 → 4 |
+
+The new 229,034 native-zero/source-`$13` observation is one iteration before
+source zero, within **228,499–229,035**. Its changed main work ends at
+229,068; the 230,000 segment continues cleanly. The new 735,866 observation
+is within **735,229–735,867**, again one iteration before source zero. Its
+main-budget differences end at 736,633, with classified polygon aftermath
+through 737,999; the actual 736,000 and 738,000 reseeds are retained. All six
+changed rows lie inside those recorded bounds.
+
+The shifted 881,733 observation remains within **881,095–881,734**. Main's
+881,732 observation is two iterations before source zero; the candidate is
+one before. The four changed rows move the one- and four-hold FP events one
+iteration later. The original 882,000 / 884,000 / 884,327 reseed chain bounds
+the aftermath. Original observations from both runs, including absent polls,
+are preserved in `poll-witnesses.json`.
+
+The unchanged 462,626 episode still reseeds at 464,000. Both ROM/live
+comparisons retain 52 post-seed main-budget differences ending at 464,051;
+this receipt therefore records the containing segment's 466,000 endpoint.
+Those rows add no changed hold claim. Budget equality outside the reported
+hold claims is not certified.
+
+### Verification boundary
+
+All **77 distinct filtered Rust tests** and **eight generator tests** pass.
+`test-summary.json` lists the exact tests: the five new all-path fixtures,
+touched overworld/loading modules, arrow/crab/Moldorm regressions and the
+retained prefix-7 decoder/loader fixtures. Product builds are warning-free;
+library-test compilation retains the same 24 unrelated dead-code warnings.
+The default product and censused candidate are byte-identical.
+
+`verification.json` and `artifact-hashes.json` bind source, binaries,
+authorities, helper identities and evidence. `git diff --check` passes.
+No matcher, classifier, P2, original-timing model or environment-switch change
+is included. No GPU, `--video`, cached-av, Snes9x process, continuous live
+replay, full library suite, oracle-cache/shared-ledger write, cargo fmt,
+commit or push occurred. Rebuildable files were removed only from this
+worktree's own `target/`; hunt-7 evidence remains read-only. Target stays below
+3 GB, and all launched work is joined before the final receipt.
+
+The uploader's remaining wait-count difference and rejected Moldorm timing
+interaction remain explicit. Hold counts and CPU picture hashes do not
+establish delivered-command, chip-state, waveform, net SPC-phase or cold exact
+A/V equality.

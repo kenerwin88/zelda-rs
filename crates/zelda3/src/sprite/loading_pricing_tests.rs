@@ -19,7 +19,9 @@ fn check(entry: u32, s: snes::Snes, edges: &mut BTreeSet<(u32, bool)>, native: i
         CpuRasterPosition::new(0, 0), CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false)),
         SourcePpuReadState::snes9x_reset()).unwrap();
     let (lo, hi) = match entry { 0x09c290 => (0xc290, 0xc2d5),
-        0x09c327 => (0xc327, 0xc3e8), 0x09c3e8 => (0xc3e8, 0xc44e), _ => unreachable!() };
+        0x09c327 => (0xc327, 0xc3e8), 0x09c3e8 => (0xc3e8, 0xc44e),
+        0x09c770 => (0xc770, 0xc80b), 0x09c80b => (0xc80b, 0xc881),
+        0x09c871 => (0xc871, 0xc881), _ => unreachable!() };
     let mut clocks = 0;
     let mut calls = Vec::new();
     let inputs = (source.snes().cpu.y, source.snes().ram[2],
@@ -57,6 +59,64 @@ fn require_edges(edges: &BTreeSet<(u32, bool)>, branches: &[u32]) {
     for &pc in branches {
         for taken in [false, true] { assert!(edges.contains(&(pc, taken)), "uncovered {pc:06x}/{taken}"); }
     }
+}
+
+#[test]
+fn prefix8_overworld_record_markers_cover_allocations_and_shared_initialization() {
+    let mut edges = BTreeSet::new();
+    let mut cases = 0;
+    for ty in [1u8, 0x41, 0x53, 0x58, 0xd0, 0xeb, 0xf3, 0xf4, 0xf5, 0xff] {
+        for free in [-1i32, 0, 4, 5, 7, 13, 14] {
+            for reuse in [0u8, 1, 2] {
+                let mut n = ZeldaState::new();
+                n.set_lag_free(true);
+                for slot in 0..16 {
+                    let mut v = n.sprite_slot_view_mut(slot);
+                    v.set_state(9); v.set_sprite_type(if reuse == 2 { 0x41 } else { 1 });
+                }
+                for slot in 0..8 { n.overlord_slot_view_mut(slot).set_overlord_type(1); }
+                if free >= 0 {
+                    let slot = free as usize;
+                    let mut v = n.sprite_slot_view_mut(slot);
+                    if reuse == 1 { v.set_sprite_type(0x41); v.set_c(1); }
+                    else { v.set_state(0); }
+                    if slot < 8 { n.overlord_slot_view_mut(slot).clear(); }
+                }
+                for entry in [0x09c770, 0x09c80b] {
+                    if entry == 0x09c80b && ty < 0xf4 { continue; }
+                    let mut s = machine(&n, entry);
+                    s.cpu.a = u16::from(ty);
+                    s.cpu.y = 3;
+                    s.ram[0..2].copy_from_slice(&0x1123u16.to_le_bytes());
+                    s.ram[2..5].copy_from_slice(&[1, 0x10, 0]);
+                    s.ram[5..8].copy_from_slice(&[0, 0x10, 0]);
+                    s.ram[0x1000] = ty;
+                    check(entry, s, &mut edges, || {
+                        if entry == 0x09c770 {
+                            let _scope = crate::cycle_ledger::routine(entry);
+                            n.price_overworld_sprite_record(ty);
+                        } else { n.price_overworld_overlord_record(ty); }
+                    });
+                    cases += 1;
+                }
+            }
+        }
+    }
+    // C78A compares #$58 after C77E already rejected it: taken is unreachable.
+    assert!(edges.contains(&(0x09c78a, false)));
+    assert!(!edges.contains(&(0x09c78a, true)));
+    require_edges(&edges, &[0x09c774, 0x09c77e, 0x09c784, 0x09c78e,
+        0x09c792, 0x09c796, 0x09c79d, 0x09c7a4, 0x09c7a9,
+        0x09c7ac, 0x09c810, 0x09c813, 0x09c83d]);
+    for slot in 0..8 {
+        let mut n = ZeldaState::new();
+        n.set_lag_free(true);
+        let mut s = machine(&n, 0x09c871);
+        s.cpu.x = slot;
+        check(0x09c871, s, &mut edges, || n.price_overlord_initialization());
+        cases += 1;
+    }
+    println!("prefix8 C770/C80B/C871: {cases} unmodified-ROM cases; all reachable branch pairs");
 }
 
 #[test]

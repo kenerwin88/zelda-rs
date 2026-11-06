@@ -701,22 +701,39 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void CoveredRupeeCrab_Draw(int k) {  // 86aa48
     pub(super) fn covered_rupee_crab_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06aa48));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06aa48);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        b.block(0x06aa4b);
         if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
+            b.taken(0x06aa50); b.block(0x06aabd);
             return;
         }
+        b.block(0x06aa52);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let r7 = if self.sprite_slot_view(k).sprite_type() == 0x17 {
+            b.block(0x06aa5b);
             2
         } else {
+            b.taken(0x06aa59);
             0
         };
+        b.block(0x06aa5f);
         let r6 = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         for i in (0..2).rev() {
             let j = i + r6;
+            b.block(0x06aa68);
+            let y = info_y.wrapping_add(COVERED_RUPEE_CRAB_DRAW_Y_OFFSETS[j] as i16 as u16);
+            if y.wrapping_add(16) < 256 { b.taken(0x06aa8d); }
+            else { b.block(0x06aa8f); }
+            b.block(0x06aa93);
             let ch = COVERED_RUPEE_CRAB_DRAW_CHARS[j];
+            if ch == 0x44 { b.block(0x06aa9b); } else { b.taken(0x06aa99); }
+            b.block(0x06aa9e);
+            if i != 0 { b.taken(0x06aaba); }
             self.set_oam_helper0_at(
                 oam,
                 info_x,
@@ -727,6 +744,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x06aabc); b.block(0x06aabd);
     }
 
     // -----------------------------------------------------------------------

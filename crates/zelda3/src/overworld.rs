@@ -355,6 +355,9 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadOverworldFromDungeon(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02e4a3));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02e4a3);
         self.set_indoor_flag(0);
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.set_overworld_fixed_color_adjustment(0);
@@ -362,9 +365,21 @@ impl ZeldaState {
         self.memorized_tile_mut().clear_count();
 
         let room = self.game_state.world.location.dungeon_room();
+        if room == 0x104 { b.taken(0x02e4c2); }
+        else {
+            b.block(0x02e4c4);
+            if room >= 0x180 { b.taken(0x02e4c7); }
+            else {
+                b.block(0x02e4c9);
+                if room < 0x100 { b.taken(0x02e4cc); }
+            }
+        }
         if room != 0x0104 && (0x0100..0x0180).contains(&room) {
+            b.block(0x02e4ce);
             self.LoadCachedEntranceProperties();
+            b.block(0x02e4d1);
         } else {
+            b.block(0x02e4d4);
             let exit_screen = self
                 .asset_raw(130)
                 .expect("LoadOverworldFromDungeon missing kExitData_ScreenIndex asset")
@@ -420,10 +435,34 @@ impl ZeldaState {
 
             let k = (0..79)
                 .rev()
-                .find(|&k| read_word_from_slice(&exit_rooms, k * 2) == room)
+                .find(|&k| {
+                    b.block(0x02e4d6);
+                    if (0xdd8a + k * 2) & 0xff00 != 0xdd8a & 0xff00 { b.crossing(0x02e4d8); }
+                    let matched = read_word_from_slice(&exit_rooms, k * 2) == room;
+                    if !matched { b.taken(0x02e4db); }
+                    matched
+                })
                 .unwrap_or_else(|| {
                     panic!("LoadOverworldFromDungeon missing exit data for room {room:#06x}")
                 });
+
+            b.block(0x02e4dd);
+            for (pc, base) in [(0x02e4dd, 0xdf15), (0x02e4ea, 0xdfb3),
+                (0x02e4f7, 0xe051), (0x02e4fc, 0xe0ef), (0x02e501, 0xde77),
+                (0x02e51d, 0xe18d), (0x02e528, 0xe22b), (0x02e538, 0xe367),
+                (0x02e53e, 0xe405)] {
+                if (base + k * 2) & 0xff00 != base & 0xff00 { b.crossing(pc); }
+            }
+            for (pc, base) in [(0x02e549, 0xde28), (0x02e556, 0xe2c9)] {
+                if (base + k) & 0xff00 != base & 0xff00 { b.crossing(pc); }
+            }
+            if exit_scroll_up_seed[k] & 0x80 == 0 { b.taken(0x02e560); }
+            else { b.block(0x02e562); }
+            b.block(0x02e565);
+            if (0xe318 + k) & 0xff00 != 0xe318 & 0xff00 { b.crossing(0x02e565); }
+            if exit_scroll_left_seed[k] & 0x80 == 0 { b.taken(0x02e56f); }
+            else { b.block(0x02e571); }
+            b.block(0x02e574);
 
             let scroll_y = read_word_from_slice(&exit_scroll_y, k * 2);
             self.set_bg1_bg2_v_live_and_copy(scroll_y);
@@ -470,7 +509,7 @@ impl ZeldaState {
             self.set_overworld_scroll_right_counter(scroll_left_seed.wrapping_neg());
         }
 
-        self.overworld_load_new_screen_properties();
+        self.overworld_load_new_screen_properties_from(true);
     }
 
     fn overworld_enter_special_area_before_palettes(&mut self) -> (u8, u8, u8) {
@@ -5484,14 +5523,24 @@ impl ZeldaState {
 
     /// ROM: `Overworld_LoadNewScreenProperties`
     pub(super) fn overworld_load_new_screen_properties(&mut self) {
+        self.overworld_load_new_screen_properties_from(false);
+    }
+
+    fn overworld_load_new_screen_properties_from(&mut self, priced_exit: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free && priced_exit);
+        b.block(0x02e58a);
         self.tile_detect_position_mut()
             .set_location_calc_mask(!7u16);
         self.overworld_load_gfx_and_screen_size();
+        b.block(0x02e598);
         self.set_overworld_right_bottom_bound_low(0xe4);
         self.clear_overworld_big_area_high();
         let big = self.overworld_is_big_area();
+        if big { b.block(0x02e5af); } else { b.taken(0x02e5ad); }
         let area = (self.game_state.world.location.overworld_screen_index() & 0x3f) as usize;
+        b.block(0x02e5b1);
         self.overworld_set_camera_boundaries(if big { 1 } else { 0 }, area as i32);
+        b.block(0x02e5b4);
         self.follower_link_state_mut().set_quadrants(0, 2);
         self.set_fullsize_overworld_quadrants();
         self.follower_link_state_mut().disable_oam_offsets();
@@ -5503,6 +5552,9 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadCachedEntranceProperties(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02e5d4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02e5d4);
         self.restore_exit_area_index();
         self.restore_exit_layer_masks();
 
@@ -5511,15 +5563,19 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .restore_position_from_overworld_exit();
         if self.game_state.world.location.dungeon_room() < 0x0124 {
+            b.block(0x02e612);
             let link_y = self.game_state.player.follower_link.y().wrapping_sub(0x10);
             self.follower_link_state_mut().set_y(link_y);
-        }
+        } else { b.taken(0x02e610); }
+        b.block(0x02e61a);
         self.follower_link_state_mut().set_facing(2);
         if self.game_state.world.region.ow_entrance_value() == 0xffff {
+            b.block(0x02e627);
             let link_y = self.game_state.player.follower_link.y().wrapping_add(0x20);
             self.follower_link_state_mut().set_y(link_y);
             self.follower_link_state_mut().set_facing(0);
-        }
+        } else { b.taken(0x02e625); }
+        b.block(0x02e631);
 
         let overworld_screen = self.exit_screen_index();
         self.set_overworld_screen_word(overworld_screen);
@@ -6252,29 +6308,39 @@ impl ZeldaState {
     /// scratch. A suspended quadrant can start here and then publish a tile
     /// prefix without materializing the rest of the C call.
     pub(super) fn begin_overworld_quadrant_decode(&mut self, screen: i32) {
+        self.begin_overworld_quadrant_decode_from(screen, false);
+    }
+
+    fn begin_overworld_quadrant_decode_from(&mut self, screen: i32, sub_overlay: bool) {
         if crate::debug_env::var_os!("ZELDA3_DEBUG_PRE_OVERWORLD_DECODE").is_some() {
             eprintln!("native_quadrant_decode_begin frame={} screen={screen}", self.frame_ctr_dbg);
         }
         let hibytes = self.GetOverworldHibytes(screen);
         // $02:F595..F60E: setup/calls; interlace $F638..F678 and
         // $F679..F68F -> F650..F678: 64 four-byte passes each.
-        if self.lag_free { crate::cycle_ledger::charge(1812); }
+        let b = crate::cycle_ledger::blocks(self.lag_free && sub_overlay);
+        if sub_overlay { b.block(0x02f7cb); }
+        else if self.lag_free { crate::cycle_ledger::charge(1812); }
         self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &hibytes,
             crate::cycle_models::overworld_map_streams::HIGH[screen as usize]);
+        b.block(0x02f808);
         if self.lag_free {
             let _child = crate::cycle_ledger::profile_routine(0x02_f638, true);
             crate::cycle_ledger::charge(282 + 64 * 552 + 63 * 6 + 92);
         }
         self.copy_overworld_map16_scratch_to_source_words_high(256);
+        b.block(0x02f80d);
 
         let lobytes = self.GetOverworldLobytes(screen);
         self.decompress_bank02(OVERWORLD_DECOMP_BUFFER, &lobytes,
             crate::cycle_models::overworld_map_streams::LOW[screen as usize]);
+        b.block(0x02f82a);
         if self.lag_free {
             let _child = crate::cycle_ledger::profile_routine(0x02_f679, true);
             crate::cycle_ledger::charge(294 + 64 * 552 + 63 * 6 + 92);
         }
         self.copy_overworld_map16_scratch_to_source_words_low(256);
+        b.block(0x02f82f);
 
         self.set_overworld_map16_decode_last(0xffff);
     }
@@ -6285,7 +6351,14 @@ impl ZeldaState {
         from_tile: u16,
         to_tile: u16,
     ) {
+        self.draw_overworld_quadrant_definitions_from(dst, from_tile, to_tile, false);
+    }
+
+    fn draw_overworld_quadrant_definitions_from(
+        &mut self, dst: usize, from_tile: u16, to_tile: u16, sub_overlay: bool,
+    ) {
         assert!(from_tile <= to_tile && to_tile <= 256);
+        let b = crate::cycle_ledger::blocks(self.lag_free && sub_overlay);
         for tile in from_tile..to_tile {
             let tile = usize::from(tile);
             let input = self
@@ -6297,9 +6370,21 @@ impl ZeldaState {
             {
                 eprintln!("native_quadrant_tile frame={} tile={tile} input={input:04x}", self.frame_ctr_dbg);
             }
-            self.charge_overworld_quadrant_tile(tile);
+            if sub_overlay {
+                if tile % 16 == 0 { b.block(0x02f856); }
+                b.block(0x02f85b);
+            } else { self.charge_overworld_quadrant_tile(tile); }
             let tile_dst = dst + (tile / 16) * 256 + (tile % 16) * 4;
             self.overworld_parse_map32_definition(tile_dst, input);
+            if sub_overlay {
+                b.block(0x02f866);
+                if tile % 16 != 15 { b.taken(0x02f86e); }
+                else {
+                    b.block(0x02f870);
+                    if tile != 255 { b.taken(0x02f87b); }
+                    else { b.block(0x02f87d); }
+                }
+            }
         }
     }
 
@@ -6418,8 +6503,10 @@ impl ZeldaState {
 
     /// ROM: `OverworldLoad_LoadSubOverlayMap32`
     pub(super) fn overworld_load_load_sub_overlay_map32(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02f7cb));
         let si = self.game_state.world.location.overworld_screen_index() as i32;
-        self.overworld_decompress_and_draw_one_quadrant(0x4000, si);
+        self.begin_overworld_quadrant_decode_from(si, true);
+        self.draw_overworld_quadrant_definitions_from(0x4000, 0, 256, true);
     }
 
     pub(super) fn Map16ToMap8(&mut self, source_page: OverworldMap16SourcePage, r20: i32) {

@@ -12,6 +12,95 @@ fn coverage5_rom_machine(n: &ZeldaState, entry: u16, db: u8) -> snes::Snes {
 }
 
 #[test]
+fn prefix8_sub_overlay_wrapper_matches_every_cartridge_screen() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    for screen in 0..160u16 {
+        let mut n = ZeldaState::new();
+        n.set_assets(&assets).unwrap();
+        n.set_lag_free(true);
+        n.set_overworld_area_index_word(screen);
+        n.set_overworld_screen_word(screen);
+        let s = coverage5_rom_machine(&n, 0xf7cb, 2);
+        let source = crate::cycle_ledger::assert_rom_marker_work(0x02f7cb, s,
+            |s| {
+                if s.cpu.k == 2 {
+                    match s.cpu.pc {
+                        0xf86e => { edges.borrow_mut().insert((0xf86e, !s.cpu.z)); }
+                        0xf87b => { edges.borrow_mut().insert((0xf87b, !s.cpu.c)); }
+                        _ => {}
+                    }
+                }
+                s.cpu.k == 2 && (0xf7cb..0xf87f).contains(&s.cpu.pc)
+            },
+            || n.overworld_load_load_sub_overlay_map32());
+        assert_eq!(&n.ram[0x4000..0x5000], &source.snes().ram[0x4000..0x5000], "screen {screen}");
+    }
+    assert_eq!(edges.borrow().len(), 4);
+    println!("prefix8 F7CB: all 160 cartridge screens; complete decode and 256 tile traversals");
+}
+
+#[test]
+fn prefix8_dungeon_exit_and_cached_exit_match_rom_paths() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let mut base = ZeldaState::new();
+    base.set_assets(&assets).unwrap();
+    base.set_lag_free(true);
+    let rooms = base.asset_raw(131).unwrap().chunks_exact(2)
+        .map(|r| u16::from_le_bytes([r[0], r[1]]))
+        .chain([0x100, 0x123, 0x124, 0x17f]).collect::<std::collections::BTreeSet<_>>();
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let mut cases = 0;
+    for room in rooms {
+        let mut n = base.clone();
+        n.set_dungeon_room(room);
+        n.set_indoor_flag(1);
+        let mut s = coverage5_rom_machine(&n, 0xe4a3, 2);
+        s.cpu.unpack_flags(0x30);
+        crate::cycle_ledger::assert_rom_marker_work(0x02e4a3, s,
+            |s| {
+                if s.cpu.k == 2 {
+                    let taken = match s.cpu.pc {
+                        0xe4c2 | 0xe5ad => Some(s.cpu.z),
+                        0xe4c7 => Some(s.cpu.c),
+                        0xe4cc | 0xe560 | 0xe56f => Some(!s.cpu.c),
+                        0xe4db => Some(!s.cpu.z), _ => None,
+                    };
+                    if let Some(taken) = taken { edges.borrow_mut().insert((s.cpu.pc, taken)); }
+                }
+                s.cpu.k == 2 && (0xe4a3..0xe5d4).contains(&s.cpu.pc)
+            }, || n.LoadOverworldFromDungeon());
+        cases += 1;
+    }
+    for room in [0x100u16, 0x123, 0x124, 0x17f] {
+        for entrance in [0u16, 0xffff] {
+            let mut n = base.clone();
+            n.set_dungeon_room(room);
+            n.set_ow_entrance_value(entrance);
+            let s = coverage5_rom_machine(&n, 0xe5d4, 2);
+            crate::cycle_ledger::assert_rom_marker_work(0x02e5d4, s,
+                |s| {
+                    if s.cpu.k == 2 {
+                        let taken = match s.cpu.pc {
+                            0xe610 => Some(s.cpu.c), 0xe625 => Some(!s.cpu.z), _ => None,
+                        };
+                        if let Some(taken) = taken { edges.borrow_mut().insert((s.cpu.pc, taken)); }
+                    }
+                    s.cpu.k == 2 && (0xe5d4..0xe6e1).contains(&s.cpu.pc)
+                }, || n.LoadCachedEntranceProperties());
+            cases += 1;
+        }
+    }
+    for pc in [0xe4c2, 0xe4c7, 0xe4cc, 0xe4db, 0xe560, 0xe56f,
+        0xe5ad, 0xe610, 0xe625] {
+        for taken in [false, true] { assert!(edges.borrow().contains(&(pc, taken)), "uncovered {pc:x}/{taken}"); }
+    }
+    println!("prefix8 E4A3/E5D4: {cases} unmodified-ROM cases; all nine branch pairs");
+}
+
+#[test]
 fn coverage5_map32_markers_match_rom_cache_hit_miss_and_each_output_index() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut base = ZeldaState::new();

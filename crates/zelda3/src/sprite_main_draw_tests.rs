@@ -962,6 +962,87 @@ fn marker29_state() -> ZeldaState {
     native
 }
 
+#[test]
+fn prefix8_enemy_arrow_writer_matches_rom_and_both_clip_edges() {
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let mut cases = 0;
+    for slot in [0usize, 15] {
+        for direction in 0..4u8 {
+            for kind in 0..4u8 {
+                for y in [0u16, 239, 240, 255, 256, 0xffff] {
+                    let mut n = marker29_state();
+                    for (a, v) in [(0xde0, direction), (0xd90, kind),
+                        (0xd10, 0x40), (0xd30, 0), (0xd00, y as u8),
+                        (0xd20, (y >> 8) as u8), (0xdd0, 9), (0xe20, 0x1b)] {
+                        n.write_wram_byte(a + slot, v);
+                    }
+                    n.write_wram_byte(0xfa0, slot as u8);
+                    n.write_wram_word(0xfda, y);
+                    n.sync_native_game_state_from_ram();
+                    let machine = marker29_machine(&n, 0x06b867, slot).expect("ROM");
+                    crate::cycle_ledger::assert_rom_marker_work(0x06b867, machine,
+                        |s| {
+                            if s.cpu.k == 6 {
+                                match s.cpu.pc {
+                                    0xb8a4 => { edges.borrow_mut().insert((0xb8a4, !s.cpu.c)); }
+                                    0xb8ca => { edges.borrow_mut().insert((0xb8ca, !s.cpu.n)); }
+                                    _ => {}
+                                }
+                            }
+                            s.cpu.k == 6 && (0xb867..0xb8ce).contains(&s.cpu.pc)
+                        }, || n.enemy_arrow_draw(slot));
+                    cases += 1;
+                }
+            }
+        }
+    }
+    for pc in [0xb8a4, 0xb8ca] {
+        for taken in [false, true] { assert!(edges.borrow().contains(&(pc, taken)), "uncovered {pc:x}/{taken}"); }
+    }
+    println!("prefix8 B867: {cases} unmodified-ROM cases; both branch pairs");
+}
+
+#[test]
+fn prefix8_crab_writer_matches_rom_all_graphics_and_gates() {
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let mut cases = 0;
+    for slot in [0usize, 15] {
+        for ty in [0x16u8, 0x17] {
+            for gfx in 0..6u8 {
+                for half in [0u8, 2, 3, 4] {
+                    for y in [0u16, 239, 248, 512, 0xffff] {
+                        let mut n = marker29_state();
+                        for (a, v) in [(0xe20, ty), (0xdc0, gfx), (0xdd0, 9), (0xcaa, 0x80)] {
+                            n.write_wram_byte(a + slot, v);
+                        }
+                        n.write_wram_byte(0xfc6, half);
+                        n.write_wram_byte(0xfa0, slot as u8);
+                        n.write_wram_word(0xfda, y);
+                        n.sync_native_game_state_from_ram();
+                        let machine = marker29_machine(&n, 0x06aa48, slot).expect("ROM");
+                        crate::cycle_ledger::assert_rom_marker_work(0x06aa48, machine,
+                            |s| {
+                                if s.cpu.k == 6 {
+                                    let taken = match s.cpu.pc {
+                                        0xaa50 => Some(s.cpu.c), 0xaa59 | 0xaa99 => Some(!s.cpu.z),
+                                        0xaa8d => Some(!s.cpu.c), 0xaaba => Some(!s.cpu.n), _ => None,
+                                    };
+                                    if let Some(taken) = taken { edges.borrow_mut().insert((s.cpu.pc, taken)); }
+                                }
+                                s.cpu.k == 6 && (0xaa48..0xaabe).contains(&s.cpu.pc)
+                            }, || n.covered_rupee_crab_draw(slot));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    for pc in [0xaa50, 0xaa59, 0xaa8d, 0xaa99, 0xaaba] {
+        for taken in [false, true] { assert!(edges.borrow().contains(&(pc, taken)), "uncovered {pc:x}/{taken}"); }
+    }
+    println!("prefix8 AA48: {cases} unmodified-ROM cases; all five branch pairs");
+}
+
 fn lag5_source_return(machine: snes::Snes) -> snes::RomCpuTimingProbe {
     behavior1_source_return(machine, |_| false)
 }

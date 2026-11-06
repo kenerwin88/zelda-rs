@@ -419,14 +419,30 @@ impl ZeldaState {
     //   Two 8x8 arrow tiles selected by direction and arrow type.
     // }
     pub(super) fn enemy_arrow_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06b867));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06b867); // JSR only; coordinate preparation is a child.
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        b.block(0x06b86a);
+        if (0xde0 + k) & 0xff00 != 0xde0 & 0xff00 { b.crossing(0x06b86a); }
+        if (0xd90 + k) & 0xff00 != 0xd90 & 0xff00 { b.crossing(0x06b870); }
         let mut oam = self.game_state.oam.current_pointer_usize();
         let r6 = (self.sprite_slot_view(k).direction() as usize) * 2;
         let r7 = (self.sprite_slot_view(k).a() as usize) * 8;
         for i in (0..2).rev() {
             let j = r6 + i;
+            b.block(0x06b87b);
+            if (0xb807 + j * 2) & 0xff00 != 0xb807 & 0xff00 { b.crossing(0x06b888); }
+            if (0xb817 + j * 2) & 0xff00 != 0xb817 & 0xff00 { b.crossing(0x06b895); }
+            let tile_y = y.wrapping_add(ENEMY_ARROW_DRAW_Y_OFFSETS[j] as u16);
+            if tile_y.wrapping_add(16) < 256 { b.taken(0x06b8a4); }
+            else { b.block(0x06b8a6); }
+            b.block(0x06b8aa);
+            if (0xb827 + j + r7) & 0xff00 != 0xb827 & 0xff00 { b.crossing(0x06b8af); }
+            if (0xb847 + j + r7) & 0xff00 != 0xb847 & 0xff00 { b.crossing(0x06b8b5); }
+            if i != 0 { b.taken(0x06b8ca); }
             self.set_oam_helper0_at(
                 oam,
                 x.wrapping_add(ENEMY_ARROW_DRAW_X_OFFSETS[j] as u16),
@@ -437,6 +453,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x06b8cc);
     }
 
     // -----------------------------------------------------------------------

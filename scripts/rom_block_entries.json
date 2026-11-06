@@ -1,4 +1,12 @@
 [
+  {"entry":"06aa48","end":"06aabe","index_max":31},
+  {"entry":"02e4a3","end":"02e5d4"},
+  {"entry":"02e5d4","end":"02e6e1","m8":false},
+  {"entry":"02f7cb","end":"02f87f","m8":false,"x8":false,"data_bank":127},
+  {"entry":"09c770","end":"09c80b"},
+  {"entry":"09c80b","end":"09c871"},
+  {"entry":"09c871","end":"09c881"},
+  {"entry":"06b867","end":"06b8ce"},
   {"entry":"09c290","end":"09c2d5"},
   {"entry":"09c327","end":"09c3e8"},
   {"entry":"09c3e8","end":"09c44e"},

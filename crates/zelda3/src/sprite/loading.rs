@@ -1195,6 +1195,7 @@ impl ZeldaState {
 
         if self.lag_free { crate::cycle_ledger::charge(46); } // $09:C76C JSR only.
         let _child = crate::cycle_ledger::routine(0x09_c770);
+        self.price_overworld_sprite_record(sprite_to_spawn);
         if sprite_to_spawn >= 0xf4 {
             let k = self.alloc_overlord();
             if k < 0 {
@@ -1264,6 +1265,82 @@ impl ZeldaState {
                 }
             }
         }
+    }
+
+    // $09:C770's allocation scan and record stores have no child for an
+    // ordinary sprite. C80B is a real JSR child for an overlord. Its direct
+    // C871 fallthrough retains C80B; the dungeon's JSR gets a C871 frame.
+    fn price_overworld_sprite_record(&self, ty: u8) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09c770);
+        if ty >= 0xf4 {
+            b.block(0x09c776);
+            self.price_overworld_overlord_record(ty);
+            b.block(0x09c779);
+            return;
+        }
+        b.taken(0x09c774);
+        b.block(0x09c77a);
+        let start = if ty == 0x58 {
+            b.taken(0x09c77e); 4
+        } else {
+            b.block(0x09c780);
+            if ty == 0xd0 {
+                b.taken(0x09c784); 5
+            } else {
+                b.block(0x09c786); // The second CMP #$58 cannot match here.
+                b.block(0x09c78c);
+                if ty == 0xeb { b.taken(0x09c78e); b.block(0x09c798); 14 }
+                else {
+                    b.block(0x09c790);
+                    if ty == 0x53 { b.taken(0x09c792); b.block(0x09c798); 14 }
+                    else {
+                        b.block(0x09c794);
+                        if ty == 0xf3 { b.block(0x09c798); 14 }
+                        else { b.taken(0x09c796); 13 }
+                    }
+                }
+            }
+        };
+        for slot in (0..=start).rev() {
+            b.block(0x09c79a);
+            let v = self.sprite_slot_view(slot);
+            if v.state() == 0 { b.taken(0x09c79d); b.block(0x09c7af); return; }
+            b.block(0x09c79f);
+            if v.sprite_type() != 0x41 { b.taken(0x09c7a4); }
+            else {
+                b.block(0x09c7a6);
+                if v.c() != 0 { b.taken(0x09c7a9); b.block(0x09c7af); return; }
+            }
+            b.block(0x09c7ab);
+            if slot != 0 { b.taken(0x09c7ac); }
+        }
+        b.block(0x09c7ae);
+    }
+
+    fn price_overworld_overlord_record(&self, ty: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09c80b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09c80b);
+        for slot in (0..8).rev() {
+            b.block(0x09c80d);
+            if self.overlord_slot_view(slot).overlord_type() == 0 {
+                b.taken(0x09c810);
+                b.block(0x09c816);
+                if ty == 0xf4 { b.block(0x09c83f); } else { b.taken(0x09c83d); }
+                b.block(0x09c842);
+                b.block(0x09c871); // Fallthrough, not a child call.
+                return;
+            }
+            b.block(0x09c812);
+            if slot != 0 { b.taken(0x09c813); }
+        }
+        b.block(0x09c815);
+    }
+
+    fn price_overlord_initialization(&self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09c871));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x09c871);
     }
 
     /// Bind the packed overworld sprite lists to their physical data addresses.
@@ -2166,6 +2243,7 @@ impl ZeldaState {
         t = (((x as u16) << 4) & 0x01ff)
             + ((self.game_state.sprites.workspace.room_origin_x_high() as u16) << 8);
         self.overlord_slot_view_mut(k).set_x(t);
+        self.price_overlord_initialization();
         let area = self.game_state.world.region.overworld_area_low();
         self.overlord_slot_view_mut(k).set_spawned_area(area);
         self.overlord_slot_view_mut(k).set_gen2(0);
