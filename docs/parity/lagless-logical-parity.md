@@ -4849,3 +4849,148 @@ and evidence. `git diff --check` passes. Evidence remains below 3 GB and all
 started jobs have exited. No GPU, Snes9x, cached-av, continuous live replay,
 full library suite, protected-cache/shared-ledger write, new environment
 switch, cargo fmt, commit or push was used. P2 is unchanged.
+
+## Lagless prefix hunt 6
+
+2026-11-01, `codex/prefix-hunt6`, base `96dcb8d4` (main at start).
+Evidence: `target/prefix-hunt6/`. **Verified partial ordered-accounting stop:
+one complete scalar owner is replaced by generated markers; 2,521,944
+source/native clocks newly pair, with no additional runtime price or hold
+recovery. Two shared-block call-site ambiguities remain in that owner.**
+
+### Largest-owner selection and source proof
+
+Fresh rankings of the original 52/88 cohorts exclude `$00:8888` and retain
+exclusive source clocks, affected-row counts, rejection reasons and first
+ordinal-span witnesses. The baseline cohort artifacts were hash-checked
+against hunt 5's verification manifest. The 88-row leader was
+`$07:EA27` DesertPrayer_BuildIrisHDMATable: 2,656,926 unmatched clocks across
+nine rows. It is absent from the 52-row population. The larger 52-row
+object/spotlight aliases remain explicit; they are not inferred missing prices.
+
+The complete `$07:EA27..EBD9` owner now emits decoded ROM blocks instead of
+its existing scalar arithmetic. The signed lower edge, scanline tests, left
+and right clamps, primary/mirrored table bounds, loop control, opening and
+closing tails, button edge, timer and terminal animation step retain their
+source branches. `$EA97`'s JSR and `$EBBE`'s JSL retire before their children;
+post-call work retires after return. The `$07:ECDC` shape and `$00:F427`
+reset bodies remain separate children and are excluded from the parent fixture.
+No old scalar charge remains alongside the markers.
+
+The unchanged generator adds **52 blocks**, preserving all **4,358** existing
+rows exactly. The ROM, SRAM and input hashes match the read-only authority
+manifest. No sampled count or deficit supplies a price. The complete ROM
+fixture passes **384** combinations of radius, coordinates, opening state,
+submodule, buttons, timer and animation step. It independently records source
+edges and asserts both outcomes of **all 27 reachable conditionals**.
+`$EAF2` cannot take BEQ: its identical AND follows `$EAED`'s rejection of
+zero. Child instructions are excluded by source range. The shape helper's
+60 existing ROM cases and the continuation fixtures also pass.
+
+The first bounded generator specification missed cross-range targets; its
+failed test is retained as `test-incomplete-generator.log`. The complete
+routine entry fixes the generation boundary. The first explicit branch
+coverage assertion then exposed an untested `$EAD7` clamp path; an additional
+coordinate fixture covers it. No census-failing pricing batch was retained.
+
+### Ordered result and remaining spans
+
+The unchanged matcher verifies the original source projections and instruction
+path digests. Both cohorts conserve S=P+U and N=Q+O, with zero signed pair
+error, unequal pairs or call-frame failures. All 142,000 audit predictor rows
+match the ordinary candidate census.
+
+| Cohort | U before → after | O before → after | Paired source before → after |
+| --- | ---: | ---: | ---: |
+| 52 | 33,135,384 → 33,135,384 | 14,982,754 → 14,982,754 | 125,922,826 → 125,922,826 |
+| 88 | 68,407,440 → 65,885,496 | 25,278,858 → 22,756,914 | 189,121,602 → 191,643,546 |
+
+`$07:EA27` U/O decreases from **2,656,926 / 2,656,926** to
+**134,982 / 134,982**. The remaining **35,748** source clocks at `$EA79`
+(351 spans) and **99,234** at `$EAC5` (1,341 spans) each have two native
+branch sites. The matcher retains `generated_marker_call_site_or_order_unproved`;
+no exception merges them. These are exact existing prices with unresolved
+occurrence attribution, not omitted instruction work. Their first witnesses
+and affected rows are in `ea27-remaining-spans.json`.
+
+| Remaining owner | 52 U / affected rows | 88 U / affected rows |
+| --- | ---: | ---: |
+| `$01:893C` object dispatcher/tails | 1,672,462 / 7 | 2,353,458 / 10 |
+| `$00:F312` spotlight/wait boundary | 881,640 / 2 | 2,222,068 / 5 |
+| `$0D:A18E` Link OAM | 600,792 / 43 | 1,086,172 / 76 |
+| `$06:84E2` sprite dispatch | 472,844 / 45 | 717,116 / 78 |
+| `$06:E41E` OAM coordinate preparation | 429,604 / 44 | 683,828 / 76 |
+| `$00:882E` tile attributes | 570,408 / 35 | 633,536 / 43 |
+| `$01:873A` room loader | 452,328 / 7 | 624,196 / 10 |
+
+Both complete rankings are retained as `owner-ranking-{before,after}-{52,88}`
+CSV/JSON files. The hunt-5 upstream owners at 59,213 remain pending; this
+batch changes no predictor field there and does not remeasure source raster
+arrival or claim that its remaining 1,540 instruction-clock deficit is fixed.
+
+### ROM and live admission
+
+The 110,000–114,000 seeded trial has 4,000 clean iterations, zero excess/FP,
+and every hold equal to P2. The ordinary summary gate rejects a nonzero-start
+slice as incomplete; `trial-gate.log` retains that result, and the exact
+interval and clean completion were checked separately without changing the
+gate. The continuous 0–96,000 prefix passes at **48 / 0 / 0**, with a
+byte-identical predictor CSV to hunt 5.
+
+The eight-chunk ROM census covers **1,473,123 iterations**, gate **PASS /
+unexplained 0**, at **2,155 / 0 / 0**. Every predictor row is unchanged,
+every runtime hold equals P2, and **zero holds recover**.
+
+| Before iteration | Missing before → after |
+| --- | ---: |
+| 94,334 | 47 → 47 |
+| 141,568 | 82 → 82 |
+| 228,499 | 204 → 204 |
+| 380,243 | 353 → 353 |
+| 461,989 | 430 → 430 |
+
+One single full seeded `--live-apu-reads --pacing-predictor` census completes
+**1,473,123 iterations**, gate **PASS / unexplained 0**, at
+**2,756 / 482 / 89**, unchanged from hunt 5. Its predictor CSV is
+byte-identical to `target/prefix-hunt5/live.csv`; every hold equals P2.
+Changed live-only hold rows: **0**. Unattributed current and changed hold
+rows are both **0**. The retained poll episodes still contribute
+**601 / 482 / 89** relative to ROM; there is no live pacing improvement.
+
+| Observed poll origin | Current live-versus-ROM hold rows | Changed rows | Added missing / excess / FP |
+| --- | ---: | ---: | --- |
+| 380,880 | 15 | 0 | 114 / 90 / 5 |
+| 462,627 | 6 | 0 | 13 / 13 / 3 |
+| 627,255 | 10 | 0 | 27 / 27 / 5 |
+| 881,732 | 135 | 0 | 234 / 230 / 67 |
+| 1,064,733 | 12 | 0 | 96 / 95 / 4 |
+| 1,318,334 | 15 | 0 | 117 / 27 / 5 |
+
+`live-partition.json` retains row values, observed poll witnesses, original
+read episodes and actual reseeds. The source poll inventory was freshly
+hash-verified against the read-only ledger. The 1,318,334 poll and its
+execution/reseed aftermath through 1,320,899 are unchanged from hunt 5.
+Secondary budget differential changes versus baseline are **zero** in all
+six reported fields; this does not assert that live and ROM budgets agree.
+
+
+### Verification boundary
+
+All **48 filtered Rust tests** (45 overworld-module tests and three
+related desert-prayer runtime tests) and **eight generator tests** pass.
+Default, reduced-feature, audit and restored-default product builds are
+warning-free; the library-test compilation retains 24 existing unrelated
+dead-code warnings. The restored default binary equals the census candidate.
+`verification.json` binds changed source, binaries, unchanged matcher/gates,
+authority identities and evidence. `git diff --check` passes.
+
+Gameplay operations and call/loop counts do not change, so **1,462,997 exact
+CPU pictures remains prior evidence**, not a new picture census. Hold counts
+are not measured net SPC phase; delivered-command, chip-state and waveform
+proofs were not recaptured. Other owners and the two shared-block occurrence
+ambiguities remain unfinished.
+
+Evidence remains below 3 GB and all started jobs have exited. No GPU,
+Snes9x process, cached-av, continuous live replay, full library suite,
+protected-cache/shared-ledger write, new environment switch, cargo fmt,
+commit or push was used. P2, matcher and classifier logic are unchanged.

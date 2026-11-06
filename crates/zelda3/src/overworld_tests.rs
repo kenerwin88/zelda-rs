@@ -316,7 +316,14 @@ fn load_price_rom_work(entry: u32, image: &[u8], y: u16, long_return: bool,
 }
 
 fn load_price_rom_work_on_bus(entry: u32, image: &[u8], y: u16, long_return: bool,
-    self_range: std::ops::RangeInclusive<u32>, mut machine: snes::Snes) -> (u64, u64) {
+    self_range: std::ops::RangeInclusive<u32>, machine: snes::Snes) -> (u64, u64) {
+    load_price_rom_work_with_edges(entry, image, y, long_return, self_range,
+        machine, &mut std::collections::BTreeSet::new())
+}
+
+fn load_price_rom_work_with_edges(entry: u32, image: &[u8], y: u16, long_return: bool,
+    self_range: std::ops::RangeInclusive<u32>, mut machine: snes::Snes,
+    edges: &mut std::collections::BTreeSet<(u32, u32)>) -> (u64, u64) {
     use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
         CpuRasterPosition, RomCpuTimingProbe, SourcePpuReadState};
     let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -351,7 +358,10 @@ fn load_price_rom_work_on_bus(entry: u32, image: &[u8], y: u16, long_return: boo
         let work = step.transactions.iter()
             .map(|t| u64::from(t.duration_master_cycles)).sum::<u64>();
         total += work;
-        if self_range.contains(&pc) { own += work; }
+        if self_range.contains(&pc) {
+            own += work;
+            edges.insert((pc, (u32::from(source.snes().cpu.k) << 16) | u32::from(source.snes().cpu.pc)));
+        }
         if source.snes().cpu.pc == 0x8000 { break; }
     }
     assert_eq!(source.snes().cpu.pc, 0x8000, "entry={entry:06x}");
@@ -734,31 +744,49 @@ fn desert_iris_calculation_prices_match_executed_rom_paths() {
 
 #[test]
 fn desert_iris_builder_prices_match_executed_rom_paths() {
+    let mut edges = std::collections::BTreeSet::new();
     for radius in [1u8, 16, 64, 128, 184, 192] {
-        for (x, y) in [(0u16, 0u16), (128, 100), (511, 240)] {
+        for (x, y) in [(0u16, 0u16), (128, 100), (511, 240), (1024, 100)] {
             for opening in [0u8, 1] {
                 for subsub in [2u8, 4] {
+                  // $EB66 button edge; $EBC6 timer sign; $EBCE terminal step.
+                  for (pad, timer, step) in [(0u8, 1u8, 0u8), (0, 0, 0), (0, 0, 3), (0xc0, 0, 0)] {
                     let mut native = ZeldaState::new();
                     native.set_lag_free(true);
                     let mut image = native.wram_image().into_owned();
                     image[0x20..0x22].copy_from_slice(&y.to_le_bytes());
                     image[0x22..0x24].copy_from_slice(&x.to_le_bytes());
+                    image[0xf4] = pad;
+                    image[0x3d] = timer;
+                    image[0x30a] = step;
                     native.import_wram_image(&image);
                     native.sync_native_game_state_from_ram();
                     native.set_spotlight_window_radius_byte(radius);
                     native.set_spotlight_window_state_byte(opening);
                     native.set_subsubmodule(subsub);
-                    let (_, own) = load_price_rom_work(0x07ea27, &native.wram_image(), 0,
-                        true, 0x07ea27..=0x07ebd9);
+                    let (_, own) = load_price_rom_work_with_edges(0x07ea27, &native.wram_image(), 0,
+                        true, 0x07ea27..=0x07ebd9, snes::Snes::new(), &mut edges);
                     let measured = crate::cycle_ledger::measure_routine_self_work(0x07ea27, || {
                         native.desert_prayer_build_complete_iris_hdma_table();
                     });
                     assert_eq!(measured, own,
-                        "radius={radius} x={x} y={y} opening={opening} subsub={subsub}");
+                        "radius={radius} x={x} y={y} opening={opening} subsub={subsub} pad={pad} timer={timer} step={step}");
+                  }
                 }
             }
         }
     }
+    // Both outcomes of every reachable conditional in $EA27..EBD9.
+    // $EAF2 cannot take BEQ: the identical AND at $EAEA already rejected zero.
+    let mut uncovered = Vec::new();
+    for pc in [0xea40, 0xea6b, 0xea72, 0xea77, 0xea7f, 0xea92,
+        0xea9c, 0xeacd, 0xead2, 0xead7, 0xeaed, 0xeb08, 0xeb0d,
+        0xeb18, 0xeb1f, 0xeb24, 0xeb36, 0xeb3e, 0xeb4d, 0xeb52,
+        0xeb5d, 0xeb64, 0xeb6c, 0xeb79, 0xeb86, 0xebc6, 0xebce] {
+        let pc = 0x070000 | pc;
+        if edges.iter().filter(|(from, _)| *from == pc).count() != 2 { uncovered.push(pc); }
+    }
+    assert!(uncovered.is_empty(), "uncovered source branches {uncovered:x?}");
 }
 
 #[test]

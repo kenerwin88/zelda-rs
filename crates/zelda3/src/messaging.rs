@@ -3033,9 +3033,9 @@ impl ZeldaState {
     ) -> bool {
         let price = self.lag_free && stop_at.is_none();
         let _scope = price.then(|| crate::cycle_ledger::routine(0x07_ea27));
-        let charge = |master| { if price { crate::cycle_ledger::charge(master); } };
+        let b = crate::cycle_ledger::blocks(price);
         // $07:EA27..EA60: caller setup and the signed lower-edge branch.
-        charge(384 + 368);
+        b.block(0x07ea27);
         let r14 = self
             .game_state
             .player
@@ -3045,7 +3045,8 @@ impl ZeldaState {
             .wrapping_add(12);
         let radius = self.game_state.display.spotlight_hdma.window_radius_byte();
         let mut spotlight_y_lower = r14.wrapping_sub(u16::from(radius));
-        charge(if sign16(spotlight_y_lower) { 32 } else { 6 });
+        if sign16(spotlight_y_lower) { b.block(0x07ea42); } else { b.taken(0x07ea40); }
+        b.block(0x07ea44);
         if stop_at
             == Some(crate::DesertPrayerIrisProgress::Setup {
                 completed_writes: 0,
@@ -3108,11 +3109,14 @@ impl ZeldaState {
             let in_window =
                 sign16(spotlight_y_lower) || (r4 >= spotlight_y_lower && r4 < spotlight_y_upper);
             // $07:EA61..EA77: lower/upper window tests.
-            charge(144 + if sign16(spotlight_y_lower) { 6 } else {
-                88 + if r4 < spotlight_y_lower { 6 } else {
-                    56 + if r4 >= spotlight_y_upper { 6 } else { 0 }
+            b.block(0x07ea61);
+            if sign16(spotlight_y_lower) { b.taken(0x07ea6b); } else {
+                b.block(0x07ea6d);
+                if r4 < spotlight_y_lower { b.taken(0x07ea72); } else {
+                    b.block(0x07ea74);
+                    if r4 >= spotlight_y_upper { b.taken(0x07ea77); }
                 }
-            });
+            }
             let radius = self.game_state.display.spotlight_hdma.window_radius_byte();
             let y_buffer = self
                 .game_state
@@ -3120,33 +3124,35 @@ impl ZeldaState {
                 .spotlight_hdma
                 .window_y_buffer_byte();
             let k = if !in_window {
-                charge(74); // $EAC5..EAC9.
+                b.block(0x07eac5); // $EAC5..EAC9.
                 r4.wrapping_sub(1)
             } else if radius < y_buffer {
-                charge(96 + 216); // $EA79..EA92, BCS not taken.
+                b.block(0x07ea79); b.block(0x07ea81); // $EA79..EA92, BCS not taken.
                 self.set_spotlight_window_y_buffer_byte(1);
                 spotlight_y_lower = 0;
                 self.set_spotlight_y_lower(0);
                 r4 = spotlight_y_upper;
                 if r4 >= 225 {
-                    charge(30); // $EA94 BRL.
+                    b.block(0x07ea94); // $EA94 BRL.
                     break;
                 }
-                charge(6 + 74); // BCC to EAC5.
+                b.taken(0x07ea92); b.block(0x07eac5); // BCC to EAC5.
                 r4.wrapping_sub(1)
             } else {
-                charge(96 + 6 + 94); // $EA79..EA9C, JSR only.
+                b.block(0x07ea79); b.taken(0x07ea7f);
+                b.block(0x07ea97); // $EA97 JSR; child excluded.
                 let pair = self.desert_hdma_calculate_iris_shape_line();
+                b.block(0x07ea9a); // $EA9A..EA9C after child return.
                 if pair.a == 0 {
-                    charge(62); // $EA9E..EAA1.
+                    b.block(0x07ea9e); // $EA9E..EAA1.
                     spotlight_y_lower = 0;
                     self.set_spotlight_y_lower(0);
                 } else {
-                    charge(6 + 236); // BNE, $EAA3..EAB1.
+                    b.taken(0x07ea9c); b.block(0x07eaa3); // BNE, $EAA3..EAB1.
                     r2 = spotlight_x_center.wrapping_add(pair.b);
                     r0 = spotlight_x_center.wrapping_sub(pair.b);
                 }
-                charge(238); // $EAB3..EAC3.
+                b.block(0x07eab3); // $EAB3..EAC3.
                 r14.wrapping_sub(u16::from(
                     self.game_state
                         .display
@@ -3176,15 +3182,26 @@ impl ZeldaState {
             let r6 = (u16::from(t7) << 8) | u16::from(t6);
             // $EACA..EB14: signed left clamp, right clamp and primary
             // table bound. Source bounds use the doubled, wrapped X16.
-            charge(62 + if sign16(r0) { 6 + 24 } else {
-                40 + if r0 & 0xff00 == 0 { 6 } else {
-                    40 + if r0 & 0xff00 == 0x100 { 46 } else { 6 + 24 }
+            b.block(0x07eaca);
+            if sign16(r0) { b.taken(0x07eacd); b.block(0x07eade); } else {
+                b.block(0x07eacf);
+                if r0 & 0xff00 == 0 { b.taken(0x07ead2); } else {
+                    b.block(0x07ead4);
+                    if r0 & 0xff00 == 0x100 { b.block(0x07ead9); } else {
+                        b.taken(0x07ead7); b.block(0x07eade);
+                    }
                 }
-            });
-            charge(156 + if r2 & 0xff00 == 0 { 6 } else { 40 + 46 });
-            charge(162 + if k.wrapping_mul(2) >= 0x1c0 { 6 } else {
-                40 + if r6 == 0xffff { 24 } else { 6 } + 46
-            });
+            }
+            b.block(0x07eae1);
+            if r2 & 0xff00 == 0 { b.taken(0x07eaed); } else {
+                b.block(0x07eaef); b.block(0x07eaf4);
+            }
+            b.block(0x07eafc);
+            if k.wrapping_mul(2) >= 0x1c0 { b.taken(0x07eb08); } else {
+                b.block(0x07eb0a);
+                if r6 == 0xffff { b.block(0x07eb0f); } else { b.taken(0x07eb0d); }
+                b.block(0x07eb12);
+            }
             if k < 240 {
                 self.set_spotlight_hdma_table_dynamic_entry(
                     k as usize,
@@ -3204,11 +3221,14 @@ impl ZeldaState {
                 || (r4 >= spotlight_y_lower && r4 < spotlight_y_upper);
             // $EB15..EB24 repeats the edge test after the shape call may
             // have cleared the lower edge.
-            charge(56 + if sign16(spotlight_y_lower) { 6 } else {
-                88 + if r4 < spotlight_y_lower { 6 } else {
-                    56 + if r4 >= spotlight_y_upper { 6 } else { 0 }
+            b.block(0x07eb15);
+            if sign16(spotlight_y_lower) { b.taken(0x07eb18); } else {
+                b.block(0x07eb1a);
+                if r4 < spotlight_y_lower { b.taken(0x07eb1f); } else {
+                    b.block(0x07eb21);
+                    if r4 >= spotlight_y_upper { b.taken(0x07eb24); }
                 }
-            });
+            }
             if mirror {
                 let k = u16::from(
                     self.game_state
@@ -3219,9 +3239,13 @@ impl ZeldaState {
                 .wrapping_sub(2)
                 .wrapping_add(r14);
                 // $EB26..EB48: mirrored store and y-buffer increment.
-                charge(206 + if k.wrapping_mul(2) >= 0x1c0 { 6 } else {
-                    86 + if r6 == 0xffff { 24 } else { 6 } + 46
-                } + 62);
+                b.block(0x07eb26);
+                if k.wrapping_mul(2) >= 0x1c0 { b.taken(0x07eb36); } else {
+                    b.block(0x07eb38);
+                    if r6 == 0xffff { b.block(0x07eb40); } else { b.taken(0x07eb3e); }
+                    b.block(0x07eb43);
+                }
+                b.block(0x07eb46);
                 if k < 240 {
                     self.set_spotlight_hdma_table_dynamic_entry(
                         k as usize,
@@ -3233,9 +3257,11 @@ impl ZeldaState {
 
             r4 = r4.wrapping_add(1);
             // $EB49..EB56: increment, signed/terminal tests and BRL.
-            charge(102 + if sign16(r4) { 6 + 30 } else {
-                40 + if r4 >= 225 { 6 } else { 30 }
-            });
+            b.block(0x07eb49);
+            if sign16(r4) { b.taken(0x07eb4d); b.block(0x07eb54); } else {
+                b.block(0x07eb4f);
+                if r4 >= 225 { b.taken(0x07eb52); } else { b.block(0x07eb54); }
+            }
             if stop_at
                 == Some(crate::DesertPrayerIrisProgress::AfterIteration {
                     next_scanline: r4,
@@ -3258,15 +3284,18 @@ impl ZeldaState {
         }
 
         if self.game_state.frame.subsubmodule != 4 {
-            charge(78 + 6 + 72); // $EB57..EB5D -> PLB/RTL.
+            b.block(0x07eb57); b.taken(0x07eb5d); b.block(0x07ebd8); // $EB57..EB5D -> PLB/RTL.
             return false;
         }
-        charge(78 + 64); // $EB57..EB64.
+        b.block(0x07eb57); b.block(0x07eb5f); // $EB57..EB64.
         if self.game_state.display.spotlight_hdma.window_state_byte() == 1 {
-            charge(6);
+            b.taken(0x07eb64);
         } else {
-            charge(80 + if (self.game_state.player.follower_link.filtered_joypad_h()
-                | self.game_state.player.follower_link.filtered_joypad_l()) & 0xc0 == 0 { 6 } else { 94 });
+            b.block(0x07eb66);
+            if (self.game_state.player.follower_link.filtered_joypad_h()
+                | self.game_state.player.follower_link.filtered_joypad_l()) & 0xc0 == 0 {
+                b.taken(0x07eb6c);
+            } else { b.block(0x07eb6e); }
         }
         if self.game_state.display.spotlight_hdma.window_state_byte() != 1
             && (self.game_state.player.follower_link.filtered_joypad_h()
@@ -3278,10 +3307,10 @@ impl ZeldaState {
             self.shr_spotlight_window_radius_byte(1);
         }
         if self.game_state.display.spotlight_hdma.window_state_byte() != 0 {
-            charge(48 + 126); // $EB76..EB86.
+            b.block(0x07eb76); b.block(0x07eb7b); // $EB76..EB86.
             self.add_spotlight_window_radius_byte(8);
             if self.game_state.display.spotlight_hdma.window_radius_byte() >= 0xc0 {
-                charge(668 + 72); // $EB88..EBC2 and PLB/RTL; reset is a child.
+                b.block(0x07eb88); // $EB88..EBBE JSL; reset is a child.
                 self.messaging_state_mut()
                     .xor_message_or_sprite_state_cache(1);
                 self.set_music_control(0xf3);
@@ -3297,19 +3326,20 @@ impl ZeldaState {
                 self.set_main_module(saved_module);
                 self.clear_window_layer_masks();
                 self.iris_spotlight_reset_table();
+                b.block(0x07ebc2); b.block(0x07ebd8); // BRA, PLB/RTL after child.
                 return false;
             }
-            charge(6); // BCC $EBC4.
+            b.taken(0x07eb86); // BCC $EBC4.
         } else {
-            charge(48 + 6); // BEQ $EBC4.
+            b.block(0x07eb76); b.taken(0x07eb79); // BEQ $EBC4.
         }
-        charge(54); // $EBC4..EBC6.
+        b.block(0x07ebc4); // $EBC4..EBC6.
         if (self
             .follower_link_state_mut()
             .decrement_spin_attack_delay_timer() as i8)
             .is_negative()
         {
-            charge(78); // $EBC8..EBCE.
+            b.block(0x07ebc8); // $EBC8..EBCE.
             let i = self
                 .game_state
                 .player
@@ -3317,15 +3347,16 @@ impl ZeldaState {
                 .y_button_action_step()
                 .wrapping_add(1);
             if i != 4 {
-                charge(32); // $EBD0.
+                b.block(0x07ebd0); // $EBD0.
                 self.follower_link_state_mut().set_y_button_action_step(i);
             }
-            else { charge(6); } // BEQ $EBD3.
-            charge(56 + if u16::from(i) + 0x22 > 0xff { 6 } else { 0 });
+            else { b.taken(0x07ebce); } // BEQ $EBD3.
+            b.block(0x07ebd3); // $EBD3..EBD6, indexed delay table.
+            if u16::from(i) + 0x22 > 0xff { b.crossing(0x07ebd3); }
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(PRAYING_SCENE_DELAYS[i as usize]);
-        } else { charge(6); } // BPL $EBD8.
-        charge(72); // $EBD8..EBD9.
+        } else { b.taken(0x07ebc6); } // BPL $EBD8.
+        b.block(0x07ebd8); // $EBD8..EBD9.
         false
     }
 
