@@ -7218,3 +7218,211 @@ requirements remain outstanding along with the implementation. No
 background process was launched, and prior evidence and authority files
 were not modified. **This section records an unfinished attempt, not a
 behavior change or an admitted batch.**
+
+## Lagless prefix hunt 17
+
+Bounded hardware-anchor trial on `codex/prefix-hunt17`, base **e8102237**.
+**Withdrawn: the candidate never reached an executing product build.**
+The two edited runtime/test files are restored byte-for-byte; only this
+diagnosis is proposed. Evidence is under `target/prefix-hunt17/`, including
+the withdrawn `trial.patch`. No owners are newly priced and **zero main
+instruction clocks are recovered**. Fresh restored-baseline checks below
+must not be read as admission of the trial.
+
+### Hardware anchor and its unmodeled remainder
+
+The trial removes `max(frame_start_cycle, execution_cycle)` from ordinary
+lagless port scheduling. After the clocked bootstrap, the driver's
+`host_frame_index` names the next physical field. Its proposed anchor is
+that field's **V225/H12**: V225 publication plus the pinned core's
+`SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES`, rather than the preceding
+output window's sample boundary. The slow-ROM hardware entry then takes
+**62 clocks**, and the existing handler's instruction work advances through
+physical WRAM refresh before CPU-to-SPC conversion. No observed residual,
+source acceptance mark, P2 result or ledger timestamp enters that formula.
+
+This is only an earliest-eligibility anchor. Ordinary atomic main has no
+retained interrupted instruction, active-DMA continuation, or measured
+phase of the `$00:8034/$8036` wait loop. Knowing that a normal NMI finds
+main waiting does not identify which LDA/BEQ instruction crosses H12.
+The trial therefore does **not** implement the requested ordinary wait-loop
+completion. Existing clocked bootstrap/idle owners keep their executing
+continuations; no guessed wait phase is attached to the ordinary path.
+Neither an exact acceptance repair nor completion of requirement A is
+claimed.
+
+All **14 authority hashes and 239 hunt-14/15 artifact hashes** match before
+reuse. The source executor and runtime source have no diff from the verified
+product build base `a1d4754c`. `anchor-residuals.csv` records all **30 source
+port stores** across the eight compared opening NMIs. The table shows port 3;
+the other compared stores in each NMI have the same CPU residual. These are
+**calculated trial positions**, not stores observed from a candidate binary.
+Each calculation holds the source's observed header branch fixed; candidate
+branch decisions and receiver equality are unmeasured.
+
+| Source NMI | Source acceptance | Trial anchor | Source `$2143` store | Calculated trial store | Trial minus source, CPU master |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Bootstrap normal | 28,896,206 | 28,896,206, retained CPU | 28,897,054 | 28,897,054 | **0** |
+| Iteration 0 lag | 29,253,600 | 29,253,560 | 29,254,448 | 29,254,408 | **−40** |
+| Iteration 1 normal | 29,610,942 | 29,610,924 | 29,611,836 | 29,611,818 | **−18** |
+| Iteration 1 lag | 29,968,338 | 29,968,292 | 29,969,232 | 29,969,186 | **−46** |
+| Iteration 2 normal | 30,325,660 | 30,325,656 | 30,326,554 | 30,326,550 | **−4** |
+| Iteration 2 lag | 30,683,066 | 30,683,024 | 30,683,960 | 30,683,918 | **−42** |
+| Iteration 3 normal | 31,040,392 | 31,040,388 | 31,041,286 | 31,041,282 | **−4** |
+| Iteration 3 lag | 31,397,798 | 31,397,756 | 31,398,692 | 31,398,650 | **−42** |
+
+The first lag's proposed stores are anchor **29,253,560** plus
+**702 / 786 / 848**, preserving the verified bootstrap header work. Source
+accepts **40 clocks later**, at H52. The proposed SFX-10 store's pure SPC
+quotient is **1,396,544**; source's store **29,254,448** has quotient
+**1,396,546** and observed receiver position **1,396,549**. No candidate
+receiver position is measured. Subtracting the quotient from the observed
+source position would mix conversion with retained instruction credit.
+
+The fresh three-iteration **restored-baseline** bus replay matches eight
+events, then differs at **SPC 1,385,026**, native instruction **`$08E5`**,
+dummy read **`$F7`**, **source 0 / native 10**. This reproduces hunt 15's
+frontier. **No next first divergence is established for the trial**, and
+later hunt-13/14 upload bus windows are not claimed to match an unbuilt
+candidate.
+
+### Upload rows and the suffix NMI after restoration
+
+A fresh bounded, seeded replay through iteration 48,556 reproduces:
+
+| Iteration | Ready polls, source / main / restored | Header polls, source / restored | Byte polls, source / restored | Holds, main → restored / source | Masked callbacks |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 34,318 | **11,184 / 9,851 / 9,851** | 52 / 53 | 76,551 / 76,550 | **40 → 40 / 41** | 23 |
+| 48,556 | **7,122 / 10,952 / 10,952** | 51 / 56 | 76,551 / 76,551 | **40 → 40 / 41** | 23 |
+
+Native clears remain **13,467,901,212 / 19,387,020,481**; the executed
+174-clock suffix restores `$4200` at **13,467,901,386 / 19,387,020,655**,
+with zero pending holds. The existing upload-return entry still owns its
+remaining store access, RTS and hardware entry. Verified source accepts
+the additional suffix NMIs at **13,467,680,894**, V251/H822, `$02:83C6`,
+and **19,387,412,412**, V225/H12, `$00:864F`. Both missing holds remain
+unresolved. `upload-comparison-restored.json` distinguishes these fresh
+native observations from the hash-verified source witnesses. There are
+no candidate ready-poll, hold or suffix measurements.
+
+### Admission and verification boundary
+
+The fresh default product build does not complete under the storage budget.
+Guarded attempts stop around 2.98 GB. A diagnostic build without the guard
+reaches **3,091,857,408 allocated bytes**, and a separate library attempt
+is observed at **3,059,339,264** before being stopped. These are actual
+**3 GB breaches**. Lossless compression of new Cargo files preserves their
+contents; deleting `.rmeta` sidecars during pipelined compilation is unsafe
+because Cargo still passes those paths to rustc. That attempt produces a
+build error and is excluded from verification. All new rebuildable Cargo
+output is subsequently removed; prior evidence remains read-only.
+
+An initial ROM helper completes its eight executions but its concatenation
+exceeds the storage guard, so it is excluded as a complete gate. The first
+CPU-picture launch is stopped before processing iterations by the same
+resource check. The replacement ROM run streams both slice CSVs and the
+combined CSV through FIFOs and lossless zstd; the supplied helper itself
+is unchanged. Excluded attempts and their process exits remain recorded.
+
+The retained product SHA-256 is **`e68c718a...6728e`**. Its complete runtime
+source matches the restored branch. The hash-verified hunt-15 library
+executable, **`9fcebacf...5af4`**, passes **81 filtered tests** freshly:
+seven native NMI stack/header tests, 44 SPC-driver tests, two bootstrap
+tests and 28 native-pacing tests. Those runs reuse a verified executable;
+they are not a fresh product build or a test of the withdrawn patch.
+
+The replacement eight-slice ROM helper passes **1,473,123 iterations**,
+**PASS / unexplained 0**, with **1,864 missing / 0 excess / 0 FP**. Its
+entire CSV is byte-identical to main, including every main instruction
+budget and every hold row. The raw SHA-256 is **`ac1aad69...21b5`**;
+`rom/result.json` records the identity before the redundant compressed
+copy is removed. The verified main copy remains under hunt 14.
+
+| Before iteration | Missing before → restored |
+| --- | ---: |
+| 94,334 | **2 → 2** |
+| 141,568 | **34 → 34** |
+| 228,499 | **142 → 142** |
+| 380,243 | **275 → 275** |
+| 461,989 | **334 → 334** |
+
+The fresh eight-slice **`--cpu-video`** census also passes all **1,473,123
+iterations**, **unexplained 0**, with **1,462,997 exact pictures**. Its
+563 early, 3,952 late, four during-lag, 905 polygon-thread, 4,702 torn and
+zero other content differences reproduce main. All eight processes exit
+zero. These are restored-runtime picture results, not evidence that the
+proposed port anchor preserves them.
+
+Exactly **one** full single-process seeded **`--live-apu-reads
+--pacing-predictor`** census completes: **1,473,123 iterations**, **PASS /
+unexplained 0**. Its CSV is byte-identical to main's
+`target/prefix-hunt14/live.csv.zst` after decompression, raw SHA-256
+**`f11bc4b6...c6f4`**. The complete timing stream is also byte-identical,
+raw SHA-256 **`286873e5...17af`**. Both identities are recorded before
+removing the redundant fresh copies; `live-polls.jsonl.zst` retains the
+fresh poll observations.
+
+| Lane | Missing before → restored | Excess before → restored | FP before → restored |
+| --- | ---: | ---: | ---: |
+| ROM | **1,864 → 1,864** | **0 → 0** | **0 → 0** |
+| Live | **2,276 → 2,276** | **318 → 318** | **85 → 85** |
+
+There are **zero changed live predictor rows, zero changed live hold rows,
+zero live-only changed holds and zero unattributed changed rows**.
+`changed-live-holds.csv` is the complete empty changed-row table. All
+**6,048 native poll rows**, ten first-zero decisions and ten actual reseeds
+match main. There is consequently no new hold row requiring an additional
+`$08:C606` attribution. This compares the restored runtime with main, not
+the withdrawn trial with main.
+
+| `$08:C606` source episode / first zero | Native first zero, main → restored | Changed live holds |
+| --- | ---: | ---: |
+| 94,334 / 94,854 | 94,854 → 94,854 | 0 |
+| 141,568 / 142,088 | 142,087 → 142,087 | 0 |
+| 228,499 / 229,035 | 229,035 → 229,035 | 0 |
+| 380,243 / 380,881 | 380,881 → 380,881 | 0 |
+| 461,989 / 462,628 | 462,627 → 462,627 | 0 |
+| 626,618 / 627,256 | 627,255 → 627,255 | 0 |
+| 735,229 / 735,867 | 735,866 → 735,866 | 0 |
+| 881,095 / 881,734 | 881,733 → 881,733 | 0 |
+| 1,064,096 / 1,064,734 | 1,064,734 → 1,064,734 | 0 |
+| 1,317,697 / 1,318,335 | 1,318,334 → 1,318,334 | 0 |
+
+Fresh SNES library and test-executable builds complete **without warnings**.
+The subsequent full-default test build also completes. Its Zelda and SNES
+executables are byte-identical to the verified hunt-15 executables. The
+Zelda test build retains exactly **24 pre-existing warning headers**, equal
+to main; it is not a warning-free product build. To fit the final link,
+the build temporarily reclaims 95 redundant metadata sidecars only after
+the final test compiler starts with archive dependencies. Their complete
+bytes are verified inside each archive, then restored with their original
+timestamps before the required Cargo test invocation.
+
+The requested full default library suite executes **once**, after the
+route censuses and all runtime edits/restoration, with
+`ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat`
+and `cargo test -q --profile parity -p zelda3 -p snes --lib`.
+**SNES: 505 passed / 7 ignored. Zelda: 3,010 passed / 3 ignored.** Its sole
+failure is the explicitly permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There are **zero unaccepted failures**; exit **101** is retained rather
+than reported as an all-green suite. Zelda finishes in **1,616.01 seconds**.
+The distinct, long production spotlight bus fixture passes. Once Cargo
+starts test execution, redundant metadata is reclaimed again for storage
+headroom; no test executable or runtime source is changed.
+
+After the suite, both fresh executable hashes still match the preserved
+hunt-15 archives. Only this worktree's newly built Cargo cache is removed.
+Final target allocation is **2,877,382,656 bytes**, below 3 GB; this does
+**not** erase the earlier breaches. All **14 authority files and 239 prior
+manifest entries** remain byte-identical. Every launched replay, collector,
+compressor and Cargo session has finished; no owned background process
+remains. `verification.json`, `resources.json` and the full-suite log retain
+the commands, hashes, exits and verification boundaries.
+
+No runtime change is admitted without an executing candidate and all its
+gates. In particular, calculated small residuals do not establish equal
+SPC phase, a wait-loop completion, a later bus frontier, or improved upload
+holds. No instruction price, classifier, matcher, P2 rule, forced hold,
+runtime environment switch, ledger-driven injection, GPU execution,
+cached A/V, external Snes9x process, cargo fmt, commit or push is introduced.
