@@ -174,6 +174,62 @@ mod tests {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
 
     #[test]
+    fn nmi_acceptance_follows_the_executed_wait_phase() {
+        use crate::cycle_models::{intro_clear::Access, native_work, nmi_stack::NativeNmiContext};
+        use std::collections::BTreeSet;
+        let rom = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
+        ).unwrap();
+        let mut acceptances = BTreeSet::new();
+        for field in [391, 392] {
+            // Every even phase in one complete LDA/BEQ period. The earlier
+            // start also crosses refresh; the later one isolates acceptance.
+            for (line, base_h) in [(222, 420), (224, 1300)] {
+                for phase in (0..46).step_by(2) {
+                    let mut machine = snes::Snes::new();
+                    machine.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    machine.nmi_enabled = true;
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0x30);
+                    machine.cpu.pc = 0x8034;
+                    machine.cpu.sp = 0x1ff;
+                    let mut ram = machine.ram.clone();
+                    let mut cpu = NativeNmiContext { a: 0, x: 0, y: 0, d: 0,
+                        db: 0, bank: 0, pc: 0x8034, sp: 0x1ff, p: 0x30 };
+                    let timeline = snes::CpuMasterTimeline::at_raster(field,
+                        snes::CpuRasterPosition::new(line, base_h + phase),
+                        snes::CpuBusWorkload::default(), snes::CpuFieldTiming::NON_INTERLACE_EVEN);
+                    let mut source = snes::RomCpuTimingProbe::new(machine, timeline.clone(),
+                        snes::SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut clock = source.timeline().clone();
+                    let mut wait = MainWait::default();
+                    let mut eligibility = None;
+                    while eligibility.is_none_or(|at| clock.clock_master_cycles() < at) {
+                        native_work::compare_instruction("wait acceptance", &mut cpu, &mut clock,
+                            &mut source, &mut ram, &rom, |cpu, clock, bus| {
+                                wait.step_clocked(cpu, clock, |at, access| match access {
+                                    WaitAccess::ReadLatch => bus(at, Access::Read(0x12, 1)) as u8,
+                                    WaitAccess::Vblank { at, .. } => {
+                                        eligibility = Some(at + snes::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES);
+                                        0
+                                    }
+                                }, |_, _| 0);
+                            });
+                    }
+                    let eligible = eligibility.unwrap();
+                    assert_eq!(source.pending_nmi_acceptance().unwrap().master_cycles(), eligible);
+                    assert!(clock.clock_master_cycles() - eligible <= 22);
+                    let accepted = source.accept_native_nmi().unwrap();
+                    assert_eq!(accepted.started_at.master_cycles(), clock.clock_master_cycles());
+                    assert_eq!(accepted.interrupted_pc, u32::from(cpu.pc));
+                    acceptances.insert((cpu.pc, clock.clock_master_cycles() - eligible));
+                }
+            }
+        }
+        assert!(acceptances.len() > 1, "eligibility alone cannot select the wait phase");
+    }
+
+    #[test]
     fn retained_wait_matches_source_bus_and_clock_across_refresh_and_vblank() {
         use crate::cycle_models::{intro_clear::Access, native_work, nmi_stack::NativeNmiContext};
         let rom = std::fs::read(

@@ -495,6 +495,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         writeln!(output, "iteration,event,pc,master,line,cycle")?;
         Ok::<_, std::io::Error>(output)
     }).transpose()?;
+    // Diagnostic provenance only. The accepted PC is the *next* instruction;
+    // retain the instruction ending at acceptance. Eligibility can precede
+    // that instruction after DMA retiming. These observations never seed an
+    // executing owner.
+    let mut nmi_instruction_edges = timing_audit.as_ref().map(|_| {
+        let mut output = BufWriter::new(fs::File::create(out_dir.join("nmi-instruction-edges.csv"))?);
+        writeln!(output, "iteration,field,instruction_pc,instruction_start,acceptance,interrupted_pc,instruction_work,wait_entry,last_nmitimen_write,nmitimen")?;
+        Ok::<_, std::io::Error>(output)
+    }).transpose()?;
+    let mut last_wait_entry = None;
+    let mut last_nmitimen_write = None;
+    let mut nmitimen = 0;
     let mut apu_bus = timing_audit.as_ref().map(|_| {
         let mut output = BufWriter::new(fs::File::create(out_dir.join("apu-bus.csv"))?);
         writeln!(output, "iteration,pc,master,address,kind,value,width,spc_pc,spc_cycle,input,output")?;
@@ -660,6 +672,35 @@ fn main() -> Result<(), Box<dyn Error>> {
             |step, exec| -> Result<(), snes::SourceCpuError> {
                 if failure.is_some() {
                     return Ok(());
+                }
+                if let Some(output) = nmi_instruction_edges.as_mut() {
+                    let end = match step.accepted_interrupt {
+                        Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. })
+                        | Some(SourceCpuAcceptedInterrupt::Irq { started_at, .. }) => started_at,
+                        None => step.ended_at,
+                    };
+                    if step.origin_pc == 0x00805f {
+                        last_wait_entry = Some(end.master_cycles());
+                    }
+                    for access in &step.accesses {
+                        if system_bank(access.address) && access.address & 0xffff == 0x4200
+                            && let SourceCpuBusAccessKind::Write { value, .. } = access.kind
+                        {
+                            last_nmitimen_write = Some(access.timestamp.master_cycles());
+                            nmitimen = value;
+                        }
+                    }
+                    if let Some(SourceCpuAcceptedInterrupt::Nmi { started_at, interrupted_pc, .. }) = step.accepted_interrupt {
+                        let work: u64 = step.transactions.iter().filter(|t| t.started_at < started_at)
+                            .map(|t| u64::from(t.duration_master_cycles)).sum();
+                        writeln!(output, "{},{},{:06x},{},{},{interrupted_pc:06x},{work},{},{},{nmitimen}",
+                            current.as_ref().map_or(next_index, |iteration| iteration.index),
+                            exec.machine().timeline().field_index(), step.origin_pc,
+                            step.started_at.master_cycles(), started_at.master_cycles(),
+                            last_wait_entry.map_or(String::new(), |at| at.to_string()),
+                            last_nmitimen_write.map_or(String::new(), |at| at.to_string()))
+                            .expect("NMI interrupted instruction receipt");
+                    }
                 }
                 // Observations retain the complete cold receiver, including
                 // its suspended SMP instruction, DSP and conversion clock.

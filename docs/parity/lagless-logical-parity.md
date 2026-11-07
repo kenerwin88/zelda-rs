@@ -9226,3 +9226,251 @@ These are complete seeded logical/CPU-picture gates and receiver-timing
 measurements. No GPU run, external Snes9x process, cached-A/V replay,
 second live census or write to the ledger/oracle/helper authorities occurs.
 Cold exact A/V acceptance remains a separate verification boundary.
+
+## Lagless prefix hunt 22
+
+Investigated NMI acceptance on `codex/prefix-hunt22`, base **a8aea661**.
+**Diagnosis only: no runtime acceptance change is admitted.** There is no
+runtime patch to revert. The ordinary handler, P2, classifier, matcher,
+instruction prices and hold decisions remain unchanged. **Zero new main
+owners are priced; zero main instruction clocks are recovered.** Actual
+acceptance for the ordinary wait loop is still unresolved in the lagless
+runtime; this section does not claim completion of that ownership work.
+
+### Eligibility owners and residual distributions
+
+The hash-verified hunt 21 table covers **2,467 NMIs / 9,530 source stores**.
+`target/prefix-hunt22/nmi-classes.csv` assigns every row. The distinction is
+the work executing on the CPU, rather than whether a module has an existing
+instruction-cost model. Ordinary lagless main runs those models atomically;
+their existence does not establish a retained physical CPU phase. The
+bootstrap NMI belongs to the wait-loop class by its interrupted work and
+already has an executing CPU owner. No `$08:C606` song-end poll occurs in
+this residual table, whose last sampled iteration is 48,556.
+
+| Eligibility class | NMIs | Source stores / compared / absent | CPU store residual before → after |
+| --- | ---: | ---: | --- |
+| (i) Main completed, `$00:8034/$00:8036` wait | 1,938 | 7,656 / 7,656 / 0 | [-22, 0] → [-22, 0] |
+| (ii) Retained polygon worker and upload suffix | 79 | 314 / 314 / 0 | [-777,771, 0] → same |
+| (iii) Atomic lagless main | 450 | 1,560 / 1,548 / 12 | [-2,540, 0] → [-2,540, 0] |
+
+All values are candidate minus source, in CPU master clocks. Complete
+before/after store and acceptance histograms are in `residual-classes.json`.
+The wait-loop per-NMI store residual histogram is below; all ports agree.
+The bootstrap NMI already owns actual acceptance and has zero store residual,
+although its physical eligibility precedes acceptance by fourteen clocks.
+
+| CPU residual | 0 | -2 | -4 | -6 | -8 | -10 | -12 | -14 | -16 | -18 | -20 | -22 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| NMIs | 173 | 173 | 184 | 171 | 167 | 161 | 179 | 150 | 159 | 161 | 178 | 82 |
+
+Class (ii) contains **77 polygon-worker NMIs**, residual **[-46, 0]**,
+and the two upload suffix NMIs below. The fresh instruction-edge trace
+distinguishes the worker from atomic main even when main has already
+completed. All 2,467 residual acceptances join the freshly executed
+source instruction trace, with zero missing or conflicting joins.
+
+Class (iii)'s ordinary instruction-boundary residual is **[-54, 0]** for
+448 NMIs. Two NMIs during iteration 1,915, accepted at `$00:8CDE`, retain
+DMA-delayed residuals **-2,540 / -1,808**. Thus -46 is not a valid bound
+for the complete atomic-main class. The suffix class also needs its actual
+enable/arrival edge; subtracting the same field's V225 eligibility gives
+-36,270 / 0, which must not be called ordinary instruction jitter.
+For the 448 ordinary atomic-main NMIs the store bound is **[-88, 0]**:
+one music access crosses a different refresh boundary from its source.
+
+### Executed wait law and the missing native phase
+
+`MainWait::step_clocked` already executes the real slow-ROM `LDA $12`
+(24 clocks) and taken `BEQ` (22 clocks), including their bus boundaries.
+The new `nmi_acceptance_follows_the_executed_wait_phase` fixture crosses
+all 23 even phases of this 46-clock period at two starting scanlines in
+each of two physical fields. It compares native instructions, registers,
+WRAM, bus timestamps and refresh against `RomCpuTimingProbe`, then checks
+the actual first eligible instruction boundary and interrupted PC. The
+same hardware eligibility has multiple valid acceptance outcomes depending
+on the retained entry phase; eligibility alone cannot select one.
+
+The ledger example's timing-audit mode now writes
+`nmi-instruction-edges.csv`: the retired instruction, instruction start,
+acceptance, next PC, executed work, last wait entry and last `$4200` store.
+These are diagnostic observations only. No observation is imported into
+the runtime or the read-only ledger authority.
+
+The next bus split's source phase is now explicit. Field 3,546 entered
+wait at CPU **1,267,303,034**. Its final `BEQ` starts at **1,267,526,742**,
+crosses eligibility **1,267,526,748**, and finishes at **1,267,526,764**,
+interrupting `$00:8034`: exactly **16** clocks of acceptance remainder.
+That is executed source provenance, not permission to inject those clocks.
+
+The lagless runtime discards `native_startup_cpu` after bootstrap, and
+foreign-memory seeds contain no CPU execution phase. Its cold-intro
+polygon worker retains instructions, but `lag_free_intro_poly_work`
+recreates a zero-origin bus cursor for each scheduled work slice;
+instruction counts select that legacy slice. This is not an absolute
+acceptance phase. Reusing those sampled counts as timing prices is excluded.
+Subsequent
+`native_finish_main_cost` retains aggregate P2 work/elapsed estimates,
+not a completed instruction timeline. For the preceding iteration 3,080,
+source opening-to-wait time is **133,640**, while native P2 reports
+**133,724**. Across the first 2,000 sampled iterations every P2 endpoint
+differs from the source endpoint, with differences **[-121,758, 16,322]**.
+These differences are diagnostic residuals, never runtime prices. Using
+that endpoint as an actual wait-loop phase would introduce an unproved
+phase reset. No such trial is admitted, and no ledger acceptance timestamp
+is read by a new runtime owner.
+
+### Upload arrival, receiver work and suffix ordering
+
+The fresh candidate bus/timing replay is byte-identical to hunt 21.
+Hash-verified source APUI transactions retain the complete command, final
+clear and enable edges. `upload-mechanism.json` decomposes the measured
+epochs using executed transfer work; none of these residuals is charged.
+
+| Iteration | Command CPU residual | Transfer wall difference | Final clear / enable CPU residual | Source enable → acceptance |
+| --- | ---: | ---: | ---: | ---: |
+| 34,318 | -57,092 | +41,016 | -16,076 | 48 |
+| 48,556 | -972,361 | +200,404 | -771,957 | 5,822 |
+
+Both rows load bank 0. `native_defer_song_upload` captures a P2 phase but
+deliberately marks bank 0 unpositioned; `start_deferred_song_bank_transfer`
+therefore passes no phase. The command is queued at the audio window's end,
+SPC **642,509,440 / 925,072,640**, rather than at an executing caller's
+CPU store. The exact ceiling conversion gives CPU **13,459,104,316 /
+19,378,157,559**. This legacy transfer also uses a **386-clock** first-read
+prefix; the positioned overworld caller and source use **364**. The missing
+command epoch and legacy caller path are upstream of acceptance jitter.
+
+At 34,318, source clears the last port at **13,467,680,672**, restores
+`$4200` at **13,467,680,846**, V251/H774, and accepts after the remaining
+store bus cycle and `RTS` at **13,467,680,894**, `$02:83C6`.
+Candidate restore is **13,467,664,770**, V239/H1062. Both are in VBlank;
+the 48-clock store-completion/return interval is correct in this case.
+The **16,076-clock** upstream completion error already exists before
+acceptance. Ready polls remain **11,184 source / 11,871 candidate**,
+header polls **52 / 51**, byte polls **76,551 / 76,551**.
+
+At 48,556, source clears at **19,387,406,416**, restores at
+**19,387,406,590**, V220/H1010, and continues the main suffix until the
+next V225/H12 acceptance at **19,387,412,412**, `$00:864F`.
+Candidate restore is **19,386,634,633**, field 54,248 V178/H1073;
+source restore is in field 54,250. The current queue assumes a return NMI
+after 48 clocks even outside VBlank. A visible-line enable must instead
+wait for the hardware arrival and execute the intervening caller suffix.
+Ready polls remain **7,122 / 10,471**, header polls **51 / 55** and byte
+polls **76,551 / 76,552**. The command already arrives **972,361 CPU clocks
+early**, so correcting only enable-edge acceptance cannot reconcile the
+upload epochs.
+
+The source's two suffix NMIs occur before main clears `$12`; both are
+additional lag NMIs. Native atomic main has already completed that suffix
+when its deferred transfer returns, restores its completed latch and
+uses the return callback as a closing NMI with pending holds zero. This
+explains why an extra source suffix hold is absent. Recovering it requires
+the real upload caller/suffix continuation and its hardware arrival; an
+unconditional extra hold would not establish that ownership.
+
+| Iteration / port | Source synchronized SPC | Candidate queued SPC | Residual |
+| --- | ---: | ---: | ---: |
+| 34,318 / 1 | 642,918,897 | 642,918,130 | -767 |
+| 34,318 / 2 | 642,918,905 | 642,918,134 | -771 |
+| 34,318 / 3 | 642,918,905 | 642,918,137 | -768 |
+| 48,556 / 1 | 925,514,479 | 925,477,349 | -37,130 |
+| 48,556 / 2 | 925,514,483 | 925,477,354 | -37,129 |
+| 48,556 / 3 | 925,514,489 | 925,477,359 | -37,130 |
+
+Both rows retain **40 native holds / 41 source lag NMIs**, with 23 masked
+native callbacks each. The six values agree: ambient 5 and two zero effect
+ports. CPU/SPC quotient deadlines and source synchronized receiver cycles
+remain separate observations.
+
+The contiguous source/candidate bus comparison still agrees for **90,095
+events**, then differs at **SPC 60,509,114**, `$F7`, source **0** /
+candidate **12**. The source wait phase above establishes the interrupted
+instruction, but the native phase is not owned and this frontier is not
+claimed crossed. Its CPU store is 1,267,527,596 versus source
+1,267,527,612. Adding the executed 16-clock remainder would move the
+quotient deadline from SPC **60,509,111 to 60,509,112**, still before
+source synchronization at **60,509,114**. Thus acceptance ownership alone
+does not prove this bus split crossed; the CPU-to-SMP credit and bus order
+also need their executed owner. No two-cycle shift is applied.
+
+### Verification boundary
+
+The pre-census audit admits only the source observation tool; the additional
+wait fixture is test-only. There are no production runtime or instruction
+budget changes, fixture epoch updates, new environment switches, classifier,
+matcher or P2 changes.
+
+The eight-slice ROM helper passes **1,473,123 iterations**, **PASS /
+unexplained 0**, at **1,864 missing / 0 excess / 0 FP**. Every predictor row
+is byte-identical to hunt 21: zero changed main/VWF instruction budgets,
+zero changed ROM hold rows and zero changed P2 diagnostics. The five
+prefixes are confirmed in both completed ROM and live-prefix readback:
+
+| Before iteration | ROM missing before → after | Live missing before → after |
+| --- | --- | --- |
+| 94,334 | 2 → 2 | 2 → 2 |
+| 141,568 | 34 → 34 | 34 → 34 |
+| 228,499 | 142 → 142 | 142 → 142 |
+| 380,243 | 275 → 275 | 275 → 275 |
+| 461,989 | 334 → 334 | 334 → 334 |
+
+The eight CPU-picture processes all exit zero: **1,473,123 iterations**,
+**PASS / unexplained 0**, **1,462,997 exact pictures**, 563 early, 3,952
+late, 4 during-lag, 905 polygon-thread, 4,702 torn and 0 other content
+differences. Every category matches hunt 21.
+
+Filtered tests pass: **6 main-wait tests**, including the 92-case acceptance
+fixture, and **6 ledger-example tests**. Production and source-example
+builds are warning-free; test warnings match the pre-existing baseline.
+No existing fixture expectation or epoch is changed. Slow live-census and
+final default-suite results are recorded under `target/prefix-hunt22/`.
+
+Exactly **one** single-process seeded `--live-apu-reads
+--pacing-predictor` census completes: **1,473,123 iterations**, **PASS /
+unexplained 0**, exit zero. The entire live CSV and decompressed timing
+trace are byte-identical to hunt 21. Both lanes retain every instruction
+budget and hold row; there are **zero changed live hold rows**, therefore
+zero live-only changed rows and zero unattributed changes.
+
+| Lane | Missing before → after | Excess before → after | FP before → after |
+| --- | --- | --- | --- |
+| ROM | 1,864 → 1,864 | 0 → 0 | 0 → 0 |
+| Live | 2,104 → 2,104 | 149 → 149 | 14 → 14 |
+
+The remaining live-versus-ROM differential is **37 hold rows**, all
+attributed to `$08:C606` poll episodes and their carried state. Fresh trace
+readback reproduces all **6,057 poll rows** and six actual reseeds.
+`current-live-rom-holds.csv/json` retains every differential row;
+`live-rom-row-observations.json` retains their fresh timing observations.
+The following deltas are live minus ROM, not changes made by this hunt.
+
+| Poll episode | Differential hold rows | Delta missing / excess / FP |
+| --- | ---: | --- |
+| 626,618 | 10 | +27 / +27 / +5 |
+| 1,064,096 | 12 | +96 / +95 / +4 |
+| 1,317,697 | 15 | +117 / +27 / +5 |
+| Total | 37 | +240 / +149 / +14 |
+
+The final default library suite is launched **once**, after all source and
+fixture edits: **505 SNES tests pass / 7 ignored**, **3,019 Zelda tests
+pass / 3 ignored**, with exactly the permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`
+failure. There are no other failures and no new test warnings. Source
+hashes remain unchanged across that run. `git diff --check` passes.
+
+All source, census and test processes are joined. The ledger, oracle,
+ROM/assets and gate helpers remain hash-identical; all 399 checked
+read-only retained artifacts/inputs are unchanged. Only this report is
+updated among the files captured in the previous artifact registry. No
+commit, push, GPU, external Snes9x process, cached-A/V replay, second live
+census, classifier/matcher/P2 change or authority write occurs. Only
+rebuildable incremental output and redundant new receiver snapshots were
+removed within this worktree's own `target/`; snapshot hashes are retained.
+Final target usage is **7.49 GB**, below the 8 GB limit.
+
+These are completed seeded logical, receiver and CPU-picture measurements.
+Actual runtime wait/polygon/suffix acceptance ownership is **not completed**;
+the eligibility anchor remains. Cold exact A/V acceptance is a separate
+verification boundary.
