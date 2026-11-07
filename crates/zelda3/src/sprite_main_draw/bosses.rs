@@ -1557,6 +1557,9 @@ impl ZeldaState {
     //   sprite_main.c:19586.
     // -----------------------------------------------------------------------
     pub(in crate::zelda_rtl) fn sprite_draw_king_helmasaur_eyes(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e856b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e856b);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x40));
@@ -1566,6 +1569,7 @@ impl ZeldaState {
         let mut oam = self.game_state.oam.current_pointer_usize();
         let mut i: i32 = 1;
         loop {
+            b.block(0x1e8584);
             let j = ((self.overlord_slot_view(4).x_low() >> 2) & 7) as usize;
             let x = info
                 .x
@@ -1581,13 +1585,17 @@ impl ZeldaState {
             );
             oam += 4;
             i -= 1;
+            if i >= 0 { b.taken(0x1e85b6); }
             if i < 0 {
                 break;
             }
         }
+        b.block(0x1e85b8);
         if self.game_state.frame.submodule != 0 {
-            self.sprite_correct_oam_entries(k, 1, 0);
-        }
+            b.block(0x1e85bd);
+            self.sprite_correct_oam_entries_long(k, 1, 0);
+        } else { b.taken(0x1e85bb); }
+        b.block(0x1e85c5);
     }
 
     // -----------------------------------------------------------------------
@@ -1599,7 +1607,11 @@ impl ZeldaState {
         k: usize,
         info: &mut PrepOamCoordsRet,
     ) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87e5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e87e5); b.block(0x1e87f0);
         *info = self.sprite_draw_multiple(k, &HELMASAUR_KING_DRAW_D_DRAW_FRAMES);
+        b.block(0x1e87f4);
     }
 
     // -----------------------------------------------------------------------
@@ -1611,6 +1623,9 @@ impl ZeldaState {
         k: usize,
         info: &mut PrepOamCoordsRet,
     ) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8805));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8805);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(19 * 4));
@@ -1620,6 +1635,8 @@ impl ZeldaState {
         let mut oam = self.game_state.oam.current_pointer_usize();
         let mut i: i32 = 3;
         loop {
+            b.block(0x1e8821);
+            if i == 3 { b.crossing(0x1e8839); b.crossing(0x1e886a); }
             let x = info
                 .x
                 .wrapping_add(HELMASAUR_KING_EXPLOSION_X_OFFSETS[i as usize] as i16 as u16)
@@ -1648,21 +1665,26 @@ impl ZeldaState {
             );
             oam += 8;
             i -= 1;
+            if i >= 0 { b.taken(0x1e8889); }
             if i < 0 {
                 break;
             }
         }
         self.temp_counter_mut().set(0xff);
+        b.block(0x1e888b);
         if self.game_state.frame.submodule != 0 {
-            self.sprite_correct_oam_entries(k, 7, 2);
+            b.block(0x1e8890);
+            self.sprite_correct_oam_entries_long(k, 7, 2);
+            b.block(0x1e8898);
             // Sprite_PrepOamCoordOrDoubleRet(k, info) refreshes the caller's coordinates.
             if let Some(p) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) {
                 info.x = p.0;
                 info.y = p.1;
                 info.flags = p.2;
                 info.r4 = 0;
-            }
-        }
+            } else { return; }
+        } else { b.taken(0x1e888e); }
+        b.block(0x1e889b);
     }
 
     // -----------------------------------------------------------------------
@@ -1670,16 +1692,23 @@ impl ZeldaState {
     //   sprite_main.c:19709.
     // -----------------------------------------------------------------------
     pub(in crate::zelda_rtl) fn sprite_draw_king_helmasaur_mouth(&mut self, k: usize, info: &PrepOamCoordsRet) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e88bc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e88bc);
         if self.sprite_slot_view(k).delay_aux2() == 0 {
+            b.taken(0x1e88bf); b.block(0x1e88ef);
             return;
         }
+        b.block(0x1e88c1);
         let yd_idx = (self.sprite_slot_view(k).delay_aux2() >> 2) as usize;
         let yd = HELMASAUR_KING_FIREBALL_Y_OFFSETS[yd_idx];
         self.oam_allocate_from_region_b(4);
+        b.block(0x1e88cf);
         let oam = self.game_state.oam.current_pointer_usize();
         let x = info.x as u8;
         let y = (info.y as u8).wrapping_add(yd).wrapping_add(0x13);
         self.set_oam_plain_at(oam, x, y, 0xaa, info.flags ^ 0xb, 2);
+        b.block(0x1e88ef);
     }
 
     // void KingHelmasaurMask(int k, PrepOamCoordsRet *info) {  // 9e8686
@@ -1694,10 +1723,15 @@ impl ZeldaState {
             return;
         }
         let start = self.sprite_slot_view(k).c() as usize * 8;
-        *info = self.sprite_draw_multiple(
-            k,
-            &HELMASAUR_MASK_DRAW_FRAMES[start..start + 8],
-        );
+        {
+            // The mask JSRs the shared wrapper; the body falls into it and
+            // the bumper JMPs into it. Each executing entry charges it once.
+            let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87f0));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(0x1e87f0);
+            *info = self.sprite_draw_multiple(k,&HELMASAUR_MASK_DRAW_FRAMES[start..start + 8]);
+            b.block(0x1e87f4);
+        }
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x20));
@@ -1884,7 +1918,7 @@ impl ZeldaState {
             self.sprite_attempt_damage_to_link_plus_recoil(k);
         }
         b.block(0x1e8a79);
-        self.sprite_correct_oam_entries(k, 16, 2);
+        self.sprite_correct_oam_entries_long(k, 16, 2);
         b.block(0x1e8a81);
         if let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) {
             b.block(0x1e8a84);

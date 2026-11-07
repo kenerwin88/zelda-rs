@@ -640,8 +640,15 @@ impl ZeldaState {
     //   Four large tiles toggled by delay timer.
     // }
     pub(super) fn bumper_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1eaa8b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eaa8b);
         let base = (((self.sprite_slot_view(k).delay_main() >> 1) & 1) as usize) * 4;
+        let wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87f0));
+        b.block(0x1e87f0);
         self.sprite_draw_multiple(k, &BUMPER_DRAW_FRAMES[base..base + 4]);
+        b.block(0x1e87f4);
+        drop(wrapper);
     }
 
     // -----------------------------------------------------------------------
@@ -966,10 +973,15 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_7E_Firebar_Clockwise(int k) {  // 9ed01a
     pub(super) fn sprite_7_e_firebar_clockwise(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ed01a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ed01a);
         self.firebar_main(k);
+        b.block(0x1ed01d);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1ed020);
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let j = usize::from(self.sprite_slot_view(k).sprite_type().wrapping_sub(0x7e))
             + if self.game_state.inventory.save_progress.palace_index_x2() == 18 {
@@ -977,6 +989,10 @@ impl ZeldaState {
             } else {
                 0
             };
+        if self.game_state.inventory.save_progress.palace_index_x2() == 18 {
+            b.block(0x1ed031);
+        } else { b.taken(0x1ed02f); }
+        b.block(0x1ed033);
         let t = ((u16::from(self.sprite_slot_view(k).a())
             | (u16::from(self.sprite_slot_view(k).b()) << 8)) as i16)
             .wrapping_add(SPRITE_7_E_FIREBAR_CLOCKWISE_INCR[j]) as u16
@@ -1061,7 +1077,7 @@ impl ZeldaState {
             oam += 4;
         }
         b.block(0x1ed174);
-        self.sprite_correct_oam_entries(k, 3, 0xff);
+        self.sprite_correct_oam_entries_long(k, 3, 0xff);
 
         b.block(0x1ed17d);
         if ((((k as u8) ^ self.game_state.frame.frame_counter) & 3)

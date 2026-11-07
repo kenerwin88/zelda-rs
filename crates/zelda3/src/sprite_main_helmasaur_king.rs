@@ -732,17 +732,27 @@ impl ZeldaState {
     //   SpriteDraw_KingHelmasaur_Mouth(k, &info);
     // }
     pub(super) fn helmasaur_king_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e853b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e853b);
         self.oam_state_mut().set_current_pointer(0x89c);
         self.oam_state_mut().set_current_extended_pointer(0xa47);
         let Some(mut info) = self.sprite_prep_oam_coord_or_double_ret_for_helmasaur_king(k) else {
             return;
         };
+        b.block(0x1e854c);
         self.king_helmasaur_operate_tail(k, &mut info);
+        b.block(0x1e854f);
         self.sprite_draw_king_helmasaur_eyes(k, &info);
+        b.block(0x1e8552);
         self.king_helmasaur_mask(k, &mut info);
+        b.block(0x1e8555);
         self.sprite_draw_king_helmasaur_body(k, &mut info);
+        b.block(0x1e8558);
         self.sprite_draw_king_helmasaur_legs(k, &mut info);
+        b.block(0x1e855b);
         self.sprite_draw_king_helmasaur_mouth(k, &info);
+        b.block(0x1e855e);
     }
 
     // void Sprite_ScheduleBossForDeath(int k) {  // sprite_main.c:18047

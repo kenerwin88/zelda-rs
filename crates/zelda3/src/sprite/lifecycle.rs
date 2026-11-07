@@ -602,11 +602,17 @@ impl ZeldaState {
     //   ThrowableScenery_TransmuteToDebris(k);
     // }
     pub(in crate::zelda_rtl) fn throwable_scenery_transmute_if_valid(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e22f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06e22f);
         if self.sprite_slot_view(k).sprite_type() != 0xec {
+            b.taken(0x06e234); b.block(0x06e26d);
             return;
         }
+        b.block(0x06e236);
         self.garnish_state_mut().set_repulsespark_timer(0);
         self.throwable_scenery_transmute_to_debris(k);
+        b.block(0x06e26d);
     }
 
     // void ThrowableScenery_TransmuteToDebris(int k) {  // 86e239
@@ -966,6 +972,19 @@ impl ZeldaState {
         let mut sprite = self.sprite_slot_view_mut(k);
         sprite.set_x_velocity(pt.x);
         sprite.set_y_velocity(pt.y);
+    }
+
+    pub(in crate::zelda_rtl) fn sprite_apply_speed_towards_link_long_marked(&mut self, k: usize, vel: u8) {
+        let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ea12));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ea12);
+        {
+            let _body = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ea04));
+            b.block(0x06ea04);
+            self.sprite_apply_speed_towards_link(k, vel);
+            b.block(0x06ea07);
+        }
+        b.block(0x06ea18);
     }
 
     // void Sprite_SetSpawnedCoordinates(int k, SpriteSpawnInfo *info) {
@@ -1937,6 +1956,24 @@ impl ZeldaState {
         self.sprite_stunned_main_ex(k, true);
     }
 
+    /// The far entry used by bank-5 callers; same-bank tail jumps skip it.
+    pub(in crate::zelda_rtl) fn thrown_sprite_tile_and_sprite_interaction_long(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dff2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06dff2);
+        self.thrown_sprite_tile_and_sprite_interaction(k);
+        b.block(0x06dff8);
+    }
+
+    /// Shared JMP tail of the fake-sword landing and Sprite_Func22.
+    pub(in crate::zelda_rtl) fn sprite_flags2_three_return(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e095));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06e095);
+        self.sprite_slot_view_mut(k).set_flags2(3);
+        b.block(0x06e09a);
+    }
+
     // void ThrowableScenery_InteractWithSpritesAndTiles(int k) {  // 86e164
     //   Sprite_MoveXY(k);
     //   if (!sprite_E[k])
@@ -2013,15 +2050,23 @@ impl ZeldaState {
             } else { b.taken(0x06e020); }
         }
 
-        if (second_entry || self.sprite_slot_view(k).e() == 0)
-            && (self.sprite_slot_view(k).wall_collision() & 0x0f) != 0
-        {
+        // Shared interaction prefix. Landing, terminal tails and peer damage
+        // retain separate owners; DFFA can jump directly to E041.
+        let interaction = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e02a));
+        let checks_wall = second_entry || self.sprite_slot_view(k).e() == 0;
+        if checks_wall { b.block(0x06e02a); }
+        if checks_wall && (self.sprite_slot_view(k).wall_collision() & 0x0f) != 0 {
+            b.block(0x06e031);
             self.sprite_apply_ricochet(k);
+            b.block(0x06e034);
             if self.sprite_slot_view(k).state() == 11 {
+                b.block(0x06e03b);
                 self.sprite_sfx_queue_sfx2_with_pan(k, 5);
-            }
-        }
+            } else { b.taken(0x06e039); }
+        } else if checks_wall { b.taken(0x06e02f); }
+        b.block(0x06e041);
         self.sprite_check_tile_property(k, 0x68);
+        b.block(0x06e046);
 
         if sprite_init_value(
             SPRITE_INIT_FLAGS3_TABLE,
@@ -2029,94 +2074,147 @@ impl ZeldaState {
         ) & 0x10
             != 0
         {
+            b.block(0x06e054);
             self.sprite_slot_view_mut(k).or_flags3(0x10);
             if self.game_state.sprites.workspace.tile() == NativeTile::PIT {
+                b.block(0x06e063);
                 self.sprite_slot_view_mut(k).and_flags3(!0x10);
-            }
-        }
-        self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+            } else { b.taken(0x06e061); }
+        } else { b.taken(0x06e052); }
+        b.block(0x06e066);
+        self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
+        b.block(0x06e069);
         let value = self.sprite_slot_view(k).z_velocity().wrapping_sub(2);
         self.sprite_slot_view_mut(k).set_z_velocity(value);
-        if self.sprite_slot_view(k).z().wrapping_sub(1) >= 0xf0 {
+        let landed = self.sprite_slot_view(k).z().wrapping_sub(1) >= 0xf0;
+        if landed { b.taken(0x06e075); } else { b.block(0x06e077); }
+        drop(interaction);
+        if landed {
+            let _landing = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e07a));
+            b.block(0x06e07a);
             let value = 0;
             self.sprite_slot_view_mut(k).set_z(value);
-            if self.sprite_slot_view(k).sprite_type() == 0xe8
-                && (self.sprite_slot_view(k).z_velocity().wrapping_sub(0xe8) as i8).is_negative()
-            {
+            let fake_sword = self.sprite_slot_view(k).sprite_type() == 0xe8;
+            if fake_sword { b.block(0x06e084); }
+            else { b.taken(0x06e082); }
+            let breaks = fake_sword && (self.sprite_slot_view(k).z_velocity().wrapping_sub(0xe8) as i8).is_negative();
+            if breaks {
+                b.block(0x06e08b);
                 let value = 6;
                 self.sprite_slot_view_mut(k).set_state(value);
                 let value = 8;
                 self.sprite_slot_view_mut(k).set_delay_main(value);
-                let value = 3;
-                self.sprite_slot_view_mut(k).set_flags2(value);
+                self.sprite_flags2_three_return(k);
                 return;
             }
+            if fake_sword { b.taken(0x06e089); }
 
+            b.block(0x06e09b);
             self.throwable_scenery_transmute_if_valid(k);
+            b.block(0x06e09e);
             // Over a pit the landing surface comes from the sprite's own
             // flags instead of the probed tile, then faces the same test.
             let landing = self.game_state.sprites.workspace.tile();
             let surface = if landing == NativeTile::PIT {
+                b.block(0x06e0a5);
                 if self.sprite_slot_view(k).flags() & 1 == 0 {
                     self.sprite_func8(k);
                     return;
                 }
+                b.taken(0x06e0a9);
                 NativeTile::from_cartridge(self.sprite_slot_view(k).flags() >> 1)
             } else {
+                b.taken(0x06e0a3);
                 landing
             };
+            b.block(0x06e0bf);
             if surface == NativeTile::SHALLOW_WATER {
+                b.block(0x06e0c3);
                 let z_vel = self.sprite_slot_view(k).z_velocity();
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
                 if (z_vel.wrapping_sub(0xf0) as i8).is_negative() {
+                    b.block(0x06e0cd);
                     let mut info = SpriteSpawnInfo::default();
                     let j = self.sprite_spawn_dynamically(k, 0xec, &mut info);
+                    b.block(0x06e0d3);
                     if j >= 0 {
+                        b.block(0x06e0d5);
                         let j = j as usize;
                         self.sprite_set_spawned_coordinates(j, &info);
+                        b.block(0x06e0d9);
                         self.sprite_func22(j);
+                        b.block(0x06e0de);
+                    } else { b.taken(0x06e0d3); }
+                } else { b.taken(0x06e0cb); }
+            } else {
+                b.taken(0x06e0c1); b.block(0x06e0e1);
+                if surface == NativeTile::DEEP_WATER {
+                    b.block(0x06e0e5);
+                    let fish = if self.sprite_slot_view(k).sprite_type() == 0xd2 {
+                        b.taken(0x06e0ea); true
+                    } else {
+                        b.block(0x06e0ec);
+                        let random = self.get_random_number();
+                        b.block(0x06e0f0);
+                        if random & 1 == 0 { b.taken(0x06e0f1); false } else { true }
+                    };
+                    if fish {
+                        b.block(0x06e0f3);
+                        self.sprite_spawn_leaping_fish(k);
                     }
-                }
-            } else if surface == NativeTile::DEEP_WATER {
-                if self.sprite_slot_view(k).sprite_type() == 0xd2
-                    || (self.get_random_number() & 1) != 0
-                {
-                    self.sprite_spawn_leaping_fish(k);
-                }
-                self.sprite_func22(k);
-                return;
+                    self.sprite_func22(k);
+                    return;
+                } else { b.taken(0x06e0e3); }
             }
 
+            b.block(0x06e115);
             let z_vel = self.sprite_slot_view(k).z_velocity();
             if (z_vel as i8).is_negative() {
+                b.block(0x06e11a);
                 let bounced = z_vel.wrapping_neg() >> 1;
+                if bounced < 9 { b.block(0x06e122); } else { b.taken(0x06e120); }
+                b.block(0x06e124);
                 let value = if bounced < 9 { 0 } else { bounced };
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
-            }
+            } else { b.taken(0x06e118); }
+            b.block(0x06e127);
             let value = ((self.sprite_slot_view(k).x_velocity() as i8) >> 1) as u8;
             self.sprite_slot_view_mut(k).set_x_velocity(value);
             if self.sprite_slot_view(k).x_velocity() == 0xff {
+                b.block(0x06e135);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
-            }
+            } else { b.taken(0x06e133); }
+            b.block(0x06e138);
             let value = ((self.sprite_slot_view(k).y_velocity() as i8) >> 1) as u8;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
             if self.sprite_slot_view(k).y_velocity() == 0xff {
+                b.block(0x06e146);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
-            }
+            } else { b.taken(0x06e144); }
         }
-        if self.sprite_slot_view(k).state() != 11
-            || self.sprite_slot_view(k).draw_work_byte_5() != 0
-        {
+        let _suffix = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e149));
+        b.block(0x06e149);
+        let check_peers = if self.sprite_slot_view(k).state() != 11 {
+            b.taken(0x06e14e); true
+        } else {
+            b.block(0x06e150);
+            if self.sprite_slot_view(k).draw_work_byte_5() == 0 { b.taken(0x06e154); false } else { true }
+        };
+        if check_peers {
+            b.block(0x06e156);
             if self.sprite_return_if_lifted(k) {
                 return;
             }
+            b.block(0x06e159);
             if self.sprite_slot_view(k).sprite_type() != 0x4a {
+                b.block(0x06e160);
                 self.thrown_sprite_check_damage_to_sprites(k);
-            }
+            } else { b.taken(0x06e15e); }
         }
+        b.block(0x06e163);
     }
 
     // void SpriteStunned_Main_Func1(int k) {  // 86e2ba

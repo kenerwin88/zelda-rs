@@ -95,8 +95,11 @@ impl ZeldaState {
 
     pub(in crate::zelda_rtl) fn sprite_correct_oam_entries_long(&mut self, k: usize, n: i32, islarge: u8) {
         // $06:FEB4..FEBB: bank wrapper, including JSR of the shared body.
-        crate::cycle_ledger::charge_routine(0x06_feb4, 190);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06feb4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06feb4);
         self.sprite_correct_oam_entries(k, n, islarge);
+        b.block(0x06feba);
     }
 
     pub(in crate::zelda_rtl) fn sprite_prep_oam_coord_or_double_ret(

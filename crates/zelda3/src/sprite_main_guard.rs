@@ -1549,7 +1549,7 @@ impl ZeldaState {
     pub(super) fn soldier_throwing_common(&mut self, k: usize) {
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x05ce23);
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
         // $05:CE26 JSR $05:AB93: both complete damage calls.

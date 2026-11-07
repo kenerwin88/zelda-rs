@@ -1426,7 +1426,7 @@ impl ZeldaState {
         let b = crate::cycle_ledger::blocks(self.lag_free);
         // $06:A473..A492: actual recoil/damage/movement/tile call opcodes.
         b.block(0x06a473);
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom06FF78) {
             return false;
         }
         // $06:A476 JSR $06:D88B: both complete damage calls.
@@ -1850,23 +1850,35 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn keese_draw_before_inactive_check(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05aa8b));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05aa8b);
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
-        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
+        self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
     }
 
     pub(in crate::zelda_rtl) fn complete_keese_after_draw(&mut self, k: usize) {
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+        // The resumed suffix owns the same caller, without repeating its draw.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05aa8b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05aa97);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        b.block(0x05aa9a);
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom05F971) {
             return;
         }
         // $05:AA9D JSR $05:AB93: both complete damage calls.
+        b.block(0x05aa9d);
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
         // $05:AAA0 JSR $05:F9ED: complete body, caller opcode unchanged.
+        b.block(0x05aaa0);
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x05aaa3);
         if self.sprite_slot_view(k).ai_state() != 0 {
+            b.taken(0x05aaa6); b.block(0x05ab04);
             if self.sprite_slot_view(k).delay_main() == 0 {
+                b.block(0x05ab09);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
                 let value = 64;
@@ -1874,18 +1886,26 @@ impl ZeldaState {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 self.sprite_zero_velocity_xy(k);
+                b.block(0x05ab17);
             } else {
+                b.taken(0x05ab07); b.block(0x05ab18);
                 if (self.sprite_slot_view(k).delay_main() & 7) == 0 {
+                    b.block(0x05ab1c);
                     let value = self.sprite_slot_view(k).a().wrapping_add(
                         KEESE_ORBIT_DIRECTION_STEPS[usize::from(self.sprite_slot_view(k).b() & 1)]
                             as u8,
                     );
                     self.sprite_slot_view_mut(k).set_a(value);
-                    if (self.get_random_number() & 3) == 0 {
+                    let random = self.get_random_number();
+                    b.block(0x05ab30);
+                    if (random & 3) == 0 {
+                        b.block(0x05ab34);
                         self.sprite_slot_view_mut(k).add_b(1);
-                    }
-                }
+                    } else { b.taken(0x05ab32); }
+                } else { b.taken(0x05ab1a); }
+                b.block(0x05ab37);
                 let j = usize::from(self.sprite_slot_view(k).a() & 0x0f);
+                if j >= 12 { b.crossing(0x05ab43); }
                 let value = KEESE_ATTACK_X_VELOCITIES[j] as u8;
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
                 let value = KEESE_ATTACK_Y_VELOCITIES[j] as u8;
@@ -1894,25 +1914,40 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(value);
             }
         } else {
+            b.block(0x05aaa8);
             if ((((k as u8) ^ self.game_state.frame.frame_counter) & 3)
                 | self.sprite_slot_view(k).delay_main())
                 != 0
             {
+                b.taken(0x05aab0); b.block(0x05aae1);
                 return;
             }
 
-            let (dir, pt) = self.sprite_direction_and_offset_to_face_link(k);
-            if pt.y.wrapping_add(0x28) >= 0x50 || pt.x.wrapping_add(0x28) >= 0x50 {
+            b.block(0x05aab2);
+            let (_, pt) = self.sprite_direction_and_offset_to_face_link_bank5(k);
+            b.block(0x05aab5);
+            if pt.y.wrapping_add(0x28) >= 0x50 {
+                b.taken(0x05aabc); b.block(0x05aae1);
                 return;
             }
+            b.block(0x05aabe);
+            if pt.x.wrapping_add(0x28) >= 0x50 {
+                b.taken(0x05aac5); b.block(0x05aae1);
+                return;
+            }
+            b.block(0x05aac7);
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
+            b.block(0x05aacd);
             self.sprite_slot_view_mut(k).add_ai_state(1);
             let value = 64;
             self.sprite_slot_view_mut(k).set_delay_main(value);
             let value = 64;
             self.sprite_slot_view_mut(k).set_b(value);
+            let dir = self.sprite_direction_and_offset_to_face_link_bank5(k).0;
+            b.block(0x05aadb);
             let value = KEESE_ATTACK_START_PHASES[usize::from(dir)] as u8;
             self.sprite_slot_view_mut(k).set_a(value);
+            b.block(0x05aae1);
         }
     }
 

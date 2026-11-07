@@ -983,6 +983,7 @@ impl ZeldaState {
                     0x1b => {
                         b.block(0x06f1f3); b.block(0x06e25a);
                         self.sprite_schedule_for_breakage(k);
+                        b.block(0x06e26d);
                         return false;
                     }
                     0x0c => {
@@ -1817,12 +1818,16 @@ impl ZeldaState {
     //   SpriteSfx_QueueSfx2WithPan(k, 0x20);
     // }
     pub(in crate::zelda_rtl) fn sprite_func8(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e0ab));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06e0ab);
         let value = 1;
         self.sprite_slot_view_mut(k).set_state(value);
         let value = 0x1f;
         self.sprite_slot_view_mut(k).set_delay_main(value);
         self.set_sound_effect_1(0);
         self.sprite_sfx_queue_sfx2_with_pan(k, 0x20);
+        b.block(0x06e0be);
     }
 
     // void Sprite_Func22(int k) {  // 86e0f6
@@ -1834,7 +1839,11 @@ impl ZeldaState {
     //   sprite_flags2[k] = 3;
     // }
     pub(in crate::zelda_rtl) fn sprite_func22(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e0f6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06e0f6);
         self.set_sound_effect_1_with_sprite_pan(k, 0x28);
+        b.block(0x06e0fa);
         let value = 3;
         self.sprite_slot_view_mut(k).set_state(value);
         let value = 15;
@@ -1842,8 +1851,8 @@ impl ZeldaState {
         let value = 0;
         self.sprite_slot_view_mut(k).set_ai_state(value);
         self.get_random_number();
-        let value = 3;
-        self.sprite_slot_view_mut(k).set_flags2(value);
+        b.block(0x06e110);
+        self.sprite_flags2_three_return(k);
     }
 
     // void Sprite_Func3(int k) {  // 86efda

@@ -24,9 +24,15 @@ impl ZeldaState {
         info: &PrepOamCoordsRet,
         spr_offs: i32,
     ) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05b160));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05b160);
         let j = (self.sprite_slot_view(k).head_direction() & 3) as usize;
         let oam = ((self.game_state.oam.current_pointer() as i32) + spr_offs * 4) as usize;
         let y = info.y.wrapping_sub(9);
+        if y.wrapping_add(16) < 0x100 { b.taken(0x05b180); }
+        else { b.block(0x05b182); }
+        b.block(0x05b187);
         let flags = info.flags | CHAIN_BALL_TROOPER_HEAD_FLAGS[j];
         self.set_oam_helper0_at(
             oam,
@@ -61,18 +67,27 @@ impl ZeldaState {
     ) {
         #[cfg(feature = "rom-shadow-audit")]
         let _audit = crate::rom_shadow_audit::local_scope(0x05b3cd,None);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05b3cd));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05b3cd);
         let g = self.sprite_slot_view(k).graphics() as usize;
         let spr_offs = spr_offs + ((FLAIL_TROOPER_BODY_SPRITE_OFFSETS[g] >> 2) as i32);
         let mut oam = ((self.game_state.oam.current_pointer() as i32) + spr_offs * 4) as usize;
         let mut n: i32 = FLAIL_TROOPER_BODY_SEGMENT_COUNTS[g] as i32;
         loop {
+            b.block(0x05b3e5);
             let j = (g * 3) + (n as usize);
+            if 0xa3+j*2>0xff { b.crossing(0x05b3f2); }
             let x = info
                 .x
                 .wrapping_add(FLAIL_TROOPER_BODY_X_OFFSETS[j] as i16 as u16);
             let y = info
                 .y
                 .wrapping_add(FLAIL_TROOPER_BODY_Y_OFFSETS[j] as i16 as u16);
+            if y.wrapping_add(16)<0x100 { b.taken(0x05b40c); }
+            else { b.block(0x05b40e); }
+            b.block(0x05b413);
+            if 0xc3+j>0xff { b.crossing(0x05b416); }
             self.set_oam_helper0_at(
                 oam,
                 x,
@@ -82,14 +97,18 @@ impl ZeldaState {
                 FLAIL_TROOPER_BODY_SIZES[j],
             );
             if n == 2 {
+                b.block(0x05b437);
                 oam += 4;
-            }
+            } else { b.taken(0x05b435); }
+            b.block(0x05b43b);
             oam += 4;
             n -= 1;
+            if n>=0 { b.taken(0x05b43c); }
             if n < 0 {
                 break;
             }
         }
+        b.block(0x05b43e);
     }
 
     // -----------------------------------------------------------------------
@@ -253,6 +272,10 @@ impl ZeldaState {
         info: &PrepOamCoordsRet,
         spr_offs: i32,
     ) {
+        // CD48/CD4F are caller-selected prefixes. CD54 owns the common body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cd54));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05cd54);
         let mut oam = ((self.game_state.oam.current_pointer() as i32) + spr_offs * 4) as usize;
         let r6 = self
             .sprite_slot_view(k)
@@ -261,31 +284,42 @@ impl ZeldaState {
             .wrapping_add(((self.sprite_slot_view(k).a() ^ 1) << 1) & 2);
         let mut i: i32 = 1;
         loop {
+            b.block(0x05cd6c);
             let j = (r6.wrapping_add(i as u8) & 0xf) as usize;
+            if 0xe8+j*2>0xff { b.crossing(0x05cd76); }
             let x = info
                 .x
                 .wrapping_add(SOLDIER_THROWING_DRAW_X_OFFSETS[j] as i16 as u16);
             let y = info
                 .y
                 .wrapping_add(SOLDIER_THROWING_DRAW_Y_OFFSETS[j] as i16 as u16);
+            if y.wrapping_add(16)<0x100 { b.taken(0x05cd93); }
+            else { b.block(0x05cd95); }
+            b.block(0x05cd9a);
+            if 0xe8+j*2>0xff { b.crossing(0x05cd9c); }
             self.hitbox_scratch_offset_mut().set_offsets(
                 SOLDIER_THROWING_DRAW_Y_OFFSETS[j] as u8,
                 SOLDIER_THROWING_DRAW_X_OFFSETS[j] as u8,
             );
             let char_off = if self.sprite_slot_view(k).sprite_type() >= 0x48 {
+                b.block(0x05cdb2);
                 3u8
             } else {
+                b.taken(0x05cdb0);
                 0u8
             };
+            b.block(0x05cdb4);
             let charnum = SOLDIER_THROWING_DRAW_CHARS[j].wrapping_sub(char_off);
             let flags = ((SOLDIER_THROWING_DRAW_FLAGS[j] | info.flags) & 0xf1) | 8;
             self.set_oam_helper0_at(oam, x, y, charnum, flags, 0);
             oam += 4;
             i -= 1;
+            if i>=0 { b.taken(0x05cdd0); }
             if i < 0 {
                 break;
             }
         }
+        b.block(0x05cdd2);
     }
 
     // -----------------------------------------------------------------------
@@ -565,16 +599,28 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void JavelinTrooper_Draw(int k) {  // 85d192
     pub(super) fn javelin_trooper_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05d192));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05d192);
         let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
         let info = PrepOamCoordsRet::from_tuple(tuple);
+        b.block(0x05d195);
         self.sprite_draw_guard_head(k, &info, 3);
+        b.block(0x05d19a);
         self.sprite_draw_bnc_body(k, &info, 2);
+        b.block(0x05d19f);
         if self.sprite_slot_view(k).graphics() < 20 {
+            b.block(0x05d1a6);
+            let _entry = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cd48));
+            b.block(0x05cd48);
             self.sprite_draw_guard_spear(k, &info, 0);
-        }
+        } else { b.taken(0x05d1a4); }
+        b.block(0x05d1a9);
+        b.block(0x05c68c);
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
+            b.block(0x05c693);
             let mut shadow_info = PrepOamCoordsRet {
                 x: info.x,
                 y: info.y,
@@ -584,8 +630,9 @@ impl ZeldaState {
             self.sprite_draw_shadow_custom(
                 k,
                 &mut shadow_info,
-                JAVELIN_TROOPER_DRAW_SHADOW[usize::from(self.sprite_slot_view(k).direction() & 3)], SpriteShadowEntry::Unpriced);
-        }
+                JAVELIN_TROOPER_DRAW_SHADOW[usize::from(self.sprite_slot_view(k).direction() & 3)], SpriteShadowEntry::Rom06DC5C);
+        } else { b.taken(0x05c691); }
+        b.block(0x05c69d);
     }
 
     // -----------------------------------------------------------------------
@@ -831,15 +878,22 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_48_RedJavelinGuard(int k) {  // 85cde1
     pub(super) fn sprite_48_red_javelin_guard(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cde1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05cde1);
         let bak0 = self.sprite_slot_view(k).graphics();
         let j = usize::from(self.sprite_slot_view(k).direction() & 3);
         if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.block(0x05cdee);
             let value = SPRITE_48_RED_JAVELIN_GUARD_DIR_LOCK[j];
             self.sprite_slot_view_mut(k).set_direction(value);
             let value = SPRITE_48_RED_JAVELIN_GUARD_LOCAL_GRAPHICS[j];
             self.sprite_slot_view_mut(k).set_graphics(value);
-        }
+        } else { b.taken(0x05cdec); }
+        b.block(0x05cdfa);
         self.javelin_trooper_draw(k);
+        b.block(0x05cdfd);
+        b.block(0x05ce1b);
         let value = j as u8;
         self.sprite_slot_view_mut(k).set_direction(value);
         let value = bak0;

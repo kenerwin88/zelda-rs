@@ -227,7 +227,11 @@ impl ZeldaState {
     //   Sprite_DrawMultiplePlayerDeferred(k, kFakeSword_Dmd, 2, NULL);
     // }
     pub(super) fn fake_sword_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05eee6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05eee6);
         self.sprite_draw_multiple_player_deferred(k, &FAKE_SWORD_DRAW_FRAMES);
+        b.block(0x05eef8);
     }
 
     // -----------------------------------------------------------------------
@@ -267,21 +271,40 @@ impl ZeldaState {
 
     // -----------------------------------------------------------------------
     // void Sprite_E8_FakeSword(int k) {  // 85eeaf
+    pub(super) fn sprite_e8_fake_sword_long(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05eea7));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05eea7);
+        self.sprite_e8_fake_sword(k);
+        b.block(0x05eead);
+    }
+
     pub(super) fn sprite_e8_fake_sword(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05eeaf));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05eeaf);
         self.fake_sword_draw(k);
-        if self.sprite_return_if_paused(k, SpritePausedEntry::Rom06D9F3) {
+        b.block(0x05eeb2);
+        if self.sprite_return_if_paused(k, SpritePausedEntry::Rom05F955) {
             return;
         }
+        b.block(0x05eeb5);
         if self.sprite_slot_view(k).draw_work_byte_3() == 3 {
+            b.block(0x05eebd);
             if self.sprite_slot_view(k).c() == 0 {
+                b.block(0x05eec2);
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_c(value);
                 self.sprite_show_message_unconditional(0x6f);
-            }
+            } else { b.taken(0x05eec0); }
+            b.block(0x05eecd);
         } else {
+            b.taken(0x05eebb); b.block(0x05eece);
             // $05:EECE JSR $05:F9ED: complete body, caller opcode unchanged.
             self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
-            self.thrown_sprite_tile_and_sprite_interaction(k);
+            b.block(0x05eed1);
+            self.thrown_sprite_tile_and_sprite_interaction_long(k);
+            b.block(0x05eed5);
         }
     }
 

@@ -490,6 +490,8 @@ fn mantle_and_oam_correction_cycles_match_rom_for_clipping() {
             for size in [0, 2, 0xff] {
                 for count in [0, 1, 5, 7] {
                     let mut state = ZeldaState::new();
+                    // Audit lagless instruction markers, including the far OAM wrapper.
+                    state.lag_free = true;
                     state.clear_oam_buffer();
                     state.sprite_set_x(4, x);
                     state.sprite_set_y(4, y);

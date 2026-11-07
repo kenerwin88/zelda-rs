@@ -3937,6 +3937,29 @@ fn load4_falling_dispatch_markers_match_rom() {
     }
 }
 
+#[test]
+fn prefix25_falling_palette_tail_matches_all_rom_filter_paths() {
+    let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets=std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for direction in [0u16,2] {
+     for countdown in 0..32 {
+      for color in [0u16,1,0x7fff,0xffff] {
+       let mut n=ZeldaState::new();n.set_assets(&assets).unwrap();
+       for(a,v)in[(0x10,7),(0x11,7),(0xb0,1),(0x1b,1)] {n.write_wram_byte(a,v);}
+       n.write_wram_word(crate::game_state::constants::DARKENING_OR_LIGHTENING_SCREEN,direction);
+       n.write_wram_word(0xc007,countdown);n.write_wram_word(0xc00b,31);
+       for index in 0..256 {n.write_wram_word(0xc300+index*2,color);n.write_wram_word(0xc500+index*2,color);}
+       n.sync_native_game_state_from_ram();n.set_lag_free(true);
+       let s=load4_rom_machine(&n,0x028e27,0x30);
+       crate::cycle_ledger::assert_rom_marker_work(0x028e27,s,|s| {
+           let pc=u32::from(s.cpu.k)*0x10000+u32::from(s.cpu.pc);
+           (0x028e27..0x028e3f).contains(&pc)||(0x008784..0x00879c).contains(&pc)||(0x02a2a0..0x02a2a5).contains(&pc)
+       },||n.module07_07_falling_transition());
+      }
+     }
+    }
+}
+
 
 fn load6_door_fixture(entry: u32, own_end: u16) {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

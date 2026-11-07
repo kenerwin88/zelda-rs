@@ -4595,7 +4595,12 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_hardhat_beetle(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x069122));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069122);
         let j = usize::from((self.sprite_slot_view(k).x_low() & 0x10) != 0);
+        if j == 0 { b.taken(0x069129); } else { b.block(0x06912b); }
+        b.block(0x06912c);
         self.sprite_slot_view_mut(k)
             .set_oam_flags(SPRITE_PREP_HARDHAT_BEETLE_OAM_FLAGS[j]);
         self.sprite_slot_view_mut(k)
@@ -4782,7 +4787,11 @@ impl ZeldaState {
     pub(super) fn sprite_prep_do_nothing_g(&mut self, _k: usize) {}
 
     pub(super) fn sprite_prep_fire_bar(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0691b4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0691b4);
         self.sprite_slot_view_mut(k).increment_b();
+        b.block(0x068ba7);
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
     }
 

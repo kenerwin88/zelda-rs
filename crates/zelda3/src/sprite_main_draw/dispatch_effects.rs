@@ -345,7 +345,7 @@ impl ZeldaState {
             0xe5 => self.sprite_e4_small_key(k),
             0xe6 => self.sprite_d9_green_rupee(k),
             0xe7 => self.sprite_e7_mushroom(k),
-            0xe8 => self.sprite_e8_fake_sword(k),
+            0xe8 => self.sprite_e8_fake_sword_long(k),
             0xe9 => self.sprite_e9_potion_shop(k),
             0xea => self.sprite_heart_container(k),
             0xeb => self.sprite_heart_piece(k),

@@ -10332,3 +10332,577 @@ These are seeded logical, CPU-picture and source-instruction proofs. Full
 upload arrival/receiver/return ownership, actual spotlight acceptance phase
 and complete unpriced instruction suffixes remain unresolved as listed
 above. Cold exact A/V acceptance is a separate boundary.
+
+## Lagless prefix hunt 25
+
+Instruction pricing on `codex/prefix-hunt25`, based on main **`eb7cddcc`**.
+Evidence is in `target/prefix-hunt25/`. The immutable admission binary is
+`zelda3-admission`, SHA-256
+`a7c88195805fbf26c3743d7413de7d38cec965ab80f2abcfd811ebf7ab959839`.
+The final ROM lane restores **320,086,182 instruction master clocks on
+205,510 iterations** and recovers **38 missing holds**, with no lost hold
+or decreased main-instruction budget. Of those recoveries, **15** are in
+141,568–228,499, **20** in 228,499–380,243 and **three** later in the route.
+
+### Fresh classification and owner ranking
+
+The regenerated ledger has **1,473,123 complete iterations**. Its stream,
+iteration, seed, ROM, SRAM and oracle hashes agree with the verified prior
+authorities. The pristine native baseline was regenerated through 380,243;
+all 228,499 earlier predictor rows agree byte-for-byte with main's prior
+admitted prefix. Hash-verified current source receipts cover the 90 earlier
+missing rows. A new cold unmodified-ROM CPU pass completes **381,401
+iterations / 414,000 host calls**, producing 171 selected complete profiles
+and covering **all 124** new-cohort missing rows. No new-cohort classification
+is inherited from an old run. Aborted and superseded development attempts
+are retained separately and are not admission evidence.
+
+Class (a) is remaining instruction ownership capable of crossing the
+current frozen diagnostic boundary; (c) has an executed upload-protocol
+owner; (d) retains extra source spotlight polling or a complete signed
+nonpoll instruction remainder smaller than that boundary. No independent
+inherited-arrival proof establishes class (b) in this batch. These are
+evidence classifications; no runtime classifier is changed.
+
+| Cohort | (a) before → after | (b) | (c) before → after | (d) before → after | Recovered |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Before 141,568 | 0 → 0 | 0 | 5 → 5 | 2 → 2 | 0 |
+| 141,568–228,499 | 65 → 52 | 0 | 3 → 3 | 15 → 13 | 15 |
+| 228,499–380,243 | 109 → 89 | 0 | 4 → 4 | 11 → 11 | 20 |
+
+All **214** baseline missing rows have before/after source, routine,
+sprite and object partitions in `classification.json`,
+`raw-owner-residuals.csv`, `sprite-owner-residuals.csv` and
+`raw-object-residuals.csv`. Main instruction totals already include VWF.
+Every signed child and wrapper is retained; inclusive totals and raw
+positive aliases are never added to produce a price.
+
+The fresh new-cohort ranking below uses each complete signed sprite-family
+owner, including all slots and child scopes. A frozen-boundary closure is
+a prioritization diagnostic, not a price or an additive recovery forecast.
+
+| New-cohort owner | Instruction rows | Frozen-boundary closures | Signed clocks |
+| --- | ---: | ---: | ---: |
+| Helmasaur King $92/$09 | 24 | 15 | 405,594 |
+| red spear guard $48/$09 | 16 | 14 | 228,260 |
+| sprite 62 master sword $62/$09 | 5 | 5 | 73,844 |
+| sprite 45 hog spear man $45/$09 | 7 | 4 | 13,036 |
+| sprite $26 $26/$09 | 6 | 3 | 27,648 |
+| sprite 5 a lost woods squirrel $5a/$09 | 5 | 3 | 4,490 |
+| sprite $79 $79/$09 | 3 | 3 | 1,812 |
+| sprite $ec $ec/$09 | 6 | 2 | 6,420 |
+| sprite 59 lost woods bird $59/$09 | 5 | 2 | 3,010 |
+| sprite 15 antifairy $15/$09 | 5 | 2 | 1,908 |
+
+The top two families are priced through their actual draw/caller scopes.
+The guard scopes recover **13** new-cohort rows (12 red-guard rows and one
+shared `$44/$09` row); Helmasaur draw restores **six**. The earlier owner batch
+also recovers 242,077, making **20** total new-cohort recoveries. These
+are actual final holds. They do not claim complete Helmasaur AI or mask
+coverage. After this batch, Helmasaur still ranks first with 18 remaining
+instruction rows / nine frozen-boundary opportunities / 125,714 signed
+clocks, followed by Master Sword (five / five / 73,844), hog spear man
+(seven / four / 13,036), Hardhat Beetle (five / three / 24,576) and the
+lost-woods squirrel (five / three / 4,490). `owner-ranking.json` retains
+both complete rankings.
+
+### Owners priced and ROM fixtures
+
+Every new price comes from decoded ROM blocks, actual branch/index
+outcomes and routine scopes. The fixtures execute unmodified ROM, select
+only the named owner's PCs and exclude called children. The **18** new
+fixtures cover both ends of the slot range, clipping and real table
+crossings; the thrown-interaction fixture checks both outcomes of all 22
+owned conditional branches. Keese, guard, Zora and landing fixtures replay
+the actual ROM random results when a child requires them.
+
+| Owner / actual ROM entries | Fixture names |
+| --- | --- |
+| Keese caller and actual draw/inactive/recoil/facing entries: `05aa8b`, `06dbf0`, `06dc10`, `05f94e`, `05f971` | `prefix25_keese_caller_all_paths_match_rom` |
+| Hardhat and firebar preparation: `069122`, `0691b4`, `068ba7` | `prefix25_beetle_and_firebar_preparation_match_rom` |
+| Firebar caller and correction wrapper: `1ed01a`, `06feb4` | `prefix25_firebar_correction_wrapper_matches_rom`<br>`prefix25_firebar_caller_all_paths_match_rom` |
+| Bumper draw and shared JMP/fallthrough tail: `1eaa8b`, `1e87f0` | `prefix25_bumper_draw_and_trampoline_match_rom` |
+| Fake sword bank wrapper, caller and draw: `05eea7`, `05eeaf`, `05eee6` | `prefix25_fake_sword_caller_and_draw_match_rom` |
+| Thrown prefix, complete landing branch owner, and peer suffix: `06dff2`, `06e02a`, `06e07a`, `06e149` | `prefix25_thrown_interaction_prefix_and_peer_suffix_match_rom` |
+| Water terminal helpers, shared flags return and transmute guard: `06e0ab`, `06e0f6`, `06e095`, `06e22f`, `06e26d` | `prefix25_water_terminal_helpers_and_transmute_guard_match_rom` |
+| Zora walking, thrown, shadow and animation caller: `059dd6`, `059e66`, `059edb`, `05bd52` | `prefix25_walking_zora_walking_all_paths_match_rom`<br>`prefix25_walking_zora_thrown_all_paths_match_rom`<br>`prefix25_zora_shadow_suffix_all_paths_match_rom` |
+| Zora speed wrapper and body excluding project-speed child: `06ea12`, `06ea04` | `prefix25_zora_speed_wrapper_and_child_match_rom` |
+| Falling palette-filter JMP tail owned by actual dispatcher frame: `028e27:02a2a0`, `028e27:02a2a4` | `prefix25_falling_palette_tail_matches_all_rom_filter_paths` |
+| Helmasaur draw caller, eyes, body, legs, mouth and correction entry: `1e853b`, `1e856b`, `1e87e5`, `1e8805`, `1e88bc`, `06feb4` | `prefix25_helmasaur_draw_eyes_body_legs_mouth_and_correction_match_rom` |
+| Guard head, body and two-tile spear writers: `05b160`, `05b3cd`, `05cd54` | `prefix25_guard_head_and_body_all_graphics_clips_and_crossings_match_rom`<br>`prefix25_guard_spear_directions_types_clips_and_crossings_match_rom` |
+| Javelin draw caller, fresh spear entry and far shadow entry: `05d192`, `05cd48`, `05c68c`, `06dc5c` | `prefix25_javelin_draw_fresh_spear_and_shadow_entries_match_rom` |
+| Red javelin caller and shared dispatch prefix: `05cde1`, `05ce1b` | `prefix25_red_javelin_caller_and_shared_prefix_all_paths_match_rom` |
+
+Keese's `$06:DC10` draw continuation already retires its instructions;
+this batch selects the actual `$06:DBF0` bank entry and prices the caller,
+inactive/recoil guards and actual facing entries without charging that
+draw body again. The ROM's second facing call is executed at its real
+call site. The existing `prefix11_recoil_entry_guards_match_zero_and_nonzero_paths`
+fixture also passes for the selected recoil guards.
+
+The bumper JMP tail, Helmasaur body fallthrough and mask JSR all reach
+`$1E:87F0`; each real invocation owns that shared tail once. Fake sword
+uses its real `$05:EEA7` bank wrapper, caller and draw entry. Thrown
+interaction has separate prefix, landing, peer suffix and terminal-child
+owners. For example, the apparent `$06:E02A` +1,146 raw residual at
+181,567 cancels the new `$06:E07A` -878 and `$06:E149` -268 aliases;
+it is not another 1,146 clocks to charge.
+
+Zora walking/thrown/shadow, speed and animation entries now own their
+actual instructions. Hardhat and firebar preparation and firebar's caller
+and correction wrapper are priced separately. The falling transition's
+`$02:A2A0` JSL / `$02:A2A4` RTS tail belongs to the real `$02:8E27`
+dispatch frame: **104** clocks recover 219,129. Its previous signed
+residual was only 82 because of the unchanged -22 main-return convention.
+
+The following are disjoint native instruction deltas on the **214 selected
+baseline missing rows**, grouped across all child scopes and slots. These
+clocks are not the full-route 320,086,182 total.
+
+| Sprite family / state | Earlier cohort clocks | New cohort clocks |
+| --- | ---: | ---: |
+| sprite $26 `$26/$08` | 2,772 | 0 |
+| sprite $26 `$26/$09` | 96 | 3,072 |
+| sprite 44 bluesain bolt `$44/$09` | 0 | 15,536 |
+| red spear guard `$48/$08` | 0 | 18,782 |
+| red spear guard `$48/$09` | 17,892 | 216,030 |
+| sprite 4 a bomb guard `$4a/$09` | 0 | 1,380 |
+| walking Zora `$56/$09` | 23,048 | 0 |
+| Keese `$6f/$09` | 26,112 | 6,144 |
+| sprite $7e `$7e/$08` | 170 | 0 |
+| sprite $7e `$7e/$09` | 2,440 | 0 |
+| Helmasaur King `$92/$09` | 0 | 238,454 |
+| bumper `$93/$09` | 12,360 | 2,472 |
+| fake sword `$e8/$09` | 12,760 | 530 |
+| sprite $ec `$ec/$0a` | 0 | 1,420 |
+| Falling dispatcher tail | 104 | 0 |
+| **Total** | **97,754** | **503,820** |
+
+The selected-row total is **601,574**. All 214 main-budget deltas equal
+the routine-total and expanded block-marker deltas, independently per row;
+the remaining scalar delta is zero in every row. Across **9,413 changed
+per-PC rows**, count and clock deltas are nonnegative, and neither the
+added work nor affected after-marker totals exceed the source. **178**
+rows retain partial source coverage from other callers; they are kept in
+`per-pc-conservation.json/csv`, not described as complete-PC coverage.
+`instruction-conservation.json` retains every iteration's equality.
+
+The generator adds **199** blocks (5,571 → 5,770). All but one old block
+are unchanged. `$06:E25A`'s old 250 static clocks are split into 208
+plus the separately owned 42-clock `$06:E26D` RTS; its indexed crossing
+is preserved and the existing damage caller emits both exactly once.
+`generated-block-preservation.json` records this source split.
+
+The signed audit also retains an untouched allocator debt. Four fake-sword
+rows (181,567 / 181,568 / 181,569 / 181,575) have a **-126-clock**
+family remainder: a +104 signed `$06:84E2` caller-scope residual and an
+unchanged -230 `$06:EAD1` right-of-Link predicate difference. The OAM
+defer allocator still calls the already marked predicate and retains its
+older raw charge: source reports one call / 230 clocks, and both baseline
+and candidate report two / 460. Neither that old child charge nor the
+caller remainder is changed here. `fake-sword-signed-remainder.json`
+keeps the complete vector. The new-marker proof does not certify untouched
+raw prices, and a raw positive caller alias is not promoted into a price.
+
+### Remaining rows and their blockers
+
+All **179** remaining ROM rows through 380,243 are listed below. The
+nonpoll remainder excludes the separately executed source upload protocol
+and additional source spotlight polls. Signed family and object owners
+include negative offsets; the other caller/child column is the remaining
+net, not a sum of positive routine aliases. Upload and the seven -22 rows
+are reported as mechanisms only. `remaining-blockers.csv/json` and
+`remaining-sprite-residuals.csv` retain the full per-row evidence.
+
+| Iteration | Class | Diagnostic clocks short | Signed nonpoll gap | Remaining owner / mechanism |
+| --- | --- | ---: | ---: | --- |
+| 34,318 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 48,556 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 95,127 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 101,031 | d | 160,288 | 14,600 | Spotlight placement/actual wait: 1,429 source V-counter reads and 254,184 extra source poll-instruction clocks; remaining nonpoll owners: dash item $3b/$09 +2,588; other signed caller/child remainder +12,012 |
+| 109,000 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 109,016 | d | 151,160 | 2,302 | Spotlight placement/actual wait: 1,428 source V-counter reads and 254,006 extra source poll-instruction clocks; remaining nonpoll owners: big fairy $c8/$09 +1,600; fairy $72/$09 +724; other signed caller/child remainder -22 |
+| 129,746 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 146,148 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 146,786 | d | — | -22 | Unchanged -22-clock main-instruction convention; actual main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved. |
+| 146,790 | d | — | -22 | Unchanged -22-clock main-instruction convention; actual main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved. |
+| 146,794 | d | — | -22 | Unchanged -22-clock main-instruction convention; actual main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved. |
+| 146,798 | d | — | -22 | Unchanged -22-clock main-instruction convention; actual main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved. |
+| 146,802 | d | — | -22 | Unchanged -22-clock main-instruction convention; actual main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved. |
+| 146,806 | d | — | -22 | Unchanged -22-clock main-instruction convention; actual main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved. |
+| 146,810 | d | — | -22 | Unchanged -22-clock main-instruction convention; actual main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved. |
+| 150,378 | a | 22,484 | 50,152 | Remaining instruction owners: sprite $ec $ec/$06 +10,178; Buzzblob $0d/$09 +776; other signed caller/child remainder +39,198 |
+| 154,637 | a | 1,334 | 5,674 | Remaining instruction owners: sprite $55 $55/$09 +2,004; sprite $eb $eb/$09 +1,470; sprite $52 $52/$09 +902; other signed caller/child remainder +1,298 |
+| 158,519 | a | 1,178 | 3,850 | Remaining instruction owners: sprite $eb $eb/$09 +1,470; sprite $55 $55/$09 +1,076; other signed caller/child remainder +1,304 |
+| 158,558 | a | 2,752 | 3,556 | Remaining instruction owners: sprite $eb $eb/$09 +1,470; sprite $55 $55/$09 +782; other signed caller/child remainder +1,304 |
+| 158,729 | a | 300 | 658 | Remaining instruction owners: sprite $eb $eb/$09 +456; sprite $55 $55/$09 +218; other signed caller/child remainder -16 |
+| 160,109 | a | 720 | 918 | Remaining instruction owners: sprite $37 $37/$09 +848; sprite $58 $58/$09 +92; other signed caller/child remainder -22 |
+| 160,154 | a | 906 | 1,428 | Remaining instruction owners: sprite $55 $55/$09 +500; other signed caller/child remainder +928 |
+| 161,123 | a | 6,540 | 7,132 | Remaining instruction owners: sprite $55 $55/$09 +3,544; sprite $eb $eb/$09 +1,672; other signed caller/child remainder +1,916 |
+| 162,301 | a | 1,548 | 7,376 | Remaining instruction owners: sprite $52 $52/$09 +3,636; sprite $eb $eb/$09 +456; other signed caller/child remainder +3,284 |
+| 162,819 | a | 6,686 | 7,110 | Remaining instruction owners: sprite $52 $52/$09 +3,636; sprite $eb $eb/$09 +456; other signed caller/child remainder +3,018 |
+| 168,346 | d | 83,650 | 8,290 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: sprite $55 $55/$09 +500; other signed caller/child remainder +7,790 |
+| 171,309 | d | 21,222 | 8,060 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: sprite $2b $2b/$09 +1,454; other signed caller/child remainder +6,606 |
+| 171,310 | d | 63,222 | 1,432 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: sprite $2b $2b/$09 +1,454; other signed caller/child remainder -22 |
+| 172,380 | d | 143,228 | -116 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: blue archer $46/$09 -94; other signed caller/child remainder -22 |
+| 174,033 | a | 665 | 2,210 | Remaining instruction owners: sprite $d4 $d4/$09 +888; sprite $d9 $d9/$09 +526; other signed caller/child remainder +796 |
+| 174,034 | a | 1,185 | 2,498 | Remaining instruction owners: sprite $d4 $d4/$09 +888; sprite $d9 $d9/$09 +526; other signed caller/child remainder +1,084 |
+| 174,280 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 174,296 | d | 152,714 | 2,302 | Spotlight placement/actual wait: 1,427 source V-counter reads and 253,828 extra source poll-instruction clocks; remaining nonpoll owners: big fairy $c8/$09 +1,600; fairy $72/$09 +724; other signed caller/child remainder -22 |
+| 180,178 | a | 15,954 | 20,668 | Remaining instruction owners: red spear guard $48/$09 +7,920; sprite $ec $ec/$06 +1,428; sprite $c5 $c5/$09 +208; other signed caller/child remainder +11,112 |
+| 180,182 | a | 9,518 | 15,650 | Remaining instruction owners: sprite $ec $ec/$06 +1,152; red spear guard $48/$09 +816; sprite $c5 $c5/$09 +208; other signed caller/child remainder +13,474 |
+| 181,568 | a | 494 | 2,462 | Remaining instruction owners: sprite $c4 $c4/$09 +920; sprite $d9 $d9/$09 +600; sprite $dc $dc/$09 +600; sprite $e1 $e1/$09 +300; fake sword $e8/$09 -126; other signed caller/child remainder +168 |
+| 186,606 | a | 1,348 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,608 | a | 1,936 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,610 | a | 1,104 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,614 | a | 1,498 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,616 | a | 2,048 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,618 | a | 1,156 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,620 | a | 1,594 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,622 | a | 1,218 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,624 | a | 1,812 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,626 | a | 1,280 | 2,166 | Remaining instruction owners: sprite $17 $17/$09 +892; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,664 | a | 2,120 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,666 | a | 1,090 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,668 | a | 2,070 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,670 | a | 1,588 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,672 | a | 1,998 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,684 | a | 3,108 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,686 | a | 2,996 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,690 | a | 2,212 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,694 | a | 2,926 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,696 | a | 1,302 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 186,698 | a | 2,340 | 4,004 | Remaining instruction owners: sprite $33 $33/$09 +1,234; sprite $17 $17/$09 +892; sprite $79 $79/$09 +604; Buzzblob $0d/$09 +582; raven $00/$09 +380; sprite $ac $ac/$09 +144; other signed caller/child remainder +168 |
+| 187,779 | a | 3,170 | 3,360 | Remaining instruction owners: other signed caller/child remainder +3,360 |
+| 189,344 | a | 5,586 | 6,014 | Remaining instruction owners: sprite $c2 $c2/$09 +1,192; sprite $27 $27/$09 +192; other signed caller/child remainder +4,630 |
+| 189,368 | a | 3,306 | 4,630 | Remaining instruction owners: sprite $c2 $c2/$09 +1,192; sprite $ad $ad/$09 +610; other signed caller/child remainder +2,828 |
+| 189,923 | d | 224,566 | 1,170 | Spotlight placement/actual wait: 1,423 source V-counter reads and 253,116 extra source poll-instruction clocks; remaining nonpoll owners: sprite $c2 $c2/$09 +1,192; other signed caller/child remainder -22 |
+| 190,815 | a | 1,836 | 2,220 | Remaining instruction owners: sprite $c2 $c2/$09 +894; sprite $27 $27/$09 +192; other signed caller/child remainder +1,134 |
+| 194,151 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 194,994 | a | 2,356 | 5,222 | Remaining instruction owners: sprite $87 $87/$09 +3,024; Mini Moldorm $18/$09 +230; sprite $86 $86/$09 +216; crystal switch $1e/$09 -1,152; other signed caller/child remainder +2,904 |
+| 196,051 | a | 7,518 | 8,090 | Remaining instruction owners: other signed caller/child remainder +8,090 |
+| 198,239 | a | 540 | 3,990 | Remaining instruction owners: sprite $a7 $a7/$09 +1,760; Mini Moldorm $18/$09 +882; sprite $e4 $e4/$09 +248; other signed caller/child remainder +1,100 |
+| 198,240 | a | 124 | 3,872 | Remaining instruction owners: sprite $a7 $a7/$09 +1,760; Mini Moldorm $18/$09 +882; sprite $e4 $e4/$09 +248; other signed caller/child remainder +982 |
+| 209,808 | a | 4,612 | 14,628 | Remaining instruction owners: crystal switch $1e/$09 -476; other signed caller/child remainder +15,104 |
+| 215,857 | a | 714 | 982 | Remaining instruction owners: other signed caller/child remainder +982 |
+| 215,858 | a | 716 | 982 | Remaining instruction owners: other signed caller/child remainder +982 |
+| 215,859 | a | 714 | 982 | Remaining instruction owners: other signed caller/child remainder +982 |
+| 217,220 | a | 714 | 1,100 | Remaining instruction owners: other signed caller/child remainder +1,100 |
+| 217,221 | a | 298 | 982 | Remaining instruction owners: other signed caller/child remainder +982 |
+| 217,222 | a | 714 | 982 | Remaining instruction owners: other signed caller/child remainder +982 |
+| 225,257 | a | 3,242 | 4,964 | Remaining instruction owners: dungeon object $232 +352; dungeon object $239 +854; other signed caller/child remainder +3,758 |
+| 239,545 | a | 12 | 368 | Remaining instruction owners: sprite_kakariko_boy $3c/$09 +68; sprite_running_boy $74/$09 +68; sprite_sweeping_lady $2a/$09 +64; other signed caller/child remainder +168 |
+| 242,100 | d | 46,004 | 1,478 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: sprite_5_a_lost_woods_squirrel $5a/$09 +898; sprite_59_lost_woods_bird $59/$09 +602; other signed caller/child remainder -22 |
+| 242,103 | a | 1,976 | 2,428 | Remaining instruction owners: sprite_5_a_lost_woods_squirrel $5a/$09 +898; sprite_59_lost_woods_bird $59/$09 +602; other signed caller/child remainder +928 |
+| 242,118 | a | 762 | 2,532 | Remaining instruction owners: sprite_5_a_lost_woods_squirrel $5a/$09 +898; sprite_59_lost_woods_bird $59/$09 +602; other signed caller/child remainder +1,032 |
+| 242,122 | a | 2,228 | 2,532 | Remaining instruction owners: sprite_5_a_lost_woods_squirrel $5a/$09 +898; sprite_59_lost_woods_bird $59/$09 +602; other signed caller/child remainder +1,032 |
+| 242,124 | a | 418 | 2,532 | Remaining instruction owners: sprite_5_a_lost_woods_squirrel $5a/$09 +898; sprite_59_lost_woods_bird $59/$09 +602; other signed caller/child remainder +1,032 |
+| 242,906 | a | 4,864 | 20,360 | Remaining instruction owners: sprite_62_master_sword $62/$09 +14,888; other signed caller/child remainder +5,472 |
+| 242,934 | a | 9,768 | 15,800 | Remaining instruction owners: sprite_62_master_sword $62/$09 +14,192; other signed caller/child remainder +1,608 |
+| 242,938 | a | 9,116 | 19,730 | Remaining instruction owners: sprite_62_master_sword $62/$09 +14,192; other signed caller/child remainder +5,538 |
+| 242,940 | a | 412 | 17,988 | Remaining instruction owners: sprite_62_master_sword $62/$09 +16,380; other signed caller/child remainder +1,608 |
+| 242,942 | a | 9,986 | 21,078 | Remaining instruction owners: sprite_62_master_sword $62/$09 +14,192; other signed caller/child remainder +6,886 |
+| 244,486 | a | 436 | 1,478 | Remaining instruction owners: sprite_5_a_lost_woods_squirrel $5a/$09 +898; sprite_59_lost_woods_bird $59/$09 +602; other signed caller/child remainder -22 |
+| 253,040 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 254,154 | d | 228,700 | 434 | Spotlight placement/actual wait: 1,428 source V-counter reads and 254,006 extra source poll-instruction clocks; remaining nonpoll owners: sprite $eb $eb/$09 +456; other signed caller/child remainder -22 |
+| 255,517 | a | 1,000 | 2,770 | Remaining instruction owners: red spear guard $48/$09 +1,646; other signed caller/child remainder +1,124 |
+| 255,521 | a | 1,608 | 2,968 | Remaining instruction owners: red spear guard $48/$09 +1,646; other signed caller/child remainder +1,322 |
+| 255,525 | a | 1,294 | 2,968 | Remaining instruction owners: red spear guard $48/$09 +1,646; other signed caller/child remainder +1,322 |
+| 255,529 | a | 1,526 | 2,266 | Remaining instruction owners: red spear guard $48/$09 +944; other signed caller/child remainder +1,322 |
+| 255,572 | a | 1,022 | 2,556 | Remaining instruction owners: sprite $33 $33/$09 +1,234; other signed caller/child remainder +1,322 |
+| 256,490 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 256,786 | a | 7,284 | 43,632 | Remaining instruction owners: dungeon object $12f +4,514; dungeon object $130 +4,514; dungeon object $170 +2,020; dungeon object $171 +12,940; dungeon object $214 +2,518; dungeon object $215 +2,518; dungeon object $216 +2,518; dungeon object $217 +2,518; dungeon object $220 +124; other signed caller/child remainder +9,448 |
+| 281,028 | a | 6,862 | 8,362 | Remaining instruction owners: sprite_1_c_statue $1c/$09 +460; blue archer $46/$09 -188; other signed caller/child remainder +8,090 |
+| 282,475 | a | 160 | 740 | Remaining instruction owners: green guard $41/$05 +718; sprite_1_c_statue $1c/$09 +460; other signed caller/child remainder -438 |
+| 282,497 | a | 8,584 | 47,980 | Remaining instruction owners: green guard $41/$05 +718; sprite_1_c_statue $1c/$09 +460; dungeon object $170 +1,880; dungeon object $171 +21,488; dungeon object $321 +2,538; dungeon object $32d +17,816; other signed caller/child remainder +3,080 |
+| 294,833 | a | 9,914 | 13,668 | Remaining instruction owners: sprite_4_a_bomb_guard $4a/$06 +7,492; sprite_11_hinox $11/$09 +2,634; sprite_22_ropa $22/$09 +1,918; other signed caller/child remainder +1,624 |
+| 294,835 | a | 10,642 | 18,236 | Remaining instruction owners: sprite_4_a_bomb_guard $4a/$06 +7,594; green guard $41/$09 +2,728; sprite_11_hinox $11/$09 +2,634; sprite_22_ropa $22/$09 +1,918; other signed caller/child remainder +3,362 |
+| 294,837 | a | 12,492 | 15,022 | Remaining instruction owners: sprite_4_a_bomb_guard $4a/$06 +6,420; green guard $41/$09 +2,728; sprite_11_hinox $11/$09 +2,634; sprite_22_ropa $22/$09 +1,918; other signed caller/child remainder +1,322 |
+| 294,844 | d | 7,862 | 7,802 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: sprite_4_a_bomb_guard $4a/$06 +7,372; sprite_11_hinox $11/$09 +452; other signed caller/child remainder -22 |
+| 295,089 | d | 147,092 | 2,302 | Spotlight placement/actual wait: 1,427 source V-counter reads and 253,828 extra source poll-instruction clocks; remaining nonpoll owners: big fairy $c8/$09 +1,600; fairy $72/$09 +724; other signed caller/child remainder -22 |
+| 297,579 | a | 860 | 6,040 | Remaining instruction owners: sprite $eb $eb/$09 +1,470; sprite_45_hog_spear_man $45/$09 +1,296; sprite $55 $55/$09 +676; Buzzblob $0d/$09 +194; other signed caller/child remainder +2,404 |
+| 297,585 | a | 9,296 | 10,228 | Remaining instruction owners: sprite $55 $55/$09 +3,920; sprite_45_hog_spear_man $45/$09 +2,240; sprite $eb $eb/$09 +1,470; Buzzblob $0d/$09 +194; other signed caller/child remainder +2,404 |
+| 297,638 | a | 2,782 | 8,046 | Remaining instruction owners: sprite $55 $55/$09 +1,776; sprite $eb $eb/$09 +1,470; sprite_45_hog_spear_man $45/$09 +1,296; Buzzblob $0d/$09 +194; other signed caller/child remainder +3,310 |
+| 297,863 | d | 129,956 | 4,942 | Spotlight placement/actual wait: 1,426 source V-counter reads and 253,650 extra source poll-instruction clocks; remaining nonpoll owners: sprite_bb_shopkeeper $bb/$09 +5,352; sprite_28_dark_world_hint_npc $28/$09 -388; other signed caller/child remainder -22 |
+| 299,434 | d | 147,848 | 2,302 | Spotlight placement/actual wait: 1,427 source V-counter reads and 253,828 extra source poll-instruction clocks; remaining nonpoll owners: big fairy $c8/$09 +1,600; fairy $72/$09 +724; other signed caller/child remainder -22 |
+| 299,510 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 304,890 | a | 11,756 | 15,634 | Remaining instruction owners: sprite_0_f_octoballoon $0f/$06 +11,456; sprite_10_octoballoon_baby $10/$09 +4,010; other signed caller/child remainder +168 |
+| 307,022 | d | 234,416 | 2,666 | Spotlight placement/actual wait: 1,405 source V-counter reads and 249,912 extra source poll-instruction clocks; remaining nonpoll owners: sprite $58 $58/$09 +2,582; other signed caller/child remainder +84 |
+| 307,040 | c | — | — | Upload caller, protocol receiver/acknowledgement and return/suffix arrival ownership remain unpositioned; no upload or acceptance-timing change. |
+| 310,875 | a | 10,058 | 20,736 | Remaining instruction owners: sprite_0_f_octoballoon $0f/$06 +11,518; sprite_10_octoballoon_baby $10/$09 +4,010; sprite $55 $55/$09 +676; other signed caller/child remainder +4,532 |
+| 310,980 | d | 171,138 | 7,790 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: other signed caller/child remainder +7,790 |
+| 310,982 | d | 84,542 | 710 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: other signed caller/child remainder +710 |
+| 313,078 | a | 32,062 | 32,694 | Remaining instruction owners: sprite_19_poe $19/$09 +8,560; green guard $41/$09 +716; other signed caller/child remainder +23,418 |
+| 313,255 | a | 35,952 | 36,056 | Remaining instruction owners: sprite_19_poe $19/$09 +9,850; green guard $41/$09 +2,704; other signed caller/child remainder +23,502 |
+| 314,323 | a | 574 | 3,098 | Remaining instruction owners: sprite_45_hog_spear_man $45/$09 +2,704; sprite $79 $79/$09 +604; blue archer $46/$09 -188; other signed caller/child remainder -22 |
+| 314,327 | a | 474 | 3,098 | Remaining instruction owners: sprite_45_hog_spear_man $45/$09 +2,704; sprite $79 $79/$09 +604; blue archer $46/$09 -188; other signed caller/child remainder -22 |
+| 314,335 | a | 14 | 3,098 | Remaining instruction owners: sprite_45_hog_spear_man $45/$09 +2,704; sprite $79 $79/$09 +604; blue archer $46/$09 -188; other signed caller/child remainder -22 |
+| 317,588 | a | 3,970 | 8,098 | Remaining instruction owners: sprite_45_hog_spear_man $45/$09 +92; other signed caller/child remainder +8,006 |
+| 322,193 | a | 10,344 | 11,236 | Remaining instruction owners: sprite_22_ropa $22/$09 +2,170; sprite_11_hinox $11/$09 +1,510; sprite_4_a_bomb_guard $4a/$09 +1,082; sprite_12_moblin $12/$09 +976; sprite_b6_kiki $b6/$09 +864; other signed caller/child remainder +4,634 |
+| 327,434 | a | 720 | 786 | Remaining instruction owners: sprite_15_antifairy $15/$09 +212; other signed caller/child remainder +574 |
+| 336,024 | a | 58 | 894 | Remaining instruction owners: sprite_15_antifairy $15/$09 +424; other signed caller/child remainder +470 |
+| 336,035 | a | 452 | 998 | Remaining instruction owners: sprite_15_antifairy $15/$09 +424; other signed caller/child remainder +574 |
+| 336,039 | a | 424 | 998 | Remaining instruction owners: sprite_15_antifairy $15/$09 +424; other signed caller/child remainder +574 |
+| 336,046 | a | 576 | 894 | Remaining instruction owners: sprite_15_antifairy $15/$09 +424; other signed caller/child remainder +470 |
+| 337,919 | a | 1,192 | 17,372 | Remaining instruction owners: sprite $26 $26/$09 +4,072; crystal switch $1e/$09 +146; other signed caller/child remainder +13,154 |
+| 337,925 | a | 2,338 | 5,208 | Remaining instruction owners: sprite $26 $26/$09 +1,876; crystal switch $1e/$09 +146; other signed caller/child remainder +3,186 |
+| 338,240 | a | 1,312 | 6,772 | Remaining instruction owners: sprite $26 $26/$09 +2,340; crystal switch $1e/$09 +1,246; other signed caller/child remainder +3,186 |
+| 338,673 | a | 9,852 | 10,696 | Remaining instruction owners: sprite $26 $26/$09 +8,144; crystal switch $1e/$09 +146; other signed caller/child remainder +2,406 |
+| 344,246 | a | 4,258 | 5,390 | Remaining instruction owners: spike $8a/$08 +702; Pokey $8e/$08 +168; sprite_1_c_statue $1c/$08 +142; other signed caller/child remainder +4,378 |
+| 347,334 | a | 5,338 | 10,696 | Remaining instruction owners: sprite $26 $26/$09 +8,144; crystal switch $1e/$09 +146; other signed caller/child remainder +2,406 |
+| 348,203 | a | 3,532 | 5,404 | Remaining instruction owners: Pokey $8e/$09 +308; other signed caller/child remainder +5,096 |
+| 353,572 | a | 3,198 | 5,276 | Remaining instruction owners: Pokey $8e/$09 +308; other signed caller/child remainder +4,968 |
+| 354,592 | a | 1,510 | 1,848 | Remaining instruction owners: sprite $ec $ec/$09 +1,070; Pokey $8e/$09 +308; other signed caller/child remainder +470 |
+| 354,594 | a | 48 | 1,848 | Remaining instruction owners: sprite $ec $ec/$09 +1,070; Pokey $8e/$09 +308; other signed caller/child remainder +470 |
+| 354,595 | d | 1,966 | 1,952 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: sprite $ec $ec/$09 +1,070; Pokey $8e/$09 +308; other signed caller/child remainder +574 |
+| 354,604 | a | 1,226 | 1,848 | Remaining instruction owners: sprite $ec $ec/$09 +1,070; Pokey $8e/$09 +308; other signed caller/child remainder +470 |
+| 354,611 | a | 344 | 1,952 | Remaining instruction owners: sprite $ec $ec/$09 +1,070; Pokey $8e/$09 +308; other signed caller/child remainder +574 |
+| 354,616 | a | 1,272 | 1,848 | Remaining instruction owners: sprite $ec $ec/$09 +1,070; Pokey $8e/$09 +308; other signed caller/child remainder +470 |
+| 354,619 | a | 1,692 | 1,952 | Remaining instruction owners: sprite $ec $ec/$09 +1,070; Pokey $8e/$09 +308; other signed caller/child remainder +574 |
+| 356,806 | a | 2,714 | 7,966 | Remaining instruction owners: sprite $ec $ec/$0a +4,084; crystal switch $1e/$09 +1,254; sprite $d9 $d9/$09 +300; other signed caller/child remainder +2,328 |
+| 367,254 | a | 1,342 | 9,646 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +394; spike $8a/$09 +156; crystal switch $1e/$09 -668; other signed caller/child remainder +8,914 |
+| 367,255 | a | 2,052 | 9,646 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +394; spike $8a/$09 +156; crystal switch $1e/$09 -668; other signed caller/child remainder +8,914 |
+| 367,256 | a | 5,532 | 9,646 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +394; spike $8a/$09 +156; crystal switch $1e/$09 -668; other signed caller/child remainder +8,914 |
+| 367,257 | a | 3,064 | 9,646 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +394; spike $8a/$09 +156; crystal switch $1e/$09 -668; other signed caller/child remainder +8,914 |
+| 367,286 | a | 30,104 | 36,046 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +394; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +34,876 |
+| 367,291 | a | 20,924 | 33,378 | Remaining instruction owners: green Eyegore $83/$09 +4,782; eye statue $38/$09 +450; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +28,020 |
+| 367,313 | a | 38,446 | 43,440 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +42,464 |
+| 367,327 | a | 35,246 | 35,880 | Remaining instruction owners: green Eyegore $83/$09 +1,374; eye statue $38/$09 +450; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +33,930 |
+| 367,337 | a | 37,994 | 43,472 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +42,496 |
+| 367,347 | a | 33,266 | 44,110 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +43,134 |
+| 367,361 | a | 38,924 | 44,422 | Remaining instruction owners: green Eyegore $83/$09 +1,374; eye statue $38/$09 +450; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +42,472 |
+| 367,372 | a | 37,698 | 44,308 | Remaining instruction owners: eye statue $38/$09 +450; green Eyegore $83/$09 +400; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +43,332 |
+| 367,394 | a | 23,774 | 33,506 | Remaining instruction owners: green Eyegore $83/$09 +4,782; eye statue $38/$09 +450; red Eyegore $84/$09 +200; spike $8a/$09 +156; crystal switch $1e/$09 -230; other signed caller/child remainder +28,148 |
+| 370,567 | a | 2,424 | 2,658 | Remaining instruction owners: Pokey $8e/$09 +1,386; crystal switch $1e/$09 -238; other signed caller/child remainder +1,510 |
+| 372,814 | a | 16,820 | 18,356 | Remaining instruction owners: Pokey $8e/$09 +14,210; Pokey $8e/$06 +154; sprite_d9_green_rupee $da/$09 +108; crystal switch $1e/$09 -238; other signed caller/child remainder +4,122 |
+| 375,434 | a | 24,120 | 29,948 | Remaining instruction owners: crystal switch $1e/$09 -238; dungeon object $170 +2,830; dungeon object $171 +22,704; dungeon object $312 +768; dungeon object $32a +330; other signed caller/child remainder +3,554 |
+| 378,070 | a | 3,560 | 7,998 | Remaining instruction owners: Helmasaur King $92/$09 +6,620; other signed caller/child remainder +1,378 |
+| 378,071 | a | 9,192 | 10,482 | Remaining instruction owners: Helmasaur King $92/$09 +8,354; other signed caller/child remainder +2,128 |
+| 378,077 | a | 6,742 | 8,258 | Remaining instruction owners: Helmasaur King $92/$09 +6,612; other signed caller/child remainder +1,646 |
+| 378,078 | a | 6,290 | 7,698 | Remaining instruction owners: Helmasaur King $92/$09 +6,612; other signed caller/child remainder +1,086 |
+| 378,079 | a | 4,812 | 8,688 | Remaining instruction owners: Helmasaur King $92/$09 +7,602; other signed caller/child remainder +1,086 |
+| 378,080 | a | 6,698 | 7,698 | Remaining instruction owners: Helmasaur King $92/$09 +6,612; other signed caller/child remainder +1,086 |
+| 378,092 | a | 7,312 | 7,834 | Remaining instruction owners: Helmasaur King $92/$09 +6,748; other signed caller/child remainder +1,086 |
+| 378,093 | d | 7,874 | 7,834 | Arrival/acceptance or actual-wait owner unresolved: the complete signed nonpoll instruction remainder is below the current frozen boundary; remaining signed owners: Helmasaur King $92/$09 +6,748; other signed caller/child remainder +1,086 |
+| 378,094 | a | 7,490 | 7,834 | Remaining instruction owners: Helmasaur King $92/$09 +6,748; other signed caller/child remainder +1,086 |
+| 378,095 | a | 6,852 | 12,052 | Remaining instruction owners: Helmasaur King $92/$09 +7,932; other signed caller/child remainder +4,120 |
+| 378,096 | a | 9,198 | 10,264 | Remaining instruction owners: Helmasaur King $92/$09 +6,778; other signed caller/child remainder +3,486 |
+| 378,098 | a | 8,948 | 9,490 | Remaining instruction owners: Helmasaur King $92/$09 +6,972; other signed caller/child remainder +2,518 |
+| 378,099 | a | 4,574 | 9,326 | Remaining instruction owners: Helmasaur King $92/$09 +6,808; other signed caller/child remainder +2,518 |
+| 378,103 | a | 382 | 11,984 | Remaining instruction owners: Helmasaur King $92/$09 +9,618; other signed caller/child remainder +2,366 |
+| 378,104 | a | 5,860 | 9,700 | Remaining instruction owners: Helmasaur King $92/$09 +7,334; other signed caller/child remainder +2,366 |
+| 378,105 | a | 8,644 | 9,688 | Remaining instruction owners: Helmasaur King $92/$09 +7,170; other signed caller/child remainder +2,518 |
+| 378,541 | a | 9,726 | 11,182 | Remaining instruction owners: Helmasaur King $92/$09 +7,714; other signed caller/child remainder +3,468 |
+| 378,780 | a | 176 | 6,122 | Remaining instruction owners: Helmasaur King $92/$09 +2,316; sprite_70_king_helmasaur_fireball $70/$09 +2,260; other signed caller/child remainder +1,546 |
+| 378,830 | a | 5,336 | 9,682 | Remaining instruction owners: Helmasaur King $92/$09 +7,164; other signed caller/child remainder +2,518 |
+
+All twelve upload rows retain caller, receiver/acknowledgement and
+return/suffix phase ownership. `upload-phase-current.json` combines current
+source bus-PC and phase receipts for both cohorts. Those executed access
+counts are diagnostics, never prices. The seven 146,786–146,810 rows retain
+the same -22 signed main-instruction residual and zero new clocks; actual
+main/NMI/HDMA arrival and wait/acceptance ownership remain unresolved.
+No upload or acceptance timing changes occur.
+
+King Helmasaur's remaining family residual includes root/AI, mask-body
+and swing work beyond the priced draw scopes. Remaining guard-family
+AI and state bodies, other named sprite families and signed non-sprite
+caller/child remainders need their own source-entry/return fixtures. The
+complete signed scope vectors are retained to establish those owners
+before any further price is admitted.
+
+### Full ROM and CPU pictures
+
+The specified eight-slice ROM helper passes **1,473,123 iterations /
+unexplained 0**, at **1,693 → 1,655 missing**, **0 → 0 excess**,
+**0 → 0 FP**. All 38 changed holds recover exactly one missing hold;
+no hold is lost and no runtime hold disagrees with the actual `cost_p2`
+model. The simpler `predicted` CSV column is not the P2 admission model.
+`rom-admission-command.json`, `rom-admission-helper.log` and
+`rom-comparison.json` retain the complete run and comparison.
+
+| Before iteration | ROM missing before → after | Live missing before → after |
+| --- | ---: | ---: |
+| 94,334 | 2 → 2 | 2 → 2 |
+| 141,568 | 7 → 7 | 7 → 7 |
+| 228,499 | 90 → 75 | 90 → 75 |
+| 380,243 | 214 → 179 | 223 → 179 |
+| 461,989 | 270 → 235 | 279 → 349 |
+
+Three recoveries are mixed instruction/wait observations, not acceptance
+phase repairs. The restored ROM instructions change the existing raster
+wait decision in these rows:
+
+| Iteration | New instruction clocks | Raster wait before → after | Holds before → after |
+| --- | ---: | ---: | ---: |
+| 187,109 | 6,912 | 0 → 267,000 | 1 → 2 |
+| 188,962 | 3,840 | 0 → 268,424 | 1 → 2 |
+| 549,411 | 824 | 0 → 269,492 | 1 → 2 |
+
+No new poll instruction or physical acceptance phase is owned by those
+hold recoveries. The later recovered rows are 525,097 (+3,068 instruction
+clocks), 549,411 (+824) and 775,682 (+196).
+`recovered-row-mechanisms.json` retains all 38 rows.
+
+The independent eight-slice `--cpu-video` census also passes all
+**1,473,123 iterations / unexplained 0**. It retains **1,462,997 exact
+pictures**, 563 early, 3,952 late, four during-lag, 905 polygon-thread,
+4,702 torn and zero other content misses. All eight picture-hash files
+are byte-identical to main. `cpu-gate.txt`,
+`cpu-picture-agreement.json` and `cpu-admission-commands.json` record the
+CPU-only proof.
+
+### Single live census and song-end attribution
+
+Exactly **one continuous seeded** `--live-apu-reads --pacing-predictor`
+process completes all **1,473,123 iterations**. SPC state carries across
+its seeds. The logical gate passes with **unexplained 0**. Live totals
+**worsen**: **2,105 → 2,172 missing**, **318 → 399 excess**,
+**85 → 88 FP**. `live-command.json` records the single launch and
+completed exit; `live-comparison.json`, `live-counts.txt` and
+`live-timing.jsonl.zst` retain the complete data.
+
+There are **57 changed live hold rows**. **38** share the exact ROM
+before/after hold pair. All other **19 live-only changes** are attributed:
+**four pendant `$08:C3FD`**, **15 crystal `$08:C606`**, **zero
+unattributed**. The conservative live-only set includes every changed
+pair that does not exactly match a changed ROM pair.
+
+The 228,499 pendant episode moves its first native zero from **229,036
+→ 229,035**, matching the direct source zero; it contributes **-9 / -9 /
+-2** missing/excess/FP. The 380,243 crystal episode moves from **380,881
+→ 380,882**, one iteration late, contributing **+114 / +90 / +5**.
+The net live-only delta is therefore **+105 / +81 / +3**. The **-38 /
+0 / 0** shared ROM improvement makes the total live delta **+67 / +81 /
++3**. The crystal regression is retained and attributed; its timing is
+not repaired in this batch.
+
+The actual source PCs come from **20 direct APUI receipts** (nonzero and
+first-zero `$2140` reads in ten episodes) in the verified prior cold
+unmodified-ROM CPU source replay. `poll-source-provenance.json` records
+the reuse; ROM, ledger and source authorities are unchanged. These PCs
+are established directly, never inferred from sprite labels. The complete
+source-context/read payload hash of the new live trace equals baseline.
+
+Episode bounds are derived **without changed holds**: contiguous native
+poll clusters overlap the directly observed source-poll intervals; actual
+boolean polls, native/source contexts and four-lane main/VWF differences
+locate execution divergence; actual reseeding or the containing
+2,000-iteration boundary ends recovery. The four lanes remove the intended
+ROM price changes. Main already includes VWF; VWF is only a separate
+observation component here. `live-execution-events.json` and
+`poll-attribution.json` retain the bounds and evidence.
+
+| Episode | Direct source PC | Source first zero | Native first zero before → after | Last observed execution divergence | Recovery end | Live-only rows | Delta missing / excess / FP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 → 94,854 | — | 96,000 | 0 | +0 / +0 / +0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,088 → 142,088 | — | 144,000 | 0 | +0 / +0 / +0 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,036 → 229,035 | 229,069 | 230,000 | 4 | -9 / -9 / -2 |
+| 380,243 | `$08:C606` | 380,881 | 380,881 → 380,882 | 383,635 | 383,636 | 15 | +114 / +90 / +5 |
+| 461,989 | `$08:C606` | 462,628 | 462,627 → 462,627 | 463,179 | 464,000 | 0 | +0 / +0 / +0 |
+| 626,618 | `$08:C606` | 627,256 | 627,257 → 627,257 | 629,461 | 629,845 | 0 | +0 / +0 / +0 |
+| 735,229 | `$08:C606` | 735,867 | 735,868 → 735,868 | 736,421 | 738,000 | 0 | +0 / +0 / +0 |
+| 881,095 | `$08:C606` | 881,734 | 881,733 → 881,733 | 884,325 | 884,327 | 0 | +0 / +0 / +0 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,734 → 1,064,734 | — | 1,066,000 | 0 | +0 / +0 / +0 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,336 → 1,318,336 | 1,320,899 | 1,320,900 | 0 | +0 / +0 / +0 |
+
+Every live-only changed row is listed below. Full before/after budgets and
+metric deltas are in `changed-live-holds.csv/json`;
+`all-changed-live-holds.csv` also retains the 38 shared ROM changes.
+
+| Iteration | Source lag | ROM holds before → after | Live holds before → after | Episode / direct source PC |
+| --- | ---: | ---: | ---: | --- |
+| 229,036 | 5 | 5 → 5 | 0 → 5 | 228,499 / `$08:C3FD` |
+| 229,037 | 0 | 0 → 0 | 5 → 0 | 228,499 / `$08:C3FD` |
+| 229,039 | 4 | 4 → 4 | 0 → 4 | 228,499 / `$08:C3FD` |
+| 229,042 | 0 | 0 → 0 | 4 → 0 | 228,499 / `$08:C3FD` |
+| 380,946 | 1 | 1 → 1 | 1 → 0 | 380,243 / `$08:C606` |
+| 380,947 | 0 | 0 → 0 | 0 → 1 | 380,243 / `$08:C606` |
+| 380,956 | 5 | 4 → 4 | 4 → 0 | 380,243 / `$08:C606` |
+| 380,957 | 0 | 0 → 0 | 0 → 4 | 380,243 / `$08:C606` |
+| 381,426 | 8 | 8 → 8 | 8 → 0 | 380,243 / `$08:C606` |
+| 381,427 | 0 | 0 → 0 | 0 → 8 | 380,243 / `$08:C606` |
+| 383,178 | 0 | 0 → 0 | 0 → 7 | 380,243 / `$08:C606` |
+| 383,181 | 7 | 7 → 7 | 7 → 0 | 380,243 / `$08:C606` |
+| 383,343 | 7 | 7 → 7 | 7 → 0 | 380,243 / `$08:C606` |
+| 383,346 | 0 | 0 → 0 | 0 → 7 | 380,243 / `$08:C606` |
+| 383,631 | 59 | 59 → 59 | 59 → 0 | 380,243 / `$08:C606` |
+| 383,632 | 6 | 6 → 6 | 6 → 0 | 380,243 / `$08:C606` |
+| 383,633 | 23 | 22 → 22 | 22 → 0 | 380,243 / `$08:C606` |
+| 383,634 | 1 | 1 → 1 | 1 → 59 | 380,243 / `$08:C606` |
+| 383,635 | 1 | 1 → 1 | 1 → 6 | 380,243 / `$08:C606` |
+
+### Verification boundary
+
+The final filtered sprite-draw (**275**), sprite (**129**), guard (**13**),
+Helmasaur (**nine**), preparation (**39**) and dungeon (**62**) groups
+pass, including all **18 new ROM fixtures**. Generator tests pass (**eight**).
+Production builds are warning-free. Library builds retain the same
+pre-existing warning headers as main. `test-verification.json` preserves
+all final checks and the retained development attempts.
+
+After runtime changes were frozen, the requested full default command
+ran **once**, with `CARGO_INCREMENTAL=0` only to limit rebuildable cache size:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+That full run records SNES **505 passed / seven ignored**, and Zelda
+**3,058 passed / two failed / three ignored**. One is the permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+The additional failure is
+`zelda_rtl::sprite_main::tests::mantle_and_oam_correction_cycles_match_rom_for_clipping`:
+its legacy setup constructed a non-lagless state, disabling the new
+lagless far-wrapper markers while expecting their clocks.
+
+The fixture now explicitly enables `lag_free`. Every original unmodified-ROM
+clock and OAM assertion is unchanged. The **entire 18-test sprite-main
+group passes** after that repair. It is the only post-freeze source edit,
+in a module imported exclusively under `#[cfg(test)]`. The subsequent
+production rebuild is **byte-identical** to the frozen ROM/CPU/live binary,
+and all runtime source remains unchanged. `fixture-mode-repair.json`,
+`mantle-fixture-command.json`, `final-build-command.json` and
+`runtime-source-agreement.json` retain that proof.
+
+**Only spotlight remains unresolved.** The original full-suite transcript
+contains the additional, now repaired setup failure; it is not rewritten.
+No second full-suite run is made under the once-only rule. Library coverage
+is therefore one full run plus the passing fixture-group recheck, rather
+than a fresh full-suite transcript after the setup repair.
+
+The continuous selected profile and chunked ROM census agree on main/VWF
+prices, source lag, native/P2 holds and classification shortfalls throughout
+all **380,243** prefix rows. Fifty rows differ only in incoming-handler,
+physical raster/refresh/HDMA or elapsed diagnostics. Among selected rows,
+only the elapsed counter at upload rows 194,151 / 256,490 differs between
+continuous and fresh-slice runs. `final-profile-agreement.json` retains
+every difference. Those phase observations are not prices or upload fixes.
+
+Final checks preserve **36 reused prior artifacts** and all **14 authority
+files**. The final source manifest tracks **934 files**; 933 retain their
+original runtime-freeze hashes, with only the explicitly recorded
+`cfg(test)` fixture repair above. The normal production rebuild and every
+final runtime census use the same binary bytes. All launched source,
+native, test, build and trace-decoder workloads have completed; no
+background work remains.
+
+No runtime P2, classifier, matcher, polling-price or environment-switch
+change is included. There is no measured-deficit price, per-scene table,
+injected hold, acceptance compensation or interpreter fallback. All game
+binary invocations use CPU-only `--logical-replay`; no GPU, `--video`,
+cached-A/V run or external Snes9x process occurs. The ledger, oracle cache
+and gate helpers remain read-only. No commit, push or `cargo fmt` occurs.
+
+Only rebuildable files inside this worktree's `target/` are removed.
+Superseded diagnostic CSVs are losslessly compressed and checked before
+removing raw copies; cleanup and compression receipts are retained.
+`resources.json` records target size below **8,000,000,000 bytes**.
+`verification.json`, `runtime.patch` and `artifact-hashes.json` retain
+the final state and identities.
+
+These are seeded logical, CPU-picture and source-instruction proofs.
+Upload arrival/receiver/return ownership, actual spotlight acceptance and
+waiting, retained raw child/caller offsets and the complete unpriced
+suffixes remain unresolved as recorded. Cold exact A/V acceptance is a
+separate boundary.

@@ -729,7 +729,15 @@ impl ZeldaState {
         }
         match self.game_state.frame.subsubmodule {
             0 => self.module07_07_00_handle_music_and_reset_room(),
-            1 => self.apply_palette_filter_bounce(),
+            1 => {
+                // The dispatch JMP tail at $02:A2A0 owns its JSL and RTS;
+                // ApplyPaletteFilter keeps its already priced child frame.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x028e27));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x02a2a0);
+                self.apply_palette_filter_bounce();
+                b.block(0x02a2a4);
+            }
             2 => {
                 if !self.begin_dungeon_falling_room_initialization_work() {
                     self.dungeon_initialize_room_from_special();
