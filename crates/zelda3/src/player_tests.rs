@@ -750,3 +750,61 @@ fn prefix11_sword_control_release_and_activation_match_rom() {
             || n.handle_sword_controls());
     }
 }
+
+#[test]
+fn prefix24_dash_control_callers_match_rom_paths() {
+    let assets=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3_assets.dat")).unwrap();
+    let edges=std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let cases=[vec![],vec![(0x372,0)],vec![(0x374,1)],vec![(0x374,1),(0xf2,0x80)],
+        vec![(0x374,17),(0xf2,0x80),(0xf0,0)],vec![(0x374,17),(0xf2,0x80),(0x3a,0)],
+        vec![(0x374,17),(0xf2,0x80),(0x6c,1)],vec![(0x4d,1)],
+        vec![(0x4d,1),(0x360,1)],vec![(0x4d,1),(0x360,1),(0x55,1)],
+        vec![(0x3a,0)],vec![(0x3c,0)],vec![(0x3c,8)],vec![(0x4f,0)],
+        vec![(0xf0,8)],vec![(0x49,8)],vec![(0x2e,6)],vec![(0x2f1,34)],vec![(0x2f1,32)],
+        vec![(0xf359,0)],vec![(0xf3c5,0)],vec![(0xf0,0)],vec![(0xf3cc,2)],
+        vec![(0x374,1),(0x3a,0x80)],vec![(0x374,1),(0x3a,0)],vec![(0x374,1),(0xf2,0x80),(0x3a,0),(0x6c,1)],
+        vec![(0x374,1),(0xf2,0x80),(0x3a,0),(0xf0,0)],
+        vec![(0x374,1),(0xf2,0x80),(0x2f5,1)],
+        vec![(0x3f5,1),(0x3f7,1)],vec![(0x5d,23),(0x3f5,1),(0x3f7,1),(0x2e2,1)]];
+    for facing in [0,2,4,6] {
+      for changes in &cases {
+        let mut n=ZeldaState::new();n.set_assets(&assets).unwrap();n.set_lag_free(true);
+        n.write_wram_word(0x20,0x80);n.write_wram_word(0x22,0x80);
+        for(a,v)in[(0x10,9),(0x5d,17),(0x372,1),(0x3a,0x80),(0x3c,9),(0x2f1,32),
+            (0xf0,4),(0x2f,facing),(0xf359,1),(0xf3c5,2)] {n.write_wram_byte(a,v);}
+        for &(a,v) in changes {n.write_wram_byte(a,v);}
+        n.sync_native_game_state_from_ram();
+        let s=marker36_player_machine(&n,0x078f86).unwrap();
+        crate::cycle_ledger::assert_rom_marker_work(0x078f86,s,|s| {
+            let own=s.cpu.k==7 && (0x8f86..0x915e).contains(&s.cpu.pc);
+            if own {
+                let taken=match s.cart.read(7,s.cpu.pc,0) {0x90=>Some(!s.cpu.c),0xb0=>Some(s.cpu.c),
+                    0xf0=>Some(s.cpu.z),0xd0=>Some(!s.cpu.z),0x10=>Some(!s.cpu.n),0x30=>Some(s.cpu.n),_=>None};
+                if let Some(taken)=taken {edges.borrow_mut().insert((s.cpu.pc,taken));}
+            }
+            own
+        },||n.link_state_dashing());
+      }
+    }
+    for pc in [0x8f8c, 0x8f92, 0x8f9b, 0x8fb0, 0x8fb6, 0x8fc1, 0x8fd5, 0x8fd9, 0x9013, 0x901c, 0x9026, 0x9033, 0x9045, 0x9057, 0x9077, 0x907b, 0x9081, 0x90b8, 0x90d9, 0x90e5, 0x90fd, 0x9108, 0x9121, 0x9125, 0x913c] {
+        for taken in [false,true] {assert!(edges.borrow().contains(&(pc,taken)),"uncovered {pc:x}/{taken}");}
+    }
+    eprintln!("prefix24 dash: every conditional both ways; {} owner cases",cases.len()*4);
+}
+
+#[test]
+fn prefix24_item_tile_execution_chain_dispatch_matches_rom() {
+    let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets=std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for tile in [0,0x34,0x71,0x36] {
+      for cheat in [0,1] {
+        let mut n=ZeldaState::new();n.set_assets(&assets).unwrap();n.set_lag_free(true);
+        n.write_wram_word(0x70a,0x3f0);n.write_wram_word(0x70e,0x7e);
+        n.write_wram_word(0x2000,tile);n.write_wram_byte(0x37f,cheat);n.sync_native_game_state_from_ram();
+        let s=marker36_player_machine(&n,0x07dc4a).unwrap();
+        crate::cycle_ledger::assert_rom_marker_work(0x07dc4a,s,
+            |s|s.cpu.k==7 && (0xdc2e..0xdc50).contains(&s.cpu.pc),
+            ||n.tile_behavior_handle_item_and_execute(0,0));
+      }
+    }
+}

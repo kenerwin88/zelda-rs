@@ -2266,3 +2266,87 @@ fn load6_mosaic_register_child_markers_match_rom() {
             || n.module09_fade_back_in_from_mosaic());
     }
 }
+
+#[test]
+fn prefix24_overlay_caller_loader_and_map8_entry_match_all_rom_paths() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    let edges = std::cell::RefCell::new(std::collections::BTreeSet::new());
+    let mut cases = 0;
+    for screen in [0u16, 0x40, 3, 5, 7, 0x43, 0x45, 0x47, 0x70, 1, 0x1b, 0x5b, 0x80] {
+      for event in [0, 0x60] {
+       for progress in [0, 2] {
+        let rooms: &[u16] = if screen >= 0x80 { &[0x180, 0x181, 0x182, 0x183, 0x189, 0x184] } else { &[0] };
+        for &room in rooms {
+         for submodule in [0, 0x23, 0x2c] {
+          let mut base = ZeldaState::new(); base.set_assets(&assets).unwrap(); base.set_lag_free(true);
+          base.write_wram_word(0x8a, screen); base.write_wram_word(0xa0, room);
+          base.write_wram_byte(0xf300, event); base.write_wram_byte(0xf2f0, event);
+          base.write_wram_byte(0xf3c5, progress); base.write_wram_byte(0x11, submodule);
+          base.sync_native_game_state_from_ram();
+          for owner in [0x02af1e, 0x02fd0d, 0x02fd26] {
+            let mut n = base.clone();
+            let mut s = coverage5_rom_machine(&n, 0xaf1e, 2); s.cpu.unpack_flags(0x30);
+            crate::cycle_ledger::assert_rom_marker_work(owner, s,
+                |s| {
+                    if owner == 0x02af1e && s.cpu.k == 2 {
+                        let pc = s.cpu.pc;
+                        // Every conditional in the caller, with its actual CPU flags.
+                        let op = s.cart.read(2, pc, 0);
+                        let taken = match op { 0x90 => Some(!s.cpu.c), 0xb0 => Some(s.cpu.c),
+                            0xf0 => Some(s.cpu.z), 0xd0 => Some(!s.cpu.z), _ => None };
+                        if (0xaf1e..0xb0d2).contains(&pc) {
+                            if let Some(taken) = taken { edges.borrow_mut().insert((pc, taken)); }
+                        }
+                    }
+                    s.cpu.k == 2 && match owner {
+                        0x02af1e => (0xaf1e..0xb0d2).contains(&s.cpu.pc),
+                        0x02fd0d => (0xfd0d..0xfd26).contains(&s.cpu.pc),
+                        _ => (0xfd26..0xfd37).contains(&s.cpu.pc),
+                    }
+                }, || n.overworld_load_overlays2());
+            cases += 1;
+          }
+         }
+        }
+       }
+      }
+    }
+    for pc in [0xaf5d, 0xaf67, 0xaf76, 0xaf81, 0xaf89, 0xaf8e, 0xaf93,
+        0xafa6, 0xafad, 0xafbc, 0xafcb, 0xafd0, 0xafd5, 0xafdd, 0xafe2,
+        0xafe7, 0xafec, 0xaff5, 0xb006, 0xb054, 0xb058, 0xb05c, 0xb060,
+        0xb064, 0xb068, 0xb06e, 0xb072, 0xb07d, 0xb081, 0xb087, 0xb08b, 0xb098] {
+        for taken in [false, true] { assert!(edges.borrow().contains(&(pc, taken)), "uncovered {pc:x}/{taken}"); }
+    }
+    eprintln!("prefix24 overlay: {cases} unmodified-ROM owner cases; all caller conditional edges");
+}
+
+#[test]
+fn prefix24_item_tile_selection_prefix_matches_every_rom_comparison_path() {
+    let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let assets=std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+    for tile in [0,0x34,0x71,0x35,0x10d,0x10f,0xe1,0xe2,0xda,0xf8,0x10e,0x37e,0x36,0x72a,0x21b] {
+      for hand in [0,2,0x40] {
+       for mode in [0,1,2] {
+        for owner in [0x1bbd7a,0x1bbd82] {
+            let mut n=ZeldaState::new();n.set_assets(&assets).unwrap();n.set_lag_free(true);
+            n.write_wram_word(0x708,0);n.write_wram_word(0x70a,0x3f0);
+            n.write_wram_word(0x70c,0);n.write_wram_word(0x70e,0x7e);
+            n.write_wram_byte(0x301,hand);n.write_wram_byte(0x37a,mode);
+            n.write_wram_word(0x2000,tile);
+            n.sync_native_game_state_from_ram();
+            let mut s=coverage5_rom_machine(&n,0xbd7a,0x1b);
+            s.cpu.k=0x1b;s.cpu.unpack_flags(0x30);
+            s.ram[0x1ff]=0; // RTL fixture frame.
+            let early = std::cell::Cell::new(true);
+            crate::cycle_ledger::assert_rom_marker_work(owner,s,|s| {
+                if s.cpu.k==0x1b && [0xbe49,0xbe5d,0xbe8d,0xbec3].contains(&s.cpu.pc) { early.set(false); }
+                s.cpu.k==0x1b && if owner==0x1bbd7a {(0xbd7a..0xbd82).contains(&s.cpu.pc)}
+                else {(0xbd82..0xbe49).contains(&s.cpu.pc)||early.get() && (0xbf1a..0xbf1e).contains(&s.cpu.pc)}
+            },
+                || {let _=n.handle_item_tile_action_overworld(0,0);});
+        }
+       }
+      }
+    }
+}

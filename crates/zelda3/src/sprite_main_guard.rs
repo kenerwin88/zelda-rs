@@ -777,6 +777,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05c25f);
         self.guard_parry_sword_attacks_far(k);
         self.guard_main_after_parry(k);
     }
@@ -794,6 +795,7 @@ impl ZeldaState {
         if self.sprite_return_if_paused(k, SpritePausedEntry::Rom05F955) {
             return;
         }
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05c25f);
         self.guard_parry_sword_attacks_far(k);
         self.guard_main_after_parry(k);
     }
@@ -888,6 +890,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
         assert!(!self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05c25f);
         self.guard_parry_sword_attacks_far(k);
         assert!((self.sprite_slot_view(k).subtype() & 7) < 5);
         assert!(self.guard_main_after_parry_through_collision(k));
@@ -904,6 +907,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_direction(direction);
         assert_ne!(self.sprite_slot_view(k).state(), 5);
         assert!(!self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05c25f);
         self.guard_parry_sword_attacks_far(k);
         assert!(self.guard_main_after_parry_until_ai(k));
         assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
@@ -1360,19 +1364,26 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_bush_guard_main(&mut self, k: usize) {
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05d1d3);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
+        b.block(0x05d1d6);
         self.sprite_slot_view_mut(k).set_ignore_projectile(1);
 
         // case 3 / case_3 fallthrough handler
         let do_case_3 = |state: &mut ZeldaState, k: usize| {
-            state.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Unpriced);
+            b.block(0x05d2ce);
+            state.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
+            b.block(0x05d2d1);
             if state.sprite_slot_view(k).delay_main() == 0 {
+                b.block(0x05d2d6);
                 let mut sprite = state.sprite_slot_view_mut(k);
                 sprite.set_ai_state(0);
                 sprite.set_delay_main(64);
             } else {
+                b.taken(0x05d2d4); b.block(0x05d2df);
                 let idx = state.sprite_slot_view(k).delay_main() as usize >> 2;
                 state
                     .sprite_slot_view_mut(k)
@@ -1382,45 +1393,68 @@ impl ZeldaState {
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x05d1f5);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x05d1fa);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(1);
                     sprite.set_delay_main(64);
-                }
+                } else { b.taken(0x05d1f8); }
+                b.block(0x05d202);
             }
             1 => {
-                self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
+                b.block(0x05d223);
+                self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
+                b.block(0x05d227);
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    let face = self.sprite_direction_to_face_link(k);
+                    b.block(0x05d22c);
+                    let face = self.sprite_direction_and_offset_to_face_link_bank5(k).0;
+                    b.block(0x05d237);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(2);
                     sprite.set_delay_main(48);
                     sprite.set_direction(face);
                     sprite.set_head_direction(face);
                 } else {
+                    b.taken(0x05d22a); b.block(0x05d23f);
                     if self.sprite_slot_view(k).delay_main() == 0x20 {
+                        b.block(0x05d243);
                         self.bush_guard_spawn_foliage(k);
-                    }
+                        b.block(0x05d247);
+                    } else { b.taken(0x05d241); }
+                    b.block(0x05d248);
                     let idx = self.sprite_slot_view(k).delay_main() as usize >> 2;
                     self.sprite_slot_view_mut(k)
                         .set_graphics(BUSH_SOLDIER_RISE_GRAPHICS[idx & 31]);
                 }
             }
             2 => {
+                b.block(0x05d277);
                 self.sprite_slot_view_mut(k).set_ignore_projectile(0);
-                self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Unpriced);
+                self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
+                b.block(0x05d27d);
                 let j = self.sprite_slot_view(k).delay_main();
                 if j == 0 {
+                    b.block(0x05d282);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(3);
                     sprite.set_delay_main(48);
                     do_case_3(self, k);
                 } else {
+                    b.taken(0x05d280); b.block(0x05d28c);
+                    if j < 40 { b.block(0x05d293); } else { b.taken(0x05d291); }
+                    b.block(0x05d296);
                     self.sprite_slot_view_mut(k)
                         .set_a(if j < 40 { 0xff } else { 0x00 });
                     if j == 16 {
+                        b.block(0x05d29a);
                         self.guard_launch_projectile(k);
-                    }
+                        b.block(0x05d29e);
+                    } else { b.taken(0x05d298); }
+                    b.block(0x05d29f);
+                    if self.sprite_slot_view(k).sprite_type() == 0x49 { b.block(0x05d2b3); }
+                    else { b.taken(0x05d2b1); }
+                    b.block(0x05d2b6);
                     let sprite = self.sprite_slot_view(k);
                     let base = (sprite.direction() as usize) * 8
                         + ((j as usize) >> 3)
@@ -1552,9 +1586,7 @@ impl ZeldaState {
             return;
         }
         b.block(0x05ce50);
-        if self.sprite_slot_view(k).wall_collision() == 0 {
-            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
-        }
+        self.soldier_move_if_clear(k);
         // ROM $05:CE53 -> $05:B88D -> $06:E496
         b.block(0x05ce53);
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
@@ -1598,19 +1630,7 @@ impl ZeldaState {
                 self.soldier_throwing_agitated_step(k);
             }
             2 => {
-                self.sprite_zero_velocity_xy(k);
-                self.sprite_guard_send_out_probe(k);
-                let delay_main = self.sprite_slot_view(k).delay_main();
-                if delay_main == 0 {
-                    let mut sprite = self.sprite_slot_view_mut(k);
-                    sprite.set_delay_main(32);
-                    sprite.set_ai_state(0);
-                } else if delay_main < 0x80 {
-                    let t = (usize::from(self.sprite_slot_view(k).direction() & 3) * 8)
-                        | usize::from((delay_main >> 3) & 7);
-                    self.sprite_slot_view_mut(k)
-                        .set_head_direction(SOLDIER_HEAD_DIRECTIONS_BY_ANIM[t & 31]);
-                }
+                self.archer_scanning(k);
             }
             3 => {
                 self.sprite_zero_velocity_xy(k);
@@ -1702,6 +1722,44 @@ impl ZeldaState {
                     .set_graphics(JAVELIN_TROOPER_ARM_GFX_BY_FRAME[base & 63]);
             }
             _ => {}
+        }
+    }
+
+    pub(super) fn soldier_move_if_clear(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cdd4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05cdd4);
+        if self.sprite_slot_view(k).wall_collision() == 0 {
+            b.block(0x05cdd9);
+            self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        } else { b.taken(0x05cdd7); b.block(0x05cddc); }
+    }
+
+    pub(super) fn archer_scanning(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cf13));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05cf13);
+        {
+            let _zero = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c4f9));
+            b.block(0x05c4f9); self.sprite_zero_velocity_xy(k);
+        }
+        b.block(0x05cf16);
+        self.sprite_guard_send_out_probe(k);
+        b.block(0x05cf19);
+        let delay = self.sprite_slot_view(k).delay_main();
+        if delay == 0 {
+            b.block(0x05cf1e);
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_delay_main(32); sprite.set_ai_state(0);
+        } else {
+            b.taken(0x05cf1c); b.block(0x05cf29);
+            if delay < 0x80 {
+                b.block(0x05cf2d);
+                let t = (usize::from(self.sprite_slot_view(k).direction() & 3) * 8)
+                    | usize::from((delay >> 3) & 7);
+                self.sprite_slot_view_mut(k).set_head_direction(SOLDIER_HEAD_DIRECTIONS_BY_ANIM[t & 31]);
+            } else { b.taken(0x05cf2b); }
+            b.block(0x05cf43);
         }
     }
 

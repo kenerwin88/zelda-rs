@@ -9790,3 +9790,545 @@ this hunt established directly, and each is a one-iteration shift of the native
 first-zero read (142,088 → 142,089; 229,035 → 229,036). Independent light gate:
 eight-slice ROM census PASS 1,843 / 0 / 0, live recount 2,215 / 257 / 23,
 filtered tests pass. Later hunts admit `$08:C3FD` or `$08:C606` attributions.
+
+## Lagless prefix hunt 24
+
+Worktree `/Users/missingno/Documents/zelda3-rs-codex`, branch
+`codex/prefix-hunt24`, base **6e6d34cc**. Instruction pricing restores
+**219,868 clocks on the 122-row cohort**, recovering all seven early (a)
+rows and **25 of the next 108 rows**. Across the full ROM route, **150
+missing holds recover**, with none lost; main work increases by
+**670,454,218 instruction clocks on 257,225 iterations**, with no negative
+budget changes. Prices follow executed unmodified-ROM blocks and actual
+branch/page-crossing outcomes. All receipts below are under
+`target/prefix-hunt24/`.
+
+### Fresh classification and ownership
+
+The 36 reused hunt-23 artifacts match their recorded hashes. The authorities
+and current source agree with the measured main baseline. A new cold
+unmodified-ROM CPU run covers **249,400 host calls / 229,108 complete
+iterations**, collecting per-PC, routine, sprite, structural, timing, NMI
+and APUI receipts for every missing row in both cohorts. The new native
+baseline agrees with main's ROM holds and main budgets throughout the
+window. The single-process versus eight-slice comparison has 23 rows with NMI,
+wait or elapsed differences, beginning at the 186,000 slice boundary.
+`baseline-agreement.json` retains them; they are not reused as physical
+arrival evidence.
+
+| Class | Before 141,568, before → remaining | 141,568–228,499, before → remaining |
+| --- | ---: | ---: |
+| (a) Nonpoll instruction shortfall | 7 → 0 | 89 → 65 |
+| (b) Independently established inherited arrival | 0 → 0 | 0 → 0 |
+| (c) Upload protocol / receiver / return phase | 5 → 5 | 4 → 3 |
+| (d) Spotlight poll or insufficient instruction-only closure | 2 → 2 | 15 → 15 |
+| Recovered holds | 0 → 7 | 0 → 25 |
+
+`classification-before.json/csv`, `classification-after.json/csv` and the
+combined `classification.json/csv` retain every row's owners, signed
+instruction gaps, protocol/poll exclusions, before/after holds and clocks.
+`raw-owner-residuals.csv` preserves negative routine residuals as well as
+positive ones. Parent/child aliases are not additive missing work. Class
+(b) stays empty because no independent physical arrival proof was obtained;
+a diagnostic P2 inverse is not that proof.
+
+The next-cohort ranking, computed before pricing, starts with Giant
+Moldorm `$09/$09` (**11 rows / 10 independent frozen-boundary closures**),
+Mini Moldorm `$18/$09` (**7 / 6**), walking Zora `$56/$09` (**12 / 6**),
+Keese `$6f/$09` (**6 / 3**), bumper `$93/$09` (**10 / 3**) and fake sword
+`$e8/$09` (**4 / 3**). Closure counts overlap and do not promise closure
+after the coupled raster wait is recomputed. `owner-ranking-before.json`
+keeps the two cohorts separate; `owner-ranking-after.json` ranks the
+remaining sprite families. Keese/fake-sword caller and draw omissions, plus bumper draw/helper
+omissions, remain deferred.
+
+### ROM-exact owners and fixtures
+
+The table partitions the cohort's *net added work* by actual sprite call
+frames and non-sprite owners. Shared children and routine-scope transfers
+are reconciled before summing; raw routine increases alone would overcount.
+The row column gives rows with new work / recovered rows containing that
+owner. These contributions overlap; they are not isolated counterfactual
+closures. `priced-owner-rows.json` retains each contribution.
+
+| Owner | Cohort clocks added | Rows with work / recovered | Unmodified-ROM fixture (prefix `prefix24_`) |
+| --- | ---: | ---: | --- |
+| Overlay caller `$02:AF1E`, loader `$02:FD0D`, overlay map8 entry `$02:FD26` | 8,088 | 2 / 2 | `overlay_caller_loader_and_map8_entry_match_all_rom_paths` |
+| Sword/shield palette-copy child `$1B:EF7B` | 20,064 | 8 / 1 | `sword_and_shield_copy_children_match_unmodified_rom` |
+| Raven bounce / long / recoil / predicate wrappers | 34,098 | 28 / 7 | `raven_wrappers_and_recoil_prefix_match_rom` |
+| Guard preparation/parry, bush caller/states/draw, archer scan/movement, heart call and other shared sprite children | 18,810 | 15 / 7 | `guard_preparation_all_subtypes_and_floors_match_rom`; `guard_parry_call_and_heart_first_call_match_rom`; `green_bush_guard_caller_and_states_match_rom`; `bush_soldier_draw_all_graphics_and_clipping_match_rom`; `archer_scan_and_clear_movement_match_all_rom_paths` |
+| Item/tile selection `$1B:BD7A/BD82`, execution callers `$07:DC4A/DC2E` | 26,598 | 15 / 9 | `item_tile_selection_prefix_matches_every_rom_comparison_path`; `item_tile_execution_chain_dispatch_matches_rom`; `item_execution_dispatch_and_existing_effect_prices_match_all_bytes` |
+| Dash control `$07:8F86..915D` | 33,890 | 15 / 9 | `dash_control_callers_match_rom_paths` |
+| Mini Moldorm on-screen draw `$1D:F829..F942` | 48,812 | 6 / 4 | `mini_moldorm_on_screen_body_all_paths_match_rom` |
+| Giant Moldorm bounce, entry, segment-explosion gates and coordinate children | 10,274 | 11 / 10 | `giant_moldorm_entry_and_coordinate_owners_match_rom`; `giant_moldorm_segment_explosion_all_gates_match_rom` |
+| Walking Zora dispatcher, wait/surface and preparation children | 19,234 | 12 / 4 | `walking_zora_dispatch_wait_and_surface_match_rom` |
+| **Total** | **219,868** | **80 / 32 distinct rows** | **16 fixture tests** |
+
+All-path fixtures cover every priced conditional; dash asserts both outcomes
+of all 25 branches, overlay covers all caller comparisons, bush draw covers
+all seven graphics values and clipping, and the shared bush-state fixture
+covers both `$47` and `$49`. Mini Moldorm covers all 16 directions, legal
+ROM slots 0–3, history phases, coordinate clipping/carry and table crossing.
+The item execution fixture covers all 256 input bytes, supported handlers,
+cheat and platform cases. Children are excluded from owner scopes, and
+new caller charges select their actual near/long ROM entry rather than
+charging the same child twice. The guard parry JSL belongs to guard callers,
+not the shared Bluesain child.
+
+The copy is exactly **1,092 sword + 1,416 shield = 2,508 clocks** wherever
+both calls execute, including each of the five early upload rows. Upload
+protocol and spotlight-poll prices are unchanged. Item/tile mutation and
+secret suffixes, Zora walking/thrown bodies, and other explicitly unpriced
+suffixes remain outside the admitted scopes.
+
+All **5,309 old generated blocks are unchanged**, with **255 new blocks**.
+Expanded marker deltas add **214,432 clocks / 7,414 instruction executions
+on 4,973 per-PC rows**, with zero negative counts or source-count/clock
+excesses. The remaining **5,436 clocks** are existing exact children:
+**3,278 coordinate clocks** (eleven 298-clock calls) and **2,158 tile-effect
+clocks**. Other scalar movements cancel as routine attribution changes.
+Every row's main-budget delta equals its routine-total delta.
+`per-pc-conservation.csv`, `instruction-conservation.json`,
+`scalar-conservation.json`, `sprite-owner-deltas.csv` and
+`priced-owner-clocks.json` retain these reconciliations. Regeneration is
+byte-identical to `rom_block_costs.rs`; all eight generator tests pass.
+
+An initial candidate also priced Mini Moldorm's `$1D:F822..F828` entry.
+Those exact 122 clocks at iteration **931,965** moved the unchanged P2
+raster wait from zero to **270,204 elapsed clocks**, creating one excess
+hold (candidate totals 1,691 / 1 / 0). That candidate is rejected. The final
+owner starts uniformly at the natural **on-screen body F829**; the entry,
+carry check and off-screen return remain unpriced on *every* path. No
+scene selector, measured deficit or spotlight adjustment is introduced.
+`entry-prefix-exclusion.json` retains the rejected row and both budgets.
+The final ROM result is **1,693 / 0 / 0**.
+
+### Remaining rows and their blockers
+
+The seven early (a) rows gain **4,044 / 4,768 / 8,054 / 7,774 / 7,774 /
+7,774 / 7,300** clocks at iterations **97,658 / 99,949 / 106,624 /
+106,956 / 106,958 / 106,960 / 106,964**, respectively. All holds recover.
+Their after nonpoll residuals are **-22 / 100 / 2,302 / 2,336 / 1,412 /
+1,412 / 716**. Recovering a hold does not claim complete instruction ownership.
+
+The following table covers every remaining row in both cohorts. The
+nonpoll gap removes executed source upload protocol and extra spotlight
+poll instructions. Signed sprite gaps use disjoint call-frame partitions;
+the other remainder can be negative because existing return conventions
+and attribution differences are retained. The diagnostic clocks short are
+recomputed by unchanged P2 and are never used as prices.
+
+| Iteration | Class | Diagnostic clocks short | Nonpoll instruction gap | Remaining owner / blocker |
+| --- | --- | ---: | ---: | --- |
+| 34,318 | c | 262,698 | 18,222 | Upload receiver/poll/return and unpriced callers/loaders; copy gain 2,508 |
+| 48,556 | c | 67,802 | 18,176 | Upload receiver/poll/return and unpriced callers/loaders; copy gain 2,508 |
+| 95,127 | c | 153,534 | 18,338 | Upload receiver/poll/return and unpriced callers/loaders; copy gain 2,508 |
+| 101,031 | d | 160,288 | 14,600 | Spotlight: 1,429 V-counter reads; dash item `$3b/$09` 2,588; remaining iris/caller work |
+| 109,000 | c | 110,360 | 26,464 | Upload receiver/poll/return and unpriced callers/loaders; copy gain 2,508 |
+| 109,016 | d | 151,160 | 2,302 | Spotlight: 1,428 V-counter reads; big fairy `$c8/$09` 1,600; fairy `$72/$09` 724; remaining iris/caller work |
+| 129,746 | c | 155,150 | 31,212 | Upload receiver/poll/return and unpriced callers/loaders; copy gain 2,508 |
+| 146,148 | c | 38,076 | 75,156 | Upload receiver/poll/return and unpriced callers/loaders; no copy on this path |
+| 146,786 | d | 2,700 | -22 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 146,790 | d | 2,602 | -22 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 146,794 | d | 5,012 | -22 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 146,798 | d | 7,822 | -22 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 146,802 | d | 10,414 | -22 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 146,806 | d | 12,286 | -22 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 146,810 | d | 14,732 | -22 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 150,378 | a | 22,484 | 50,152 | sprite $ec `$ec/$06` 10,178; sprite $0d `$0d/$09` 776; other signed caller/child remainder 39,198 |
+| 154,637 | a | 1,334 | 5,674 | sprite $55 `$55/$09` 2,004; sprite $eb `$eb/$09` 1,470; sprite $52 `$52/$09` 902; other signed caller/child remainder 1,298 |
+| 158,519 | a | 7,586 | 10,258 | walking Zora `$56/$09` 6,408; sprite $eb `$eb/$09` 1,470; sprite $55 `$55/$09` 1,076; other signed caller/child remainder 1,304 |
+| 158,538 | a | 2,878 | 12,034 | walking Zora `$56/$09` 8,224; sprite $eb `$eb/$09` 1,470; sprite $55 `$55/$09` 1,036; other signed caller/child remainder 1,304 |
+| 158,558 | a | 10,088 | 10,892 | walking Zora `$56/$09` 7,336; sprite $eb `$eb/$09` 1,470; sprite $55 `$55/$09` 782; other signed caller/child remainder 1,304 |
+| 158,719 | a | 248 | 1,198 | walking Zora `$56/$09` 540; sprite $eb `$eb/$09` 456; sprite $55 `$55/$09` 218; other signed caller/child remainder -16 |
+| 158,729 | a | 840 | 1,198 | walking Zora `$56/$09` 540; sprite $eb `$eb/$09` 456; sprite $55 `$55/$09` 218; other signed caller/child remainder -16 |
+| 160,109 | a | 720 | 918 | sprite $37 `$37/$09` 848; sprite $58 `$58/$09` 92; other signed caller/child remainder -22 |
+| 160,154 | a | 906 | 1,428 | sprite $55 `$55/$09` 500; other signed caller/child remainder 928 |
+| 161,123 | a | 6,540 | 7,132 | sprite $55 `$55/$09` 3,544; sprite $eb `$eb/$09` 1,672; other signed caller/child remainder 1,916 |
+| 162,301 | a | 1,548 | 7,376 | sprite $52 `$52/$09` 3,636; sprite $eb `$eb/$09` 456; other signed caller/child remainder 3,284 |
+| 162,819 | a | 6,686 | 7,110 | sprite $52 `$52/$09` 3,636; sprite $eb `$eb/$09` 456; other signed caller/child remainder 3,018 |
+| 168,346 | d | 83,650 | 8,290 | Main/NMI/HDMA arrival and executed-wait ownership; sprite $55 `$55/$09` 500; instruction work alone is insufficient |
+| 171,309 | d | 21,222 | 8,060 | Main/NMI/HDMA arrival and executed-wait ownership; sprite $2b `$2b/$09` 1,454; instruction work alone is insufficient |
+| 171,310 | d | 63,222 | 1,432 | Main/NMI/HDMA arrival and executed-wait ownership; sprite $2b `$2b/$09` 1,454; instruction work alone is insufficient |
+| 172,380 | d | 143,228 | -116 | Main/NMI/HDMA arrival and executed-wait ownership; instruction work alone is insufficient |
+| 174,033 | a | 665 | 2,210 | sprite $d4 `$d4/$09` 888; sprite $d9 `$d9/$09` 526; other signed caller/child remainder 796 |
+| 174,034 | a | 1,185 | 2,498 | sprite $d4 `$d4/$09` 888; sprite $d9 `$d9/$09` 526; other signed caller/child remainder 1,084 |
+| 174,280 | c | 112,958 | 26,464 | Upload receiver/poll/return and unpriced callers/loaders; copy gain 2,508 |
+| 174,296 | d | 152,714 | 2,302 | Spotlight: 1,427 V-counter reads; big fairy `$c8/$09` 1,600; fairy `$72/$09` 724; remaining iris/caller work |
+| 180,178 | a | 24,900 | 29,614 | sprite $48 `$48/$09` 16,866; sprite $ec `$ec/$06` 1,428; sprite $c5 `$c5/$09` 208; other signed caller/child remainder 11,112 |
+| 180,182 | a | 18,464 | 24,596 | sprite $48 `$48/$09` 9,762; sprite $ec `$ec/$06` 1,152; sprite $c5 `$c5/$09` 208; other signed caller/child remainder 13,474 |
+| 181,567 | a | 2,746 | 5,652 | fake sword `$e8/$09` 3,064; sprite $c4 `$c4/$09` 920; sprite $d9 `$d9/$09` 600; sprite $dc `$dc/$09` 600; sprite $e1 `$e1/$09` 300; other signed caller/child remainder 168 |
+| 181,568 | a | 3,684 | 5,652 | fake sword `$e8/$09` 3,064; sprite $c4 `$c4/$09` 920; sprite $dc `$dc/$09` 600; sprite $d9 `$d9/$09` 600; sprite $e1 `$e1/$09` 300; other signed caller/child remainder 168 |
+| 181,569 | a | 2,874 | 5,652 | fake sword `$e8/$09` 3,064; sprite $c4 `$c4/$09` 920; sprite $d9 `$d9/$09` 600; sprite $dc `$dc/$09` 600; sprite $e1 `$e1/$09` 300; other signed caller/child remainder 168 |
+| 181,575 | a | 2,452 | 5,652 | fake sword `$e8/$09` 3,064; sprite $c4 `$c4/$09` 920; sprite $dc `$dc/$09` 600; sprite $d9 `$d9/$09` 600; sprite $e1 `$e1/$09` 300; other signed caller/child remainder 168 |
+| 186,606 | a | 1,348 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,608 | a | 1,936 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,610 | a | 1,104 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,614 | a | 1,498 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,616 | a | 2,048 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,618 | a | 1,156 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,620 | a | 1,594 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,622 | a | 1,218 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,624 | a | 1,812 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,626 | a | 1,280 | 2,166 | sprite $17 `$17/$09` 892; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,664 | a | 2,120 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,666 | a | 1,090 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,668 | a | 2,070 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,670 | a | 1,588 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,672 | a | 1,998 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,684 | a | 3,108 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,686 | a | 2,996 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,690 | a | 2,212 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,694 | a | 2,926 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,696 | a | 1,302 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 186,698 | a | 2,340 | 4,004 | sprite $33 `$33/$09` 1,234; sprite $17 `$17/$09` 892; sprite $79 `$79/$09` 604; sprite $0d `$0d/$09` 582; raven `$00/$09` 380; sprite $ac `$ac/$09` 144; other signed caller/child remainder 168 |
+| 187,109 | d | 138,608 | 8,070 | Spotlight: 1,408 V-counter reads; Keese `$6f/$09` 6,912; sprite $ad `$ad/$09` 1,180; remaining iris/caller work |
+| 187,779 | a | 7,010 | 7,200 | Keese `$6f/$09` 3,840; other signed caller/child remainder 3,360 |
+| 187,781 | a | 82 | 5,098 | Keese `$6f/$09` 3,840; other signed caller/child remainder 1,258 |
+| 187,782 | a | 1,442 | 5,098 | Keese `$6f/$09` 3,840; other signed caller/child remainder 1,258 |
+| 188,654 | a | 1,956 | 4,710 | Keese `$6f/$09` 3,840; other signed caller/child remainder 870 |
+| 188,962 | d | 230,604 | 4,768 | Spotlight: 1,414 V-counter reads; Keese `$6f/$09` 3,840; remaining iris/caller work |
+| 189,344 | a | 5,586 | 6,014 | sprite $c2 `$c2/$09` 1,192; sprite $27 `$27/$09` 192; other signed caller/child remainder 4,630 |
+| 189,368 | a | 3,306 | 4,630 | sprite $c2 `$c2/$09` 1,192; sprite $ad `$ad/$09` 610; other signed caller/child remainder 2,828 |
+| 189,923 | d | 224,566 | 1,170 | Spotlight: 1,423 V-counter reads; sprite $c2 `$c2/$09` 1,192; remaining iris/caller work |
+| 190,815 | a | 1,836 | 2,220 | sprite $c2 `$c2/$09` 894; sprite $27 `$27/$09` 192; other signed caller/child remainder 1,134 |
+| 194,151 | c | 19,768 | 43,808 | Upload receiver/poll/return and unpriced callers/loaders; copy gain 2,508 |
+| 194,994 | a | 2,356 | 5,222 | sprite $87 `$87/$09` 3,024; Mini Moldorm `$18/$09` 230; sprite $86 `$86/$09` 216; other signed caller/child remainder 2,904 |
+| 196,051 | a | 7,518 | 8,090 | other signed caller/child remainder 8,090 |
+| 198,239 | a | 540 | 3,990 | sprite $a7 `$a7/$09` 1,760; Mini Moldorm `$18/$09` 882; sprite $e4 `$e4/$09` 248; other signed caller/child remainder 1,100 |
+| 198,240 | a | 124 | 3,872 | sprite $a7 `$a7/$09` 1,760; Mini Moldorm `$18/$09` 882; sprite $e4 `$e4/$09` 248; other signed caller/child remainder 982 |
+| 209,808 | a | 4,708 | 14,724 | sprite $26 `$26/$09` 96; other signed caller/child remainder 15,104 |
+| 215,856 | a | 1,016 | 9,814 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 8,296 |
+| 215,857 | a | 2,232 | 2,500 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 982 |
+| 215,858 | a | 2,234 | 2,500 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 982 |
+| 215,859 | a | 2,232 | 2,500 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 982 |
+| 217,218 | a | 2,550 | 8,676 | sprite $26 `$26/$08` 2,772; bumper `$93/$08` 1,800; sprite $7e `$7e/$08` 170; other signed caller/child remainder 3,934 |
+| 217,219 | a | 1,016 | 9,696 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 8,178 |
+| 217,220 | a | 2,232 | 2,618 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 1,100 |
+| 217,221 | a | 1,816 | 2,500 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 982 |
+| 217,222 | a | 2,232 | 2,500 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 282; other signed caller/child remainder 982 |
+| 219,129 | a | 54 | 82 | other signed caller/child remainder 82 |
+| 219,689 | a | 194 | 6,410 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 92; other signed caller/child remainder 5,082 |
+| 225,257 | a | 4,570 | 6,292 | bumper `$93/$09` 1,236; sprite $7e `$7e/$09` 92; other signed caller/child remainder 4,964 |
+
+The eight remaining upload rows have separate protocol owners in the fresh
+APUI and routine receipts. Some retain enough *unpriced nonprotocol* work
+for a future instruction batch; that does not establish upload acceptance
+or authorize importing a measured poll count as a price. The seven
+146,786–146,810 rows already have a **-22-clock** signed main-instruction
+residual: their phase cannot be repaired by inventing more main work.
+`classification.json` names every remaining sprite family/state and keeps
+raw positive routine aliases separate from additive owners. The per-slot,
+per-routine `remaining-sprite-residuals.csv` retains every signed child
+and wrapper difference. The next scopes include Keese caller `$05:AA8B`
+and draw entry `$06:DC10`, bumper draw `$1E:AA8B` (the bumper caller is
+already priced), fake-sword caller/draw `$05:EEAF/EEE6` and thrown
+interaction `$06:E02A`, plus Zora walking/thrown, draw and shadow suffixes.
+Those are owner candidates, not sums of raw positive aliases.
+
+### Full ROM, CPU pictures and live census
+
+The eight-slice seeded ROM helper completes **1,473,123 iterations**,
+**PASS / unexplained 0**, at **1,843 → 1,693 missing**, **0 → 0 excess**,
+**0 → 0 FP**. All 150 changed holds recover one missing hold, with zero
+losses and zero runtime-hold/P2 disagreements.
+
+| Before iteration | ROM missing before → after | Live missing before → after |
+| --- | ---: | ---: |
+| 94,334 | 2 → 2 | 2 → 2 |
+| 141,568 | 14 → 7 | 14 → 7 |
+| 228,499 | 122 → 90 | 131 → 90 |
+| 380,243 | 255 → 214 | 273 → 223 |
+| 461,989 | 314 → 270 | 446 → 279 |
+
+The eight-slice `--cpu-video` census also passes **1,473,123 iterations /
+unexplained 0**, retaining **1,462,997 exact pictures**, 563 early, 3,952
+late, four during-lag, 905 polygon-thread, 4,702 torn and zero other content
+misses. Every picture hash and every segment's video categories are
+identical to main, independently of changed pacing budgets.
+`cpu-picture-agreement.json` and `cpu-picture-gate.txt` retain the proof.
+
+Exactly **one** continuous seeded `--live-apu-reads --pacing-predictor`
+process completes all **1,473,123 iterations**; SPC state carries across
+its seeds. Live totals are **2,215 → 2,105 missing**,
+**257 → 318 excess**, **23 → 85 FP**.
+`live-command.json` records the single launch, completed exit and final
+binary hash. `live-comparison.json` retains the totals and prefixes;
+`live-timing.jsonl.zst` retains the continuous native/source poll trace.
+Missing improves, while live excess and FP increase by **61 / 62**. The
+881,095 episode contributes **+234 / +230 / +67** missing/excess/FP across
+135 changed rows after its first native zero moves one iteration early.
+The net live-only delta is **+40 / +61 / +62**; the 150 shared ROM
+recoveries make the overall live missing delta **-110**. These poll-phase
+regressions are retained and attributed, not described as solved pacing.
+
+
+### Song-end attribution
+
+All **179 live-only changed hold rows** are attributed:
+**5 pendant `$08:C3FD`**, **174 crystal `$08:C606`**,
+**zero unattributed**. The comparison has **329 total changed live rows**,
+of which **150 share the exact ROM before/after hold pair**.
+The conservative live-only set includes every other changed pair.
+
+The first cold source pass recorded routine profiles without bus instrumentation;
+its command and output are retained. A corrected cold unmodified-ROM CPU
+source replay, with the existing block/bus and timing-audit switches enabled,
+observes **20 direct APUI
+receipts**: a nonzero and first-zero `$2140` read in each of ten song-end
+episodes. `poll-source-identity.json` establishes the actual source PCs;
+sprite labels are not used to infer pendant versus crystal ownership.
+Routine, sprite and structural profiles from the two source passes are
+byte-identical (`source-poll-profile-agreement.json`).
+The episode bounds below are chosen *without hold changes*: actual
+native/source boolean polls, native/source context divergence, four-lane
+main/VWF budget differences, then actual reseeding or the containing
+2,000-iteration segment boundary. The four lanes remove the intended ROM
+price delta from the live instruction delta. `poll-attribution.json`
+conserves every missing/excess/FP delta, including shared ROM recoveries.
+
+| Episode | Direct source PC | Source first zero | Main live first zero | Hunt 24 first zero | Independent recovery end | Live-only changed rows |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 | 94,854 | 96,000 | 0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,089 | 142,088 | 144,000 | 5 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,036 | 229,036 | 230,000 | 0 |
+| 380,243 | `$08:C606` | 380,881 | 380,882 | 380,881 | 383,636 | 15 |
+| 461,989 | `$08:C606` | 462,628 | 462,628 | 462,627 | 466,000 | 6 |
+| 626,618 | `$08:C606` | 627,256 | 627,257 | 627,257 | 629,845 | 0 |
+| 735,229 | `$08:C606` | 735,867 | 735,867 | 735,868 | 738,000 | 6 |
+| 881,095 | `$08:C606` | 881,734 | 881,734 | 881,733 | 884,327 | 135 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,735 | 1,064,734 | 1,066,963 | 12 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,336 | 1,318,336 | 1,320,900 | 0 |
+
+Every live-only changed row follows. `changed-live-holds.csv/json` retains
+its metric deltas and the independently observed bounds as well.
+
+| Iteration | Source lag | ROM holds before → after | Live holds before → after | Episode / direct source PC |
+| --- | ---: | ---: | ---: | --- |
+| 142,089 | 5 | 5 → 5 | 0 → 5 | 141,568 / `$08:C3FD` |
+| 142,090 | 0 | 0 → 0 | 5 → 0 | 141,568 / `$08:C3FD` |
+| 142,092 | 4 | 4 → 4 | 0 → 4 | 141,568 / `$08:C3FD` |
+| 142,093 | 3 | 3 → 3 | 4 → 3 | 141,568 / `$08:C3FD` |
+| 142,095 | 0 | 0 → 0 | 3 → 0 | 141,568 / `$08:C3FD` |
+| 380,946 | 1 | 1 → 1 | 0 → 1 | 380,243 / `$08:C606` |
+| 380,947 | 0 | 0 → 0 | 1 → 0 | 380,243 / `$08:C606` |
+| 380,956 | 5 | 4 → 4 | 0 → 4 | 380,243 / `$08:C606` |
+| 380,957 | 0 | 0 → 0 | 4 → 0 | 380,243 / `$08:C606` |
+| 381,426 | 8 | 8 → 8 | 0 → 8 | 380,243 / `$08:C606` |
+| 381,427 | 0 | 0 → 0 | 8 → 0 | 380,243 / `$08:C606` |
+| 383,178 | 0 | 0 → 0 | 7 → 0 | 380,243 / `$08:C606` |
+| 383,181 | 7 | 7 → 7 | 0 → 7 | 380,243 / `$08:C606` |
+| 383,343 | 7 | 7 → 7 | 0 → 7 | 380,243 / `$08:C606` |
+| 383,346 | 0 | 0 → 0 | 7 → 0 | 380,243 / `$08:C606` |
+| 383,631 | 59 | 59 → 59 | 0 → 59 | 380,243 / `$08:C606` |
+| 383,632 | 6 | 6 → 6 | 0 → 6 | 380,243 / `$08:C606` |
+| 383,633 | 23 | 22 → 22 | 0 → 22 | 380,243 / `$08:C606` |
+| 383,634 | 1 | 1 → 1 | 59 → 1 | 380,243 / `$08:C606` |
+| 383,635 | 1 | 1 → 1 | 6 → 1 | 380,243 / `$08:C606` |
+| 462,699 | 0 | 0 → 0 | 0 → 1 | 461,989 / `$08:C606` |
+| 462,700 | 1 | 1 → 1 | 1 → 0 | 461,989 / `$08:C606` |
+| 462,709 | 0 | 0 → 0 | 0 → 4 | 461,989 / `$08:C606` |
+| 462,710 | 5 | 4 → 4 | 4 → 0 | 461,989 / `$08:C606` |
+| 463,179 | 0 | 0 → 0 | 0 → 8 | 461,989 / `$08:C606` |
+| 463,180 | 8 | 8 → 8 | 8 → 0 | 461,989 / `$08:C606` |
+| 735,937 | 1 | 1 → 1 | 1 → 0 | 735,229 / `$08:C606` |
+| 735,938 | 0 | 0 → 0 | 0 → 1 | 735,229 / `$08:C606` |
+| 735,947 | 5 | 4 → 4 | 4 → 0 | 735,229 / `$08:C606` |
+| 735,948 | 0 | 0 → 0 | 0 → 4 | 735,229 / `$08:C606` |
+| 736,420 | 8 | 7 → 7 | 7 → 0 | 735,229 / `$08:C606` |
+| 736,422 | 0 | 0 → 0 | 0 → 7 | 735,229 / `$08:C606` |
+| 881,794 | 0 | 0 → 0 | 0 → 1 | 881,095 / `$08:C606` |
+| 881,795 | 1 | 1 → 1 | 1 → 0 | 881,095 / `$08:C606` |
+| 881,804 | 0 | 0 → 0 | 0 → 4 | 881,095 / `$08:C606` |
+| 881,805 | 5 | 4 → 4 | 4 → 0 | 881,095 / `$08:C606` |
+| 882,275 | 8 | 8 → 8 | 8 → 0 | 881,095 / `$08:C606` |
+| 882,276 | 0 | 0 → 0 | 0 → 8 | 881,095 / `$08:C606` |
+| 882,475 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,476 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,477 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,484 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,485 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,486 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,529 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,530 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,531 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,538 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,539 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,540 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,591 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,592 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,593 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,600 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,601 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,602 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,676 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,677 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,678 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,686 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,687 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,688 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,740 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,741 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,742 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,750 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,751 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,752 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,804 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,805 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,806 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,814 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,815 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,816 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,893 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,894 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,895 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,919 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,920 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,921 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,957 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,958 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,959 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,983 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,984 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,985 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,053 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,054 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,055 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,071 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,072 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,073 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,117 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,118 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,119 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,135 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,136 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,137 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,181 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,182 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,183 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,199 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,200 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,201 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,272 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,273 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,274 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,298 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,299 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,300 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,338 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,339 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,340 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,364 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,365 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,366 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,398 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,399 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,400 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,424 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,425 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,426 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,483 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,484 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,485 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,509 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,510 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,511 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,539 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,540 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,541 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,565 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,566 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,567 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,601 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,602 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,603 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,627 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,628 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,629 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,697 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,698 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,699 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,724 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,725 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,726 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,727 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,728 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,729 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,754 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,755 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,756 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,765 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,766 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,767 | 2 | 2 → 2 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,792 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,793 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,794 | 0 | 0 → 0 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,842 | 7 | 7 → 7 | 7 → 0 | 881,095 / `$08:C606` |
+| 883,881 | 0 | 0 → 0 | 0 → 7 | 881,095 / `$08:C606` |
+| 883,977 | 7 | 7 → 7 | 7 → 0 | 881,095 / `$08:C606` |
+| 884,319 | 0 | 0 → 0 | 0 → 59 | 881,095 / `$08:C606` |
+| 884,320 | 0 | 0 → 0 | 0 → 6 | 881,095 / `$08:C606` |
+| 884,321 | 0 | 0 → 0 | 0 → 25 | 881,095 / `$08:C606` |
+| 884,322 | 59 | 59 → 59 | 59 → 1 | 881,095 / `$08:C606` |
+| 884,323 | 6 | 6 → 6 | 6 → 1 | 881,095 / `$08:C606` |
+| 884,324 | 25 | 25 → 25 | 25 → 1 | 881,095 / `$08:C606` |
+| 1,064,798 | 1 | 1 → 1 | 0 → 1 | 1,064,096 / `$08:C606` |
+| 1,064,799 | 0 | 0 → 0 | 1 → 0 | 1,064,096 / `$08:C606` |
+| 1,064,808 | 5 | 4 → 4 | 0 → 4 | 1,064,096 / `$08:C606` |
+| 1,064,809 | 0 | 0 → 0 | 4 → 0 | 1,064,096 / `$08:C606` |
+| 1,065,281 | 8 | 7 → 7 | 0 → 7 | 1,064,096 / `$08:C606` |
+| 1,065,282 | 0 | 0 → 0 | 7 → 0 | 1,064,096 / `$08:C606` |
+| 1,066,543 | 0 | 0 → 0 | 7 → 0 | 1,064,096 / `$08:C606` |
+| 1,066,544 | 7 | 7 → 7 | 0 → 7 | 1,064,096 / `$08:C606` |
+| 1,066,958 | 59 | 59 → 59 | 0 → 59 | 1,064,096 / `$08:C606` |
+| 1,066,959 | 6 | 6 → 6 | 59 → 6 | 1,064,096 / `$08:C606` |
+| 1,066,960 | 24 | 24 → 24 | 6 → 24 | 1,064,096 / `$08:C606` |
+| 1,066,961 | 1 | 1 → 1 | 24 → 1 | 1,064,096 / `$08:C606` |
+
+
+### Verification boundary
+
+**Admission passes the specified seeded logical gates.** The 16 new ROM
+fixture tests pass, together with the filtered sprite-draw (258), player
+(62), sprite (129), overworld (103), graphics (40), guard (13), prep (39)
+and Mothula (7) groups. Generator tests pass (8). Production builds are
+warning-free; library builds retain only the same pre-existing warning
+headers as main. `test-verification.json` records the final checks and
+supersedes the retained failed development attempts.
+
+After runtime and fixture changes were frozen, the exact full default
+library command ran **once**:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+SNES: **505 passed / 7 ignored**. Zelda: **3,041 passed / 3 ignored / one
+permitted failure**, exactly
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There are no other failures and no full-suite rerun.
+
+Final hashes preserve all **36 reused prior artifacts**, **14 authority
+files** and **931 frozen source/fixture files**. The final binary is
+`zelda3-admission`; its source and fixtures are unchanged across the final
+ROM, CPU-picture, live and full-library admission runs. All launched
+processes have completed, with no background process left.
+
+No P2, classifier, matcher, polling price or environment-switch change is
+included. There is no measured-deficit price, per-scene pricing, injected
+hold or interpreter fallback. Every Zelda binary invocation is CPU-only
+with `--logical-replay`; no GPU, `--video`, cached-A/V run or external
+Snes9x process occurs. The ledger, oracle cache and gate helpers remain
+read-only. No commit, push or `cargo fmt` occurs.
+
+Only rebuildable files in this worktree's `target/` were removed. Earlier
+candidate slice CSVs were losslessly compressed and checked before their
+raw copies were removed; both cache cleanup lists are retained. The target
+size is recorded in `resources.json` and remains below **8,000,000,000
+bytes**. `verification.json`, final identity checks, `runtime.patch` and
+`artifact-hashes.json` retain the result and its evidence identities.
+
+These are seeded logical, CPU-picture and source-instruction proofs. Full
+upload arrival/receiver/return ownership, actual spotlight acceptance phase
+and complete unpriced instruction suffixes remain unresolved as listed
+above. Cold exact A/V acceptance is a separate boundary.

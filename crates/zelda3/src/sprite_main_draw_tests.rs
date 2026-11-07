@@ -7,6 +7,8 @@ use super::*;
 
 #[path = "sprite_prefix23_tests.rs"]
 mod prefix23;
+#[path = "sprite_prefix24_tests.rs"]
+mod prefix24;
 
 #[test]
 fn prefix10_intro_dispatch_and_fade_markers_match_rom() {

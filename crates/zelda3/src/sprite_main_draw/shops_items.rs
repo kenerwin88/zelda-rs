@@ -481,6 +481,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_D8_Heart(int k) {  // 86cec0
     pub(super) fn sprite_d8_heart(&mut self, k: usize) {
+        // Complete first call instruction; the transient draw owns its body.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06cec0);
         if self.sprite_draw_absorbable_transient(k, true) {
             return;
         }

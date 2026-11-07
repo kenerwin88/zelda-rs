@@ -62,6 +62,37 @@ mod velocity_price_tests {
         CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
 
     #[test]
+    fn prefix24_item_execution_dispatch_and_existing_effect_prices_match_all_bytes() {
+        let rom=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")).unwrap();
+        for tile in 0..=255u8 {
+          for cheat in [0,1] {
+           for platform in [0,1] {
+            let mut n=ZeldaState::new();n.set_lag_free(true);
+            n.write_wram_byte(0x37f,cheat);n.write_wram_byte(0x2f5,platform);
+            n.sync_native_game_state_from_ram();
+            let tile=NativeTile::from_cartridge(tile);
+            if n.tile_effect_self_master(tile,false).is_none() {continue;}
+            let mut s=Snes::new();s.cart.load(CartType::LoRom,&rom,0x2000);
+            s.ram.copy_from_slice(&n.wram_image());s.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+            s.cpu.e=false;s.cpu.unpack_flags(0x30);s.cpu.k=7;s.cpu.db=7;s.cpu.pc=0xdc2e;s.cpu.sp=0x1fc;
+            s.cpu.a=u16::from(tile.cartridge_attribute());
+            let clock=CpuMasterTimeline::at_raster(0,CpuRasterPosition::new(0,0),CpuBusWorkload::default(),CpuFieldTiming::non_interlace(false));
+            let mut source=RomCpuTimingProbe::new(s,clock,SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut expected=0;
+            for _ in 0..1000 {
+                let step=source.step().unwrap();
+                expected+=step.transactions.iter().map(|t|u64::from(t.duration_master_cycles)).sum::<u64>();
+                if source.snes().cpu.pc==0x8000 {break;}
+            }
+            assert_eq!(source.snes().cpu.pc,0x8000);
+            let before=crate::cycle_ledger::master();n.price_item_tile_inner_dispatch(tile);
+            assert_eq!(crate::cycle_ledger::master()-before,expected,"tile={tile:?} cheat={cheat} platform={platform}");
+           }
+          }
+        }
+    }
+
+    #[test]
     fn movement_tail_prices_match_executed_rom_paths() {
         let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../saves/zelda3.sfc")).unwrap();
@@ -1370,8 +1401,28 @@ impl ZeldaState {
     }
 
     pub(super) fn tile_behavior_handle_item_and_execute(&mut self, x: u16, y: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07dc4a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07dc4a);
         let tile = self.handle_item_tile_action_overworld(x, y);
+        b.block(0x07dc4e);
+        self.price_item_tile_inner_dispatch(tile);
         self.tile_detect_execute_definition(tile, 0, 1, false);
+    }
+
+    fn price_item_tile_inner_dispatch(&self, tile: NativeTile) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07dc2e);
+        if self.game_state.player.follower_link.cheat_walk_through_walls() != 0 { b.block(0x07dc39); }
+        else { b.taken(0x07dc37); b.block(0x07dc3f); }
+        b.block(0x07dc40);
+        // Same source handler body already used by TileDetection_Execute;
+        // this direct entry previously bypassed that owner's price entirely.
+        if self.lag_free {
+            if let Some(clocks) = self.tile_effect_self_master(tile, false) {
+                crate::cycle_ledger::charge(clocks);
+            }
+        }
     }
 
     pub(in crate::zelda_rtl) fn push_block_target_tile(&self, x: u16, y: u16) -> NativeTile {

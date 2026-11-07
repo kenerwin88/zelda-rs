@@ -747,6 +747,9 @@ impl ZeldaState {
     /// run `finish_overworld_load_overlays` (route host 1568434: the credits'
     /// master-sword grove scene advanced the submodule twice).
     fn prepare_overworld_load_overlays(&mut self) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02af1e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02af1e);
         let overworld_screen = self.game_state.world.location.overworld_screen();
         self.set_prev_screen_index_word(overworld_screen);
         self.store_overworld_prev_map16_load_state(
@@ -762,27 +765,46 @@ impl ZeldaState {
         let si = u16::from(self.game_state.world.location.overworld_screen_index());
         let mut xv;
         if si >= 0x80 {
+            b.block(0x02af5f);
             xv = 0x97;
             let room = self.game_state.world.location.dungeon_room();
             if room == 0x0180 {
+                b.block(0x02af69);
                 if self.game_state.world.overworld.event_info.event_info(0x80) & 0x40 != 0 {
+                    b.taken(0x02af76); b.block(0x02af9c);
                     self.set_sub_screen_layers(0);
                     self.increment_submodule();
                     return true;
                 }
+                b.block(0x02af78);
             } else if room == 0x0181 {
+                b.taken(0x02af67); b.block(0x02af7b); b.taken(0x02af81); b.block(0x02af78);
                 xv = 0x94;
             } else if room == 0x0189 {
+                b.taken(0x02af67); b.block(0x02af7b); b.block(0x02af83);
+                b.taken(0x02af89); b.block(0x02af78);
                 xv = 0x93;
             } else {
+                b.taken(0x02af67); b.block(0x02af7b); b.block(0x02af83); b.block(0x02af8b);
+                if room == 0x0182 { b.taken(0x02af8e); }
+                else { b.block(0x02af90); if room != 0x0183 { b.taken(0x02af93); } }
                 if room == 0x0182 || room == 0x0183 {
+                    b.block(0x02af95);
                     self.set_ambient_sound_effect(1);
                 }
+                b.block(0x02af9c);
                 self.set_sub_screen_layers(0);
                 self.increment_submodule();
                 return true;
             }
         } else if (si & 0x3f) == 0 {
+            b.taken(0x02af5d); b.block(0x02afa3); b.block(0x02afa8);
+            if si & 0x40 != 0 { b.taken(0x02afad); b.block(0x02afbe); }
+            else {
+                b.block(0x02afaf);
+                if self.game_state.world.overworld.event_info.event_info(0x80) & 0x40 != 0 { b.taken(0x02afbc); }
+                else { b.block(0x02afbe); }
+            }
             xv = if (si & 0x40) == 0
                 && self.game_state.world.overworld.event_info.event_info(0x80) & 0x40 != 0
             {
@@ -791,15 +813,32 @@ impl ZeldaState {
                 0x9d
             };
         } else if matches!(si, 0x03 | 0x05 | 0x07) {
+            b.taken(0x02af5d); b.block(0x02afa3); b.taken(0x02afa6); b.block(0x02afc3);
+            if si == 3 { b.taken(0x02afcb); }
+            else { b.block(0x02afcd); if si == 5 { b.taken(0x02afd0); }
+                else { b.block(0x02afd2); b.taken(0x02afd5); } }
             xv = 0x95;
         } else if matches!(si, 0x43 | 0x45 | 0x47) {
+            b.taken(0x02af5d); b.block(0x02afa3); b.taken(0x02afa6);
+            for pc in [0x02afc3, 0x02afcd, 0x02afd2, 0x02afd7] { b.block(pc); }
+            if si == 0x43 { b.taken(0x02afdd); }
+            else { b.block(0x02afdf); if si == 0x45 { b.taken(0x02afe2); }
+                else { b.block(0x02afe4); b.taken(0x02afe7); } }
             xv = 0x9c;
         } else if si == 0x70 {
+            b.taken(0x02af5d); b.block(0x02afa3); b.taken(0x02afa6);
+            for pc in [0x02afc3, 0x02afcd, 0x02afd2, 0x02afd7, 0x02afdf, 0x02afe4, 0x02afe9, 0x02afee] { b.block(pc); }
             xv = 0x9c;
             if self.game_state.world.overworld.event_info.event_info(0x70) & 0x20 == 0 {
+                b.block(0x02aff7); b.block(0x02b008);
                 xv = 0x9f;
-            }
+            } else { b.taken(0x02aff5); }
         } else {
+            b.taken(0x02af5d); b.block(0x02afa3); b.taken(0x02afa6);
+            for pc in [0x02afc3, 0x02afcd, 0x02afd2, 0x02afd7, 0x02afdf, 0x02afe4, 0x02afe9] { b.block(pc); }
+            b.taken(0x02afec); b.block(0x02aff9);
+            if self.game_state.inventory.save_progress.progress_indicator() < 2 { b.block(0x02b008); }
+            else { b.taken(0x02b006); }
             xv = if self.game_state.inventory.save_progress.progress_indicator() < 2 {
                 0x9f
             } else {
@@ -807,6 +846,7 @@ impl ZeldaState {
             };
         }
 
+        b.block(0x02b00b);
         self.set_overworld_map16_src_off(0x0390);
         self.set_overlay_index_word(xv);
         self.set_overworld_screen_word(xv);
@@ -826,8 +866,31 @@ impl ZeldaState {
         self.set_ambient_sound_effect(ambient_sound_effect);
 
         if matches!(xv, 0x97 | 0x94 | 0x93 | 0x9d | 0x9e | 0x9f) {
+            let branch = match xv { 0x97 => 0x02b054, 0x94 => 0x02b058, 0x93 => 0x02b05c,
+                0x9d => 0x02b060, 0x9e => 0x02b064, _ => 0x02b068 };
+            for pc in [0x02b056, 0x02b05a, 0x02b05e, 0x02b062, 0x02b066] {
+                if pc < branch { b.block(pc); }
+            }
+            b.taken(branch);
             self.set_color_math_control(0x72);
         } else {
+            for pc in [0x02b056, 0x02b05a, 0x02b05e, 0x02b062, 0x02b066, 0x02b06a] { b.block(pc); }
+            if xv == 0x95 { b.taken(0x02b06e); }
+            else { b.block(0x02b070); if xv == 0x9c { b.taken(0x02b072); }
+                else {
+                    b.block(0x02b074);
+                    let prev = self.game_state.world.region.prev_screen_index_byte();
+                    if prev == 0x5b { b.taken(0x02b07d); }
+                    else { b.block(0x02b07f);
+                        if prev != 0x1b { b.taken(0x02b081); b.block(0x02b08d); }
+                        else { b.block(0x02b083);
+                            if self.game_state.frame.submodule == 35 { b.taken(0x02b087); }
+                            else { b.block(0x02b089); if self.game_state.frame.submodule == 44 { b.taken(0x02b08b); }
+                                else { b.block(0x02b08d); } }
+                        }
+                    }
+                }
+            }
             let prev = self.game_state.world.region.prev_screen_index_byte();
             if xv == 0x95
                 || xv == 0x9c
@@ -842,6 +905,7 @@ impl ZeldaState {
                 self.set_color_math_control(0x20);
             }
         }
+        b.block(0x02b08f);
         false
     }
 
@@ -851,10 +915,15 @@ impl ZeldaState {
     }
 
     fn finish_overworld_load_overlays_suffix(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02af1e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02b094);
         if self.game_state.world.region.overlay_index() == 0x94 {
+            b.block(0x02b09a);
             let value = self.game_state.display.ppu_scroll_copy.bg1_v_copy2() | 0x0100;
             self.set_bg1_y(value);
-        }
+        } else { b.taken(0x02b098); }
+        b.block(0x02b0a0);
 
         let overworld_screen = self.game_state.world.region.prev_screen_index_word();
         self.set_overworld_screen_word(overworld_screen);
@@ -1154,12 +1223,18 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadOverworldOverlay(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02fd0d));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x02fd0d);
         self.overworld_load_load_sub_overlay_map32();
         self.LoadOverworldOverlayAfterMap32();
     }
 
     fn LoadOverworldOverlayAfterMap32(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02fd0d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02fd12);
         self.Map16ToMap8(OverworldMap16SourcePage::Overlay, 0x1000);
+        b.block(0x02fd1c);
         self.set_pending_nmi_subroutine(4);
         self.set_core_update_disable_flag(4);
         self.increment_submodule();
@@ -2700,6 +2775,7 @@ impl ZeldaState {
             .dungeon
             .room_tilemaps
             .bg2_tile_by_byte_pos(pos);
+        self.price_overworld_tool_tile_prefix(attr);
         let mut yv = 0u16;
         let mut check_secret = false;
         let mut memoize = false;
@@ -2805,6 +2881,57 @@ impl ZeldaState {
             self.ancilla_add_bush_poof(sx, sy);
         }
         tile_attr
+    }
+
+    // $1B:BD82..BE48 is the selection prefix, before any terrain mutation
+    // or secret child. BF1A is owned only on the prefix's actual early exit.
+    fn price_overworld_tool_tile_prefix(&self, attr: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bbd82));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bbd82);
+        let hand = self.game_state.player.follower_link.item_in_hand();
+        if hand & 2 != 0 {
+            b.taken(0x1bbdaa); b.block(0x1bbdcc);
+            if attr != 0x21b {
+                b.taken(0x1bbdd4); b.block(0x1bbde9);
+                b.block(0x1bbdec); b.block(0x1bbf1a);
+            } else {
+                b.block(0x1bbdd6); b.block(0x1bbde3);
+            }
+            return;
+        }
+        b.block(0x1bbdac);
+        if hand & 0x40 != 0 {
+            b.block(0x1bbdb4);
+            if attr == 0x36 { b.taken(0x1bbdbf); b.block(0x1bbdc9); }
+            else {
+                b.block(0x1bbdc1);
+                if attr == 0x72a { b.block(0x1bbdc9); }
+                else { b.taken(0x1bbdc7); b.block(0x1bbdec); b.block(0x1bbf1a); }
+            }
+            return;
+        }
+        b.taken(0x1bbdb2);
+        for (value, pc, branch) in [(0x34,0x1bbdef,0x1bbdf7),(0x71,0x1bbdf9,0x1bbdfc),
+            (0x35,0x1bbdfe,0x1bbe01),(0x10d,0x1bbe03,0x1bbe06),(0x10f,0x1bbe08,0x1bbe0b),
+            (0xe1,0x1bbe0d,0x1bbe10),(0xe2,0x1bbe12,0x1bbe15),(0xda,0x1bbe17,0x1bbe1a),
+            (0xf8,0x1bbe1c,0x1bbe1f),(0x10e,0x1bbe21,0x1bbe24)] {
+            b.block(pc);
+            if attr == value {
+                b.taken(branch); b.block(0x1bbe3e);
+                if self.game_state.player.follower_link.position_mode() != 1 {
+                    b.taken(0x1bbe47); b.block(0x1bbe3b); b.block(0x1bbf1a);
+                }
+                return;
+            }
+        }
+        b.block(0x1bbe26);
+        if attr == 0x37e { b.taken(0x1bbe29); return; }
+        b.block(0x1bbe2b);
+        if attr == 0x36 { b.taken(0x1bbe31); return; }
+        b.block(0x1bbe33);
+        if attr == 0x72a { b.taken(0x1bbe39); return; }
+        b.block(0x1bbe3b); b.block(0x1bbf1a);
     }
 
     /// ROM: `Overworld_PickHammerSfx`
@@ -6510,6 +6637,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Map16ToMap8(&mut self, source_page: OverworldMap16SourcePage, r20: i32) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02fd46));
         let mut cursor = self.native_overworld_map8.take().unwrap_or_else(||
             self.begin_overworld_map8_cursor(source_page, r20 as u16));
         assert_eq!(cursor.source_page, source_page);
@@ -6520,6 +6648,10 @@ impl ZeldaState {
     pub(super) fn begin_overworld_map8_cursor(
         &mut self, source_page: OverworldMap16SourcePage, upload_base: u16,
     ) -> NativeOverworldMap8Cursor {
+        if source_page == OverworldMap16SourcePage::Overlay {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02fd26));
+            crate::cycle_ledger::blocks(self.lag_free).block(0x02fd26);
+        }
         // $02:FD46..FD57: Map16ToMap8 prologue.
         if self.lag_free { crate::cycle_ledger::charge(254); }
         let map16_src = self.overworld_map16_src_off().wrapping_add(0x1000);

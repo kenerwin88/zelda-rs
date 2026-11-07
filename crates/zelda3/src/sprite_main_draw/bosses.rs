@@ -1137,7 +1137,11 @@ impl ZeldaState {
     // void SpriteDraw_Moldorm_Head(int k) {  // 9dd993 — sprite_main.c:17976
     // -----------------------------------------------------------------------
     pub(super) fn sprite_09_giant_moldorm(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd74e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dd74e);
         self.giant_moldorm_draw(k);
+        b.block(0x1dd751);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -1324,12 +1328,12 @@ impl ZeldaState {
         b.block(0x1dd8ea);
         self.giant_moldorm_incremental_segment_explosion(k);
         b.block(0x1dd8ed);
-        let cur_x = u16::from(self.sprite_slot_view(k).x_low())
-            | (u16::from(self.sprite_slot_view(k).x_high()) << 8);
-        let cur_y = u16::from(self.sprite_slot_view(k).y_low())
-            | (u16::from(self.sprite_slot_view(k).y_high()) << 8);
-        self.sprite_workspace_mut().set_current_sprite_x(cur_x);
-        self.sprite_workspace_mut().set_current_sprite_y(cur_y);
+        {
+            let _long = self.lag_free.then(|| crate::cycle_ledger::routine(0x0684bd));
+            b.block(0x0684bd);
+            self.sprite_get16_bit_coords(k);
+            b.block(0x0684c0);
+        }
         b.block(0x1dd8f1);
     }
 
@@ -2137,14 +2141,27 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Moldorm_Draw(int k) {  // 9df822
     pub(super) fn moldorm_draw(&mut self, k: usize) {
+        // Own the complete on-screen body, after the coordinate child's
+        // carry test. F822..F828 remains an explicit unpriced entry prefix.
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Long) else {
             return;
         };
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1df829));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1df829);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let mut base = self.sprite_slot_view(k).direction().wrapping_sub(1);
-        for _ in (0..2).rev() {
+        for i in (0..2).rev() {
             let idx = usize::from(base & 0x0f);
+            b.block(0x1df837);
+            if idx == 15 { b.crossing(0x1df843); }
             let y = moldorm_eye_oam_y(info_y, MOLDORM_DRAW_Y_OFFSETS[idx] as i16 as u16);
+            let offset = MOLDORM_DRAW_Y_OFFSETS[idx] as i16 as u16;
+            let sum = u32::from(info_y) + u32::from(offset);
+            if (sum as u16).wrapping_add(16).wrapping_add(u16::from(sum > 0xffff)) < 256 { b.taken(0x1df85e); }
+            else { b.block(0x1df860); }
+            b.block(0x1df864);
+            if i != 0 { b.taken(0x1df882); }
             self.set_oam_helper1_at(
                 oam,
                 info_x.wrapping_add(MOLDORM_DRAW_X_OFFSETS[idx] as i16 as u16),
@@ -2156,6 +2173,7 @@ impl ZeldaState {
             oam += 4;
             base = base.wrapping_add(2);
         }
+        b.block(0x1df884);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
@@ -2169,6 +2187,7 @@ impl ZeldaState {
         self.moldorm_history_mut(j).set_position(x, y);
 
         for i in (0..3).rev() {
+            b.block(0x1df8c2);
             let j = usize::from(
                 self.sprite_slot_view(k)
                     .subtype2()
@@ -2184,6 +2203,10 @@ impl ZeldaState {
                 .y()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
                 .wrapping_add(MOLDORM_DRAW_XY[i] as i16 as u16);
+            if y.wrapping_add(16) < 256 { b.taken(0x1df91a); }
+            else { b.block(0x1df91c); }
+            b.block(0x1df920);
+            if i != 0 { b.taken(0x1df93c); }
             self.set_oam_helper0_at(
                 oam,
                 x,
@@ -2194,6 +2217,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x1df93e);
     }
 
     // -----------------------------------------------------------------------

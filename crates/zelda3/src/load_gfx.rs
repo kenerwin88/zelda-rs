@@ -2008,6 +2008,7 @@ impl ZeldaState {
         } else {
             0
         };
+        self.price_gear_palette_copy(2);
         self.load_gear_palette_from_asset(82, sword_index * 3, 0x1b2, 2);
         self.increment_cgram_update_flag();
     }
@@ -2020,8 +2021,22 @@ impl ZeldaState {
         } else {
             0
         };
+        self.price_gear_palette_copy(3);
         self.load_gear_palette_from_asset(83, shield_index * 4, 0x1b8, 3);
         self.increment_cgram_update_flag();
+    }
+
+    // These two asset-backed callers execute the same EF7B copy as the
+    // ROM-address-backed palette path. Their caller instructions remain separate.
+    fn price_gear_palette_copy(&self, last: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bef7b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bef7b);
+        for i in 0..=last {
+            b.block(0x1bef82);
+            if i < last { b.taken(0x1bef93); }
+        }
+        b.block(0x1bef95);
     }
 
     /// ROM: `Palette_Load_SpriteMain`
@@ -7375,6 +7390,23 @@ mod system1_palette_tests {
                         let _scope = crate::cycle_ledger::routine(routine);
                         if entry == 0xecc5 { n.palette_load_sp5l(); } else { n.palette_load_sp6l(); }
                     });
+            }
+        }
+    }
+
+    #[test]
+    fn prefix24_sword_and_shield_copy_children_match_unmodified_rom() {
+        for sword in [0, 1, 2, 3, 4, 0xff] {
+            for shield in 0..=3 {
+                for entry in [0xed03, 0xed29] {
+                    let mut n = native();
+                    n.write_wram_byte(0xf359, sword); n.write_wram_byte(0xf35a, shield);
+                    n.sync_native_game_state_from_ram();
+                    let s = source(&n, entry, true);
+                    crate::cycle_ledger::assert_rom_marker_work(0x1bef7b, s,
+                        |s| s.cpu.k == 0x1b && (0xef7b..0xef96).contains(&s.cpu.pc),
+                        || if entry == 0xed03 { n.palette_load_sword(); } else { n.palette_load_shield(); });
+                }
             }
         }
     }

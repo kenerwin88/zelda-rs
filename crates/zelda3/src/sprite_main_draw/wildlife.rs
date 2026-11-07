@@ -10,6 +10,32 @@ use crate::types::sign8;
 
 impl ZeldaState {
 
+    pub(super) fn sprite_09_moldorm_bounce(&mut self, k: usize) {
+        let _bounce = self.lag_free.then(|| crate::cycle_ledger::routine(0x069469));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069469);
+        {
+            let _long = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd6f6));
+            b.block(0x1dd6f6);
+            self.sprite_09_giant_moldorm(k);
+            b.block(0x1dd6fc);
+        }
+        b.block(0x06946d);
+    }
+
+    pub(super) fn sprite_00_raven_bounce(&mut self, k: usize) {
+        let _bounce = self.lag_free.then(|| crate::cycle_ledger::routine(0x06946e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06946e);
+        {
+            let _long = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddd7b));
+            b.block(0x1ddd7b);
+            self.sprite_raven(k);
+            b.block(0x1ddd81);
+        }
+        b.block(0x069472);
+    }
+
     // -----------------------------------------------------------------------
     // void Crab_Draw(int k) {  // 859510
     //   Two mirrored 16x16 body tiles plus the common shadow.
@@ -156,7 +182,7 @@ impl ZeldaState {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 b.block(0x1dddae);
-                let r = self.sprite_is_right_of_link(k);
+                let r = self.sprite_is_right_of_link_bank1d(k);
                 b.block(0x1dddb1); b.block(0x1dde5a);
                 let value = (self.sprite_slot_view(k).oam_flags() & !0x40) | r.a.wrapping_mul(0x40);
                 self.sprite_slot_view_mut(k).set_oam_flags(value);

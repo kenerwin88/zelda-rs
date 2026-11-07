@@ -1046,6 +1046,7 @@ impl ZeldaState {
 
     pub(in crate::zelda_rtl) fn guard_parry_far_prefix(&self) {
         // $05:C25F JSL $06:EB5E, suspended inside EB76 at EB94.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05c25f);
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb5e));
         crate::cycle_ledger::blocks(self.lag_free).block(0x06eb5e);
     }
@@ -2263,6 +2264,16 @@ impl ZeldaState {
         k: usize,
         entry: SpriteRecoilEntry,
     ) -> bool {
+        if entry == SpriteRecoilEntry::Rom1DE8C5 {
+            // The first branch is owned for every path; only its zero-recoil
+            // return is complete here. The nonzero body remains unpriced.
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1de8c5));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(0x1de8c5);
+            if self.sprite_slot_view(k).f() == 0 {
+                b.taken(0x1de8c8); b.block(0x1de943); return false;
+            }
+        }
         let axis = match entry {
             SpriteRecoilEntry::Unpriced | SpriteRecoilEntry::Rom05F971 | SpriteRecoilEntry::Rom06FF78 => None,
             SpriteRecoilEntry::Rom1EFE9B => Some(SpriteMoveEntry::Rom1EFF34),

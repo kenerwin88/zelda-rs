@@ -2156,6 +2156,13 @@ impl ZeldaState {
         x: u16,
         y: u16,
     ) -> crate::tile_definition::NativeTile {
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bbd7a));
+            let b = crate::cycle_ledger::blocks(self.lag_free);
+            b.block(0x1bbd7a);
+            if self.game_state.world.location.is_indoors() { b.block(0x1bbd7e); }
+            else { b.taken(0x1bbd7c); }
+        }
         let attribute = if self.game_state.world.location.is_indoors() {
             self.handle_item_tile_action_dungeon(x, y)
         } else {

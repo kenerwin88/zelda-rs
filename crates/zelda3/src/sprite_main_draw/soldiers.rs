@@ -811,13 +811,20 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_47_GreenBushGuard(int k) {  // 85d1bf
     pub(super) fn sprite_47_green_bush_guard(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05d1bf));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05d1bf);
         if self.sprite_slot_view(k).ai_state() != 0 {
+            b.block(0x05d1c4);
             if self.sprite_slot_view(k).graphics() >= 14 {
+                b.block(0x05d1cb);
                 self.archer_soldier_draw(k);
+                b.block(0x05d1ce);
             } else {
+                b.taken(0x05d1c9); b.block(0x05d1d0);
                 self.bush_soldier_common_draw(k);
             }
-        }
+        } else { b.taken(0x05d1c2); }
         self.sprite_bush_guard_main(k);
     }
 
@@ -1214,17 +1221,30 @@ impl ZeldaState {
     }
 
     pub(super) fn bush_soldier_common_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05d321));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05d321);
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
+        b.block(0x05d324);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let g = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         for i in (0..2).rev() {
             let j = g + i;
+            b.block(0x05d32d);
+            if 0xe9 + j * 2 >= 0x100 { b.crossing(0x05d343); }
+            if info_y.wrapping_add(BUSH_SOLDIER_COMMON_DRAW_Y_OFFSETS[j] as i16 as u16).wrapping_add(16) < 256 {
+                b.taken(0x05d350);
+            } else { b.block(0x05d352); }
+            b.block(0x05d357);
             let mut flags = BUSH_SOLDIER_COMMON_DRAW_FLAGS[j] | 0x20;
             if i == 0 {
+                b.block(0x05d368);
                 flags = (flags & !0x0e) | info_flags;
-            }
+            } else { b.taken(0x05d366); }
+            b.block(0x05d36c);
+            if i != 0 { b.taken(0x05d37d); }
             self.set_oam_helper0_at(
                 oam,
                 info_x,
@@ -1235,5 +1255,6 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x05d37f);
     }
 }

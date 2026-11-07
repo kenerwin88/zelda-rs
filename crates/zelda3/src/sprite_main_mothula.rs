@@ -5232,7 +5232,23 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn giant_moldorm_incremental_segment_explosion(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd8f2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dd8f2);
         let aux4 = self.sprite_slot_view(k).delay_aux4();
+        if self.sprite_slot_view(k).state() != 9 { b.taken(0x1dd8f7); }
+        else {
+            b.block(0x1dd8f9);
+            if aux4 == 0 { b.taken(0x1dd8fc); }
+            else {
+                b.block(0x1dd8fe);
+                if aux4 >= 80 { b.taken(0x1dd900); }
+                else {
+                    b.block(0x1dd902);
+                    if ((aux4 & 15) | self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) != 0 { b.taken(0x1dd909); }
+                }
+            }
+        }
         if self.sprite_slot_view(k).state() == 9
             && aux4 != 0
             && aux4 < 80
@@ -5241,9 +5257,11 @@ impl ZeldaState {
                 | self.game_state.frame.modal_pause_flag)
                 == 0
         {
+            b.block(0x1dd90b);
             self.sprite_slot_view_mut(k).add_b(1);
             self.sprite_make_boss_explosion(k);
         }
+        b.block(0x1dd912);
     }
 
     // void Sprite_ArmosCrusher(int k) {  // 9def7e

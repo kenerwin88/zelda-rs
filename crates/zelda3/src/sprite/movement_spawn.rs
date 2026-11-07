@@ -525,6 +525,19 @@ impl ZeldaState {
         }
     }
 
+    pub(in crate::zelda_rtl) fn sprite_is_right_of_link_bank1d(&self, k: usize) -> PairU8 {
+        let _near = self.lag_free.then(|| crate::cycle_ledger::routine(0x1de898));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1de898);
+        let long = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eacd));
+        b.block(0x06eacd);
+        let result = self.sprite_is_right_of_link(k);
+        b.block(0x06ead0);
+        drop(long);
+        b.block(0x1de89c);
+        result
+    }
+
     pub(in crate::zelda_rtl) fn sprite_is_below_link(&self, k: usize) -> PairU8 {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06_eae8));
         let blocks = crate::cycle_ledger::blocks(self.lag_free);

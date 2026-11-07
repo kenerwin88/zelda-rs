@@ -113,7 +113,7 @@ impl ZeldaState {
         // prefix it ran in is incomplete (see `cycle_ledger::probe_annotation`).
         let _probe = crate::cycle_ledger::probe_annotation();
         match self.sprite_slot_view(k).sprite_type() {
-            0x00 => self.sprite_raven(k),
+            0x00 => self.sprite_00_raven_bounce(k),
             0x01 => self.sprite_01_vulture_bounce(k),
             0x02 => self.sprite_02_stalfos_head(k),
             0x03 => {}
@@ -122,7 +122,7 @@ impl ZeldaState {
             0x06 => self.sprite_pull_switch_bounce(k),
             0x07 => self.sprite_pull_switch_bounce(k),
             0x08 => self.sprite_08_octorok(k),
-            0x09 => self.sprite_09_giant_moldorm(k),
+            0x09 => self.sprite_09_moldorm_bounce(k),
             0x0a => self.sprite_08_octorok(k),
             0x0b => self.sprite_0_b_cucco(k),
             0x0c => self.sprite_0_c_octorok_stone(k),

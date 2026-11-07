@@ -294,7 +294,7 @@ impl ZeldaState {
     // void SpritePrep_StandardGuard(int k) {  // 868fd6
     pub(super) fn sprite_prep_standard_guard(&mut self, k: usize) {
         if self.sprite_prep_standard_guard_before_trooper(k) {
-            self.sprite_prep_trooper_and_archer_soldier(k);
+            self.sprite_prep_trooper_and_archer_soldier_body(k);
         }
     }
 
@@ -302,25 +302,36 @@ impl ZeldaState {
     /// the shared trooper/archer helper is the next source call; `false`
     /// means the initializer returned through its indoor early exit.
     fn sprite_prep_standard_guard_before_trooper(&mut self, k: usize) -> bool {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x068fd6);
         let subtype = self.sprite_slot_view(k).subtype();
         if subtype != 0 {
+            b.block(0x068fdb);
             if (subtype & 7) >= 5 {
+                b.taken(0x068fe1); b.block(0x069003);
+                if subtype & 7 == 5 { b.taken(0x069003); } else { b.block(0x069005); }
+                b.block(0x069007);
                 let j = usize::from(if (subtype & 7) != 5 { 4 } else { 0 } + ((subtype >> 3) & 3));
                 self.sprite_slot_view_mut(k)
                     .set_b(SPRITE_PREP_STANDARD_GUARD_GUARD_SUBTYPE_B_REMAP[j]);
                 self.sprite_slot_view_mut(k).masked_or_flags(0x0f, 0x50);
                 return true;
             }
+            b.block(0x068fe3);
             self.sprite_slot_view_mut(k)
                 .set_direction(((subtype & 7).wrapping_sub(1)) ^ 1);
-        }
+        } else { b.taken(0x068fd9); }
+        b.block(0x068fe9);
         if self.game_state.world.location.is_indoors() {
+            b.taken(0x068feb); b.block(0x068fcf);
             self.sprite_slot_view_mut(k).and_flags5(!0x80);
             return false;
         }
+        b.block(0x068fed);
         self.sprite_slot_view_mut(k).set_ai_state(1);
         self.sprite_slot_view_mut(k).set_delay_main(112);
         let dir = self.sprite_direction_to_face_link(k);
+        b.block(0x068ffa); b.block(0x069001);
         self.sprite_slot_view_mut(k).set_direction(dir);
         self.sprite_slot_view_mut(k).set_head_direction(dir);
         true
@@ -328,13 +339,20 @@ impl ZeldaState {
 
     // void SpritePrep_TrooperAndArcherSoldier(int k) {  // 869001
     pub(super) fn sprite_prep_trooper_and_archer_soldier(&mut self, k: usize) {
+        crate::cycle_ledger::blocks(self.lag_free).block(0x069001);
+        self.sprite_prep_trooper_and_archer_soldier_body(k);
+    }
+
+    fn sprite_prep_trooper_and_archer_soldier_body(&mut self, k: usize) {
         let bak0 = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
         self.sprite_active_main_jsr(k);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x069031);
         self.sprite_active_main_jsr(k);
         self.sprite_prep_trooper_and_archer_soldier_suffix(k, bak0);
     }
 
     pub(super) fn sprite_prep_trooper_and_archer_soldier_prefix(&mut self, k: usize) -> u8 {
+        crate::cycle_ledger::blocks(self.lag_free).block(0x069025);
         let bak0 = self.game_state.frame.submodule;
         self.set_submodule(0);
         let deflection_bits = (self.sprite_slot_view(k).deflection_bits() >> 1) | 0x80;
@@ -344,6 +362,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_trooper_and_archer_soldier_suffix(&mut self, k: usize, bak0: u8) {
+        crate::cycle_ledger::blocks(self.lag_free).block(0x069034);
         let deflection_bits = self.sprite_slot_view(k).deflection_bits().wrapping_shl(1);
         self.sprite_slot_view_mut(k)
             .set_deflection_bits(deflection_bits);
