@@ -893,12 +893,23 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_63_DebirandoPit(int k) {  // 858531
     pub(super) fn sprite_63_debirando_pit(&mut self, k: usize) {
-        let (_, pt) = self.sprite_direction_and_offset_to_face_link(k);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x058531));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x058531);
+        let (_, pt) = self.sprite_direction_and_offset_to_face_link_bank5(k);
+        b.block(0x058534);
+        if pt.y.wrapping_add(0x20) >= 0x40 { b.taken(0x05853b); }
+        else {
+            b.block(0x05853d);
+            if pt.x.wrapping_add(0x20) >= 0x40 { b.taken(0x058544); }
+        }
         if pt.y.wrapping_add(0x20) < 0x40 && pt.x.wrapping_add(0x20) < 0x40 {
+            b.block(0x058546);
             self.oam_allocate_from_region_b(16);
         }
-
+        b.block(0x05854c);
         self.debirando_pit_draw(k);
+        b.block(0x05854f);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -996,7 +1007,12 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_64_Debirando(int k) {  // 85874d
     pub(super) fn sprite_64_debirando(&mut self, k: usize) {
+        // Two-call entry only; the dispatched AI suffix is still unpriced.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05874d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05874d);
         self.debirando_draw(k);
+        b.block(0x058750);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }

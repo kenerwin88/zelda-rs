@@ -1149,6 +1149,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_66_WallCannonVerticalLeft(int k) {  // 858090
     pub(super) fn sprite_66_wall_cannon_vertical_left(&mut self, k: usize) {
+        // Table selection and the two-call entry. Movement/spawn suffix
+        // stays unpriced; its existing children keep their own charges.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x058090));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x058090);
         let mut j = usize::from(self.sprite_slot_view(k).direction());
         let value = SPRITE_66_WALL_CANNON_VERTICAL_LEFT_LOCAL_GRAPHICS[j]
             + u8::from(self.sprite_slot_view(k).delay_aux2() != 0);
@@ -1158,6 +1163,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         // ROM $05:80AB JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x0580af);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }

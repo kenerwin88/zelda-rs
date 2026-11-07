@@ -1005,22 +1005,36 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_57_DesertStatue(int k) {  // 85956d
     pub(super) fn sprite_57_desert_statue(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05956d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05956d);
         self.desert_barrier_draw(k);
+        b.block(0x059570);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // ROM $05:9573
+        b.block(0x059573);
         let dmg = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x059577);
         if dmg {
+            b.block(0x05957a);
             self.sprite_nullify_hookshot_drag();
+            b.block(0x05957e);
             self.sprite_repel_dash();
-        }
-        if self.sprite_slot_view(k).delay_main() != 0 || sign8(self.sprite_slot_view(k).ai_state())
-        {
+        } else { b.taken(0x059578); }
+        b.block(0x059582);
+        if self.sprite_slot_view(k).delay_main() != 0 {
+            b.taken(0x059586); b.block(0x059594);
             return;
         }
-
+        b.block(0x059588);
+        if sign8(self.sprite_slot_view(k).ai_state()) {
+            b.taken(0x05958b); b.block(0x059594); return;
+        }
+        b.block(0x05958d);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.block(0x05958f);
             if self
                 .game_state
                 .messaging
@@ -1028,8 +1042,10 @@ impl ZeldaState {
                 .message_or_sprite_state_cache()
                 == 0
             {
+                b.block(0x059594);
                 return;
             }
+            b.taken(0x059592); b.block(0x059595);
             let value = self
                 .game_state
                 .messaging
@@ -1039,36 +1055,54 @@ impl ZeldaState {
             let value = 128;
             self.sprite_slot_view_mut(k).set_delay_main(value);
             self.set_ambient_sound_effect(7);
-        }
+        } else { b.taken(0x05958d); }
 
+        b.block(0x0595a2);
+        if !dmg { b.taken(0x0595a2); }
+        else {
+            b.block(0x0595a4);
+            if self.game_state.player.follower_link.incapacitated_timer() != 0 { b.taken(0x0595a6); }
+        }
         if dmg && self.game_state.player.follower_link.incapacitated_timer() == 0 {
+            b.block(0x0595a8);
             self.follower_link_state_mut().set_incapacitated_timer(16);
             self.sprite_apply_speed_towards_link(k, 32);
+            b.block(0x0595b2);
         }
 
+        b.block(0x0595ba);
         let j = usize::from(self.sprite_slot_view(k).direction());
         let value = SPRITE_57_DESERT_STATUE_XV[j] as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         let value = SPRITE_57_DESERT_STATUE_YV[j] as u8;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
+        if (0x95fe + j) >> 8 != 0x95fe >> 8 { b.crossing(0x0595c3); }
         // ROM $05:95C9
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x0595cc);
         // ROM $05:95CC -> $05:B88D -> $06:E496
-        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) != 0 {
+        let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) != 0;
+        b.block(0x0595cf);
+        if collision {
+            b.block(0x0595d1);
             let value =
                 SPRITE_57_DESERT_STATUE_NEXT_D[usize::from(self.sprite_slot_view(k).direction())];
             self.sprite_slot_view_mut(k).set_direction(value);
-        }
+        } else { b.taken(0x0595cf); }
+        b.block(0x0595da);
         self.follower_link_state_mut().immobilize();
         self.sprite_slot_view_mut(k).add_subtype2(1);
         if (self.sprite_slot_view(k).subtype2() & 1) == 0 {
+            b.block(0x0595e9);
             self.sprite_slot_view_mut(k).add_g(1);
             if self.sprite_slot_view(k).g() == 130 {
+                b.block(0x0595f3);
                 let value = 128;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
                 self.follower_link_state_mut().clear_immobilized();
-            }
-        }
+            } else { b.taken(0x0595f1); }
+        } else { b.taken(0x0595e7); }
+        b.block(0x0595fb);
     }
 
     // -----------------------------------------------------------------------
@@ -1089,7 +1123,7 @@ impl ZeldaState {
         b.block(0x059637);
         let x_step = (self.sprite_slot_view(k).delay_main() >> 1) & 1;
         self.sprite_workspace_mut().add_current_sprite_x_low(x_step);
-        let (_, pt) = self.sprite_direction_and_offset_to_face_link(k);
+        let (_, pt) = self.sprite_direction_and_offset_to_face_link_bank5(k);
         b.block(0x059644);
         if pt.x.wrapping_add(0x20) >= 0x40 {
             b.taken(0x05964b);

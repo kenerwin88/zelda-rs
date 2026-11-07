@@ -82,6 +82,25 @@ mod tests {
     use super::VisibleSwordOamSlotCursor;
 
     #[test]
+    fn prefix23_bit_scan_matches_every_byte_in_unmodified_rom() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for value in 0..=255u16 {
+            let mut n = super::ZeldaState::new(); n.set_lag_free(true);
+            let mut s = snes::Snes::new();
+            s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+            s.cpu.e = false; s.cpu.unpack_flags(0x30); s.cpu.k = 0x0d;
+            s.cpu.db = 0x0d; s.cpu.pc = 0xaac3; s.cpu.a = 0xab00 | value; s.cpu.sp = 0x1fc;
+            s.ram[0x1fd..0x1ff].copy_from_slice(&0x7fffu16.to_le_bytes());
+            let mut result = 0;
+            let source = crate::cycle_ledger::assert_rom_marker_work(0x0daac3, s,
+                |s| s.cpu.k == 0x0d && (0xaac3..0xaacc).contains(&s.cpu.pc),
+                || result = n.find_most_significant_bit(value as u8));
+            assert_eq!(result, source.snes().cpu.x as u8);
+        }
+    }
+
+    #[test]
     fn visible_sword_oam_slot_cursor_advances_only_for_emitted_tiles() {
         let mut slots = VisibleSwordOamSlotCursor::new(102);
 
@@ -4017,14 +4036,22 @@ impl ZeldaState {
     }
 
     fn find_most_significant_bit(&self, mut v: u8) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0daac3));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0daac3);
         let mut i: i16 = 7;
-        while v & 0x80 == 0 {
+        loop {
+            b.block(0x0daac5);
+            if v & 0x80 != 0 { b.taken(0x0daac6); break; }
+            b.block(0x0daac8);
             i -= 1;
             if i < 0 {
                 break;
             }
+            b.taken(0x0daac9);
             v <<= 1;
         }
+        b.block(0x0daacb);
         i as u8
     }
 

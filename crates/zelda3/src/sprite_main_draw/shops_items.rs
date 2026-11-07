@@ -887,7 +887,12 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_B3_PedestalPlaque(int k) {  // 9ee044
     pub(super) fn sprite_b3_pedestal_plaque(&mut self, k: usize) {
+        // Price the two-call entry only. The interaction suffix after
+        // $E04B remains a separate omission, including all dialogue work.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ee044);
         self.sprite_prep_oam_coord(k);
+        b.block(0x1ee048);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }

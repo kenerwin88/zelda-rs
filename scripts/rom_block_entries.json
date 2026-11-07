@@ -892,5 +892,19 @@
   {"entry": "05c68c", "end": "05c69e"},
   {"entry": "05cdff", "end": "05ce23"},
   {"entry": "05ce23", "end": "05ce68"},
-  {"entry":"07a0ba","end":"07a0bb"}
+  {"entry":"07a0ba","end":"07a0bb"},
+  {"entry":"069473","end":"069478"},
+  {"entry":"1ddc72","end":"1ddc7a"},
+  {"entry":"1ddc7a","end":"1ddc88","index_max":15},
+  {"entry":"1ddd5e","end":"1ddd7b","index_max":15},
+  {"entry":"05956d","end":"0595fc","index_max":15},
+  {"entry":"0daac3","end":"0daacc"},
+  {"entry":"00f8b1","end":"00f8b7"},
+  {"entry":"00f8c6","end":"00f8e0"},
+  {"entry":"00f8e0","end":"00f8e9"},
+  {"entry":"1ee044","end":"1ee04b"},
+  {"entry":"06cba2","end":"06cbbc","index_max":15},
+  {"entry":"058090","end":"0580b2","index_max":15},
+  {"entry":"058531","end":"058552","index_max":15},
+  {"entry":"05874d","end":"058753"}
 ]

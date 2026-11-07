@@ -107,10 +107,21 @@ impl ZeldaState {
     //   Two large wing/body tiles plus common shadow.
     // }
     pub(super) fn vulture_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddd5e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ddd5e);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        let mut info = self.sprite_draw_multiple(k, &VULTURE_DRAW_FRAMES[base..base + 2]);
+        let mut info = {
+            let _draw = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8549));
+            b.block(0x1d8549);
+            let info = self.sprite_draw_multiple(k, &VULTURE_DRAW_FRAMES[base..base + 2]);
+            b.block(0x1d854d);
+            info
+        };
         // ROM $1D:DD76
+        b.block(0x1ddd76);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x1ddd7a);
     }
 
     // -----------------------------------------------------------------------
@@ -739,8 +750,26 @@ impl ZeldaState {
     //   Dormant vulture that begins circling and tracking Link.
     // }
     pub(super) fn sprite_01_vulture_bounce(&mut self, k: usize) {
+        // The two real wrappers and the caller prefix through its inactive
+        // child. The active AI suffix remains unpriced; no return is prepaid
+        // for the inactive child's stack-unwinding tail.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069473);
+        let long = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddc72));
+        b.block(0x1ddc72);
+        self.sprite_vulture(k);
+        b.block(0x1ddc78);
+        drop(long);
+        b.block(0x069477);
+    }
+
+    fn sprite_vulture(&mut self, k: usize) {
+        let _caller = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ddc7a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ddc7a);
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.vulture_draw(k);
+        b.block(0x1ddc85);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }

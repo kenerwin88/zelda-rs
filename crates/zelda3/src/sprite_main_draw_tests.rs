@@ -5,6 +5,9 @@ use crate::zelda_rtl::sprite::{
 };
 use super::*;
 
+#[path = "sprite_prefix23_tests.rs"]
+mod prefix23;
+
 #[test]
 fn prefix10_intro_dispatch_and_fade_markers_match_rom() {
     for countdown in [0, 1, 13] {

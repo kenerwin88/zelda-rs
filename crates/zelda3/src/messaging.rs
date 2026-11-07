@@ -185,6 +185,42 @@ pub(crate) struct NativeScrollCopyCursor {
 #[cfg(test)]
 mod dungeon_map_preparation_tests {
     #[test]
+    fn prefix23_prayer_dispatch_and_case_callers_match_all_rom_targets() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+        let assets = std::fs::read(root.join("zelda3_assets.dat")).unwrap();
+        for case in 0..5 {
+            for radius in [0x26, 0x40] {
+                for owner in [0x00f89a, 0x00879c] {
+                    let mut n = crate::zelda_rtl::ZeldaState::new();
+                    n.set_assets(&assets).unwrap(); n.set_lag_free(true);
+                    n.set_main_module(0x0e); n.set_submodule(5); n.set_subsubmodule(case);
+                    n.set_spotlight_window_radius_byte(radius); n.set_spotlight_window_state_byte(1);
+                    n.write_wram_word(0x20, 0x40); n.write_wram_word(0x22, 0x40);
+                    n.sync_native_game_state_from_ram();
+                    let mut s = snes::Snes::new();
+                    s.cart.load(snes::CartType::LoRom, &rom, 0x2000);
+                    s.ram.copy_from_slice(&n.wram_image());
+                    s.cpu.e = false; s.cpu.unpack_flags(0x30); s.cpu.k = 0; s.cpu.db = 0;
+                    s.cpu.pc = 0xf8b1; s.cpu.sp = 0x1fc;
+                    s.ram[0x1fd..0x200].copy_from_slice(&[0xff, 0x7f, 0]);
+                    crate::cycle_ledger::assert_rom_marker_work(owner, s,
+                        |s| s.cpu.k == 0 && if owner == 0x00879c {
+                            (0x879c..0x879f).contains(&s.cpu.pc)
+                        } else {
+                            (0x879f..0x87c0).contains(&s.cpu.pc)
+                                || (0xf8b1..0xf8b7).contains(&s.cpu.pc)
+                                || (0xf8c6..0xf8e9).contains(&s.cpu.pc)
+                        }, || {
+                            let _scope = crate::cycle_ledger::routine(0x00f89a);
+                            n.module0e_05_desert_prayer();
+                        });
+                }
+            }
+        }
+    }
+
+    #[test]
     fn early_map_configuration_precedes_held_tileset_work() {
         let mut state = crate::zelda_rtl::ZeldaState::new();
         state.set_hdma_enable_mask(0x80);
@@ -2690,10 +2726,17 @@ impl ZeldaState {
 
     /// ROM: `Module0E_05_DesertPrayer`
     pub(super) fn module0e_05_desert_prayer(&mut self) {
+        // RunInterface's JML retains its frame. The JSL dispatcher owns
+        // its entry only; its inline-table suffix belongs to this caller.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x00f8b1);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x00879c)); b.block(0x00879c); }
+        b.block(0x00879f);
         match self.game_state.frame.subsubmodule {
             0 => self.reset_transition_props_and_advance_reset_interface(),
             1 => self.apply_palette_filter_bounce(),
             2 => {
+                b.block(0x00f8c6);
                 if let Some(
                     interruption @ crate::MainLoopInterruption::DesertPrayerIris {
                         source_subsubmodule,
@@ -2726,9 +2769,11 @@ impl ZeldaState {
                     return;
                 }
                 self.desert_prayer_initialize_iris_hdma();
+                b.block(0x00f8ca);
                 self.complete_desert_prayer_case2_after_iris();
             }
             3 => {
+                b.block(0x00f8e0);
                 if let Some(
                     interruption @ crate::MainLoopInterruption::DesertPrayerIris {
                         source_subsubmodule,
@@ -2780,9 +2825,12 @@ impl ZeldaState {
                     return;
                 }
                 self.apply_palette_filter_bounce();
+                b.block(0x00f8e4);
                 self.desert_prayer_build_complete_iris_hdma_table();
+                b.block(0x00f8e8);
             }
             4 => {
+                b.block(0x00f8e4);
                 if let Some(
                     interruption @ crate::MainLoopInterruption::DesertPrayerIris {
                         source_subsubmodule,
@@ -2812,6 +2860,7 @@ impl ZeldaState {
                     return;
                 }
                 self.desert_prayer_build_complete_iris_hdma_table();
+                b.block(0x00f8e8);
             }
             _ => {}
         }

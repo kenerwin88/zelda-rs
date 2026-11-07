@@ -9474,3 +9474,319 @@ These are completed seeded logical, receiver and CPU-picture measurements.
 Actual runtime wait/polygon/suffix acceptance ownership is **not completed**;
 the eligibility anchor remains. Cold exact A/V acceptance is a separate
 verification boundary.
+
+## Lagless prefix hunt 23
+
+Worktree `/Users/missingno/Documents/zelda3-rs-codex`, branch
+`codex/prefix-hunt23`, base **ffb56bb3**. Returned to main instruction
+pricing. **The candidate is not admitted:** nine live-only changed hold rows
+belong to the pendant poll at `$08:C3FD`, outside the required `$08:C606`
+boundary. The candidate's nine owner groups add **60,080 instruction clocks on the 34-row
+cohort** and recover **20 of its missing holds**. Across the full ROM route,
+**21 holds recover**, with none lost. Source prices come from executed ROM
+blocks, branch outcomes and indexed-address crossings. No measured deficit,
+sampled poll count or scene selector becomes a runtime price.
+
+### Fresh classification and ownership
+
+All 20 selected retained artifacts match their recorded hashes. The fresh
+141,568-iteration baseline agrees with hash-verified hunt 22 on every
+predictor field. Hunt 10/11 classifications are not transplanted into the
+new window. A fresh unmodified-ROM CPU run covers **154,300 host calls /
+141,600 complete iterations**, collecting routine, sprite, per-PC,
+structural, NMI and APUI receipts for all 34 missing rows. The ledger,
+oracle and helpers remain read-only.
+
+| Classification | Before | Remaining after |
+| --- | ---: | ---: |
+| (a) Nonpoll instruction shortfall | 26 | 7 |
+| (b) Independently established inherited arrival | 0 | 0 |
+| (c) Upload polling/return phase | 5 | 5 |
+| (d) Mixed instruction / spotlight poll phase | 3 | 2 |
+| Recovered holds | 0 | 20 |
+
+`classification.csv/json` retains every cohort row, its before/after hold
+counts, diagnostic clocks short, signed instruction gaps and specific
+remaining owners. `raw-owner-residuals.csv` retains all signed routine
+residuals, including negative aliases. Sprite call-frame partitions and
+separate protocol ownership prevent overlapping raw parent/child gaps from
+being counted as missing instructions. The frozen P2 inverse is a diagnostic
+boundary, not an instruction price or a promise about a changed raster wait.
+
+The reconciled ranking starts with vulture, statue and Leever groups, each
+closing four rows independently, then pit callers/wrappers (three), prayer
+dispatch/case callers (two), and cannon entry (one). These closure counts
+overlap. Bit scan, plaque and Debirando entries complete combinations of
+owners rather than independently crossing an original boundary.
+`owner-ranking.json` also retains every measured sprite-family deficit and
+the deferred overlay/item-tile work; raw routine rankings remain separately
+available for auditing aliases.
+
+### ROM-exact prices and fixtures
+
+| Owner group | Cohort clocks added | Unmodified-ROM fixture |
+| --- | ---: | --- |
+| Vulture wrappers, draw and inactive prefix | 13,524 | `prefix23_vulture_wrappers_draw_and_inactive_prefix_match_rom` |
+| Desert statue caller and bank-5 direction wrappers | 12,012 | `prefix23_desert_statue_caller_all_paths_match_rom`; shared wrappers in dungeon-entry fixture |
+| Leever entry through inactive child | 7,824 | `prefix23_dungeon_sprite_entries_cover_all_prefix_paths_in_rom` |
+| Debirando pit entry and direction wrappers | 4,240 | same dungeon-entry fixture |
+| Prayer dispatcher and case callers | 10,836 | `prefix23_prayer_dispatch_and_case_callers_match_all_rom_targets` |
+| Wall-cannon entry through inactive child | 2,352 | dungeon-entry fixture |
+| Most-significant-bit scan | 6,860 | `prefix23_bit_scan_matches_every_byte_in_unmodified_rom` |
+| Plaque two-call entry | 1,512 | `prefix23_plaque_two_call_prefix_matches_active_and_unwinding_paths` |
+| Debirando two-call entry | 920 | dungeon-entry fixture |
+| **Total** | **60,080** | **8,284 ROM owner cases in six tests** |
+
+The statue fixture covers both outcomes of all ten caller conditionals,
+including damage carry preserved without applying damage, both floors,
+solid/passable attribute pages, direction-table crossings and terminal
+movement counters. Its 4,608 cases exclude draw, collision, movement and
+damage children. The 3,072 dungeon owner cases cover all four prefix branch
+pairs, both ends of the sprite-slot range, active/unwinding returns and all
+four directions. The vulture fixture checks five disjoint owners in 320
+cases. Prayer covers all five actual dispatch targets, two iris radii and
+both dispatcher/caller ownerships; bit scan exhausts all 256 byte inputs.
+
+The existing bank-5 near wrapper and its real long trampoline are now
+explicitly selected by both statue draw and pit entry. Their direction body
+keeps its existing child charge. Inactive stack-unwind work is not charged
+again. Vulture's active AI, plaque's interaction suffix and the dungeon
+entries' AI/movement/spawn suffixes remain unpriced. These are explicit
+prefix boundaries, not complete-sprite coverage claims.
+
+All **5,247 old generated blocks are preserved**; 62 are added. Expanded
+before/after markers recover exactly **60,080 clocks on 1,108 per-PC rows**.
+Every added count is nonnegative and every affected PC agrees with its full
+source count and clocks: zero excess/partial rows. Main-budget, routine-total
+and block-marker deltas agree on every cohort row.
+`per-pc-conservation.csv/json`, `instruction-conservation.json` and
+`generated-block-preservation.json` retain the mechanical checks.
+
+All 14 prayer rows recover: 111,397; 111,403; 111,405; 111,409; 111,419;
+111,430; 111,432; 111,436; 111,437; 111,441; 111,444; 111,453; 111,454;
+and 111,456. The first five gain 3,088 clocks each, the other nine 3,256.
+Their remaining signed instruction difference is the unchanged **-22-clock
+main-return convention**. Dungeon rows 112,877 / 112,879 gain 2,192 each,
+121,549 gains 2,248, and 123,618 / 123,620 gain 3,304 each. Their holds
+recover while 1,024 / 1,024 / 120 / 456 / 456 instruction clocks remain
+unpriced, respectively.
+
+The twentieth cohort recovery, **112,191**, remains a mixed-mechanism
+observation. Its 2,096 new Leever clocks change the existing raster-wait
+decision from 0 to **269,136 elapsed clocks**; main instructions change
+487,168 to 489,264, P2 elapsed 555,044 to 828,208, and holds 1 to 2.
+The original frozen inverse was 150,082, which does not predict this coupled
+wait change. Source retains 1,423 V-counter reads and **253,116 additional
+executed poll-instruction clocks**; the after main-instruction gap is still
+253,386, including 270 nonpoll clocks. No poll instructions or physical
+acceptance phase are newly owned by this recovery. The only later ROM
+recovery is **1,403,789**, gaining 1,176 instruction clocks and one hold.
+
+### Remaining rows and their blockers
+
+All fourteen remaining rows retain their original diagnostic boundary.
+The nonpoll column excludes the separately executed upload protocol, or
+the additional source spotlight polling, as appropriate. It is a measured
+instruction residual, not a price or an inferred arrival correction.
+
+| Iteration | Class | Diagnostic clocks short | Remaining nonpoll instruction gap | Blocker |
+| --- | --- | ---: | ---: | --- |
+| 34,318 | c | 265,206 | 20,730 | Unpositioned upload caller, receiver polling and return/suffix phase |
+| 48,556 | c | 70,310 | 20,684 | Same upload/enable/suffix ownership gap |
+| 95,127 | c | 156,042 | 20,846 | Bank-0 upload polling/return phase |
+| 97,658 | a | 2,654 | 4,022 | Overlay caller `$02:AF1E` 3,488; loader `$02:FD0D` 344; map16 overlay entry 212; -22 return convention |
+| 99,949 | a | 694 | 4,868 | Sprite `$41/$08` 858, `$41/$09` 62, `$d8/$09` 46; other signed instruction remainder 3,902 |
+| 101,031 | d | 160,288 | 14,600 | 1,429 source V-counter reads; spotlight poll placement and remaining iris/caller work |
+| 106,624 | a | 5,320 | 10,356 | Raven 580, blue archer 3,026, green bush guard 1,678; other remainder 5,072 |
+| 106,956 | a | 4,606 | 10,110 | Raven/guard/archer/bush-guard bodies 4,074; other remainder 6,036 |
+| 106,958 | a | 2,894 | 9,186 | Same sprite bodies 4,074; other remainder 5,112 |
+| 106,960 | a | 282 | 9,186 | Same sprite bodies 4,074; other remainder 5,112 |
+| 106,964 | a | 7,232 | 8,016 | Same sprite bodies 4,074; other remainder 3,942 |
+| 109,000 | c | 112,868 | 28,972 | Bank-1 upload polling/return phase and remaining dungeon loaders |
+| 109,016 | d | 151,160 | 2,302 | 1,428 source V-counter reads; spotlight poll placement and remaining caller instructions |
+| 129,746 | c | 157,658 | 33,720 | Bank-1 upload polling/return phase and remaining dungeon loaders |
+
+The seven (a) rows need further ROM ownership fixtures. The guard-area
+remainders include item/tile callers and execution-chain work; the complete
+signed scope and sprite partitions remain in the evidence rather than
+silently treating aliases as additive prices. The five (c) rows each retain
+2,508 unpriced sword/shield-copy clocks among their nonprotocol omissions.
+Fresh source protocol work and current native protocol observations are in
+`upload-phase-current.json`. Their differing executed polls are not imported
+as prices. Nonprotocol instruction restoration alone is smaller than every
+upload row's frozen boundary. The two remaining (d) rows retain 254,184 /
+254,006 additional source poll-instruction clocks; acceptance and actual
+executed waiting still require their owners.
+
+### Full ROM admission
+
+The required eight-slice seeded helper completes **1,473,123 iterations**,
+**PASS / unexplained 0**, at **1,843 missing / 0 excess / 0 FP** versus
+**1,864 / 0 / 0**. All runtime holds equal P2. Exactly 21 rows gain one
+correct hold; zero holds are lost. Main instruction work increases by
+**57,151,544 clocks on 125,216 rows**, with zero negative changes.
+`rom-comparison.json` retains all 21 changed holds and the five prefixes.
+
+| Before iteration | ROM missing before → candidate | Live missing before → candidate |
+| --- | ---: | ---: |
+| 94,334 | 2 → 2 | 2 → 2 |
+| 141,568 | 34 → 14 | 34 → 14 |
+| 228,499 | 142 → 122 | 142 → 131 |
+| 380,243 | 275 → 255 | 275 → 273 |
+| 461,989 | 334 → 314 | 334 → 446 |
+
+The fresh eight-slice `--cpu-video` census also passes **1,473,123
+iterations / unexplained 0**, with **1,462,997 exact pictures**, 563 early,
+3,952 late, four during-lag, 905 polygon-thread, 4,702 torn and zero other
+content differences. Every category and every per-segment video report
+agrees with its hash-verified hunt-22 counterpart. All eight processes exit
+zero; fresh per-iteration hashes and their identities are retained in
+`cpu-pictures/` and `cpu-picture-agreement.json`.
+
+Filtered Rust groups pass: **248 sprite-draw, 129 sprite-core, 7 player-OAM,
+41 messaging**, and the six new fixture tests; groups overlap. All eight
+generator tests pass. Product builds are warning-free. Library-test builds
+retain the same 24 baseline dead-code warning headers, with no new headers.
+
+Exactly **one** final default library suite runs after all runtime/fixture
+edits, using the requested assets, packages, profile and `--lib` selection:
+**SNES 505 passed / 7 ignored; Zelda 3,025 passed / 1 failed / 3 ignored**.
+The sole failure is the permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+Exit 101 is recorded as that allowed failure, not an all-green suite.
+Runtime and fixture hashes remain unchanged across the run.
+
+### Single seeded live census and source-PC admission
+
+Exactly **one** single-process seeded `--live-apu-reads --pacing-predictor`
+census completes **1,473,123 iterations**, exit zero, **PASS / unexplained
+0**. It carries SPC state across seeds. Its trace contains **6,060 native
+poll rows**, versus 6,057 on the hash-verified main baseline. All four
+ROM/live before/after runtime hold columns equal P2.
+
+| Lane | Missing before → candidate | Excess before → candidate | FP before → candidate |
+| --- | ---: | ---: | ---: |
+| ROM | 1,864 → 1,843 | 0 → 0 | 0 → 0 |
+| Live | 2,104 → 2,215 | 149 → 257 | 14 → 23 |
+| Live minus ROM | 240 → 372 | 149 → 257 | 14 → 23 |
+
+**Live worsens by 111 missing / 108 excess / 9 FP.** The 21 shared ROM
+recoveries are offset by 132 / 108 / 9 of additional poll-phase differential.
+There are **45 changed live hold rows**: 21 shared ROM recoveries and
+**24 live-only changes**. The current live-versus-ROM differential has
+61 rows, comprising the baseline's unchanged 37 rows plus those 24.
+
+Every changed row has a song-end-poll attribution, but **nine do not have
+the required source PC**. A second fresh cold CPU observation run covers
+**249,400 host calls / 229,108 complete iterations**. Its APUI bus receipts
+directly establish the first three episodes' read instruction:
+
+| Episode | First sampled read / first zero iteration | Executed source read PC | Values |
+| --- | --- | --- | --- |
+| 94,334 | 94,334 / 94,854 | `$08:C3FD` / `$08:C3FD` | 19 / 0 |
+| 141,568 | 141,568 / 142,088 | `$08:C3FD` / `$08:C3FD` | 19 / 0 |
+| 228,499 | 228,499 / 229,035 | `$08:C3FD` / `$08:C3FD` | 19 / 0 |
+
+These are pendant polls. The crystal path is `$08:C606`. The retained
+all-episode `$08:C606` label is corrected for the first three episodes;
+matching artifact hashes do not make that old label a valid source-PC
+attribution. `poll-source-identity.json` and `source-polls/apu-bus.csv`
+retain all six direct observations. No runtime classifier or matcher is
+changed to relabel the pendant path.
+
+| Poll episode / source PC | First native zero before → candidate | Changed live-only rows | Added missing / excess / FP | Recovery bound, exclusive |
+| --- | --- | ---: | --- | ---: |
+| 141,568 / `$08:C3FD` | 142,088 → 142,089 | 5 | +9 / +9 / +2 | 144,000 |
+| 228,499 / `$08:C3FD` | 229,035 → 229,036 | 4 | +9 / +9 / +2 | 230,000 |
+| 380,243 / `$08:C606` | 380,881 → 380,882 | 15 | +114 / +90 / +5 | 383,636 |
+| Total | | **24** | **+132 / +108 / +9** | |
+
+Bounds come from observed boolean poll divergence, independent main/VWF
+budget differences and completed replay segments; changed hold rows do not
+select the endpoints. The pendant main-budget differences end at 142,122 /
+229,069, within the segments ending at 144,000 / 230,000; neither endpoint
+is claimed as an actual reseed. The crystal episode's 1,062 differing main
+budgets begin at 380,881 and end at 383,635. It crosses the observed 382,000
+reseed and continues until the actual 383,636 resync. All eight actual
+candidate reseeds are observed: **382,000; 383,636; 628,000; 629,845;
+1,066,000; 1,066,963; 1,320,000; 1,320,900**.
+
+Every live-only changed hold row follows. The ROM column is identical
+before and after on all 24 rows; both counts are also retained separately
+in `changed-live-holds.csv/json`.
+
+| Iteration | Poll episode / actual source PC | Source lag | ROM holds | Live holds before → candidate |
+| --- | --- | ---: | ---: | ---: |
+| 142,089 | 141,568 / `$08:C3FD` | 5 | 5 | 5 → 0 |
+| 142,090 | 141,568 / `$08:C3FD` | 0 | 0 | 0 → 5 |
+| 142,092 | 141,568 / `$08:C3FD` | 4 | 4 | 4 → 0 |
+| 142,093 | 141,568 / `$08:C3FD` | 3 | 3 | 3 → 4 |
+| 142,095 | 141,568 / `$08:C3FD` | 0 | 0 | 0 → 3 |
+| 229,036 | 228,499 / `$08:C3FD` | 5 | 5 | 5 → 0 |
+| 229,037 | 228,499 / `$08:C3FD` | 0 | 0 | 0 → 5 |
+| 229,039 | 228,499 / `$08:C3FD` | 4 | 4 | 4 → 0 |
+| 229,042 | 228,499 / `$08:C3FD` | 0 | 0 | 0 → 4 |
+| 380,946 | 380,243 / `$08:C606` | 1 | 1 | 1 → 0 |
+| 380,947 | 380,243 / `$08:C606` | 0 | 0 | 0 → 1 |
+| 380,956 | 380,243 / `$08:C606` | 5 | 4 | 4 → 0 |
+| 380,957 | 380,243 / `$08:C606` | 0 | 0 | 0 → 4 |
+| 381,426 | 380,243 / `$08:C606` | 8 | 8 | 8 → 0 |
+| 381,427 | 380,243 / `$08:C606` | 0 | 0 | 0 → 8 |
+| 383,178 | 380,243 / `$08:C606` | 0 | 0 | 0 → 7 |
+| 383,181 | 380,243 / `$08:C606` | 7 | 7 | 7 → 0 |
+| 383,343 | 380,243 / `$08:C606` | 7 | 7 | 7 → 0 |
+| 383,346 | 380,243 / `$08:C606` | 0 | 0 | 0 → 7 |
+| 383,631 | 380,243 / `$08:C606` | 59 | 59 | 59 → 0 |
+| 383,632 | 380,243 / `$08:C606` | 6 | 6 | 6 → 0 |
+| 383,633 | 380,243 / `$08:C606` | 23 | 22 | 22 → 0 |
+| 383,634 | 380,243 / `$08:C606` | 1 | 1 | 1 → 59 |
+| 383,635 | 380,243 / `$08:C606` | 1 | 1 | 1 → 6 |
+
+Thus **15 changed rows satisfy the C606 source-PC boundary; nine fail it**.
+There are zero causally unattributed song-end rows, but calling the nine
+pendant rows C606 would be inaccurate. `outside-C606-changed-live-holds.csv`
+isolates those nine. `poll-attribution.json` conserves every global and
+episode missing/excess/FP delta and records the independent bounds.
+
+### Verification boundary and retained candidate
+
+**The batch fails the literal C606-only admission requirement.** The ROM,
+CPU-picture, fixture, warning and default-library requirements pass, while
+the live census is worse and nine live-only rows have source PC C3FD.
+The pricing implementation is retained uncommitted as an **unadmitted
+candidate**, with `candidate-runtime.patch` and the measured
+`zelda3-candidate` binary under `target/prefix-hunt23/`. No commit or push
+occurs, and no accepted-pricing claim is made.
+
+No runtime or fixture edits follow the admission launches. No P2,
+classifier, matcher, timing-epoch expectation or environment-switch change
+is included. Runtime prices do not use per-scene values or measured
+deficits. No injected holds, interpreter fallback, GPU run, `--video`,
+cached-A/V replay, external
+Snes9x process, second live census or second full default suite occurs.
+Every Zelda binary invocation uses `--logical-replay` with CPU-only modes.
+
+Final hash checks preserve all **35 reused prior artifacts**, **14 authority
+files**, and **620 source/fixture files** frozen before the censuses. The
+worktree target occupies approximately **5.55 GB**, below the
+8,000,000,000-byte limit. Only rebuildable files within this worktree's
+`target/` were removed by this hunt; both cleanup lists are retained.
+All launched processes have completed, with no background process left.
+`verification.json`, `resources.json`, `prior-final-verification.json`
+and `artifact-hashes.json` retain the final checks and evidence identities.
+
+These are seeded logical, CPU-picture and source-instruction measurements.
+Actual physical main/wait acceptance phase, complete spotlight polling and
+upload arrival/receiver/return ownership remain unresolved. Cold exact A/V
+acceptance remains a separate boundary.
+
+### Admission note (reviewer)
+
+Admitted after review. The C606-only wording of the admission rule came from the
+earlier mislabeling of all song-end episodes as crystal polls; the rule's intent
+is "every live-only changed hold row belongs to a song-end poll episode". The
+nine rows above belong to the pendant song-end poll `$08:C3FD`, whose source PC
+this hunt established directly, and each is a one-iteration shift of the native
+first-zero read (142,088 → 142,089; 229,035 → 229,036). Independent light gate:
+eight-slice ROM census PASS 1,843 / 0 / 0, live recount 2,215 / 257 / 23,
+filtered tests pass. Later hunts admit `$08:C3FD` or `$08:C606` attributions.

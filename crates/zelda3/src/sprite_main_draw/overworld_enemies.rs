@@ -1653,15 +1653,26 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_71_Leever(int k) {  // 86cba2
     pub(super) fn sprite_71_leever(&mut self, k: usize) {
+        // Complete entry through the inactive child; AI/recoil suffix is
+        // deliberately outside this prefix's instruction ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06cba2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06cba2);
         if self.sprite_slot_view(k).ai_state() != 0 {
+            b.block(0x06cba7);
             self.leever_draw(k);
+            b.block(0x06cbaa);
         } else {
+            b.taken(0x06cba5); b.block(0x06cbac);
             self.sprite_prep_oam_coord_from(k, super::sprite::PrepOamCoordEntry::Safe);
         }
+        b.block(0x06cbaf);
         if self.sprite_slot_view(k).pause() != 0 {
+            b.block(0x06cbb4);
             let value = 8;
             self.sprite_slot_view_mut(k).set_state(value);
-        }
+        } else { b.taken(0x06cbb2); }
+        b.block(0x06cbb9);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }

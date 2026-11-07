@@ -1095,6 +1095,20 @@ impl ZeldaState {
         self.sprite_direction_and_offset_to_face_link(k).0
     }
 
+    /// The bank-5 JSR entry, including its real long-call trampoline.
+    pub(in crate::zelda_rtl) fn sprite_direction_and_offset_to_face_link_bank5(&mut self, k: usize) -> (u8, PointU8) {
+        let _bank5 = self.lag_free.then(|| crate::cycle_ledger::routine(0x05f93f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05f93f);
+        let long = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eaa0));
+        b.block(0x06eaa0);
+        let result = self.sprite_direction_and_offset_to_face_link(k);
+        b.block(0x06eaa3);
+        drop(long);
+        b.block(0x05f943);
+        result
+    }
+
     /// The direction the sprite must face to look at Link, and the sprite's
     /// signed byte offset from Link (positive when the sprite is right of or
     /// below Link).
