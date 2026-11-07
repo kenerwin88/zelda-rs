@@ -1684,6 +1684,18 @@ impl ApuState {
         &mut self,
         mut host: impl FnMut(u32, &mut [u8; 6], [u8; 4]),
     ) -> Result<u8, UnsupportedSmpMicroStep> {
+        self.run_instruction_with_host_events_without_dsp(|apu| {
+            host(apu.cycles, &mut apu.in_ports, apu.out_ports);
+        })
+    }
+
+    /// A CPU read can select a later store while the same SPC instruction
+    /// remains suspended. Let that owner enqueue the store before the next
+    /// pseudo-step, so a bus access inside this instruction sees its deadline.
+    pub fn run_instruction_with_host_events_without_dsp(
+        &mut self,
+        mut host: impl FnMut(&mut Self),
+    ) -> Result<u8, UnsupportedSmpMicroStep> {
         assert!(self.snes9x_dsp.is_none());
         assert!(self.smp_coroutine.is_idle());
         self.record_spc_instruction_trace();
@@ -1698,7 +1710,7 @@ impl ApuState {
             };
             self.apply_cycle_sequenced_smp_state(state);
             let result = result?;
-            host(self.cycles, &mut self.in_ports, self.out_ports);
+            host(self);
             if matches!(result, SmpMicroStepResult::InstructionComplete { .. }) {
                 let cycles = self.cycles.wrapping_sub(start) as u8;
                 self.spc.cycles_used = cycles;

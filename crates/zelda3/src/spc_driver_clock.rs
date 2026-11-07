@@ -145,24 +145,31 @@ impl HostPortTransport {
         // Original Interrupt_NMI $80df-$811b: command source bytes and
         // acknowledgement bytes have distinct owners. In particular $12d
         // nonzero always republishes APUI01, even if its value repeats.
-        let music = if latches[0] != 0 {
-            (latches[0] != last[0]).then_some(latches[0])
+        let music = self.nmi_music_write(latches[0], last[0], acknowledgements[0]);
+        let ambient = self.nmi_ambient_write(latches[1], last[1], acknowledgements[1]);
+        HostPortWrites { writes: [music, ambient, Some(latches[2]), Some(latches[3])] }
+    }
+
+    fn nmi_music_write(&mut self, command: u8, last: u8, acknowledgement: u8) -> Option<u8> {
+        let music = if command != 0 {
+            (command != last).then_some(command)
         } else {
-            (acknowledgements[0] == last[0]).then_some(0)
-        };
-        let ambient = if latches[1] != 0 {
-            Some(latches[1])
-        } else {
-            (acknowledgements[1] == last[1]).then_some(0)
+            (acknowledgement == last).then_some(0)
         };
         if let Some(value) = music.filter(|value| *value != 0) {
             self.requested_music = value;
         }
+        music
+    }
+
+    fn nmi_ambient_write(&mut self, command: u8, last: u8, acknowledgement: u8) -> Option<u8> {
+        let ambient = if command != 0 { Some(command) }
+            else { (acknowledgement == last).then_some(0) };
         if let Some(value) = ambient {
             self.ambient_input = value;
             if value != 0 { self.requested_ambient = value; }
         }
-        HostPortWrites { writes: [music, ambient, Some(latches[2]), Some(latches[3])] }
+        ambient
     }
 
     fn frame_writes(
@@ -174,52 +181,147 @@ impl HostPortTransport {
     ) -> HostPortWrites {
         let ports = commands.legacy_ports();
         let mut writes = [None; 4];
+        writes[0] = self.music_write(ports[0], acknowledgements[0]);
+        writes[1] = self.ambient_write(ports[1], acknowledgements[1]);
 
-        // The ROM only writes APUI00 for a new music command, or writes zero
-        // after the SPC has acknowledged the last one. Merely retaining the
-        // typed command latch does not perform another host-port write.
-        if ports[0] != self.requested_music {
-            self.requested_music = ports[0];
-            writes[0] = Some(ports[0]);
-        } else if acknowledgements[0] == self.requested_music {
-            writes[0] = Some(0);
-        }
-
-        // APUI01 is likewise conditional. Track the engine latch separately
-        // from the last acknowledged effect so 0 -> same-effect retriggers are
-        // still visible after an intervening clear.
-        if ports[1] != self.ambient_input {
-            self.ambient_input = ports[1];
-            writes[1] = Some(ports[1]);
-            if ports[1] != 0 {
-                self.requested_ambient = ports[1];
-            }
-        } else if ports[1] == 0 && acknowledgements[1] == self.requested_ambient {
-            writes[1] = Some(0);
-        }
-
-        // The original NMI always latches the two one-shot effect ports. A VWF
-        // glyph which was already complete at the queued NMI boundary retains
-        // its captured APUI03 value once. A merely owned marker is not enough:
-        // frame 20620's still-drawing glyph has a real clear at this boundary,
-        // while frames 20764 and 20857 retain a completed click even if an
-        // intervening NMI has already cleared the physical port latch.
+        // The original NMI always latches the two one-shot effect ports.
         writes[2] = Some(ports[2]);
         writes[3] = Some(match vwf_glyph_tone_boundary_policy {
-            // Version-8 snapshots created before value-carrying markers only
-            // recorded "complete". Prefer the physical latch, with the ROM's
-            // dialogue click as the only reconstructable fallback.
             2 | 3 => effect2_input.max(12),
             marker if marker & 0xc0 == 0x80 => marker & 0x3f,
             _ => ports[3],
         });
         HostPortWrites { writes }
     }
+
+    fn music_write(&mut self, command: u8, acknowledgement: u8) -> Option<u8> {
+        // The ROM only writes APUI00 for a new music command, or writes zero
+        // after the SPC has acknowledged the last one. Merely retaining the
+        // typed command latch does not perform another host-port write.
+        if command != self.requested_music {
+            self.requested_music = command;
+            Some(command)
+        } else if acknowledgement == self.requested_music {
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    fn ambient_write(&mut self, command: u8, acknowledgement: u8) -> Option<u8> {
+        // APUI01 is likewise conditional. Track the engine latch separately
+        // from the last acknowledged effect so 0 -> same-effect retriggers are
+        // still visible after an intervening clear.
+        if command != self.ambient_input {
+            self.ambient_input = command;
+            if command != 0 {
+                self.requested_ambient = command;
+            }
+            Some(command)
+        } else if command == 0 && acknowledgement == self.requested_ambient {
+            Some(0)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct HostPortWrites {
     writes: [Option<u8>; 4],
+}
+
+/// An ordinary lagless NMI retains its reads as well as its stores. The CPU
+/// work below is the $80C9 audio prefix; each read waits for the executing
+/// receiver's pseudo-op boundary, just like the upload CPU's port accesses.
+#[derive(Clone, Debug)]
+struct LaglessNmi {
+    host: u64,
+    vector: u64,
+    ports: [u8; 4],
+    last: Option<[u8; 2]>,
+    handled: [Option<Option<u8>>; 4],
+    music: Option<Option<u8>>,
+    music_work: u64,
+}
+
+impl LaglessNmi {
+    fn next_read_master(&self) -> u64 {
+        // A direct command branch has no APU dependency. Select its stores
+        // before running the receiver, rather than pretending it read APUI.
+        let work = match self.music {
+            None if self.ports[0] != 0 || self.handled[0].is_some() => 0,
+            None => 390,
+            Some(_) if self.ports[1] != 0 || self.handled[1].is_some() => 390,
+            Some(_) => self.music_work + 72,
+        };
+        nmi_audio_access_master_clock(self.vector, work)
+    }
+
+    fn advance(&mut self, cycle: u64, output: [u8; 4], transport: &mut HostPortTransport,
+        events: &mut Vec<(u64, u8, u8)>, silent: bool) -> bool
+    {
+        while snes_master_clock_to_apu_cycle(self.next_read_master()) <= cycle {
+            let port = usize::from(self.music.is_some());
+            let master = self.next_read_master();
+            // Nonzero commands take the ROM's direct branch, without an APUI
+            // read. The decision point still precedes the branch's store.
+            if !silent && port_trace_selected(self.host) && self.ports[port] == 0 {
+                eprintln!("spc_nmi_read host={} master={master} cycle={cycle} port={port} value={}",
+                    self.host, output[port]);
+            }
+            if port == 0 {
+                let write = if let Some(last) = self.last {
+                    transport.nmi_music_write(self.ports[0], last[0], output[0])
+                } else { transport.music_write(self.ports[0], output[0]) };
+                let write = self.handled[0].unwrap_or(write);
+                self.music = Some(write);
+                self.music_work = if let Some(last) = self.last {
+                    // $80DF/$80F1 branches, including BCS for controls >=F2.
+                    // These are executed instructions through $8103, not a
+                    // duration inferred from whether a port happened to store.
+                    if self.ports[0] == 0 {
+                        if write == Some(0) { 496 } else { 450 }
+                    } else if self.ports[0] == last[0] { 426 }
+                    else if self.ports[0] < 0xf2 { 578 } else { 552 }
+                } else { 450 + music_path_suffix(write) };
+                if self.handled[0].is_none() && let Some(value) = write {
+                    let writes = HostPortWrites { writes: [write, None, None, None] };
+                    let master = nmi_audio_access_master_clock(self.vector, host_port_cpu_work(writes)[0]);
+                    let target = snes_master_clock_to_apu_cycle(master);
+                    if !silent && port_trace_selected(self.host) {
+                        eprintln!("spc_nmi_store host={} master={master} cycle={target} port=0 value={value}", self.host);
+                    }
+                    events.push((target, 0, value));
+                }
+            } else {
+                let ambient = if let Some(last) = self.last {
+                    transport.nmi_ambient_write(self.ports[1], last[1], output[1])
+                } else { transport.ambient_write(self.ports[1], output[1]) };
+                let writes = HostPortWrites { writes: [self.music.unwrap(),
+                    self.handled[1].unwrap_or(ambient), Some(self.ports[2]), Some(self.ports[3])] };
+                let suffix = match writes.writes[1] {
+                    Some(0) => [0, 150, 234, 296],
+                    Some(_) => [0, 110, 204, 266],
+                    None => [0, 0, 188, 250],
+                };
+                let masters = suffix.map(|work|
+                    nmi_audio_access_master_clock(self.vector, self.music_work + work));
+                let targets = masters.map(snes_master_clock_to_apu_cycle);
+                for port in 1..4 {
+                    if self.handled[port].is_none() && let Some(value) = writes.writes[port] {
+                        if !silent && port_trace_selected(self.host) {
+                            eprintln!("spc_nmi_store host={} master={} cycle={} port={port} value={value}",
+                                self.host, masters[port], targets[port]);
+                        }
+                        events.push((targets[port], port as u8, value));
+                    }
+                }
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -619,6 +721,12 @@ pub(crate) struct AbsoluteDspEventClock {
     #[serde(skip)]
     pending_timed_main_cpu_port_writes: Vec<(u64, u8, u8)>,
     #[serde(skip)]
+    pending_lagless_nmis: Vec<LaglessNmi>,
+    #[serde(skip)]
+    pending_lagless_port_writes: Vec<(u64, u8, u8)>,
+    #[serde(skip)]
+    pending_lagless_nmi_latches: Option<([u8; 4], [u8; 2])>,
+    #[serde(skip)]
     pending_upload_return_nmi_master_clock: Option<(u64, [u8; 4], [u8; 2])>,
     #[serde(default)]
     song_bank_transfer: Option<SongBankHostTransfer>,
@@ -671,6 +779,9 @@ impl AbsoluteDspEventClock {
             pending_writes: Vec::new(),
             pending_main_cpu_port_writes: Vec::new(),
             pending_timed_main_cpu_port_writes: Vec::new(),
+            pending_lagless_nmis: Vec::new(),
+            pending_lagless_port_writes: Vec::new(),
+            pending_lagless_nmi_latches: None,
             pending_upload_return_nmi_master_clock: None,
             song_bank_transfer: None,
             completed_song_bank_id: None,
@@ -779,7 +890,9 @@ impl AbsoluteDspEventClock {
         }
         self.apu.debug_dsp_write_trace.as_mut().unwrap().clear();
         let mut polls = Vec::new();
-        let mut host_writes = if self
+        let lagless_nominal = lagless && self.song_bank_transfer.is_none();
+        let source_latches = self.pending_lagless_nmi_latches.take();
+        let mut host_writes = if lagless_nominal || self
             .song_bank_transfer
             .as_ref()
             .is_some_and(SongBankHostTransfer::suppresses_nmi_transport)
@@ -803,10 +916,8 @@ impl AbsoluteDspEventClock {
         }
         // Later nominal ports inherit the actual native branch's duration,
         // even though its own store must be excluded from delivery below.
-        let lagless_nominal = lagless && self.song_bank_transfer.is_none();
         let host_port_targets = if lagless_nominal {
-            lagless_host_port_target_cycles(self.host_frame_index, host_writes,
-                frame_start_cycle.max(self.apu_cycle_origin + u64::from(self.apu.cycles)))
+            host_port_target_cycles_at_nmi_entry(lagless_nmi_vector(self.host_frame_index), host_writes)
         } else {
             host_port_target_cycles(self.host_frame_index, host_writes)
         };
@@ -842,18 +953,18 @@ impl AbsoluteDspEventClock {
             })
             .collect();
         if lagless_nominal {
-            // Nominal NMI time belongs to the output callback in lagless,
-            // not to an accumulating physical NTSC-field count. Publish the
-            // batch to the cycle-level bus queue before executing any SPC
-            // instruction. Rounding individual stores to pseudo-op returns
-            // would lose both their spacing and their order against reads.
-            // Timed CPU accesses and the upload coroutine retain their owners.
-            for (target, port, value) in host_port_events.drain(..) {
-                self.apu.schedule_input_port_event(
-                    target.checked_sub(self.apu_cycle_origin).unwrap().try_into().unwrap(),
-                    port, value);
-                self.debug_host_port_write(target, port, value, "lagless-cycle");
-            }
+            let mut ports = source_latches.map_or(commands.legacy_ports(), |(latches, _)| latches);
+            ports[3] = match vwf_glyph_tone_boundary_policy {
+                2 | 3 => self.apu.in_ports[3].max(12),
+                marker if marker & 0xc0 == 0x80 => marker & 0x3f,
+                _ => ports[3],
+            };
+            self.pending_lagless_nmis.push(LaglessNmi {
+                host: self.host_frame_index,
+                vector: lagless_nmi_vector(self.host_frame_index),
+                ports, last: source_latches.map(|(_, last)| last), handled, music: None, music_work: 450,
+            });
+            host_port_events.clear();
         }
         // Main-CPU port writes occur after the frame's NMI audio handler. The
         // translated engine executes main work as one semantic slice, so the
@@ -882,20 +993,27 @@ impl AbsoluteDspEventClock {
         let execution_target = frame_end_cycle + SMP_CPU_LOOKAHEAD_CYCLES;
         let mut execution_cycle = self.apu_cycle_origin + u64::from(self.apu.cycles);
         while execution_cycle < execution_target {
+            advance_lagless_nmis(&mut self.pending_lagless_nmis, execution_cycle,
+                self.apu.out_ports, &mut self.host_transport,
+                &mut self.pending_lagless_port_writes, self.observation_silent);
+            self.schedule_lagless_port_writes();
             if self.pending_upload_return_nmi_master_clock.is_some_and(|(master, _, _)|
                 snes_master_clock_to_apu_cycle(master) <= execution_cycle)
             {
                 let (master, latches, last) = self.pending_upload_return_nmi_master_clock.take().unwrap();
                 assert!(self.song_bank_transfer.is_none(), "return NMI preceded upload completion");
-                let writes = self.host_transport.nmi_latch_writes(latches, last, self.apu.out_ports);
-                let targets = host_port_target_cycles_at_nmi_entry(master, writes);
-                if debug_transport {
-                    eprintln!("spc_transport_return_nmi host={} master={} writes={:?} targets={targets:?}",
-                        self.host_frame_index, master, writes.writes);
+                if lagless {
+                    self.pending_lagless_nmis.push(LaglessNmi {
+                        host: self.host_frame_index, vector: master,
+                        ports: latches, last: Some(last), handled: [None; 4], music: None, music_work: 450,
+                    });
+                } else {
+                    let writes = self.host_transport.nmi_latch_writes(latches, last, self.apu.out_ports);
+                    let targets = host_port_target_cycles_at_nmi_entry(master, writes);
+                    host_port_events.extend(writes.writes.into_iter().enumerate().filter_map(|(port, value)|
+                        value.map(|value| (targets[port], port as u8, value))));
+                    host_port_events[next_host_port..].sort_by_key(|&(target, port, _)| (target, port));
                 }
-                host_port_events.extend(writes.writes.into_iter().enumerate().filter_map(|(port, value)|
-                    value.map(|value| (targets[port], port as u8, value))));
-                host_port_events[next_host_port..].sort_by_key(|&(target, port, _)| (target, port));
             }
             let instruction_start = execution_cycle;
             let opcode = self.apu.ram[self.apu.spc.pc as usize];
@@ -951,14 +1069,26 @@ impl AbsoluteDspEventClock {
             }
             let mut transfer_completed = false;
             if execution_cycle >= self.apu_cycle_origin {
-                if self.song_bank_transfer.as_ref().is_some_and(|transfer| transfer.interleave_host_cpu) {
+                if !self.pending_lagless_nmis.is_empty()
+                    || self.song_bank_transfer.as_ref().is_some_and(|transfer| transfer.interleave_host_cpu)
+                {
                     let origin = self.apu_cycle_origin;
-                    let transfer = self.song_bank_transfer.as_mut().unwrap();
-                    self.apu.run_instruction_with_host_ports_without_dsp(|local, input, output| {
-                        transfer_completed |= transfer.advance_host_cpu_until(
-                            origin + u64::from(local), input, output,
-                        );
-                    }).expect("timed song upload reached unsupported SPC instruction");
+                    let nmis = &mut self.pending_lagless_nmis;
+                    let transport = &mut self.host_transport;
+                    let writes = &mut self.pending_lagless_port_writes;
+                    let silent = self.observation_silent;
+                    let host = self.host_frame_index;
+                    let transfer = &mut self.song_bank_transfer;
+                    self.apu.run_instruction_with_host_events_without_dsp(|apu| {
+                        let at = origin + u64::from(apu.cycles);
+                        advance_lagless_nmis(nmis, at, apu.out_ports,
+                            transport, writes, silent);
+                        schedule_lagless_port_writes(apu, writes, origin, host, silent);
+                        if let Some(transfer) = transfer.as_mut().filter(|t| t.interleave_host_cpu) {
+                            transfer_completed |= transfer.advance_host_cpu_until(at,
+                                &mut apu.in_ports, apu.out_ports);
+                        }
+                    }).expect("NMI receiver reached unsupported SPC instruction");
                 } else {
                     self.apu.run_cycle_sequenced_instruction_without_dsp();
                 }
@@ -1054,6 +1184,15 @@ impl AbsoluteDspEventClock {
             }
         }
         DspClockWindow { writes, polls }
+    }
+
+    fn schedule_lagless_port_writes(&mut self) {
+        schedule_lagless_port_writes(&mut self.apu, &mut self.pending_lagless_port_writes,
+            self.apu_cycle_origin, self.host_frame_index, self.observation_silent);
+    }
+
+    pub(crate) fn capture_lagless_nmi_latches(&mut self, latches: [u8; 4], last: [u8; 2]) {
+        self.pending_lagless_nmi_latches = Some((latches, last));
     }
 
 
@@ -1580,6 +1719,17 @@ fn advance_snes_cpu_master_clock(mut master_clock: u64, mut cpu_master_clocks: u
     master_clock
 }
 
+fn nmi_audio_access_master_clock(vector: u64, work: u64) -> u64 {
+    let at = advance_snes_cpu_master_clock(vector, work);
+    // A work endpoint may be pre-drain. Before the following bus access,
+    // pinned getset.h drains Cycles >= NextEvent, including equality.
+    if next_wram_refresh_master_clock(at) == at {
+        at + SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS
+    } else {
+        at
+    }
+}
+
 fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4] {
     // Libretro frame zero begins while the reset/bootstrap frame is already in
     // progress, so normal NMI frame N is one host callback behind the callback
@@ -1590,48 +1740,85 @@ fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4]
         + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE
         + NMI_AUDIO_NOMINAL_ENTRY_HCLOCK;
 
-    host_port_master_clock_offsets(writes)
-        .map(|offset| snes_master_clock_to_apu_cycle(nmi_entry_master_clock + offset))
+    host_port_target_cycles_at_nmi_entry(nmi_entry_master_clock, writes)
 }
 
-fn lagless_host_port_target_cycles(frame_index: u64, writes: HostPortWrites, entry: u64) -> [u64; 4] {
-    // Keep the CPU path and the fractional CPU->SPC conversion phase. Only
-    // translate the batch's epoch: one accepted lagless NMI belongs to this
-    // callback's continuous output clock.
-    // `entry` is at or ahead of execution; no individual store is clamped.
-    let master = snes_frame_start_master_clock(frame_index.saturating_sub(1))
+fn lagless_nmi_vector(frame_index: u64) -> u64 {
+    // V225 asserts this field's NMI. The pinned CPU makes it eligible twelve
+    // clocks later; slow-ROM native hardware entry executes 62 clocks.
+    // Ordinary main's interrupted instruction/DMA remainder is still unknown.
+    let eligible = snes_frame_start_master_clock(frame_index)
         + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE
-        + NMI_AUDIO_NOMINAL_ENTRY_HCLOCK;
-    let origin = snes_master_clock_to_apu_cycle(master);
-    host_port_target_cycles(frame_index, writes).map(|at| entry + (at - origin))
+        + snes::cpu_timeline::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES;
+    advance_snes_cpu_master_clock(eligible, 62)
+}
+
+fn advance_lagless_nmis(nmis: &mut Vec<LaglessNmi>, cycle: u64, output: [u8; 4],
+    transport: &mut HostPortTransport, events: &mut Vec<(u64, u8, u8)>, silent: bool)
+{
+    while let Some(nmi) = nmis.first_mut() {
+        if !nmi.advance(cycle, output, transport, events, silent) { break; }
+        nmis.remove(0);
+    }
+}
+
+fn schedule_lagless_port_writes(apu: &mut ApuState, pending: &mut Vec<(u64, u8, u8)>,
+    origin: u64, host: u64, silent: bool)
+{
+    let now = origin + u64::from(apu.cycles);
+    let mut events = std::mem::take(pending);
+    events.sort_by_key(|&(at, port, _)| (at, port));
+    for (target, port, value) in events {
+        if target <= now {
+            // An imported receiver may already be past a field's store.
+            // Retire due latches in original deadline order, with explicit
+            // lateness evidence, rather than subtracting an unsigned origin.
+            apu.in_ports[usize::from(port)] = value;
+            if !silent && port_trace_selected(host) {
+                eprintln!("spc_port_overdue host={host} target={target} delivery={now} port={port} value={value}");
+            }
+        } else if let Ok(local) = u32::try_from(target - origin) {
+            apu.schedule_input_port_event(local, port, value);
+            if !silent && port_trace_selected(host) {
+                eprintln!("spc_port_write host={host} cycle={target} port={port} value={value} delivery=lagless-cycle");
+            }
+        } else {
+            // Carry the absolute deadline until a rebase makes it fit.
+            pending.push((target, port, value));
+        }
+    }
+}
+
+fn music_path_suffix(write: Option<u8>) -> u64 {
+    match write { Some(0) => 46, Some(_) => 128, None => 0 }
 }
 
 fn host_port_target_cycles_at_nmi_entry(master: u64, writes: HostPortWrites) -> [u64; 4] {
-    // The legacy V225/C84 offsets include the one refresh crossed by that
-    // nominal handler. A held NMI may enter anywhere: advance its CPU work
-    // through refresh from its actual vector-entry position instead.
-    host_port_master_clock_offsets(writes).map(|offset|
-        snes_master_clock_to_apu_cycle(advance_snes_cpu_master_clock(
-            master, offset.saturating_sub(SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS),
+    // Price executed ROM work, then cross the pinned hardware refresh events
+    // from the actual vector position, exactly as for the handler's reads.
+    // In particular $80F3's new-music STA precedes refresh at V225/H74;
+    // $80FD's clear and the later stores cross it. No blanket stall removal.
+    host_port_cpu_work(writes).map(|work|
+        snes_master_clock_to_apu_cycle(nmi_audio_access_master_clock(
+            master, work,
         )))
 }
 
-fn host_port_master_clock_offsets(writes: HostPortWrites) -> [u64; 4] {
-    // These are durations from the clean ROM's nominal NMI entry to its APUI
-    // stores, including its one WRAM refresh. A music write lengthens the path to the ambient
-    // branch; the ambient branch then has separate no-write, clear, and new-
-    // effect paths. This models the transport protocol rather than assigning a
-    // special phase to any route frame or DSP command.
+fn host_port_cpu_work(writes: HostPortWrites) -> [u64; 4] {
+    // Executed $80C9..$811B instruction work, excluding hardware stalls.
+    // The music STA prefix is 444; the zero STZ prefix is 468. The remaining
+    // paths include their branch work, with refresh owned solely by the
+    // physical timeline. Absent-store entries are ignored by callers.
     let (port_zero_offset, music_suffix): (u64, u64) = match writes.writes[0] {
-        Some(0) => (508, 46),
+        Some(0) => (468, 46),
         Some(_) => (444, 128),
         None => (0, 0),
     };
     let (port_one_offset, port_two_offset, port_three_offset): (u64, u64, u64) =
         match writes.writes[1] {
-            Some(0) => (640, 724, 786),
-            Some(_) => (600, 694, 756),
-            None => (0, 678, 740),
+            Some(0) => (600, 684, 746),
+            Some(_) => (560, 654, 716),
+            None => (0, 638, 700),
         };
     [
         port_zero_offset,

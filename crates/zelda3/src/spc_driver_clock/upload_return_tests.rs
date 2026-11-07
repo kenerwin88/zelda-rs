@@ -59,19 +59,20 @@ fn bootstrap_nmi_cannot_suppress_the_first_lagless_effect() {
     clock.apu.debug_spc_instruction_trace = Some(Vec::new());
     // The opening NMI has already stored zero to APUI03. Its completed
     // transaction must not consume the next NMI's independently queued SFX.
-    clock.cpu_port_at(0, 3, Some(0)).unwrap();
+    let bootstrap_store = advance_snes_cpu_master_clock(lagless_nmi_vector(0), 792);
+    clock.cpu_port_at(bootstrap_store, 3, Some(0)).unwrap();
     let before = clock.cpu_ports.as_ref().unwrap().clone();
-    clock.begin_lagless_output_after_bootstrap(0);
+    clock.begin_lagless_output_after_bootstrap(bootstrap_store);
     let after = clock.cpu_ports.as_ref().unwrap();
     assert_eq!(before.clock().checkpoint(), after.clock().checkpoint());
     assert_eq!(bincode::serialize(before.machine()).unwrap(),
         bincode::serialize(after.machine()).unwrap());
-    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 10]), 8, 0);
+    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 10]), 534, 0);
     assert_eq!(clock.apu.in_ports[3], 10);
     assert!(clock.apu.debug_spc_instruction_trace.as_ref().unwrap().iter()
         .any(|step| step.pc == 0x2002 && step.a == 10),
         "the executing SPC must read the new effect, not the bootstrap clear");
-    clock.advance_lagless(Default::default(), 8, 0);
+    clock.advance_lagless(Default::default(), 534, 0);
     assert_eq!(clock.apu.in_ports[3], 0, "the following NMI still clears the one-shot");
 }
 
@@ -202,6 +203,9 @@ fn clock_at_first_host_boundary() -> AbsoluteDspEventClock {
         pending_writes: Vec::new(),
         pending_main_cpu_port_writes: Vec::new(),
         pending_timed_main_cpu_port_writes: Vec::new(),
+        pending_lagless_nmis: Vec::new(),
+        pending_lagless_port_writes: Vec::new(),
+        pending_lagless_nmi_latches: None,
         pending_upload_return_nmi_master_clock: None,
         song_bank_transfer: None,
         completed_song_bank_id: None,
@@ -246,32 +250,114 @@ fn sound_fix1_first_upload_return_publishes_ambient_after_terminal_clears() {
     assert!(clock.pending_upload_return_nmi_master_clock.is_none());
     assert_eq!(&clock.apu.in_ports[..4], &[0,5,0,0x42]);
     clock.apu.out_ports[1] = 5;
-    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0xf1,0,0,0]),64,0);
+    // $8110 clears the acknowledged ambient at the next physical NMI,
+    // independently of the caller's short sample window.
+    let clear = host_port_target_cycles_at_nmi_entry(lagless_nmi_vector(1),
+        HostPortWrites { writes: [None, Some(0), Some(0), Some(0)] })[3];
+    let samples = (clear - clock.absolute_apu_cycle).div_ceil(32) as u32 + 1;
+    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0xf1,0,0,0]),samples,0);
     assert_eq!(&clock.apu.in_ports[1..4], &[0,0,0]);
 }
 
 #[test]
-fn lagless_nmi_translation_keeps_cpu_spacing_and_fractional_phase() {
+fn lagless_nmi_anchor_keeps_hardware_field_and_handler_work() {
     for host in [1, 302, 146541, 251820, 1_573_135] {
-        for writes in [
-            HostPortWrites { writes: [Some(1), Some(0), Some(0), Some(0)] },
-            HostPortWrites { writes: [Some(0); 4] },
-            HostPortWrites { writes: [None, Some(3), Some(0), Some(0)] },
-        ] {
-            let physical = host_port_target_cycles(host, writes);
-            let execution = host * 534 * 32 + 25;
-            let mapped = lagless_host_port_target_cycles(host, writes, execution);
-            for p in 0..4 {
-                assert!(mapped[p] >= execution);
-                assert_eq!(mapped[p] - mapped[0], physical[p] - physical[0]);
-            }
-            let active: Vec<_> = (0..4).filter(|&p| writes.writes[p].is_some())
-                .map(|p| mapped[p]).collect();
-            assert!(active.windows(2).all(|w| w[0] < w[1]));
-            let next = lagless_host_port_target_cycles(host + 1, writes, execution + 534 * 32);
-            assert!(next.iter().all(|at| *at > *active.last().unwrap()));
-        }
+        let vector = snes_frame_start_master_clock(host) + 225 * 1364 + 12 + 62;
+        assert_eq!(lagless_nmi_vector(host), vector);
+        let writes = HostPortWrites { writes: [None, Some(0), Some(0), Some(10)] };
+        let targets = host_port_target_cycles_at_nmi_entry(vector, writes);
+        assert!(targets[1] < targets[2] && targets[2] < targets[3]);
     }
+    // Source field81 $2143 bus start is 29,254,448. Eligibility omits
+    // forty clocks of the interrupted instruction; never fit them into it.
+    let vector = lagless_nmi_vector(81);
+    assert_eq!(advance_snes_cpu_master_clock(vector, 746), 29_254_408);
+}
+
+#[test]
+fn lagless_acknowledgement_waits_for_the_anchored_receiver_read() {
+    let mut clock = cpu_port_clock_fixture(&[0x8f, 5, 0xf5, 0x2f, 0xfe]);
+    clock.host_frame_index = 1;
+    clock.host_transport.requested_ambient = 5;
+    clock.capture_lagless_nmi_latches([0; 4], [0, 5]);
+    // No music store: the ambient LDA $2141 is 522 executed clocks
+    // after vector entry, including any crossed hardware refresh.
+    clock.apu.out_ports[0] = 1;
+    let read = snes_master_clock_to_apu_cycle(
+        advance_snes_cpu_master_clock(lagless_nmi_vector(1), 522));
+    clock.absolute_apu_cycle = read - 8;
+    clock.apu.cycles = (read - 8) as u32;
+    clock.apu.in_ports[1] = 5;
+    assert_eq!(clock.apu.out_ports[1], 0);
+    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0,5,0,0]), 8, 0);
+    assert_eq!(clock.apu.out_ports[1], 5, "executed MOV $f5,#5 supplies the acknowledgement");
+    assert_eq!(clock.apu.in_ports[1], 0, "$8108 reads 5 and $8110 clears APUI01");
+}
+
+#[test]
+fn lagless_deadlines_before_origin_retire_in_order_and_far_deadlines_carry() {
+    let mut clock = cpu_port_clock_fixture(&[0x2f, 0xfe]);
+    clock.apu_cycle_origin = 1 << 30;
+    let origin = clock.apu_cycle_origin;
+    clock.pending_lagless_port_writes = vec![(origin - 2, 1, 0),
+        (origin - 4, 1, 5), (origin + u64::from(u32::MAX) + 1, 3, 10)];
+    clock.schedule_lagless_port_writes();
+    assert_eq!(clock.apu.in_ports[1], 0, "the earlier 5 precedes the source clear");
+    assert_eq!(clock.pending_lagless_port_writes,
+        [(origin + u64::from(u32::MAX) + 1, 3, 10)]);
+}
+
+#[test]
+fn lagless_new_music_store_keeps_the_rom_prefix_before_refresh() {
+    // Fresh-ledger source witness: iteration194, field391, $8034 accepts at
+    // V225/H12 = 140037020. Native entry62 plus the executed $80C9..$80F3
+    // prefix444 places STA $2140 at 140037526 (H518), before H534 refresh.
+    // Source synchronized SPC=6685098. Independently derive the queue's
+    // expected deadline from the source CPU store, rather than fitting it
+    // to the synchronized receiver observation.
+    let mut nmi = LaglessNmi {
+        host: 391, vector: lagless_nmi_vector(391), ports: [1,0,0,0],
+        last: Some([0;2]), handled: [None;4], music: None, music_work: 450,
+    };
+    let mut events = Vec::new();
+    nmi.advance(snes_master_clock_to_apu_cycle(nmi.vector), [0;4],
+        &mut HostPortTransport::default(), &mut events, true);
+    assert_eq!(events[0], (snes_master_clock_to_apu_cycle(140_037_526), 0, 1));
+}
+
+#[test]
+fn nmi_reads_and_stores_charge_only_crossed_refresh_events() {
+    let line = snes_frame_start_master_clock(391) + 225 * 1364;
+    // The v2 phase carries across odd short fields; field391/V225 is H538.
+    assert_eq!(next_wram_refresh_master_clock(line), line + 538);
+    let music = HostPortWrites { writes: [Some(1), Some(0), Some(0), Some(0)] };
+    let clear = HostPortWrites { writes: [Some(0); 4] };
+    for h in [74, 84, 100, 600, 1300] {
+        let vector = line + h;
+        for writes in [music, clear] {
+            let work = host_port_cpu_work(writes);
+            let targets = host_port_target_cycles_at_nmi_entry(vector, writes);
+            for p in 0..4 {
+                // Count physical refresh events independently of the store
+                // helper, including a possible next-line refresh.
+                let mut end = vector + work[p];
+                let mut refresh = next_wram_refresh_master_clock(vector);
+                while refresh < end {
+                    end += SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS;
+                    refresh = next_wram_refresh_master_clock(refresh + 40);
+                }
+                assert_eq!(targets[p], snes_master_clock_to_apu_cycle(end));
+            }
+        }
+        let nmi = LaglessNmi { host: 391, vector, ports: [0;4],
+            last: Some([0;2]), handled: [None;4], music: None, music_work: 450 };
+        let expected = vector + 390 + if h < 538 && h + 390 > 538 { 40 } else { 0 };
+        assert_eq!(nmi.next_read_master(), expected);
+    }
+    assert_eq!(host_port_target_cycles_at_nmi_entry(line + 74, music)[0],
+        snes_master_clock_to_apu_cycle(line + 518));
+    assert_eq!(host_port_target_cycles_at_nmi_entry(line + 74, clear)[0],
+        snes_master_clock_to_apu_cycle(line + 582));
 }
 
 #[test]
@@ -300,9 +386,12 @@ fn lagless_nmi_stores_survive_output_boundary_and_cycle_rebase() {
     // A one-pair test callback ends before the last stores. The scheduler's
     // lookahead may execute them, but neither the next callback nor rebasing
     // may drop or duplicate them.
-    clock.absolute_apu_cycle = (1 << 30) + 9;
+    clock.host_frame_index = snes_frame_for_master_clock(
+        apu_cycle_to_snes_master_clock((1 << 30) + 100_000));
+    let first_store = host_port_target_cycles_at_nmi_entry(
+        lagless_nmi_vector(clock.host_frame_index), HostPortWrites { writes: [Some(0); 4] })[0];
+    clock.absolute_apu_cycle = first_store - 50;
     clock.apu.cycles = (clock.absolute_apu_cycle + 20) as u32;
-    clock.host_frame_index = 302;
     clock.apu.debug_spc_instruction_trace = Some(Vec::new());
     clock.advance_lagless(Default::default(), 1, 0);
     assert!(clock.apu_cycle_origin >= 1 << 30);
@@ -577,4 +666,150 @@ fn upload_return_nmi_republishes_ports_at_source_bus_positions() {
     assert!(clock.song_bank_transfer.is_none());
     assert!(clock.pending_upload_return_nmi_master_clock.is_none());
     assert_eq!(&clock.apu.in_ports[..4], &[0, 5, 0, 0]);
+}
+
+#[test]
+fn lagless_store_at_refresh_endpoint_waits_for_hardware_drain() {
+    // ROM probe: field391/V225, vector H94, command1/last0.
+    // Prefix444 reaches H538 exactly; getset.h drains >= NextEvent.
+    let mut nmi = LaglessNmi {
+        host: 391, vector: 140_037_102, ports: [1,0,0,0], last: Some([0;2]),
+        handled: [None;4], music: None, music_work: 450,
+    };
+    let mut events = Vec::new();
+    nmi.advance(snes_master_clock_to_apu_cycle(nmi.vector), [0;4],
+        &mut HostPortTransport::default(), &mut events, true);
+    assert_eq!(events[0], (snes_master_clock_to_apu_cycle(140_037_586), 0, 1));
+}
+
+#[test]
+fn lagless_read_at_refresh_endpoint_waits_for_hardware_drain() {
+    // Same ROM prefix, command0: LDA $2140 work390 from vector H148
+    // reaches H538 exactly. The preceding access drains refresh first.
+    let nmi = LaglessNmi {
+        host: 391, vector: 140_037_156, ports: [0;4], last: Some([0;2]),
+        handled: [None;4], music: None, music_work: 450,
+    };
+    assert_eq!(nmi.next_read_master(), 140_037_586);
+}
+
+#[test]
+fn lagless_accesses_before_at_and_after_refresh_match_executed_rom() {
+    // Pinned ROM probe from $00:80C9, field391/V225 (H538 refresh).
+    // Each expected bus start is independently executed source evidence;
+    // H90/94/98 and H144/148/152 straddle the exact endpoint for STA/LDA.
+    // H600 also proves that an already-passed refresh is not charged again.
+    for (store, vector, expected) in [
+        (true, 140_037_082, 140_037_526),
+        (true, 140_037_098, 140_037_542),
+        (true, 140_037_102, 140_037_586),
+        (true, 140_037_106, 140_037_590),
+        (true, 140_037_608, 140_038_052),
+        (false, 140_037_082, 140_037_472),
+        (false, 140_037_152, 140_037_542),
+        (false, 140_037_156, 140_037_586),
+        (false, 140_037_160, 140_037_590),
+        (false, 140_037_608, 140_037_998),
+    ] {
+        let mut nmi = LaglessNmi {
+            host: 391, vector, ports: [u8::from(store), 0, 0, 0],
+            last: Some([0; 2]), handled: [None; 4], music: None, music_work: 450,
+        };
+        if store {
+            let mut events = Vec::new();
+            nmi.advance(snes_master_clock_to_apu_cycle(vector), [0; 4],
+                &mut HostPortTransport::default(), &mut events, true);
+            assert_eq!(events[0], (snes_master_clock_to_apu_cycle(expected), 0, 1));
+        } else {
+            assert_eq!(nmi.next_read_master(), expected);
+        }
+    }
+}
+
+#[test]
+fn lagless_handler_paths_match_executed_rom_accesses() {
+    use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+        CpuRasterPosition, RomCpuTimingProbe, Snes, SourceCpuBusAccessKind,
+        SourcePpuReadState};
+    let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../saves/zelda3.sfc")).unwrap();
+    // All music branches (including repeated and F2 controls), crossed with
+    // ambient clear/skip/direct branches. Source execution owns expectations.
+    for (music, last_music, echo_music) in [
+        (0, 1, 0), (0, 1, 1), (1, 1, 0), (1, 0, 0), (0xf2, 0, 0),
+    ] {
+        for (ambient, last_ambient, echo_ambient) in [(0, 5, 0), (0, 5, 5), (5, 5, 0)] {
+            let ports = [music, ambient, 10, 12];
+            let last = [last_music, last_ambient];
+            let output = [echo_music, echo_ambient, 0, 0];
+            let mut unstalled = Vec::new();
+            // H600 is after refresh, and ends before the next refresh. Its
+            // source instruction work checks each later access independently.
+            for h in [600, 74, 90, 94, 98, 144, 148, 152, 1300] {
+                let timeline = CpuMasterTimeline::at_raster(391,
+                    CpuRasterPosition::new(225, h), CpuBusWorkload::default(),
+                    CpuFieldTiming::NON_INTERLACE_EVEN);
+                let vector = timeline.clock_master_cycles();
+                let mut machine = Snes::new();
+                machine.cart.load(CartType::LoRom, &rom, 0x2000);
+                machine.cpu.pc = 0x80c9;
+                machine.cpu.sp = 0x1f2;
+                machine.cpu.e = false;
+                machine.cpu.unpack_flags(0x34);
+                machine.ram[0x12c..0x130].copy_from_slice(&ports);
+                machine.ram[0x133] = last_music;
+                machine.ram[0x131] = last_ambient;
+                let mut apu = ApuState::new();
+                apu.reset();
+                apu.cpu_cycles_left = 0;
+                apu.spc.pc = 0x2000;
+                apu.ram[0x2000..0x2002].copy_from_slice(&[0x2f, 0xfe]);
+                apu.out_ports = output;
+                let owner = snes::apu::ApuHostPortTiming::new(
+                    snes::apu::ApuHostPortProbe::new(apu).unwrap(),
+                    Snes9xApuClockCheckpoint::new(vector, 0, 0).unwrap()).unwrap();
+                let mut source = RomCpuTimingProbe::new(machine, timeline,
+                    SourcePpuReadState::snes9x_reset()).unwrap();
+                source.attach_apu_port_owner(owner).unwrap();
+                let mut expected_reads = Vec::new();
+                let mut expected_stores = Vec::new();
+                let mut accesses = Vec::new();
+                for _ in 0..100 {
+                    for access in source.step().unwrap().accesses {
+                        if !(0x2140..=0x2143).contains(&access.address) { continue; }
+                        let master = access.timestamp.master_cycles();
+                        let port = (access.address - 0x2140) as u8;
+                        accesses.push(master);
+                        match access.kind {
+                            SourceCpuBusAccessKind::Read { width: 1, .. } =>
+                                expected_reads.push(master),
+                            SourceCpuBusAccessKind::Write { value, width: 1 } =>
+                                expected_stores.push((snes_master_clock_to_apu_cycle(master), port, value as u8)),
+                            _ => panic!("unexpected audio access"),
+                        }
+                    }
+                    if expected_stores.last().is_some_and(|e| e.1 == 3) { break; }
+                }
+                assert_eq!(expected_stores.last().unwrap().1, 3);
+                if h == 600 {
+                    unstalled = accesses.iter().map(|at| at - vector).collect();
+                }
+                let model: Vec<_> = unstalled.iter().map(|work|
+                    nmi_audio_access_master_clock(vector, *work)).collect();
+                assert_eq!(model, accesses, "refresh per access: ports={ports:?} last={last:?} output={output:?} h={h}");
+                let mut nmi = LaglessNmi { host: 391, vector, ports, last: Some(last),
+                    handled: [None; 4], music: None, music_work: 450 };
+                let mut reads = Vec::new();
+                let mut stores = Vec::new();
+                loop {
+                    let at = nmi.next_read_master();
+                    if ports[usize::from(nmi.music.is_some())] == 0 { reads.push(at); }
+                    if nmi.advance(snes_master_clock_to_apu_cycle(at), output,
+                        &mut HostPortTransport::default(), &mut stores, true) { break; }
+                }
+                assert_eq!(reads, expected_reads, "reads: ports={ports:?} h={h}");
+                assert_eq!(stores, expected_stores, "stores: ports={ports:?} h={h}");
+            }
+        }
+    }
 }

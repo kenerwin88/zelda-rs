@@ -8732,3 +8732,497 @@ There is no commit/push, GPU run, external Snes9x process, cached-A/V replay,
 second live census or write to the ledger/oracle/helper authorities.
 These are logical/CPU-picture and receiver-timing diagnostics, not cold A/V
 acceptance. All retained trial measurements identify their own binary.
+
+## Lagless prefix hunt 21
+
+Corrected physical-field NMI transport on `codex/prefix-hunt21`, base
+**541c21fd**. The hunt 20 `corrected-trial.patch` is integrated unchanged
+in its four runtime files. Additional source-derived fixtures audit the
+access boundary and every music/ambient path before any census launches.
+**Kept and admitted in this worktree.** All requested gates pass, with
+only the explicitly permitted default-suite spotlight failure. **No new main
+instruction owners are priced; zero main instruction clocks are recovered.**
+
+### Hardware law, executed work and the pre-census audit
+
+Ordinary audio handlers begin at physical V225/H12 eligibility plus the
+executed 62-clock hardware entry. Captured `$012C..$012F` and `$0133/$0131`
+latches preserve the ROM command branches; acknowledgement reads observe
+the executing receiver at the handler's bus times. Clocked upload returns
+and existing native CPU bus accesses retain their separate owners.
+Interrupted-instruction/DMA acceptance is still unresolved.
+
+Pinned Snes9x revision `921f9f7b83660eb44ad263022a57a4a029057c37`
+uses `while (CPU.Cycles >= CPU.NextEvent)` in `getset.h` memory-access
+completion. `cpuexec.cpp` adds 40 master clocks at
+`HC_WRAM_REFRESH_EVENT`. Consequently work ending exactly at refresh must
+wait for that drain before the following bus access. The existing
+`advance_snes_cpu_master_clock` work-endpoint helper and its fixture stay
+unchanged. `nmi_audio_access_master_clock` adds the due refresh at equality;
+both acknowledgement reads and every retained handler store use it.
+The carried M1SNES/v2 H534/H538 phase includes field boundaries and the odd
+short line. No sampled residual supplies a runtime price.
+
+The new-music prefix is 444 executed clocks, the clear prefix 468; music
+branch completion at `$8103` is 450/496/426/578/552 for no-clear, clear,
+repeated, new-below-F2 and new-F2-plus respectively. Ambient reads add 72;
+ambient stores add 150 for clear or 110 for direct. Effect-store suffixes
+are 234/296 (clear), 204/266 (direct), or 188/250 (no ambient store).
+Refresh is charged from each vector through its executed prefix, including
+a refresh at the exact access boundary. These are ROM branch costs, not
+route-dependent prices.
+
+The pre-census audit is retained in `target/prefix-hunt21/pre-census-audit.json`.
+All ten independent ROM positions are integrated fixtures. A further
+135-case `RomCpuTimingProbe` fixture executes the real `$00:80C9` handler:
+five music branches crossed with ambient skip/clear/direct and nine vector
+positions, including both exact endpoints, already-passed refresh and a
+next-line crossing. It checks reads, stores, values and each access's
+refresh against executed source instruction work. All checks pass before
+ROM, live or picture census launch. The full default library suite remains
+the final test command after evaluation.
+
+The field 391 new-music source witness is freshly reproduced: acceptance
+140,037,020, vector 140,037,082, store **140,037,526**, queued SPC
+**6,685,098**, zero CPU/quotient residual. Hunt 19's blanket subtraction
+had removed 40 clocks before refresh. At the exact H538 endpoints, the
+corrected read and store are **140,037,586**, rather than 140,037,546:
+the missing 40-clock hardware drain is restored.
+
+### Before, equal and after the refresh boundary
+
+The executed-source timestamps below are also checked by the integrated
+fixtures. Field 391/V225 refresh is H538; the equal endpoints drain to H578.
+
+| Access | Vector H | Executed work | Source CPU = corrected CPU | CPU residual |
+| --- | --- | --- | --- | --- |
+| store | 74 | 444 | 140,037,526 | 0 |
+| store | 90 | 444 | 140,037,542 | 0 |
+| store | 94 | 444 | 140,037,586 | 0 |
+| store | 98 | 444 | 140,037,590 | 0 |
+| store | 600 | 444 | 140,038,052 | 0 |
+| read | 74 | 390 | 140,037,472 | 0 |
+| read | 144 | 390 | 140,037,542 | 0 |
+| read | 148 | 390 | 140,037,586 | 0 |
+| read | 152 | 390 | 140,037,590 | 0 |
+| read | 600 | 390 | 140,037,998 | 0 |
+
+### Fixture epochs and deadline carry
+
+Only superseded output-window epochs change in existing fixtures. The
+bootstrap effect is observed through source field 81 and the following
+physical NMI, preserving **10 then 0** and the SPC's actual read of 10.
+The upload-return ambient fixture observes the following acknowledgement
+NMI's final store, preserving `[0,5,0,$42]` then zero on ports1..3.
+The rebase fixture uses a coherent hardware field near its absolute APU
+clock instead of pairing field 302 with an unrelated clock above 2^30.
+The old callback-translation fixture is replaced with physical eligibility
+plus entry/work assertions. No behavioral expected port value is relaxed.
+
+NMI continuations and stores retain absolute u64 deadlines across windows.
+Already-due stores retire in original deadline order before any unsigned
+origin subtraction. A future deadline outside local u32 range remains
+pending until representable after rebase; scheduled local events rebase
+with the APU. Existing split-window, rebase, pre-origin ordering and far
+future fixtures pass. The generic SPC host callback can enqueue a
+CPU-selected store before the same SPC instruction completes.
+
+### Residuals and the next first bus divergence
+
+Fresh bus replay through iteration 48,558 exits zero with clean WRAM.
+Its raw log and decompressed timing trace are byte-identical to the
+hash-verified hunt20 trial, independently establishing the following
+unchanged measurements on the corrected product. The source authorities
+and reused baseline artifacts are hash-checked before reuse.
+
+First-lag port3 publication moves **1,381,221 → 1,396,544**, recovering
+**15,323 SPC clocks of publication phase**, separate from zero recovered
+main instruction clocks. Planned CPU store 29,254,408 remains 40 clocks
+before source 29,254,448 because actual interrupted-instruction acceptance
+is not owned.
+
+| Physical field | Candidate minus source, CPU master | Candidate queued / source synchronized SPC, port3 |
+| --- | --- | --- |
+| 80 | 0 | 1,379,486 / 1,379,486 |
+| 81 | -40 | 1,396,544 / 1,396,549 |
+| 82 | -18 | 1,413,606 / 1,413,608 |
+| 83 | -46 | 1,430,666 / 1,430,669 |
+| 84 | -4 | 1,447,725 / 1,447,729 |
+| 85 | -42 | 1,464,785 / 1,464,787 |
+| 86 | -4 | 1,481,845 / 1,481,847 |
+| 87 | -42 | 1,498,905 / 1,498,910 |
+
+At field 2236 the candidate ambient read is CPU 799,377,912, receiver
+38,160,627, value5; source reads eight CPU clocks later, synchronized to
+the same cycle and value. Candidate clear0 is CPU 799,377,990, queued
+38,160,630; source is CPU 799,377,998, synchronized 38,160,631. The former
+SPC 38,169,267 split remains crossed.
+
+The contiguous comparison matches **90,095 bus events** before
+**SPC 60,509,114**, `$F7` read: **source 0 / candidate 12**. Source field 3546
+accepts at CPU 1,267,526,764/H28, sixteen clocks after eligibility.
+Candidate port3 is CPU 1,267,527,596, queue 60,509,111; source is
+CPU 1,267,527,612, quotient60,509,112, synchronized 60,509,114. Source
+reads0 before publishing12 at that synchronized cycle. Remaining work is
+actual CPU acceptance and CPU-to-SMP credit/bus ordering, not a fitted
+runtime offset. Bus equality compares cycle/direction/address/value.
+
+The regenerated residual CSV covers **9,530 source stores / 2,467 NMIs**,
+with **zero ambiguous joins**. All **182,575** fresh candidate store
+observations convert to their queue deadlines by the exact CPU/SPC
+quotient. Twelve absent source stores and six clocked-return stores stay
+explicit. Returns are joined to their fresh clocked vector, not a
+same-field ordinary NMI. Physical-field joins do not establish logical
+callback identity. Complete tables are retained under `target/prefix-hunt21/`.
+
+### Upload rows and post-upload suffix NMIs
+
+| Iteration | Ready polls source / main / corrected | Header polls source / corrected | Byte polls source / corrected | Holds main → corrected / source | Masked callbacks |
+| --- | --- | --- | --- | --- | --- |
+| 34,318 | 11,184 / 9,851 / 11,871 | 52 / 51 | 76,551 / 76,551 | 40 → 40 / 41 | 23 |
+| 48,556 | 7,122 / 10,952 / 10,471 | 51 / 55 | 76,551 / 76,552 | 40 → 40 / 41 | 23 |
+
+The first upload at 10,425 retains 6,259 ready polls against source 5,876,
+58 holds and 22 masked callbacks. These are executed transfer counts;
+callback counts diverge, so they are not matched CPU checkpoints.
+
+| Iteration / lane | First SPC FF read | Ready AA store | Ready BB store |
+| --- | --- | --- | --- |
+| 34,318 / source | 642,527,398 | 642,544,073 | 642,544,080 |
+| 34,318 / corrected | 642,529,970 | 642,543,308 | 642,543,315 |
+| 48,556 / source | 925,122,447 | 925,139,379 | 925,139,386 |
+| 48,556 / corrected | 925,087,620 | 925,102,516 | 925,102,523 |
+
+Final clears are CPU 13,467,664,596 /19,386,634,459. The executed 174-clock
+suffix restores `$4200` at 13,467,664,770 /19,386,634,633, with zero pending
+holds. Source's additional suffix NMIs accept at 13,467,680,894,
+V251/H822, `$02:83C6`, and 19,387,412,412, V225/H12, `$00:864F`.
+Neither missing source suffix hold is recovered.
+
+| Iteration / port | Source synchronized SPC | Corrected queued SPC | Difference |
+| --- | --- | --- | --- |
+| 34,318 / 1 | 642,918,897 | 642,918,130 | -767 |
+| 34,318 / 2 | 642,918,905 | 642,918,134 | -771 |
+| 34,318 / 3 | 642,918,905 | 642,918,137 | -768 |
+| 48,556 / 1 | 925,514,479 | 925,477,349 | -37,130 |
+| 48,556 / 2 | 925,514,483 | 925,477,354 | -37,129 |
+| 48,556 / 3 | 925,514,489 | 925,477,359 | -37,130 |
+
+All six values agree (ambient 5, then two zeros), while receiver epochs
+remain different. The complete 42-NMI tables per upload retain opening,
+40 pre-mask lag NMIs and source suffix, including every absent port.
+
+### ROM, CPU pictures and instruction conservation
+
+The supplied eight-slice ROM helper passes **1,473,123 iterations**,
+**PASS / unexplained 0**. ROM holds change in **zero rows**; main and VWF
+instruction budgets change in **zero rows**. The same 550 predictor rows
+change only handler, elapsed, raster, refresh or HDMA diagnostics; their
+complete field counts are in `instruction-conservation.json`. No pricing,
+classifier, matcher or P2 implementation changes are made.
+
+The five requested ROM prefixes remain unchanged. Live prefixes are also
+shown to distinguish receiver-driven branch improvements from ROM pricing.
+
+| Before iteration | ROM missing main → corrected | Live missing main → corrected |
+| --- | --- | --- |
+| 94,334 | 2 → 2 | 2 → 2 |
+| 141,568 | 34 → 34 | 34 → 34 |
+| 228,499 | 142 → 142 | 151 → 142 |
+| 380,243 | 275 → 275 | 284 → 275 |
+| 461,989 | 334 → 334 | 343 → 334 |
+
+The eight-slice `--cpu-video` gate passes **1,473,123 iterations**,
+**unexplained 0**, with all eight processes exiting zero. It preserves
+**1,462,997 exact pictures**, 563 early, 3,952 late, 4 during-lag,
+905 polygon-thread, 4,702 torn and 0 other content differences, matching
+main in every category.
+
+### One live census and complete poll attribution
+
+Exactly **one** full, single-process seeded `--live-apu-reads
+--pacing-predictor` census completes: **1,473,123 iterations**,
+**PASS / unexplained 0**, exit zero. Commands, launch count, binary identity
+and timing readback are retained under `target/prefix-hunt21/`.
+
+| Lane | Missing main → corrected | Excess main → corrected | FP main → corrected |
+| --- | --- | --- | --- |
+| ROM | 1,864 → 1,864 | 0 → 0 | 0 → 0 |
+| Live | 2,276 → 2,104 | 318 → 149 | 85 → 14 |
+
+All **176 changed live hold rows** are live-only, because ROM holds change
+in zero rows across builds. Every changed row is attributed to an observed
+**`$08:C606`** song-end predicate change and its carried state; **zero
+rows are unassigned**. The complete baseline and corrected timing traces
+are read back. Every changed CSV hold value is checked against its actual
+timing observation. Each changed episode has an observed first-zero
+predicate change; its recovery boundary and following row agree in native
+context, callbacks, held/masked counts, poll outcome and published port
+values. Full boundary observations remain in `live-comparison.json`.
+
+The **4,744** live main-budget differences are executed poll-path/carry
+changes within those same verified intervals; zero are unanchored. Main
+instruction prices stay unchanged. Runtime holds equal P2 in every row.
+Current live-versus-ROM holds differ in **37** rows, all attributed.
+The net live improvement is **172 missing / 169 excess / 71 FP**.
+
+| Poll episode / source first zero | Main → corrected first zero | Changed hold rows | Delta missing / excess / FP | Recovery bound, exclusive |
+| --- | --- | --- | --- | --- |
+| 94,334 / 94,854 | 94,854 → 94,854 | 0 | 0 / 0 / 0 | 94,855 |
+| 141,568 / 142,088 | 142,087 → 142,088 | 5 | -9 / -9 / -2 | 144,000 |
+| 228,499 / 229,035 | 229,035 → 229,035 | 0 | 0 / 0 / 0 | 229,036 |
+| 380,243 / 380,881 | 380,881 → 380,881 | 0 | 0 / 0 / 0 | 380,882 |
+| 461,989 / 462,628 | 462,627 → 462,628 | 6 | -13 / -13 / -3 | 466,000 |
+| 626,618 / 627,256 | 627,255 → 627,257 | 6 | 0 / 0 / 0 | 629,845 |
+| 735,229 / 735,867 | 735,866 → 735,867 | 6 | -12 / -12 / -3 | 738,000 |
+| 881,095 / 881,734 | 881,733 → 881,734 | 135 | -234 / -230 / -67 | 884,327 |
+| 1,064,096 / 1,064,734 | 1,064,734 → 1,064,735 | 12 | 96 / 95 / 4 | 1,066,963 |
+| 1,317,697 / 1,318,335 | 1,318,334 → 1,318,336 | 6 | 0 / 0 / 0 | 1,320,900 |
+
+The 881,095 episode removes 234 missing, 230 excess and 67 FP, while
+1,064,096 becomes one iteration late and adds 96 missing, 95 excess and
+4 FP. The 626,618 and 1,317,697 episodes cross from early to late while
+conserving totals. These regressions remain explicit.
+
+Observed native poll rows are **6,048 → 6,057**. The six actual corrected
+reseeds are **628,000 / 629,845 / 1,066,000 / 1,066,963 / 1,320,000 /
+1,320,900**. Baseline CSV raw SHA-256 is
+`f11bc4b607fc228fb6e2a181b332cf4932772889c742be8d2985ed6ce9e7c6f4`;
+baseline timing raw SHA-256 is
+`286873e50117590b175154c1bb1d14265832c78b9b7cc3259ee1e5f6130217af`;
+corrected timing raw SHA-256 is
+`184adedcf95d5176b3dff5350ae1774f821ed6407d1d1881d167ca803ac480fb`.
+The latter is byte-identical to the hash-verified hunt20 measured trace,
+now produced by the fully integrated corrected product. Source first-zero
+values are independently reproduced from retained ledger reads in the
+fresh trace for all ten episodes.
+
+The following is the complete changed-live-hold set. Every episode denotes
+`$08:C606`; `changed-live-holds.csv/json` retain every row and both timing
+observations. No live/ROM hold-equality assumption is used for attribution.
+
+| Iteration | Source lag | Main → corrected holds | Poll episode |
+| --- | --- | --- | --- |
+| 142,088 | 0 | 5 → 0 | 141,568 |
+| 142,089 | 5 | 0 → 5 | 141,568 |
+| 142,091 | 0 | 4 → 0 | 141,568 |
+| 142,092 | 4 | 3 → 4 | 141,568 |
+| 142,094 | 3 | 0 → 3 | 141,568 |
+| 462,699 | 0 | 1 → 0 | 461,989 |
+| 462,700 | 1 | 0 → 1 | 461,989 |
+| 462,709 | 0 | 4 → 0 | 461,989 |
+| 462,710 | 5 | 0 → 4 | 461,989 |
+| 463,179 | 0 | 8 → 0 | 461,989 |
+| 463,180 | 8 | 0 → 8 | 461,989 |
+| 627,316 | 0 | 1 → 0 | 626,618 |
+| 627,318 | 0 | 0 → 1 | 626,618 |
+| 627,326 | 0 | 4 → 0 | 626,618 |
+| 627,328 | 0 | 0 → 4 | 626,618 |
+| 627,799 | 0 | 8 → 0 | 626,618 |
+| 627,801 | 0 | 0 → 8 | 626,618 |
+| 735,936 | 0 | 1 → 0 | 735,229 |
+| 735,937 | 1 | 0 → 1 | 735,229 |
+| 735,946 | 0 | 4 → 0 | 735,229 |
+| 735,947 | 5 | 0 → 4 | 735,229 |
+| 736,420 | 8 | 0 → 7 | 735,229 |
+| 736,422 | 0 | 7 → 0 | 735,229 |
+| 881,794 | 0 | 1 → 0 | 881,095 |
+| 881,795 | 1 | 0 → 1 | 881,095 |
+| 881,804 | 0 | 4 → 0 | 881,095 |
+| 881,805 | 5 | 0 → 4 | 881,095 |
+| 882,275 | 8 | 0 → 8 | 881,095 |
+| 882,276 | 0 | 8 → 0 | 881,095 |
+| 882,475 | 2 | 0 → 2 | 881,095 |
+| 882,476 | 2 | 0 → 2 | 881,095 |
+| 882,477 | 2 | 0 → 2 | 881,095 |
+| 882,484 | 0 | 2 → 0 | 881,095 |
+| 882,485 | 0 | 2 → 0 | 881,095 |
+| 882,486 | 0 | 2 → 0 | 881,095 |
+| 882,529 | 2 | 0 → 2 | 881,095 |
+| 882,530 | 2 | 0 → 2 | 881,095 |
+| 882,531 | 2 | 0 → 2 | 881,095 |
+| 882,538 | 0 | 2 → 0 | 881,095 |
+| 882,539 | 0 | 2 → 0 | 881,095 |
+| 882,540 | 0 | 2 → 0 | 881,095 |
+| 882,591 | 2 | 0 → 2 | 881,095 |
+| 882,592 | 2 | 0 → 2 | 881,095 |
+| 882,593 | 2 | 0 → 2 | 881,095 |
+| 882,600 | 0 | 2 → 0 | 881,095 |
+| 882,601 | 0 | 2 → 0 | 881,095 |
+| 882,602 | 0 | 2 → 0 | 881,095 |
+| 882,676 | 2 | 0 → 2 | 881,095 |
+| 882,677 | 2 | 0 → 2 | 881,095 |
+| 882,678 | 2 | 0 → 2 | 881,095 |
+| 882,686 | 0 | 2 → 0 | 881,095 |
+| 882,687 | 0 | 2 → 0 | 881,095 |
+| 882,688 | 0 | 2 → 0 | 881,095 |
+| 882,740 | 2 | 0 → 2 | 881,095 |
+| 882,741 | 2 | 0 → 2 | 881,095 |
+| 882,742 | 2 | 0 → 2 | 881,095 |
+| 882,750 | 0 | 2 → 0 | 881,095 |
+| 882,751 | 0 | 2 → 0 | 881,095 |
+| 882,752 | 0 | 2 → 0 | 881,095 |
+| 882,804 | 2 | 0 → 2 | 881,095 |
+| 882,805 | 2 | 0 → 2 | 881,095 |
+| 882,806 | 2 | 0 → 2 | 881,095 |
+| 882,814 | 0 | 2 → 0 | 881,095 |
+| 882,815 | 0 | 2 → 0 | 881,095 |
+| 882,816 | 0 | 2 → 0 | 881,095 |
+| 882,893 | 2 | 0 → 2 | 881,095 |
+| 882,894 | 2 | 0 → 2 | 881,095 |
+| 882,895 | 2 | 0 → 2 | 881,095 |
+| 882,919 | 0 | 2 → 0 | 881,095 |
+| 882,920 | 0 | 2 → 0 | 881,095 |
+| 882,921 | 0 | 2 → 0 | 881,095 |
+| 882,957 | 2 | 0 → 2 | 881,095 |
+| 882,958 | 2 | 0 → 2 | 881,095 |
+| 882,959 | 2 | 0 → 2 | 881,095 |
+| 882,983 | 0 | 2 → 0 | 881,095 |
+| 882,984 | 0 | 2 → 0 | 881,095 |
+| 882,985 | 0 | 2 → 0 | 881,095 |
+| 883,053 | 2 | 0 → 2 | 881,095 |
+| 883,054 | 2 | 0 → 2 | 881,095 |
+| 883,055 | 2 | 0 → 2 | 881,095 |
+| 883,071 | 0 | 2 → 0 | 881,095 |
+| 883,072 | 0 | 2 → 0 | 881,095 |
+| 883,073 | 0 | 2 → 0 | 881,095 |
+| 883,117 | 2 | 0 → 2 | 881,095 |
+| 883,118 | 2 | 0 → 2 | 881,095 |
+| 883,119 | 2 | 0 → 2 | 881,095 |
+| 883,135 | 0 | 2 → 0 | 881,095 |
+| 883,136 | 0 | 2 → 0 | 881,095 |
+| 883,137 | 0 | 2 → 0 | 881,095 |
+| 883,181 | 2 | 0 → 2 | 881,095 |
+| 883,182 | 2 | 0 → 2 | 881,095 |
+| 883,183 | 2 | 0 → 2 | 881,095 |
+| 883,199 | 0 | 2 → 0 | 881,095 |
+| 883,200 | 0 | 2 → 0 | 881,095 |
+| 883,201 | 0 | 2 → 0 | 881,095 |
+| 883,272 | 2 | 0 → 2 | 881,095 |
+| 883,273 | 2 | 0 → 2 | 881,095 |
+| 883,274 | 2 | 0 → 2 | 881,095 |
+| 883,298 | 0 | 2 → 0 | 881,095 |
+| 883,299 | 0 | 2 → 0 | 881,095 |
+| 883,300 | 0 | 2 → 0 | 881,095 |
+| 883,338 | 2 | 0 → 2 | 881,095 |
+| 883,339 | 2 | 0 → 2 | 881,095 |
+| 883,340 | 2 | 0 → 2 | 881,095 |
+| 883,364 | 0 | 2 → 0 | 881,095 |
+| 883,365 | 0 | 2 → 0 | 881,095 |
+| 883,366 | 0 | 2 → 0 | 881,095 |
+| 883,398 | 2 | 0 → 2 | 881,095 |
+| 883,399 | 2 | 0 → 2 | 881,095 |
+| 883,400 | 2 | 0 → 2 | 881,095 |
+| 883,424 | 0 | 2 → 0 | 881,095 |
+| 883,425 | 0 | 2 → 0 | 881,095 |
+| 883,426 | 0 | 2 → 0 | 881,095 |
+| 883,483 | 2 | 0 → 2 | 881,095 |
+| 883,484 | 2 | 0 → 2 | 881,095 |
+| 883,485 | 2 | 0 → 2 | 881,095 |
+| 883,509 | 0 | 2 → 0 | 881,095 |
+| 883,510 | 0 | 2 → 0 | 881,095 |
+| 883,511 | 0 | 2 → 0 | 881,095 |
+| 883,539 | 2 | 0 → 2 | 881,095 |
+| 883,540 | 2 | 0 → 2 | 881,095 |
+| 883,541 | 2 | 0 → 2 | 881,095 |
+| 883,565 | 0 | 2 → 0 | 881,095 |
+| 883,566 | 0 | 2 → 0 | 881,095 |
+| 883,567 | 0 | 2 → 0 | 881,095 |
+| 883,601 | 2 | 0 → 2 | 881,095 |
+| 883,602 | 2 | 0 → 2 | 881,095 |
+| 883,603 | 2 | 0 → 2 | 881,095 |
+| 883,627 | 0 | 2 → 0 | 881,095 |
+| 883,628 | 0 | 2 → 0 | 881,095 |
+| 883,629 | 0 | 2 → 0 | 881,095 |
+| 883,697 | 2 | 0 → 2 | 881,095 |
+| 883,698 | 2 | 0 → 2 | 881,095 |
+| 883,699 | 2 | 0 → 2 | 881,095 |
+| 883,724 | 0 | 2 → 0 | 881,095 |
+| 883,725 | 0 | 2 → 0 | 881,095 |
+| 883,726 | 0 | 2 → 0 | 881,095 |
+| 883,727 | 2 | 0 → 2 | 881,095 |
+| 883,728 | 2 | 0 → 2 | 881,095 |
+| 883,729 | 2 | 0 → 2 | 881,095 |
+| 883,754 | 0 | 2 → 0 | 881,095 |
+| 883,755 | 0 | 2 → 0 | 881,095 |
+| 883,756 | 0 | 2 → 0 | 881,095 |
+| 883,765 | 2 | 0 → 2 | 881,095 |
+| 883,766 | 2 | 0 → 2 | 881,095 |
+| 883,767 | 2 | 0 → 2 | 881,095 |
+| 883,792 | 0 | 2 → 0 | 881,095 |
+| 883,793 | 0 | 2 → 0 | 881,095 |
+| 883,794 | 0 | 2 → 0 | 881,095 |
+| 883,842 | 7 | 0 → 7 | 881,095 |
+| 883,881 | 0 | 7 → 0 | 881,095 |
+| 883,977 | 7 | 0 → 7 | 881,095 |
+| 884,319 | 0 | 59 → 0 | 881,095 |
+| 884,320 | 0 | 6 → 0 | 881,095 |
+| 884,321 | 0 | 25 → 0 | 881,095 |
+| 884,322 | 59 | 1 → 59 | 881,095 |
+| 884,323 | 6 | 1 → 6 | 881,095 |
+| 884,324 | 25 | 1 → 25 | 881,095 |
+| 1,064,798 | 1 | 1 → 0 | 1,064,096 |
+| 1,064,799 | 0 | 0 → 1 | 1,064,096 |
+| 1,064,808 | 5 | 4 → 0 | 1,064,096 |
+| 1,064,809 | 0 | 0 → 4 | 1,064,096 |
+| 1,065,281 | 8 | 7 → 0 | 1,064,096 |
+| 1,065,282 | 0 | 0 → 7 | 1,064,096 |
+| 1,066,543 | 0 | 0 → 7 | 1,064,096 |
+| 1,066,544 | 7 | 7 → 0 | 1,064,096 |
+| 1,066,958 | 59 | 59 → 0 | 1,064,096 |
+| 1,066,959 | 6 | 6 → 59 | 1,064,096 |
+| 1,066,960 | 24 | 24 → 6 | 1,064,096 |
+| 1,066,961 | 1 | 1 → 24 | 1,064,096 |
+| 1,318,395 | 0 | 1 → 0 | 1,317,697 |
+| 1,318,397 | 0 | 0 → 1 | 1,317,697 |
+| 1,318,405 | 0 | 4 → 0 | 1,317,697 |
+| 1,318,407 | 0 | 0 → 4 | 1,317,697 |
+| 1,318,877 | 0 | 8 → 0 | 1,317,697 |
+| 1,318,879 | 0 | 0 → 8 | 1,317,697 |
+
+### Verification boundary and final state
+
+The production build is warning-free. Its SHA-256 is
+`3ba1c05717cf2573fa7d55ce617c90682a64729ec384cc44f184f22bbafcb826`;
+the measured binary is retained as `target/prefix-hunt21/zelda3-candidate`.
+The four runtime files match the corrected hunt20 retained sources
+byte-for-byte; added test coverage is in `upload_return_tests.rs`.
+
+Filtered groups pass: **52 SPC-driver**, the separate **135-case handler
+audit**, **195 audio**, **7 NMI-stack**, **28 native-pacing**, **2 bootstrap**,
+**6 host-port** and **1 scheduled-input-port** tests. The broader NMI filter
+passes **17 Snes / 258 Zelda tests**, with its existing ignored cases.
+Groups overlap. Test builds retain the same **24 baseline dead-code warning
+headers**, with no new headers. `filtered-results.json` and
+`warning-comparison.json` retain the exact results.
+
+Exactly **one** full default library suite runs, as the final test command,
+with the required assets, packages, profile and `--lib` selection:
+**Snes 505 passed / 7 ignored; Zelda 3,018 passed / 1 failed / 3 ignored**.
+Its sole failure is the permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+The command exits 101 for that failure; it is not described as an all-green
+suite. `full-library-result.json` records the exact command and confirms
+that every audited runtime/fixture source hash stayed unchanged.
+
+The access, refresh, deadline-carry and fixture audit completes **before any
+census launch**. No runtime or fixture source changes follow the census.
+The report-only live/ROM-equality guard is corrected and the complete CSV
+comparison recomputed; this changes no runtime and launches no additional
+live replay. All 176 changed live holds remain attributed and every ROM,
+picture, instruction-conservation and library admission requirement holds.
+
+The corrected handler remains in the source diff on `codex/prefix-hunt21`;
+there is no restoration, commit or push. All launched processes are joined.
+Ledger, oracle, source ROM/assets and helper authorities remain
+hash-identical after evaluation. Target usage is **6.89 GB
+(6.42 GiB)**, below 8 GB; only completed build incremental caches
+are removed, within this worktree's own target directory. Prior evidence is
+preserved read-only. Commands, binary/source identities, raw timings,
+complete residuals, attribution and gate results are retained under
+`target/prefix-hunt21/`.
+
+These are complete seeded logical/CPU-picture gates and receiver-timing
+measurements. No GPU run, external Snes9x process, cached-A/V replay,
+second live census or write to the ledger/oracle/helper authorities occurs.
+Cold exact A/V acceptance remains a separate verification boundary.

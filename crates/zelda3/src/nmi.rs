@@ -1458,6 +1458,11 @@ impl ZeldaState {
         self.native_publish_apu_requests();
         if let Some(master) = self.native_take_upload_return_audio() {
             self.queue_lagless_song_upload_return_nmi(master);
+        } else {
+            // Retain the source bytes before this semantic handler consumes
+            // them. Its SPC acknowledgement branches execute at the anchored
+            // NMI bus times, rather than the earlier output-window boundary.
+            self.capture_lagless_nmi_latches();
         }
         if crate::spc_driver_clock::sound_owner_trace_selected(u64::from(self.frame_ctr_dbg)) {
             let s = &self.game_state.system_signals;

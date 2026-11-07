@@ -1412,6 +1412,16 @@ impl ZeldaState {
         }
     }
 
+    pub(crate) fn capture_lagless_nmi_latches(&mut self) {
+        if !self.lag_free { return; }
+        let s = &self.game_state.system_signals;
+        let latches = [s.music_control(), s.ambient_sound_effect(), s.sound_effect_1(), s.sound_effect_2()];
+        let last = [s.last_music_control(), s.last_ambient_sound_effect()];
+        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            clock.capture_lagless_nmi_latches(latches, last);
+        }
+    }
+
     #[cfg(test)]
     #[cfg(feature = "rom-timing")]
     pub(super) fn native_apu_port_owner_for_test(&self) -> snes::apu::ApuHostPortTiming {
