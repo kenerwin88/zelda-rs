@@ -7119,3 +7119,102 @@ environment switch, nominal H-clock adjustment, forced hold, source-driven
 port injection, GPU execution, cached A/V, external Snes9x process, cargo
 fmt, commit or push is introduced. Every product invocation uses
 `--logical-replay`; the picture census additionally uses `--cpu-video`.
+
+## Lagless prefix hunt 16
+
+Follow-up investigation on `codex/prefix-hunt16`, base **6e01b922**.
+**Incomplete: no acceptance/publication repair is implemented or admitted.**
+Evidence is under `target/prefix-hunt16/`. No runtime file changes, new
+prices or recovered instruction clocks are proposed.
+
+### Executing owners and the unresolved handoff
+
+The existing clocked implementation is usable only with a live interrupted
+CPU context and its executing `CpuMasterTimeline`. `NativeNmiContext`
+already owns hardware entry, `music_header` and `audio_and_update_gate`;
+`native_nmi_header_access` sends their actual bus timestamps through
+`native_nmi_port_at`. The unresolved part is the ordinary lagless caller's
+instruction continuation before that entry, rather than its handler's
+port-store offsets.
+
+The retained intro path demonstrates the lifecycle that must survive the
+handoff. `try_native_startup_main_entry` consumes the returned caller
+context. The intro setup and half-slot owners advance that same timeline;
+`Startup::advance_intro_clear` retires individual instructions, observes
+vblank and completes the interrupted instruction before returning
+`IntroClearBoundary::AcceptNmi`. `resume_native_intro_clear_host` then runs
+the accepted handler and resumes the suspended main. The ordinary lagless
+path instead finishes main atomically, computes its pending holds, and
+runs presentation callbacks afterward. Keeping the bootstrap pointer
+alone would enable those interruptible main owners without also providing
+their resume lifecycle. It is not a completed callback wiring change.
+
+`NativePacing`'s immutable HDMA lease is an aggregate stall composer, not
+an instruction continuation. Its block costs, P2 slots and nominal handler
+wall durations cannot identify the instruction interrupted at vblank.
+This attempt does not convert any of them, or
+`ledger_master_at_nmi_acceptance`, into a hardware acceptance timestamp.
+Both ordinary post-bootstrap lag/held NMIs and ordinary closing NMIs
+remain unmeasured and retain their existing behavior. The clocked cold
+bootstrap and the existing upload-return suffix are unchanged.
+
+### Store frontier and upload rows
+
+The following are **hash-verified hunt-15 observations**, not new native
+measurements. All 14 checked authority files and 239 manifest entries for
+hunts 14/15 match their recorded hashes. The prior product binary also
+matches its recorded SHA-256; the runtime source directories have no diff
+between its build base `a1d4754c` and this branch's `6e01b922` base.
+
+Source accepts the first lag NMI at CPU master **29,253,600** and stores
+SFX-10 at **29,254,448**, synchronizing the executing SPC at **1,396,549**.
+This attempt has **not** reproduced that timestamp on a repaired native
+timeline. The retained comparison's first difference remains SPC
+**1,385,026**, instruction **`$08E5`**, dummy read **`$F7`**, source **0** /
+native **10**, after eight equal events. No newly reached next divergence
+is claimed.
+
+| Iteration | Ready polls, source / unchanged main | Holds, unchanged main / source | Current repair outcome |
+| --- | ---: | ---: | --- |
+| 34,318 | 11,184 / 9,851 | 40 / 41 | Unresolved; no new run |
+| 48,556 | 7,122 / 10,952 | 40 / 41 | Unresolved; no new run |
+
+The retained source suffix acceptances are **13,467,680,894**, V251/H822,
+`$02:83C6`, and **19,387,412,412**, V225/H12, `$00:864F`. Neither missing
+hold is fixed. Upload polls, suffix behavior and later bus windows were
+not freshly measured in this attempt.
+
+### Census and poll-attribution boundary
+
+These are the verified existing main results. The right-hand values denote
+unchanged runtime source, **not fresh hunt-16 census results**.
+
+| Before iteration | Existing main missing → unchanged source |
+| --- | ---: |
+| 94,334 | 2 → 2 |
+| 141,568 | 34 → 34 |
+| 228,499 | 142 → 142 |
+| 380,243 | 275 → 275 |
+| 461,989 | 334 → 334 |
+
+| Lane | Existing missing / excess / FP | Fresh hunt-16 gate |
+| --- | ---: | --- |
+| ROM | 1,864 / 0 / 0 | Not run |
+| Live | 2,276 / 318 / 85 | Not run |
+| CPU pictures | 1,462,997 exact | Not run |
+
+| Poll attribution | Result in this attempt |
+| --- | --- |
+| Implemented live-only hold changes | None; runtime source unchanged |
+| Fresh changed-live-row comparison | Not run |
+| Fresh `$08:C606` episode measurements | Not run |
+| Fresh unexplained-row admission | Not established |
+
+No product build, filtered tests, full default library suite, ROM census,
+CPU-picture census or live replay was launched. Prior successful gates
+and the prior suite's permitted spotlight failure are not presented as
+fresh verification. The requested warning-free build and final full-suite
+requirements remain outstanding along with the implementation. No
+background process was launched, and prior evidence and authority files
+were not modified. **This section records an unfinished attempt, not a
+behavior change or an admitted batch.**
