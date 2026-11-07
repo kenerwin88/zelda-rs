@@ -6867,3 +6867,255 @@ push occurs. Every product invocation uses `--logical-replay`; the picture
 census adds `--cpu-video`. Authority and prior-evidence hashes, binary
 identities, command records, `source.patch` and final artifact hashes bind
 the evidence. All launched processes are joined before completion.
+
+## Lagless prefix hunt 13
+
+Follow-up diagnosis on `codex/prefix-hunt15`, base **a1d4754c**. Evidence is
+under `target/prefix-hunt15/`. **The first post-bootstrap lagless NMI has no
+measured native CPU acceptance position. Requirement B therefore stops at
+its explicit no-guess boundary.** No transport behavior is changed, no
+owners are newly priced, and **zero main instruction clocks are recovered**.
+
+### Acceptance ownership and the four port stores
+
+The cold opening NMI does have an executing CPU owner. The fresh bounded
+replay records acceptance at **28,896,206**, **V225/H26**, interrupted
+**`$00:8036`**. Its hardware entry takes **62 CPU master clocks**, reaching
+the handler vector at **28,896,268**, H88. `NativeNmiContext` then advances
+the actual instruction/bus path, including refresh, through `music_header`
+and `audio_and_update_gate`. `native_nmi_header_access` publishes each store
+through `native_nmi_port_at` at that CPU timeline's current timestamp.
+These native transactions match the hash-verified source bus witness.
+
+| NMI / accepted CPU master / V,H | `$2140` store | `$2141` store | `$2142` store | `$2143` store |
+| --- | ---: | ---: | ---: | ---: |
+| Cold normal, native and source: **28,896,206 / 225,26** | none | 28,896,908 | 28,896,992 | 28,897,054 = 0 |
+| First lag, source: **29,253,600 / 225,52** | none | 29,254,302 | 29,254,386 | 29,254,448 = 10 |
+| Following normal, source: **29,610,942 / 225,30** | 29,611,512 | 29,611,690 | 29,611,774 | 29,611,836 = 0 |
+| First lag / ordinary following normal, native lagless | **unmeasured** | **unmeasured** | **unmeasured** | **unmeasured** |
+
+The first two paths read `$2140` but do not store it: the executing receiver
+echo is `$8B`, different from the last-music latch. Absence of that store is
+an executed branch decision, not a missing observation. Their stores to
+ports 1/2/3 lie **702 / 786 / 848** clocks after acceptance. The following
+normal path clears port 0 and reaches its four stores at **570 / 748 / 832 /
+894** clocks after acceptance. The normal-versus-lag update-gate branch is
+after the audio stores; it does not justify a different guessed audio epoch.
+
+The discontinuity is explicit in `zelda_initialization_code`: after
+`begin_lagless_audio_after_bootstrap(28,933,252)`, it drops
+`native_startup_cpu` and `native_ppu`. Ordinary lagless main subsequently
+records aggregate instruction work and P2 callback slots. `ApuRequest`
+retains a slot, value and producer, but neither an interrupted instruction
+continuation nor an absolute CPU acceptance timestamp. `run_native_held_frame`
+and the ordinary closing callback call the unclocked `interrupt_nmi` path;
+they do not pass a `NativeNmiContext` / `CpuMasterTimeline` into the clocked
+header. `ledger_master_at_nmi_acceptance` is an instruction-ledger mark,
+not a physical beam/master timestamp. Neither that mark nor a P2 callback
+count supplies the missing acceptance point.
+
+This diagnosis is scoped to these ordinary lagless callbacks. Retained
+native CPU owners elsewhere already have clocked handler entry machinery;
+their existence does not establish an entry position for the first lag
+callback after the cold owner has been discarded.
+
+### CPU-to-SPC conversion and the unchanged first split
+
+The conversion contract retains **15,664 / 328,125**, the fractional
+remainder, the suspended SPC instruction and signed pseudo-step credit.
+For source CPU store **29,254,448**, the pure quotient is **1,396,546** with
+remainder **17,222**. Synchronizing the executing SPC reaches **1,396,549**.
+The three-clock difference is retained instruction credit; the quotient
+must not be mislabeled as the observed receiver bus position. Cold native
+stores likewise retain their clock checkpoint and match the source's
+observed **1,379,478 / 1,379,483 / 1,379,486** execution cycles.
+
+The ordinary callback instead schedules against output window
+**[1,381,184, 1,398,272)**. `lagless_host_port_target_cycles` takes
+`max(frame_start_cycle, apu_cycle_origin + apu.cycles)` as its epoch, then
+adds NMI-relative store differences computed from the nominal
+**V225/H84** epoch. H84 is a legacy handler/vector-position assumption,
+not the measured hardware acceptance position. The output window starts
+on the DSP sample lattice after the bootstrap main-entry handoff; the
+first source lag NMI accepts later, in the following field. Reusing the
+relative store spacing cannot repair that epoch distinction or recover
+the interrupted CPU instruction's acceptance jitter.
+
+Concretely, bootstrap main entry **28,933,252** converts to **1,381,212**;
+the output cursor rounds that down to the sample boundary **1,381,184**.
+Source's next accepted lag NMI, **29,253,600**, converts to **1,396,505**
+before accounting for execution credit. Thus the callback epoch starts
+near bootstrap's returned main, rather than the next NMI's accepted CPU
+instruction boundary. These conversions describe the observed mismatch;
+they are not replacements for the absent native CPU clock.
+
+The native batch remains **none / 0 / 0 / 10**, scheduled at
+**1,381,184 / 1,381,214 / 1,381,218 / 1,381,221**. Port 3 is therefore
+**15,328 observed SPC clocks** earlier than source. This is a measured
+publication gap, never an inserted offset or a price.
+
+Fresh bus-window comparison reproduces **eight equal events**, then the
+first difference at **SPC 1,385,026**, instruction **`$08E5`**, dummy read
+of **`$F7`**: **source 0 / native 10**. Its semantic load at **1,385,032**
+and compare at **1,385,037** also read **0 / 10**. Source logs post-operand
+PCs and native logs instruction PCs; the comparison uses cycle, direction,
+address and value. `first-phase-divergence.json` preserves the neighboring
+events. There is **no later newly reached first divergence**: B's missing
+CPU owner prevents a justified transport repair, so this remains the frontier.
+
+### Ready polls and the post-upload suffix
+
+The fresh bounded, seeded ROM run through iteration 48,556 records:
+
+| Iteration | Ready polls, source / main / current | Header polls, source / current | Byte polls, source / current | Holds, main → current / source | Masked callbacks |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 34,318 | **11,184 / 9,851 / 9,851** | 52 / 53 | 76,551 / 76,550 | **40 → 40 / 41** | 23 |
+| 48,556 | **7,122 / 10,952 / 10,952** | 51 / 56 | 76,551 / 76,551 | **40 → 40 / 41** | 23 |
+
+The native port clears remain at transport CPU masters **13,467,901,212 /
+19,387,020,481**; the 174-clock instruction suffix reaches the `$4200`
+restore at **13,467,901,386 / 19,387,020,655**, with zero pending holds.
+`queue_upload_return_nmi_at_master` subsequently advances the remaining
+store access (6), RTS (42) and hardware entry (62) on that transport
+timeline. This suffix mechanism does not restore the discarded main CPU
+owner or make the source/native upload command epochs equal.
+
+Source's additional accepted suffix NMIs remain **13,467,680,894,
+V251/H822, `$02:83C6`**, and **19,387,412,412, V225/H12, `$00:864F`**.
+Both missing holds remain open. Source ready-loop and suffix witnesses are
+reused only after their artifact hashes, unchanged ledger/oracle authority
+hashes and unchanged source-executor code are checked. The native protocol
+counts and return timestamps are freshly reproduced in `upload-comparison.json`.
+
+### Admission and verification boundary
+
+Verification results are recorded with their command, binary, authority and
+artifact identities under `target/prefix-hunt15/`. No runtime source change
+is proposed by this diagnosis. A callback-window shift, nominal H-clock,
+ledger-derived epoch or forced hold would bypass the missing executing CPU
+acceptance owner and is deliberately not substituted for it.
+
+The unmodified eight-slice ROM helper passes **1,473,123 iterations**, gate
+**PASS / unexplained 0**. All predictor rows, hold rows and main instruction
+budgets equal main. The fresh CSV is byte-identical to the verified
+`target/prefix-hunt14/candidate/rom.csv.zst` after decompression; its raw
+hash and verification receipt are retained, and its redundant new copy is
+removed to make room for library compilation. Prior evidence is not changed.
+
+| Before iteration | Missing before → after |
+| --- | ---: |
+| 94,334 | **2 → 2** |
+| 141,568 | **34 → 34** |
+| 228,499 | **142 → 142** |
+| 380,243 | **275 → 275** |
+| 461,989 | **334 → 334** |
+
+The fresh eight-slice `--cpu-video` census also passes **1,473,123
+iterations**, unexplained **0**, with **1,462,997 exact pictures**. Its
+**563 early, 3,952 late, four during source lag, 905 polygon-thread, 4,702
+torn and zero other content differences** match main's aggregate tallies.
+These are picture-census results, not proof of equal CPU/SPC phase.
+
+Exactly one complete single-process seeded `--live-apu-reads
+--pacing-predictor` census passes **1,473,123 iterations**, gate **PASS /
+unexplained 0**. The live CSV is byte-identical to main after decompression;
+the complete timing stream is also byte-identical to main. Both fresh
+streams are hashed before their redundant new copies are removed. The
+preserved identical copies remain under `target/prefix-hunt14/`, and
+`live-polls.jsonl.zst` retains the current poll observations separately.
+
+| Lane | Missing before → after | Excess before → after | FP before → after |
+| --- | ---: | ---: | ---: |
+| ROM | **1,864 → 1,864** | **0 → 0** | **0 → 0** |
+| Live | **2,276 → 2,276** | **318 → 318** | **85 → 85** |
+
+All **6,048 native poll rows**, ten first-zero decisions and actual reseeds
+match main. There are **zero changed live predictor rows, zero changed live
+hold rows, zero live-only changed holds and zero unattributed changes**.
+`changed-live-holds.csv` is the complete empty changed-row table. The **177
+current live-versus-ROM hold differences** retain their verified `$08:C606`
+episode attribution; current unattributed rows and runtime/`cost_p2`
+disagreements are both zero. The other `predicted_refresh` column is a
+diagnostic predictor, not the runtime P2 result used for that check.
+
+| Source episode / first zero | Native first zero, main → current | Current hold-differential rows | Changed holds | Added missing / excess / FP |
+| --- | ---: | ---: | ---: | ---: |
+| 94,334 / 94,854 | 94,854 → 94,854 | 0 | 0 | 0 / 0 / 0 |
+| 141,568 / 142,088 | 142,087 → 142,087 | 5 | 0 | 9 / 9 / 2 |
+| 228,499 / 229,035 | 229,035 → 229,035 | 0 | 0 | 0 / 0 / 0 |
+| 380,243 / 380,881 | 380,881 → 380,881 | 0 | 0 | 0 / 0 / 0 |
+| 461,989 / 462,628 | 462,627 → 462,627 | 6 | 0 | 13 / 13 / 3 |
+| 626,618 / 627,256 | 627,255 → 627,255 | 10 | 0 | 27 / 27 / 5 |
+| 735,229 / 735,867 | 735,866 → 735,866 | 6 | 0 | 12 / 12 / 3 |
+| 881,095 / 881,734 | 881,733 → 881,733 | 135 | 0 | 234 / 230 / 67 |
+| 1,064,096 / 1,064,734 | 1,064,734 → 1,064,734 | 0 | 0 | 0 / 0 / 0 |
+| 1,317,697 / 1,318,335 | 1,318,334 → 1,318,334 | 15 | 0 | 117 / 27 / 5 |
+
+An earlier live launch aborted after **777 startup rows**, before any
+song-end episode: the analysis collector incorrectly treated the always-
+zstd timing stream as plain JSONL and closed its pipe. Its failure and
+partial output are retained under `aborted-live/` and excluded from census
+results. The corrected launch runs the entire route in one process; there
+is no repeated complete live census or repeated live song-end experiment.
+
+The strict decimal **3 GB resource bound is not maintained throughout**.
+The inherited target starts at **6,068,224,000 allocated bytes**; removing
+only rebuildable Cargo output reduces it to **2,854,899,712**. A later ROM
+concatenation sample reaches **3,000,508,416**, and a guarded library link
+attempt reaches **3,010,256,896**. Those are recorded breaches, not rounded
+down to GiB or omitted because cleanup follows. `resources.json` records
+the final allocation and maximum observed samples.
+
+Subsequent library builds disable incremental compilation and use host
+optimization `z`, one codegen unit and stripped symbols to reduce artifacts.
+Compiler-cache files are transparently compressed. Standalone `.rmeta`
+sidecars are temporarily reclaimed only after verifying an exact copy in
+each corresponding `.rlib` archive; their original bytes and nanosecond
+timestamps are restored after the build. This changes host artifact
+storage, not emulated instruction prices, runtime code or test selection.
+New replay logs are losslessly compressed, and verified duplicate fresh
+CSV/timing copies point to the preserved main artifacts. Prior evidence,
+ledger and oracle files remain read-only.
+
+All **81 distinct filtered tests** pass: **seven native NMI stack/header
+tests, 44 SPC-driver tests, two cold-bootstrap tests and 28 native-pacing
+tests**. In particular, `native_nmi_entry_bus_matches_rom_across_refresh_and_field_boundaries`,
+`music_header_matches_rom_commands_echoes_and_bus_timestamps` and
+`nmi_audio_and_update_gate_matches_rom_data_bus_and_state` verify the
+existing clocked machinery independently of the missing ordinary lagless
+acceptance owner. The completed-bootstrap suppression fixture also passes.
+These fixtures do not manufacture or validate an unmeasured runtime entry.
+
+The product binary is the hash-verified, unchanged main artifact
+**`e68c718a...6728e`**, with its warning-free product-build receipt. No new
+product build is claimed. The fresh library test build retains exactly
+**24 pre-existing warning headers**, identical to main, with **zero new
+warnings**. No warning suppression or unrelated source cleanup is applied.
+
+The required full default library suite runs **once**, after the route
+censuses and filtered checks, with the requested assets path and the same
+compact host-build settings. **SNES: 505 passed / 7 ignored. Zelda: 3,010
+passed / 3 ignored.** Its sole failure is the explicitly permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There are **zero unaccepted failures**. Exit **101**, the full log and the
+command/environment receipt are preserved; the suite is not all green.
+Zelda's execution finishes in **2,144.98 seconds**. No implementation change
+follows this run.
+
+The fresh test executables are losslessly archived and their decoded hashes
+verified before removing this worktree's rebuildable Cargo cache. Final
+target allocation is **2.87 GB**, below the limit; this does not erase the
+earlier resource breaches. All **14 checked authorities and 115 checked
+prior artifacts** remain byte-identical. Every launched replay and Cargo
+session has completed; no owned replay or build process is left running.
+
+This is a **documentation/evidence diagnosis**, not an admitted ROM-exact
+publication repair. The clocked bootstrap owner is measured; the first
+ordinary post-bootstrap lag NMI and ordinary intro closing callbacks still
+lack measured native acceptance positions. Equal command/poll observations
+do not establish equal executing SPC state or repair that missing CPU owner.
+No new owner, instruction price, P2 rule, classifier, matcher, engine
+environment switch, nominal H-clock adjustment, forced hold, source-driven
+port injection, GPU execution, cached A/V, external Snes9x process, cargo
+fmt, commit or push is introduced. Every product invocation uses
+`--logical-replay`; the picture census additionally uses `--cpu-video`.
