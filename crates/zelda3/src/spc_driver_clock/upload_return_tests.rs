@@ -54,6 +54,28 @@ fn cpu_port_clock_fixture(program: &[u8]) -> AbsoluteDspEventClock {
 }
 
 #[test]
+fn bootstrap_nmi_cannot_suppress_the_first_lagless_effect() {
+    let mut clock = cpu_port_clock_fixture(&[0xe4, 0xf7, 0x2f, 0xfc]);
+    clock.apu.debug_spc_instruction_trace = Some(Vec::new());
+    // The opening NMI has already stored zero to APUI03. Its completed
+    // transaction must not consume the next NMI's independently queued SFX.
+    clock.cpu_port_at(0, 3, Some(0)).unwrap();
+    let before = clock.cpu_ports.as_ref().unwrap().clone();
+    clock.begin_lagless_output_after_bootstrap(0);
+    let after = clock.cpu_ports.as_ref().unwrap();
+    assert_eq!(before.clock().checkpoint(), after.clock().checkpoint());
+    assert_eq!(bincode::serialize(before.machine()).unwrap(),
+        bincode::serialize(after.machine()).unwrap());
+    clock.advance_lagless(EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 10]), 8, 0);
+    assert_eq!(clock.apu.in_ports[3], 10);
+    assert!(clock.apu.debug_spc_instruction_trace.as_ref().unwrap().iter()
+        .any(|step| step.pc == 0x2002 && step.a == 10),
+        "the executing SPC must read the new effect, not the bootstrap clear");
+    clock.advance_lagless(Default::default(), 8, 0);
+    assert_eq!(clock.apu.in_ports[3], 0, "the following NMI still clears the one-shot");
+}
+
+#[test]
 fn cpu_port_reads_retain_partial_stores_and_credit_across_output_windows() {
     let mut clock = cpu_port_clock_fixture(&[0xda, 0xf4, 0x2f, 0xfe]);
     clock.apu.spc.a = 0x37;

@@ -725,6 +725,11 @@ impl AbsoluteDspEventClock {
         self.absolute_apu_cycle = snes_master_clock_to_apu_cycle(master)
             / APU_CYCLES_PER_DSP_SAMPLE * APU_CYCLES_PER_DSP_SAMPLE;
         self.host_frame_index = snes_frame_for_master_clock(master) + 1;
+        // These actions belong to the opening NMI, which the reset CPU has
+        // already completed. They cannot retire stores in the first logical
+        // callback's different NMI. Keep the executing receiver and clock;
+        // retire only that completed handler's transport ownership.
+        self.cpu_port_actions = [None; 4];
     }
 
     pub(crate) fn advance(
