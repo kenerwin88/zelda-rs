@@ -7426,3 +7426,351 @@ SPC phase, a wait-loop completion, a later bus frontier, or improved upload
 holds. No instruction price, classifier, matcher, P2 rule, forced hold,
 runtime environment switch, ledger-driven injection, GPU execution,
 cached A/V, external Snes9x process, cargo fmt, commit or push is introduced.
+
+## Lagless prefix hunt 18
+
+Hardware-anchor trial on `codex/prefix-hunt18`, base **6ff335b1**.
+**Withdrawn after executing the candidate: three existing SPC-driver
+fixtures fail.** Both trial files are restored byte-for-byte. The restored
+product SHA-256 is **`e68c718a...6728e`**, exactly the retained main binary;
+the independently preserved candidate is **`c7d13bdd...edd7f`** at
+`target/prefix-hunt18/zelda3-candidate`. All candidate route measurements
+below belong to that candidate, not to the restored final runtime.
+Evidence is under `target/prefix-hunt18/`. **No owners are newly priced;
+zero main instruction clocks are recovered.**
+
+### Hardware anchor, measured phase and next bus owner
+
+Hunt 17's `trial.patch` applies cleanly. It replaces the output-window
+origin with physical-field V225/H12 eligibility, then advances the existing
+62-clock slow-ROM hardware entry and handler work through WRAM refresh
+before CPU-to-SPC conversion. The interrupted ordinary main instruction,
+DMA continuation and `$00:8034/$8036` wait-loop phase remain unmodeled.
+No measured residual or ledger acceptance timestamp enters the runtime
+formula. The patch is retained as evidence, not as an admitted change.
+
+All **389** initial authority/prior-artifact checks, **854** supplementary
+hunt-12/13 artifact checks and **five** additional source-witness checks
+match. The source CPU/APU core has no diff from the source witness base
+`89ea9fbb`; the example's intervening edits only add observations. Fresh
+CPU source executions also cover 2,400 and 11,700 host calls, writing only
+new hunt-18 evidence.
+
+The opening table reports the last store, `$2143`. Each of the other
+compared stores in the same NMI has the same CPU residual. CPU residuals
+are calculated from the implemented anchor and handler path; the candidate
+SPC queue deadlines are observed from the executing product. The bootstrap
+retains its executing CPU owner. Scheduled deadlines and source synchronized
+SPC observations have different conversion-credit boundaries, so their
+subtraction is not an instruction price or a measured CPU acceptance.
+
+| Source NMI / field | Candidate minus source, CPU master | Candidate queued SPC / source synchronized SPC |
+| --- | --- | --- |
+| Bootstrap / 80 | 0 | 1,379,486 / 1,379,486 |
+| Iteration 0 lag / 81 | -40 | 1,396,544 / 1,396,549 |
+| Iteration 1 normal / 82 | -18 | 1,413,606 / 1,413,608 |
+| Iteration 1 lag / 83 | -46 | 1,430,666 / 1,430,669 |
+| Iteration 2 normal / 84 | -4 | 1,447,725 / 1,447,729 |
+| Iteration 2 lag / 85 | -42 | 1,464,785 / 1,464,787 |
+| Iteration 3 normal / 86 | -4 | 1,481,845 / 1,481,847 |
+| Iteration 3 lag / 87 | -42 | 1,498,905 / 1,498,910 |
+
+The first SFX-10 deadline moves **1,381,221 → 1,396,544** SPC clocks,
+recovering **15,323 clocks of publication phase**, while recovering **zero
+main instruction clocks**. Source's CPU store is **29,254,448**; the trial
+formula gives **29,254,408**, still **40 CPU master clocks early**. The
+source pure CPU-to-SPC quotient is **1,396,546**; the synchronized receiver
+observation is **1,396,549**. These quantities remain separately recorded.
+
+The candidate matches all **52** bus events in the inherited opening window
+**[1,381,400, 1,420,000]**. A fresh contiguous extended comparison matches
+**55,828** events, then first differs at **SPC 38,169,267**: native
+instruction **`$08E5`**, dummy read **`$F5`**, **source 0 / candidate 5**.
+Source logs post-operand `$08E8`; bus equality compares cycle, direction,
+address and value. `first-phase-divergence.json` retains both neighboring
+streams and the common acknowledgement writes.
+
+The next missing owner is the **NMI's acknowledgement read and branch
+decision**, not an additional fitted store offset. In source iteration
+**1,915**, physical field **2,236**, source accepts at CPU master
+**799,377,296**, V225/H20, only eight clocks after eligibility. Both SPC
+streams publish ambient acknowledgement **5 at 38,158,816**. Source reads
+`$2141` as **5 at 38,160,627** and clears it from `$00:8110` at CPU master
+**799,377,998**, synchronized SPC **38,160,631**. Candidate computes
+`frame_writes` at window **[38,145,280, 38,162,336)** with receiver execution
+**38,145,300**, before that acknowledgement. It chooses **no port-1 store**;
+its next clear is not queued until **38,177,690**. Its port-2/3 paths are
+46 CPU clocks shorter than source's clear branch: their actual queue-formula
+residuals are **−54**, versus the eligibility-only **−8**. Anchoring stores
+does not move the earlier read/branch decision to the executing CPU NMI.
+`next-divergence-transport.log` and `next-divergence-port-neighbors.json`
+retain that causal split. Ordinary instruction completion is still required
+before exact acceptance can be claimed.
+
+### Every compared NMI and the upload windows
+
+`all-compared-nmi-residuals.csv` records **2,462 unique source NMIs**;
+`all-compared-store-residuals.csv` records all **9,515 compared source
+stores**, including the extended prefix, first runtime upload and both
+inherited upload windows.
+Each row retains source acceptance/PC, physical field, eligibility residual,
+observed candidate queue deadline/value, and the CPU formula position when
+an ordinary queued store exists. **Every reconstructed ordinary CPU position converts
+to its observed queue deadline exactly.** These are physical-field joins;
+subsequent callback-count or branch differences do not establish equal
+logical ownership. Absent stores stay explicit.
+
+The following enumerates all **42 NMIs per upload window**: opening,
+40 pre-mask lag NMIs and the source suffix NMI. Eligibility deltas compare
+V225/H12 with source acceptance; queued store deltas use the candidate branch
+and are ordered by ports 1/2/3. A single number means all three agree.
+The suffix uses the clocked upload-return owner, so it is not assigned an
+ordinary eligibility anchor. At 48,556 the ordinary stores in the same
+physical field belong to a different post-return callback; they are not a
+matched source suffix. The full CSVs retain that distinction and all values.
+
+| NMI | 34,318 field | Eligibility delta | Queued store deltas 1/2/3 | 48,556 field | Eligibility delta | Queued store deltas 1/2/3 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Opening | 37621 | -6 | -6 | 54186 | 0 | 0 |
+| Lag 1 | 37622 | -8 | -8 | 54187 | -40 | -40 |
+| Lag 2 | 37623 | -2 | -2 | 54188 | 0 | 0 |
+| Lag 3 | 37624 | -18 | -18 | 54189 | -8 | -8 |
+| Lag 4 | 37625 | -30 | -30 | 54190 | -16 | -16 |
+| Lag 5 | 37626 | -44 | -44 | 54191 | -2 | -2 |
+| Lag 6 | 37627 | -18 | -18 | 54192 | -36 | -36 |
+| Lag 7 | 37628 | -14 | -14 | 54193 | -2 | -2 |
+| Lag 8 | 37629 | -30 | -30 | 54194 | -34 | -34 |
+| Lag 9 | 37630 | -50 | -50 | 54195 | -8 | -8 |
+| Lag 10 | 37631 | -16 | -16 | 54196 | -10 | -10 |
+| Lag 11 | 37632 | -30 | -30 | 54197 | -12 | -12 |
+| Lag 12 | 37633 | -28 | -28 | 54198 | 0 | 0 |
+| Lag 13 | 37634 | 0 | 0 | 54199 | -4 | -4 |
+| Lag 14 | 37635 | -12 | -12 | 54200 | -6 | -6 |
+| Lag 15 | 37636 | -36 | -36 | 54201 | -30 | -30 |
+| Lag 16 | 37637 | -22 | -22 | 54202 | -32 | -32 |
+| Lag 17 | 37638 | -2 | -2 | 54203 | -38 | -38 |
+| Lag 18 | 37639 | 0 | 0 | 54204 | -18 | -18 |
+| Lag 19 | 37640 | -28 | -28 | 54205 | -16 | -16 |
+| Lag 20 | 37641 | -10 | -10 | 54206 | -20 | -20 |
+| Lag 21 | 37642 | -2 | -2 | 54207 | -10 | -10 |
+| Lag 22 | 37643 | -46 | -46 | 54208 | 0 | 0 |
+| Lag 23 | 37644 | -30 | -30 | 54209 | -12 | -12 |
+| Lag 24 | 37645 | -28 | -28 | 54210 | -20 | -20 |
+| Lag 25 | 37646 | -36 | -36 | 54211 | -2 | -2 |
+| Lag 26 | 37647 | -28 | -28 | 54212 | -24 | -24 |
+| Lag 27 | 37648 | -34 | -34 | 54213 | -38 | -38 |
+| Lag 28 | 37649 | -10 | -10 | 54214 | -30 | -30 |
+| Lag 29 | 37650 | -2 | -2 | 54215 | -6 | -6 |
+| Lag 30 | 37651 | -10 | -10 | 54216 | -20 | -20 |
+| Lag 31 | 37652 | -18 | -18 | 54217 | -32 | -32 |
+| Lag 32 | 37653 | -16 | -16 | 54218 | -54 | -54 |
+| Lag 33 | 37654 | -40 | -40 | 54219 | -10 | -10 |
+| Lag 34 | 37655 | -12 | -12 | 54220 | -14 | -14 |
+| Lag 35 | 37656 | -12 | -12 | 54221 | -12 | -12 |
+| Lag 36 | 37657 | -2 | -2 | 54222 | -2 | -2 |
+| Lag 37 | 37658 | -46 | -46 | 54223 | -22 | -22 |
+| Lag 38 | 37659 | -6 | -6 | 54224 | -6 | absent |
+| Lag 39 | 37660 | -22 | -22 | 54225 | -10 | absent |
+| Lag 40 | 37661 | 0 | absent | 54226 | -12 | absent |
+| Suffix | 37685 | clocked return | ordinary stores absent | 54250 | clocked return | different post-return callback |
+
+### Executed upload polls, holds and return suffix
+
+| Iteration | Ready polls, source / main / candidate | Header polls, source / candidate | Byte polls, source / candidate | Holds, main → candidate / source | Masked callbacks |
+| --- | --- | --- | --- | --- | --- |
+| 34,318 | **11,184 / 9,851 / 11,871** | 52 / 52 | 76,551 / 76,551 | **40 → 40 / 41** | 23 |
+| 48,556 | **7,122 / 10,952 / 10,471** | 51 / 55 | 76,551 / 76,552 | **40 → 40 / 41** | 23 |
+
+| Iteration / lane | First SPC `$FF` read | `$AA` ready store | `$BB` ready store |
+| --- | --- | --- | --- |
+| 34,318 source | 642,527,398 | 642,544,073 | 642,544,080 |
+| 34,318 candidate | 642,529,972 | 642,543,310 | 642,543,317 |
+| 48,556 source | 925,122,447 | 925,139,379 | 925,139,386 |
+| 48,556 candidate | 925,087,620 | 925,102,516 | 925,102,523 |
+
+These are retired transfer-audit counts and deduplicated SPC bus observations,
+including return-preview clones. They are not matched common-CPU access
+checkpoints after callback counts diverge. The first runtime upload at
+10,425 changes **9,689 → 6,259** ready polls against **5,876** source,
+retains **58 holds**, and changes masked callbacks **23 → 22**. The later
+native output epoch consequently advances by one callback; the two target
+command targets are **642,509,440 / 925,072,640**.
+
+The two final port clears are **13,467,664,648 / 19,386,634,459** CPU master
+clocks. Their executed 174-clock suffixes restore `$4200` at
+**13,467,664,822 / 19,386,634,633**, both with **zero pending holds**. Source
+accepts its additional suffix NMIs at **13,467,680,894**, V251/H822,
+`$02:83C6`, and **19,387,412,412**, V225/H12, `$00:864F`. Neither source
+suffix hold is recovered. `upload-comparison.json`,
+`upload-receiver-bus.json`, the complete bounded bus log, and per-callback
+receiver observations retain the measurements.
+
+The executed return-owner port deliveries are also measured, rather than
+substituted with ordinary same-field nominal stores:
+
+| Iteration / port | Source synchronized SPC | Candidate instruction-return SPC | Observed SPC delta |
+| --- | --- | --- | --- |
+| 34,318 / 1 | 642,918,897 | 642,918,132 | -765 |
+| 34,318 / 2 | 642,918,905 | 642,918,142 | -763 |
+| 34,318 / 3 | 642,918,905 | 642,918,142 | -763 |
+| 48,556 / 1 | 925,514,479 | 925,477,350 | -37,129 |
+| 48,556 / 2 | 925,514,483 | 925,477,360 | -37,123 |
+| 48,556 / 3 | 925,514,489 | 925,477,360 | -37,129 |
+
+All six values match source (ambient 5, then two zeros), but these are
+different receiver epochs. `upload-return-store-residuals.json` preserves
+the source CPU stores and actual native return-owner observations without
+inventing an inverse-converted native CPU acceptance.
+
+### ROM, pictures and instruction conservation
+
+The supplied eight-slice ROM census helper passes **1,473,123 iterations**,
+**PASS / unexplained 0**. ROM holds do not change in any row; all main
+instruction budgets are unchanged. **440** predictor rows change handler,
+refresh/raster or elapsed diagnostics; **69** change masked callback count.
+The handler-price functions and P2 rules are unchanged; observed branches
+change their executed durations. `instruction-conservation.json` enumerates
+the changed fields.
+
+| Before iteration | Missing main → candidate |
+| --- | --- |
+| 94,334 | 2 → 2 |
+| 141,568 | 34 → 34 |
+| 228,499 | 142 → 142 |
+| 380,243 | 275 → 275 |
+| 461,989 | 334 → 334 |
+
+| Lane | Missing main → candidate | Excess main → candidate | FP main → candidate |
+| --- | --- | --- | --- |
+| ROM | **1,864 → 1,864** | **0 → 0** | **0 → 0** |
+| Live | **2,276 → 2,215** | **318 → 257** | **85 → 72** |
+
+The eight-slice **`--cpu-video`** census passes all **1,473,123 iterations**,
+**unexplained 0**, preserving **1,462,997 exact pictures**. The 563 early,
+3,952 late, four during-lag, 905 polygon-thread, 4,702 torn and zero other
+content differences equal main. All eight processes exit zero.
+
+### One live census and complete changed-row attribution
+
+Exactly **one** full single-process seeded **`--live-apu-reads
+--pacing-predictor`** census completes, **PASS / unexplained 0**. The baseline
+is main's hash-verified `target/prefix-hunt14/live.csv.zst`. All **33** changed
+live hold rows are live-only changes because ROM holds are unchanged; all
+are attributed to observed **`$08:C606`** song-end predicate differences and
+carried state inside the verified recovery intervals. **Zero changed rows
+are unattributed.** The **2,494** live main-budget differences are executed
+poll-dependent path differences within those same intervals; zero are
+unanchored. Runtime holds equal P2 in both complete route lanes.
+
+| Source poll episode / first zero | Main → candidate first zero | Changed hold rows | Delta missing / excess / FP | Recovery bound, exclusive |
+| --- | --- | --- | --- | --- |
+| 94,334 / 94,854 | 94,854 → 94,854 | 0 | 0 / 0 / 0 | 94,855 |
+| 141,568 / 142,088 | 142,087 → 142,088 | 5 | -9 / -9 / -2 | 144,000 |
+| 228,499 / 229,035 | 229,035 → 229,035 | 0 | 0 / 0 / 0 | 229,036 |
+| 380,243 / 380,881 | 380,881 → 380,881 | 0 | 0 / 0 / 0 | 380,882 |
+| 461,989 / 462,628 | 462,627 → 462,628 | 6 | -13 / -13 / -3 | 466,000 |
+| 626,618 / 627,256 | 627,255 → 627,256 | 10 | -27 / -27 / -5 | 629,845 |
+| 735,229 / 735,867 | 735,866 → 735,867 | 6 | -12 / -12 / -3 | 738,000 |
+| 881,095 / 881,734 | 881,733 → 881,733 | 0 | 0 / 0 / 0 | 884,327 |
+| 1,064,096 / 1,064,734 | 1,064,734 → 1,064,734 | 0 | 0 / 0 / 0 | 1,066,963 |
+| 1,317,697 / 1,318,335 | 1,318,334 → 1,318,336 | 6 | 0 / 0 / 0 | 1,320,900 |
+
+The four corrected early-zero episodes account for **61 fewer missing,
+61 fewer excess and 13 fewer false-positive rows**. The last episode moves
+from one iteration early to one late; its six changed hold rows conserve
+all three totals. Native poll observations change **6,048 → 6,054** rows.
+Actual reseeds change from ten to five: **882,000 / 884,000 / 884,327 /
+1,320,000 / 1,320,900**. Both full timing streams are read back to observe
+these decisions; baseline raw SHA-256 **`286873e5...17af`** is reproduced.
+The current live-versus-ROM differential has **150** rows, all inside the
+known poll recovery intervals. `live-comparison.json` conserves the full
+counts; `changed-live-holds.json` also includes both timing observations
+for each of the following complete changed-row set.
+
+| Iteration | Source lag | Main → candidate holds | Poll episode |
+| --- | --- | --- | --- |
+| 142,088 | 0 | 5 → 0 | $08:C606 / 141,568 |
+| 142,089 | 5 | 0 → 5 | $08:C606 / 141,568 |
+| 142,091 | 0 | 4 → 0 | $08:C606 / 141,568 |
+| 142,092 | 4 | 3 → 4 | $08:C606 / 141,568 |
+| 142,094 | 3 | 0 → 3 | $08:C606 / 141,568 |
+| 462,699 | 0 | 1 → 0 | $08:C606 / 461,989 |
+| 462,700 | 1 | 0 → 1 | $08:C606 / 461,989 |
+| 462,709 | 0 | 4 → 0 | $08:C606 / 461,989 |
+| 462,710 | 5 | 0 → 4 | $08:C606 / 461,989 |
+| 463,179 | 0 | 8 → 0 | $08:C606 / 461,989 |
+| 463,180 | 8 | 0 → 8 | $08:C606 / 461,989 |
+| 627,316 | 0 | 1 → 0 | $08:C606 / 626,618 |
+| 627,317 | 1 | 0 → 1 | $08:C606 / 626,618 |
+| 627,326 | 0 | 4 → 0 | $08:C606 / 626,618 |
+| 627,327 | 5 | 0 → 4 | $08:C606 / 626,618 |
+| 627,799 | 0 | 8 → 0 | $08:C606 / 626,618 |
+| 627,800 | 8 | 0 → 8 | $08:C606 / 626,618 |
+| 629,325 | 7 | 0 → 7 | $08:C606 / 626,618 |
+| 629,327 | 0 | 7 → 0 | $08:C606 / 626,618 |
+| 629,458 | 0 | 7 → 0 | $08:C606 / 626,618 |
+| 629,462 | 7 | 0 → 7 | $08:C606 / 626,618 |
+| 735,936 | 0 | 1 → 0 | $08:C606 / 735,229 |
+| 735,937 | 1 | 0 → 1 | $08:C606 / 735,229 |
+| 735,946 | 0 | 4 → 0 | $08:C606 / 735,229 |
+| 735,947 | 5 | 0 → 4 | $08:C606 / 735,229 |
+| 736,420 | 8 | 0 → 7 | $08:C606 / 735,229 |
+| 736,422 | 0 | 7 → 0 | $08:C606 / 735,229 |
+| 1,318,395 | 0 | 1 → 0 | $08:C606 / 1,317,697 |
+| 1,318,397 | 0 | 0 → 1 | $08:C606 / 1,317,697 |
+| 1,318,405 | 0 | 4 → 0 | $08:C606 / 1,317,697 |
+| 1,318,407 | 0 | 0 → 4 | $08:C606 / 1,317,697 |
+| 1,318,877 | 0 | 8 → 0 | $08:C606 / 1,317,697 |
+| 1,318,879 | 0 | 0 → 8 | $08:C606 / 1,317,697 |
+
+### Fixture rejection and final verification boundary
+
+The executing candidate's filtered SPC-driver run is **42 passed / 3 failed**.
+The failures are:
+
+- `bootstrap_nmi_cannot_suppress_the_first_lagless_effect`: input remains
+  zero instead of 10 after the fixture's eight-sample output window.
+- `sound_fix1_first_upload_return_publishes_ambient_after_terminal_clears`:
+  subsequent input ports remain `[5, 0, 66]` instead of `[0, 0, 0]`.
+- `lagless_nmi_stores_survive_output_boundary_and_cycle_rebase`: the
+  absolute field deadline precedes the rebased APU origin and
+  `target.checked_sub(apu_cycle_origin)` fails.
+
+These expose the trial's changed contract between physical field index,
+output-window duration and retained receiver time. The route censuses do
+not cover every existing window/rebase fixture. The trial is rejected
+without changing those fixtures' expectations. `runtime-restoration.json`
+verifies both files against their pre-trial SHA-256 values. The restored
+fresh product is byte-identical to main. Restored focused tests pass:
+**44 SPC driver + 7 NMI stack + 2 lag-free bootstrap + 28 native pacing =
+81 tests**. Candidate and restored product builds and the fresh source
+example build have **zero warnings**. The library-test build re-emits the
+same **24 pre-existing warning headers** as main; it is not reported as a
+warning-free test build.
+
+The required full default library suite runs **once**, after the route
+censuses and all runtime edits/restoration, with
+`ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat`
+and `cargo test -q --profile parity -p zelda3 -p snes --lib`.
+**SNES: 505 passed / 7 ignored. Zelda: 3,010 passed / 3 ignored.** The sole
+failure is the explicitly permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There are **zero unaccepted failures**. Exit **101** is retained, rather
+than reported as an all-green suite; Zelda finishes in **810.32 seconds**.
+
+Both runtime files are restored, so the final branch adds this diagnosis
+only. The single live census above tests the withdrawn candidate; there is
+no second restored live replay. The restored product hash, focused tests
+and final default suite establish the final-runtime boundary separately.
+The largest observed target allocation is approximately **6.6 GB**, and the
+final allocation is approximately **4.6 GB**, below the **8 GB** cap. After
+the short source process exits zero, 1,998 unreferenced fresh receiver
+observations are reclaimed with a path/size/hash manifest; complete bus,
+CPU timing/profile streams and selected source boundaries remain. Prior
+evidence is unchanged: all **1,248** rechecked entries match, including all
+**14 authority files** rechecked again after the suite. Every launched
+replay, source executor, Cargo session and collector has finished; no owned
+background process remains. Work uses CPU logical modes and Rust source
+executors, with no GPU execution, cached A/V or external Snes9x process.
+Instruction prices, classifier, matcher, P2 rules and runtime environment
+interfaces are unchanged. No cargo fmt, commit or push is performed.
