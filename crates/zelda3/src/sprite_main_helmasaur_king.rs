@@ -73,63 +73,108 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_reinitialize(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8019));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8019);
         let t = self.sprite_slot_view(k).subtype2() as usize;
         for i in (0..=3usize).rev() {
+            b.block(0x1e8024);
             let idx = (t.wrapping_add(i.wrapping_mul(8))) & 0x1f;
             self.overlord_slot_view_mut(i)
                 .set_x_low(HELMASAUR_MASK_X_OFFSETS[idx]);
+            if i != 0 { b.taken(0x1e8034); }
         }
+        b.block(0x1e8036);
     }
 
     // void Sprite_92_HelmasaurKing(int k) {  // sprite_main.c:19293
     //   ...see sprite_main.c...
     // }
     pub(super) fn sprite_92_helmasaur_king(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8039));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8039);
         if sign8(self.sprite_slot_view(k).c()) {
+            b.block(0x1e803e);
+            if self.sprite_slot_view(k).delay_main() == 0 { b.taken(0x1e8041); }
+            else {
+                b.block(0x1e8043);
+                if self.sprite_slot_view(k).delay_main() != 1 { b.taken(0x1e8044); }
+            }
             if self.sprite_slot_view(k).delay_main() == 1 {
+                b.block(0x1e8046);
                 self.sprite_slot_view_mut(k).clear();
             }
+            b.block(0x1e8049);
             // ROM $1E:8049 JSL $06:DBF0
             self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+            b.block(0x1e804d);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
+            b.block(0x1e8050);
             if ((self.game_state.frame.frame_counter & 7) | self.sprite_slot_view(k).delay_aux1())
                 == 0
             {
+                b.block(0x1e8059);
                 self.sprite_slot_view_mut(k).xor_oam_flags(0x40);
-            }
+            } else { b.taken(0x1e8057); }
+            b.block(0x1e8061);
             self.sprite_move_xyz(k, SpriteMoveEntry::Rom1EFF34);
+            b.block(0x1e8064);
             self.sprite_slot_view_mut(k).subtract_z_velocity(2);
             if sign8(self.sprite_slot_view(k).z()) {
+                b.block(0x1e806f);
                 let mut sprite = self.sprite_slot_view_mut(k);
                 sprite.set_z(0);
                 sprite.set_delay_main(12);
                 sprite.set_z_velocity(24);
                 sprite.set_graphics(6);
-            }
+            } else { b.taken(0x1e806d); }
+            b.block(0x1e8081);
             return;
         }
 
+        b.taken(0x1e803c); b.block(0x1e8082);
         if self.sprite_slot_view(k).c() < 3 {
+            b.block(0x1e8086);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.clear_object_priority_bits(0x0e);
             sprite.set_flags(0x0a);
         } else {
+            b.taken(0x1e8084); b.block(0x1e8095);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_flags4(0x1f);
             sprite.set_flags(2);
         }
+        b.block(0x1e809f);
         self.helmasaur_king_draw(k);
+        b.block(0x1e80a2);
         if self.sprite_slot_view(k).state() == 6 {
+            b.block(0x1e80a9);
             let t = self.sprite_slot_view(k).delay_main();
             if t == 0 {
+                b.block(0x1e80ae);
                 self.sprite_schedule_boss_for_death(k);
                 return;
             }
+            b.taken(0x1e80ac); b.block(0x1e80bc);
             self.sprite_slot_view_mut(k).set_hit_timer(t | 0xf0);
             let j = self.overlord_slot_view(3).gen2();
+            if t >= 128 { b.taken(0x1e80c5); }
+            else {
+                b.block(0x1e80c7);
+                if t & 7 != 0 { b.taken(0x1e80c9); }
+                else { b.block(0x1e80cb); if j==0x10 { b.taken(0x1e80d0); } }
+            }
             if t < 128 && (t & 7) == 0 && j != 0x10 {
+                b.block(0x1e80d2);
+                if sign8(self.overlord_slot_view(5+usize::from(j)).x_low()) { b.block(0x1e80dc); }
+                else { b.taken(0x1e80da); }
+                b.block(0x1e80de);
+                if sign8(self.overlord_slot_view(5+usize::from(j)).y_low()) { b.block(0x1e80f4); }
+                else { b.taken(0x1e80f2); }
+                b.block(0x1e80f6);
                 self.overlord_slot_view_mut(3).add_gen2(1);
                 let j = j as usize;
                 let x = self
@@ -142,112 +187,166 @@ impl ZeldaState {
                 self.sprite_workspace_mut().set_current_sprite_y(y);
                 self.sprite_make_boss_explosion(k);
             }
+            b.block(0x1e8109);
             return;
         }
 
+        b.taken(0x1e80a7); b.block(0x1e8117);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
 
+        b.block(0x1e811a);
         let t = HELMASAUR_MASK_DAMAGE_STAGE_BY_HEALTH
             [(self.sprite_slot_view(k).health() >> 2) as usize];
         self.sprite_slot_view_mut(k).set_c(t);
         if t == 3 {
+            b.block(0x1e812a);
             if t != self.sprite_slot_view(k).e() {
+                b.block(0x1e812f);
                 self.sprite_slot_view_mut(k).set_hit_timer(0);
                 self.helmasaur_king_explode_mask(k);
-            }
-        } else if t != self.sprite_slot_view(k).e() {
-            self.helmasaur_king_chip_away_at_mask(k);
+                b.block(0x1e8135);
+            } else { b.taken(0x1e812d); }
+        } else {
+            b.taken(0x1e8128); b.block(0x1e8137);
+            if t != self.sprite_slot_view(k).e() {
+                b.block(0x1e813c); self.helmasaur_king_chip_away_at_mask(k);
+            } else { b.taken(0x1e813a); }
         }
+        b.block(0x1e813f);
         let c = self.sprite_slot_view(k).c();
         self.sprite_slot_view_mut(k).set_e(c);
 
         // ROM $1E:8145 JSL $06:F2AA
         self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
+        b.block(0x1e8149);
         self.helmasaur_king_swing_tail(k);
+        b.block(0x1e814c);
         self.helmasaur_king_attempt_damage(k);
+        b.block(0x1e814f);
         self.helmasaur_king_check_mask_damage_from_hammer(k);
 
+        b.block(0x1e8152);
         if self.sprite_slot_view(k).delay_aux1() == 0 {
+            b.taken(0x1e8155); b.block(0x1e815c);
             if self.sprite_slot_view(k).delay_aux2() != 0 {
+                b.block(0x1e8161);
                 if self.sprite_slot_view(k).delay_aux2() == 0x40 {
+                    b.block(0x1e8165);
                     self.helmasaur_king_spit_fireball(k);
+                    b.block(0x1e8168);
                     if self.sprite_slot_view(k).c() >= 3 {
                         self.helmasaur_king_begin_anim_clock(k);
-                    }
-                }
+                    } else { b.taken(0x1e816d); }
+                } else { b.taken(0x1e8163); }
+                b.block(0x1e817c);
                 return;
             }
+            b.taken(0x1e815f);
         } else {
+            b.block(0x1e8157);
             if self.sprite_slot_view(k).delay_aux1() == 96 {
+                b.taken(0x1e8159);
                 self.helmasaur_king_begin_anim_clock(k);
-            }
+                b.block(0x1e817c);
+            } else { b.block(0x1e815b); }
             return;
         }
 
+        b.block(0x1e817d);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x1e819c);
+                if self.sprite_slot_view(k).hit_timer()!=0 { b.taken(0x1e819f); }
+                else { b.block(0x1e81a1); if self.sprite_slot_view(k).delay_main()!=0 { b.taken(0x1e81a4); } }
                 let sprite = self.sprite_slot_view(k);
-                if (sprite.hit_timer() != 0 || sprite.delay_main() == 0)
-                    && !self.helmasaur_king_maybe_fireball(k)
-                {
+                if sprite.hit_timer() != 0 || sprite.delay_main() == 0 {
+                  b.block(0x1e81a6);
+                  if !self.helmasaur_king_maybe_fireball(k) {
+                    b.block(0x1e81a9);
                     let j = (self.get_random_number() & 7) as usize;
+                    b.block(0x1e81ad);
                     let damaged_mask = self.sprite_slot_view(k).c() >= 3;
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_x_velocity(HELMASAUR_KING_PATROL_X_VELOCITIES[j] as u8);
                     sprite.set_y_velocity(HELMASAUR_KING_PATROL_Y_VELOCITIES[j] as u8);
                     sprite.set_delay_main(64);
                     if damaged_mask {
+                        b.block(0x1e81c8);
                         sprite.shift_x_velocity_left(1);
                         sprite.shift_y_velocity_left(1);
                         sprite.halve_delay_main();
-                    }
+                    } else { b.taken(0x1e81c6); }
+                    b.block(0x1e81d1);
                     sprite.increment_ai_state();
-                }
+                    b.block(0x1e81d4);
+                  }
+                } else { b.block(0x1e81d4); }
             }
             1 => {
+                b.block(0x1e81d5);
                 self.helmasaur_king_handle_movement(k);
+                b.block(0x1e81d8);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1e81dd);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_delay_main(32);
                     sprite.increment_ai_state();
-                }
+                } else { b.taken(0x1e81db); }
+                b.block(0x1e81e5);
             }
             2 => {
+                b.block(0x1e8210);
+                if self.sprite_slot_view(k).hit_timer()!=0 { b.taken(0x1e8213); }
+                else { b.block(0x1e8215); if self.sprite_slot_view(k).delay_main()!=0 { b.taken(0x1e8218); } }
                 let sprite = self.sprite_slot_view(k);
-                if (sprite.hit_timer() != 0 || sprite.delay_main() == 0)
-                    && !self.helmasaur_king_maybe_fireball(k)
-                {
+                if sprite.hit_timer() != 0 || sprite.delay_main() == 0 {
+                  b.block(0x1e821a);
+                  if !self.helmasaur_king_maybe_fireball(k) {
+                    b.block(0x1e821d);
                     let damaged_mask = self.sprite_slot_view(k).e() >= 3;
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_delay_main(64);
                     if damaged_mask {
+                        b.block(0x1e8229);
                         sprite.halve_delay_main();
-                    }
+                    } else { b.taken(0x1e8227); }
+                    b.block(0x1e822c);
                     sprite.negate_x_velocity();
                     sprite.negate_y_velocity();
                     sprite.increment_ai_state();
-                }
+                    b.block(0x1e8241);
+                  }
+                } else { b.block(0x1e8241); }
             }
             3 => {
+                b.block(0x1e8242);
                 self.helmasaur_king_handle_movement(k);
+                b.block(0x1e8245);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1e824a);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(0);
                     sprite.set_delay_main(64);
-                }
+                } else { b.taken(0x1e8248); }
+                b.block(0x1e8252);
             }
             _ => {}
         }
     }
 
     fn helmasaur_king_begin_anim_clock(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e816f);
         if self.sprite_slot_view(k).anim_clock() == 0 {
+            b.block(0x1e8174);
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.increment_anim_clock();
             sprite.set_delay_aux3(32);
-        }
+        } else { b.taken(0x1e8172); }
     }
 
     // void HelmasaurKing_HandleMovement(int k) {  // sprite_main.c:19422
@@ -259,21 +358,33 @@ impl ZeldaState {
     //   Sprite_MoveXY(k);
     // }
     pub(super) fn helmasaur_king_handle_movement(&mut self, k: usize) {
-        let mut n: i32 = 1
-            + i32::from((self.game_state.frame.frame_counter & 3) == 0)
-            + i32::from(self.sprite_slot_view(k).c() >= 3);
-        loop {
-            self.sprite_slot_view_mut(k).increment_subtype2();
-            if (self.sprite_slot_view(k).subtype2() & 15) == 0 {
-                self.set_sound_effect_1(0x21);
-            }
-            n -= 1;
-            if n == 0 {
-                break;
-            }
-        }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e81e6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e81e6);
+        self.helmasaur_king_step_animation(k);
+        b.block(0x1e81e9);
+        if self.game_state.frame.frame_counter & 3 == 0 {
+            b.block(0x1e81ef); self.helmasaur_king_step_animation(k);
+        } else { b.taken(0x1e81ed); }
+        b.block(0x1e81f2);
+        if self.sprite_slot_view(k).c() >= 3 {
+            b.block(0x1e81f9); self.helmasaur_king_step_animation(k);
+        } else { b.taken(0x1e81f7); }
+        b.block(0x1e81fc);
         // ROM $1E:81FC
         self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
+        b.block(0x1e81ff);
+    }
+
+    fn helmasaur_king_step_animation(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8200));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8200);
+        self.sprite_slot_view_mut(k).increment_subtype2();
+        if self.sprite_slot_view(k).subtype2() & 15 == 0 {
+            b.block(0x1e820a); self.set_sound_effect_1(0x21);
+        } else { b.taken(0x1e8208); }
+        b.block(0x1e820f);
     }
 
     // bool HelmasaurKing_MaybeFireball(int k) {  // sprite_main.c:19431
@@ -289,16 +400,31 @@ impl ZeldaState {
     //   return true;
     // }
     pub(super) fn helmasaur_king_maybe_fireball(&mut self, k: usize) -> bool {
+        let scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8253));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8253);
         self.sprite_slot_view_mut(k).increment_subtype();
         if self.sprite_slot_view(k).subtype() != 4 {
+            b.taken(0x1e825b); b.block(0x1e827b);
             return false;
         }
+        b.block(0x1e825d);
+        // First PLA closes the child frame. Its remaining instructions run
+        // in the actual caller's frame, as in the ROM routine profiler.
+        drop(scope);
+        b.block(0x1e825e);
         self.sprite_slot_view_mut(k).set_subtype(0);
-        if (self.get_random_number() & 1) != 0 {
+        let random = self.get_random_number();
+        b.block(0x1e8266);
+        if (random & 1) != 0 {
+            b.block(0x1e826a);
             self.sprite_slot_view_mut(k).set_delay_aux2(127);
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x2a);
+            b.block(0x1e8275);
         } else {
+            b.taken(0x1e8268); b.block(0x1e8276);
             self.sprite_slot_view_mut(k).set_delay_aux1(160);
+            b.block(0x1e827b);
         }
         true
     }
@@ -456,62 +582,96 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_swing_tail(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e82a0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e82a0);
         self.overlord_slot_view_mut(4).add_x_low(1);
         self.helmasaur_king_reinitialize(k);
+        b.block(0x1e82a7);
         let mask: u8 = if self.sprite_slot_view(k).anim_clock() != 0 {
+            b.block(0x1e82ae);
             0
         } else {
+            b.taken(0x1e82ac);
             1
         };
+        b.block(0x1e82b0);
         if (self.game_state.frame.frame_counter & mask) == 0 {
+            b.block(0x1e82b4);
             let j = (self.sprite_slot_view(k).direction() & 1) as usize;
             // overlord_gen2[0] += j ? -1 : 1
             let delta: u8 = if j != 0 { 0xffu8 } else { 1u8 };
             self.overlord_slot_view_mut(0).add_gen2(delta);
             if self.overlord_slot_view(0).gen2() == HELMASAUR_TAIL_SWING_X_VELOCITY_TARGETS[j] as u8
             {
+                b.block(0x1e82c9);
                 self.sprite_slot_view_mut(k).increment_direction();
-            }
+            } else { b.taken(0x1e82c7); }
+            b.block(0x1e82cc);
+            if sign8(self.overlord_slot_view(0).gen2()) { b.block(0x1e82d3); }
+            else { b.taken(0x1e82d1); }
+            b.block(0x1e82d4);
             // WORD(overlord_gen1[5]) += (int8)overlord_gen2[0]
             let delta_w = (self.overlord_slot_view(0).gen2() as i8) as i16 as u16;
             self.overlord_slot_view_mut(5).add_gen1_word(delta_w);
-        }
+        } else { b.taken(0x1e82b2); }
+        b.block(0x1e82e4);
         if self.sprite_slot_view(k).anim_clock() == 0 {
+            b.taken(0x1e82e7); b.block(0x1e8326);
             return;
         }
+        b.block(0x1e82e9);
         if self.overlord_slot_view(0).gen2() == 0 {
+            b.block(0x1e82ee);
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x6);
-        }
+        } else { b.taken(0x1e82ec); }
 
+        b.block(0x1e82f4);
         if self.sprite_slot_view(k).anim_clock() == 2 {
+            b.taken(0x1e82f9); b.block(0x1e832d);
             let j = self.sprite_slot_view(k).head_direction();
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
             self.overlord_slot_view_mut(1).add_gen2_word(dw);
             let cmp = if j != 0 { (-124i8) as u8 } else { 124u8 };
             if self.overlord_slot_view(1).gen2() == cmp {
+                b.block(0x1e834a);
                 self.sprite_slot_view_mut(k).set_anim_clock(3);
-            }
+            } else { b.taken(0x1e8348); }
+            b.block(0x1e834d);
             self.overlord_slot_view_mut(7).add_gen1(3);
-        } else if self.sprite_slot_view(k).anim_clock() == 3 {
+        } else {
+          b.block(0x1e82fb);
+          if self.sprite_slot_view(k).anim_clock() == 3 {
+            b.taken(0x1e82fd); b.block(0x1e8357);
             let j = self.sprite_slot_view(k).head_direction() ^ 1;
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
             self.overlord_slot_view_mut(1).add_gen2_word(dw);
             if self.overlord_slot_view(1).gen2() == 0 {
+                b.block(0x1e8376);
                 self.sprite_slot_view_mut(k).set_anim_clock(0);
-            }
+            } else { b.taken(0x1e8374); }
+            b.block(0x1e8379);
             self.overlord_slot_view_mut(7).subtract_gen1(3);
+            b.block(0x1e8382);
         } else {
+            b.block(0x1e82ff);
             if (self.overlord_slot_view(0).gen2() | self.sprite_slot_view(k).delay_aux3()) == 0 {
+                b.block(0x1e8307);
                 let head_direction = self.overlord_slot_view(6).gen1() & 1;
                 self.sprite_slot_view_mut(k)
                     .set_head_direction(head_direction);
+                b.block(0x1e8312);
                 let dir = self.sprite_is_right_of_link(k).a ^ 1;
                 if dir == self.sprite_slot_view(k).head_direction() {
+                    b.block(0x1e831a);
                     self.sprite_slot_view_mut(k).set_anim_clock(2);
                     let sfx = self.sprite_calculate_sfx_pan(k) | 0x26;
+                    b.block(0x1e8321);
                     self.set_sound_effect_2(sfx);
-                }
-            }
+                } else { b.taken(0x1e8318); }
+                b.block(0x1e8326);
+            } else { b.taken(0x1e8305); b.block(0x1e8382); }
+          }
         }
     }
 

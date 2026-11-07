@@ -11,6 +11,8 @@ mod prefix23;
 mod prefix24;
 #[path = "sprite_prefix25_tests.rs"]
 mod prefix25;
+#[path = "sprite_prefix26_tests.rs"]
+mod prefix26;
 
 #[test]
 fn prefix10_intro_dispatch_and_fade_markers_match_rom() {

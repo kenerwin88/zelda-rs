@@ -748,12 +748,11 @@ impl ZeldaState {
         }
         self.bolt_guard_trigger_chase_theme(k);
         self.guard_parry_sword_attacks_far(k);
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom05F971) {
             return false;
         }
-        if self.sprite_slot_view(k).wall_collision() == 0 {
-            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
-        }
+        // $05:CBF0 JSR CDD4: select the already proved guarded XY entry.
+        self.soldier_move_if_clear(k);
         // $05:CBF3 JSR B88D -> JSL E496; $05:CBF6 JSL F121.
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
         self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Rom06F121);
@@ -789,13 +788,11 @@ impl ZeldaState {
         b.block(0x05cc6e);
         self.guard_parry_sword_attacks_far(k);
         b.block(0x05cc72);
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom05F971) {
             return;
         }
         b.block(0x05cc75);
-        if self.sprite_slot_view(k).wall_collision() == 0 {
-            self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
-        }
+        self.soldier_move_if_clear(k);
         // ROM $05:CC78 -> $05:B88D -> $06:E496
         b.block(0x05cc78);
         self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);

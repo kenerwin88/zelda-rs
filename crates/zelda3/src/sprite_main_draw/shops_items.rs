@@ -1585,22 +1585,35 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_AC_Apple(int k) {  // 9ef515
     pub(super) fn sprite_ac_apple(&mut self, k: usize) {
+        // The seed handler and its fallthrough apple body share the dispatch
+        // frame. SpawnApple owns its child instructions separately.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ef515));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef515);
         if self.sprite_slot_view(k).ai_state() != 0 {
+            b.taken(0x1ef518);
             self.sprite_apple(k);
             return;
         }
+        b.block(0x1ef51a);
         if self.sprite_slot_view(k).e() == 0 {
+            b.block(0x1ef51f);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             let mut n = (self.get_random_number() & 3).wrapping_add(2);
+            b.block(0x1ef526);
             loop {
+                b.block(0x1ef52c);
                 self.spawn_apple(k);
+                b.block(0x1ef530);
                 if n == 0 {
                     break;
                 }
+                b.taken(0x1ef532);
                 n = n.wrapping_sub(1);
             }
-        }
+        } else { b.taken(0x1ef51d); }
+        b.block(0x1ef534);
     }
 
     // -----------------------------------------------------------------------

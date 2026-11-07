@@ -1713,6 +1713,9 @@ impl ZeldaState {
 
     // void KingHelmasaurMask(int k, PrepOamCoordsRet *info) {  // 9e8686
     pub(in crate::zelda_rtl) fn king_helmasaur_mask(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8686));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8686);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(8));
@@ -1720,8 +1723,10 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(2));
         if self.sprite_slot_view(k).c() >= 3 {
+            b.taken(0x1e86ac); b.block(0x1e86cc);
             return;
         }
+        b.block(0x1e86ae);
         let start = self.sprite_slot_view(k).c() as usize * 8;
         {
             // The mask JSRs the shared wrapper; the body falls into it and
@@ -1732,6 +1737,7 @@ impl ZeldaState {
             *info = self.sprite_draw_multiple(k,&HELMASAUR_MASK_DRAW_FRAMES[start..start + 8]);
             b.block(0x1e87f4);
         }
+        b.block(0x1e86b3);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_add(0x20));
@@ -1739,14 +1745,22 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(8));
         if self.sprite_slot_view(k).delay_aux4() != 0 {
+            b.block(0x1e86cc);
             return;
         }
+        b.taken(0x1e86ca); b.block(0x1e86cd);
         for i in (0..=1usize).rev() {
+            b.block(0x1e86cf);
             let bomb = self.ancilla_slot_view(i);
-            if bomb.ancilla_type() == 7 && (bomb.x_velocity() | bomb.y_velocity()) != 0 {
-                self.king_helmasaur_check_bomb_damage(k, i);
+            if bomb.ancilla_type() != 7 { b.taken(0x1e86d4); }
+            else {
+                b.block(0x1e86d6);
+                if (bomb.x_velocity() | bomb.y_velocity()) == 0 { b.taken(0x1e86dc); }
+                else { b.block(0x1e86de); self.king_helmasaur_check_bomb_damage(k, i); }
             }
+            b.block(0x1e86e1); if i != 0 { b.taken(0x1e86e2); }
         }
+        b.block(0x1e86e4);
     }
 
     // void KingHelmasaur_CheckBombDamage(int k, int j) {  // 9e86e5

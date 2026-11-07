@@ -807,21 +807,29 @@ impl ZeldaState {
     //     MasterSword_SpawnLightBeam(k, sprite_A[k] >> 2 & 1, kMasterSword_NumLightBeams[j]);
     // }
     pub(super) fn sprite_master_sword_light_fountain(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0589dc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0589dc);
         self.sprite_draw_light_fountain(k);
+        b.block(0x0589df);
         let new_a = self.sprite_slot_view(k).a().wrapping_add(1);
         self.sprite_slot_view_mut(k).set_a(new_a);
         if new_a == 0 {
+            b.block(0x0589e7);
             self.sprite_slot_view_mut(k).increment_c();
             self.sprite_slot_view_mut(k).set_state(0);
-        }
+        } else { b.taken(0x0589e5); }
+        b.block(0x0589ed);
         self.sprite_slot_view_mut(k).set_direction((new_a >> 2) & 3);
         let j = ((new_a >> 5) & 7) as usize;
         self.sprite_slot_view_mut(k)
             .set_graphics(MASTER_SWORD_FOUNTAIN_GRAPHICS[j]);
         if MASTER_SWORD_FOUNTAIN_LIGHT_BEAM_COUNTS[j] != 0 {
+            b.block(0x058a0a);
             let ain = (new_a >> 2) & 1;
             self.master_sword_spawn_light_beam(k, ain, MASTER_SWORD_FOUNTAIN_LIGHT_BEAM_COUNTS[j]);
-        }
+        } else { b.taken(0x058a08); }
+        b.block(0x058a15);
     }
 
     // void Sprite_MasterSword_LightWell(int k) {  // 858a16
@@ -835,13 +843,19 @@ impl ZeldaState {
     //   sprite_graphics[k] = 0;
     // }
     pub(super) fn sprite_master_sword_light_well(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x058a16));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x058a16);
         self.sprite_draw_light_fountain(k);
+        b.block(0x058a19);
         let new_a = self.sprite_slot_view(k).a().wrapping_add(1);
         self.sprite_slot_view_mut(k).set_a(new_a);
         if new_a == 0 {
+            b.block(0x058a21);
             self.sprite_slot_view_mut(k).increment_c();
             self.sprite_slot_view_mut(k).set_state(0);
-        }
+        } else { b.taken(0x058a1f); }
+        b.block(0x058a27);
         self.sprite_slot_view_mut(k).set_direction((new_a >> 2) & 3);
         self.sprite_slot_view_mut(k).set_graphics(0);
     }
@@ -1211,41 +1225,61 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_master_sword_prop(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x058d29));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x058d29);
         self.oam_allocate_from_region_b(4);
+        b.block(0x058d2f);
         // ROM $05:8D2F JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x058d33);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                b.block(0x058d40);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+                b.block(0x058d43);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x058d48);
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).set_delay_main(208);
                     let oam_flags = self.sprite_slot_view(k).oam_flags();
                     self.sprite_slot_view_mut(k).set_a(oam_flags);
-                }
+                } else { b.taken(0x058d46); }
+                b.block(0x058d56);
             }
             1 => {
+                b.block(0x058d57);
                 let mix = (((k as u8) << 1) ^ self.game_state.frame.frame_counter) & 0xe;
                 let oam_flags = (self.sprite_slot_view(k).oam_flags() & !0xe) | mix;
                 self.sprite_slot_view_mut(k).set_oam_flags(oam_flags);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x058d70);
                     self.sprite_slot_view_mut(k).set_ai_state(2);
                     let a = self.sprite_slot_view(k).a();
                     self.sprite_slot_view_mut(k).set_oam_flags(a);
-                }
+                } else { b.taken(0x058d6e); }
+                b.block(0x058d79);
             }
             2 => {
-                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                b.block(0x058d7a);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+                b.block(0x058d7d);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x058d82);
                     let x_velocity = self.sprite_slot_view(k).x_velocity().wrapping_shl(1);
                     let y_velocity = self.sprite_slot_view(k).y_velocity().wrapping_shl(1);
                     self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
                     self.sprite_slot_view_mut(k).set_y_velocity(y_velocity);
                     self.sprite_slot_view_mut(k).set_delay_main(6);
-                }
+                } else { b.taken(0x058d80); }
+                b.block(0x058d8d);
                 if self.sprite_slot_view_mut(k).increment_e() == 0 {
+                    b.block(0x058d92);
                     self.sprite_slot_view_mut(k).set_state(0);
-                }
+                } else { b.taken(0x058d90); }
+                b.block(0x058d95);
             }
             _ => {}
         }

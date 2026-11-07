@@ -254,7 +254,7 @@ impl ZeldaState {
         b.block(if fleeing { 0x1dde66 } else { 0x1dde1b });
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 1) == 0 {
             b.block(if fleeing { 0x1dde6c } else { 0x1dde21 });
-            let mut pt = self.sprite_project_speed_towards_link(k, if fleeing { 48 } else { 32 });
+            let mut pt = self.sprite_project_speed_towards_link_long_marked(k, if fleeing { 48 } else { 32 });
             if fleeing {
                 b.block(0x1dde72);
                 pt.x = pt.x.wrapping_neg();
@@ -1174,9 +1174,17 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_59_LostWoodsBird(int k) {  // 85940e
     pub(super) fn sprite_59_lost_woods_bird(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05940e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05940e);
         if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.taken(0x059411); b.block(0x05944b);
             return;
         }
+        b.block(0x059413);
+        if sign8(self.sprite_slot_view(k).x_velocity()) { b.taken(0x05941b); }
+        else { b.block(0x05941d); }
+        b.block(0x05941f);
         let value = (self.sprite_slot_view(k).oam_flags() & !0x40)
             | if sign8(self.sprite_slot_view(k).x_velocity()) {
                 0
@@ -1186,28 +1194,40 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         // ROM $05:9422 JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x059426);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // ROM $05:9429
+        b.block(0x059429);
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x05942c);
         self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+        b.block(0x05942f);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x05943a);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(1);
                 if sign8(self.sprite_slot_view(k).z_velocity().wrapping_sub(0xf1)) {
+                    b.block(0x059448);
                     let value = 1;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                }
+                } else { b.taken(0x059446); }
+                b.block(0x05944b);
             }
             1 => {
+                b.block(0x05944c);
                 self.sprite_slot_view_mut(k).add_z_velocity(2);
                 if !sign8(self.sprite_slot_view(k).z_velocity().wrapping_sub(0x10)) {
+                    b.block(0x059458);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                }
+                } else { b.taken(0x059456); }
+                b.block(0x05945b);
                 self.sprite_slot_view_mut(k).add_subtype2(1);
                 let value = (self.sprite_slot_view(k).subtype2() >> 1) & 1;
                 self.sprite_slot_view_mut(k).set_graphics(value);
@@ -1219,9 +1239,17 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_5A_LostWoodsSquirrel(int k) {  // 859468
     pub(super) fn sprite_5_a_lost_woods_squirrel(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059468));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059468);
         if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.taken(0x05946b); b.block(0x0594ae);
             return;
         }
+        b.block(0x05946d);
+        if sign8(self.sprite_slot_view(k).x_velocity()) { b.taken(0x059475); }
+        else { b.block(0x059477); }
+        b.block(0x059479);
         let value = (self.sprite_slot_view(k).oam_flags() & !0x40)
             | if sign8(self.sprite_slot_view(k).x_velocity()) {
                 0
@@ -1231,23 +1259,32 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         // ROM $05:947C JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+        b.block(0x059480);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
         // ROM $05:9483
+        b.block(0x059483);
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x059486);
         self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+        b.block(0x059489);
         self.sprite_slot_view_mut(k).subtract_z_velocity(2);
         if sign8(self.sprite_slot_view(k).z()) {
+            b.block(0x059496);
             let value = 0;
             self.sprite_slot_view_mut(k).set_z(value);
             let value = 16;
             self.sprite_slot_view_mut(k).set_z_velocity(value);
             let value = 12;
             self.sprite_slot_view_mut(k).set_delay_main(value);
-        }
+        } else { b.taken(0x059494); }
+        b.block(0x0594a3);
+        if self.sprite_slot_view(k).delay_main()==0 { b.taken(0x0594a8); }
+        else { b.block(0x0594aa); }
         let value = u8::from(self.sprite_slot_view(k).delay_main() != 0);
         self.sprite_slot_view_mut(k).set_graphics(value);
+        b.block(0x0594ab); b.block(0x0594ae);
     }
 
     // -----------------------------------------------------------------------

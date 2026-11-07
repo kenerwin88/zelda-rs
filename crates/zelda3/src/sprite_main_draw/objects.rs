@@ -21,10 +21,16 @@ impl ZeldaState {
     //   Sprite_DrawMultiple(k, &kMasterSword_LightBall_Dmd[sprite_graphics[k] * 4 + sprite_D[k]], 1, NULL);
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_light_fountain(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x058a94));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x058a94);
         self.oam_allocate_from_region_c(4);
+        b.block(0x058a9a);
         let idx = (self.sprite_slot_view(k).graphics() as usize) * 4
             + (self.sprite_slot_view(k).direction() as usize);
+        b.block(0x058ab1);
         self.sprite_draw_multiple(k, &MASTER_SWORD_LIGHT_BALL_DRAW_FRAMES[idx..idx + 1]);
+        b.block(0x058ab5);
     }
 
     // -----------------------------------------------------------------------
@@ -992,6 +998,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_62_MasterSword(int k) {  // 8588c5
     pub(super) fn sprite_62_master_sword(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0588c5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0588c5);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).subtype2() {
             0 => self.master_sword_main(k),
             1 => self.sprite_master_sword_light_fountain(k),
@@ -1572,7 +1583,7 @@ impl ZeldaState {
             return;
         }
         b.block(0x06b8f1);
-        let hit = self.sprite_check_damage_to_link_same_layer(k);
+        let hit = self.sprite_check_damage_to_link_same_layer_marked(k);
         b.block(0x06b8f4);
         if hit {
             b.block(0x06b8f6);

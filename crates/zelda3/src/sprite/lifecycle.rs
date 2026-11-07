@@ -987,6 +987,15 @@ impl ZeldaState {
         b.block(0x06ea18);
     }
 
+    pub(in crate::zelda_rtl) fn sprite_project_speed_towards_link_long_marked(&self, k: usize, vel: u8) -> ProjectSpeedRet {
+        let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ea1a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ea1a);
+        let result = self.sprite_project_speed_towards_link(k, vel);
+        b.block(0x06ea20);
+        result
+    }
+
     // void Sprite_SetSpawnedCoordinates(int k, SpriteSpawnInfo *info) {
     //   sprite_x_lo[k] = info->r0_x;
     //   sprite_x_hi[k] = info->r0_x >> 8;

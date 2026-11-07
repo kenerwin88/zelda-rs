@@ -875,7 +875,7 @@ impl ZeldaState {
             return;
         }
         b.block(0x06d8cf);
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom06FF78) {
             return;
         }
         b.block(0x06d8d2);
@@ -1917,7 +1917,11 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_Cukeman(int k) {  // 9afa0c
     pub(super) fn sprite_cukeman(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1afa0c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1afa0c);
         if self.sprite_slot_view(k).head_direction() == 0 {
+            b.taken(0x1afa0f); b.block(0x1afa7d);
             return;
         }
 
@@ -1925,12 +1929,27 @@ impl ZeldaState {
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let link_x = self.game_state.player.follower_link.x();
         let link_y = self.game_state.player.follower_link.y();
-        if self.sprite_slot_view(k).state() == 9
-            && (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
-            && cur_x.wrapping_sub(link_x).wrapping_add(0x18) < 0x30
-            && link_y.wrapping_sub(cur_y).wrapping_add(0x20) < 0x30
-            && (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) != 0
-        {
+        b.block(0x1afa11);
+        let message = if self.sprite_slot_view(k).state() != 9 { b.taken(0x1afa16); false }
+        else {
+            b.block(0x1afa18);
+            if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) != 0 { b.taken(0x1afa1d); false }
+            else {
+                b.block(0x1afa1f);
+                if cur_x.wrapping_sub(link_x).wrapping_add(0x18) >= 0x30 { b.taken(0x1afa2e); false }
+                else {
+                    b.block(0x1afa30);
+                    if link_y.wrapping_sub(cur_y).wrapping_add(0x20) >= 0x30 { b.taken(0x1afa3d); false }
+                    else {
+                        b.block(0x1afa3f);
+                        if (self.game_state.player.follower_link.filtered_joypad_l() & 0x80) == 0 { b.taken(0x1afa43); false }
+                        else { true }
+                    }
+                }
+            }
+        };
+        if message {
+            b.block(0x1afa45);
             let subtype = self.sprite_slot_view(k).subtype();
             self.dialogue_message_index_mut()
                 .set_value(0x017a + u16::from(subtype & 1));
@@ -1939,13 +1958,16 @@ impl ZeldaState {
             self.sprite_show_message_minimal_c();
         }
 
+        b.block(0x1afa5c);
         let old = self.sprite_slot_view(k).oam_flags() & 0xf0;
         let value = old | 8;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.cukeman_draw(k);
+        b.block(0x1afa6f);
         let value = old | 0x0d;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.oam_allocate_from_region_a(0x10);
+        b.block(0x1afa7b);
     }
 
     // -----------------------------------------------------------------------
