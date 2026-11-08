@@ -6,6 +6,37 @@ use super::super::sprite::SpriteSpawnInfo;
 use crate::tile_definition::NativeTile;
 use crate::types::Point16U;
 
+#[cfg(test)]
+mod prefix33_tests {
+    use super::*;
+
+    #[test]
+    fn prefix33_slosh_permission_all_masks_frames_and_handlers_match_rom() {
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        for direction in 0..16 {
+            for frame in 0..16 {
+                for handler in [0,17] {
+                    let mut n = ZeldaState::new(); n.set_lag_free(true);
+                    n.write_wram_byte(0x67,direction); n.write_wram_byte(0x1a,frame);
+                    n.write_wram_byte(0x5d,handler); n.sync_native_game_state_from_ram();
+                    let mut s = snes::Snes::new();
+                    s.cart.load(snes::CartType::LoRom,&rom,0x2000);
+                    s.ram.copy_from_slice(&n.wram_image());
+                    s.ram[0x1fd..0x200].copy_from_slice(&[0xff,0x7f,0]);
+                    s.cpu.e=false; s.cpu.unpack_flags(0x30); s.cpu.k=7; s.cpu.db=7;
+                    s.cpu.pc=0xd2c6; s.cpu.sp=0x1fc;
+                    let mut result=false;
+                    let source=crate::cycle_ledger::assert_rom_marker_work(0x07d2c6,s,
+                        |s|s.cpu.k==7 && (0xd2c6..0xd2e4).contains(&s.cpu.pc),
+                        || result=n.link_permission_for_slosh_sounds());
+                    assert_eq!(result,source.snes().cpu.c);
+                }
+            }
+        }
+    }
+}
+
 impl ZeldaState {
     pub(in crate::zelda_rtl) fn link_receive_item(&mut self, item: u8, chest_position: u16) {
         let _ = self.link_receive_item_from(item, chest_position, ItemReceiptCaller::AtomicCaller);
@@ -665,13 +696,24 @@ impl ZeldaState {
     }
 
     pub(super) fn link_permission_for_slosh_sounds(&self) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07d2c6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07d2c6);
         if self.game_state.player.follower_link.direction() & 0x0f == 0 {
+            b.taken(0x07d2ca); b.block(0x07d2e2);
             return true;
         }
+        b.block(0x07d2cc);
         if self.game_state.player.follower_link.handler_state() != 17 {
-            self.game_state.frame.frame_counter & 0x0f != 0
+            b.block(0x07d2d2);
+            if self.game_state.frame.frame_counter & 0x0f == 0 {
+                b.taken(0x07d2d6); b.block(0x07d2e0); false
+            } else { b.block(0x07d2d8); b.block(0x07d2e2); true }
         } else {
-            self.game_state.frame.frame_counter & 0x07 != 0
+            b.taken(0x07d2d0); b.block(0x07d2da);
+            if self.game_state.frame.frame_counter & 0x07 != 0 {
+                b.taken(0x07d2de); b.block(0x07d2e2); true
+            } else { b.block(0x07d2e0); false }
         }
     }
 

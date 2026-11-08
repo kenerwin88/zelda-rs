@@ -268,6 +268,15 @@ impl ZeldaState {
         )
     }
 
+    pub(super) fn ancilla_prep_oam_coord_long_marked(&mut self, k: usize) -> (u16, u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08f6d9));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08f6d9);
+        let result = self.ancilla_prep_oam_coord(k);
+        b.block(0x08f6df);
+        result
+    }
+
     /// ROM: `Ancilla_MoveX`
     pub(in crate::zelda_rtl) fn ancilla_move_x(&mut self, k: usize) {
         // $08:9080 wraps the shared Y-axis body with X+10, then restores

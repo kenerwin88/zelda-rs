@@ -177,9 +177,9 @@ impl ZeldaState {
             return;
         }
         b.block(0x09ae1c);
-        let (x, y) = self.ancilla_prep_oam_coord(k);
+        let (x, y) = self.ancilla_prep_oam_coord_long_marked(k);
         b.block(0x09ae20);
-        self.ancilla_set_oam(
+        self.ancilla_set_oam_long_marked(
             self.game_state.oam.current_pointer_usize(),
             x,
             y,

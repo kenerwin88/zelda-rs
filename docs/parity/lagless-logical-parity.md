@@ -13368,3 +13368,398 @@ analysis children and tests have exited. Target occupies **13.04 GB allocated**,
 below 16 GB. `verification.json`, `read-only-agreement.json`,
 `source-freeze-agreement.json`, `prior-artifact-agreement.json` and
 `artifact-hashes.json` retain the readback receipts.
+
+## Lagless prefix hunt 33
+
+Baseline is `396c1464` on `codex/prefix-hunt33`; evidence is in
+`target/prefix-hunt33/`. All 14 authority hashes, 132 retained hunt-32
+artifacts, and the baseline's 1,494 frozen files agree before reuse. The
+freshly regenerated ledger contains 1,473,123 iterations. Source inputs to
+the diagnostic classification and the direct APUI bus observations are also
+hash-verified. The final binary SHA-256 is
+`df8148244e65b2e4a1ed985d10db6bc586942ecc2a74ab965ee443f962ec2244`.
+
+### Owners and ROM fixtures
+
+| ROM owner | Newly priced work / excluded children |
+| --- | --- |
+| `$1B:BE49` | Mutation suffix of ToolAndTileInteraction: all terrain cases, hole-position guards, secret carry branch, packet calls and spawn calls; selection prefix and called bodies excluded |
+| `$1B:C8A4` | Secret lookup, every record and screen, missing-record exit, event/follower/sound branches; powder child excluded |
+| `$1B:C943` | Powder adjustment, both outcomes |
+| `$0E:DD40` | Memorized map16 writes and both excluded-tile guards |
+| `$02:AB7B` | Scroll/exit wrapper; map-scroll and exit-scan children excluded |
+| `$0E:DEE3` | Special-overworld exit scan, tile/screen comparisons, both actual direction loops and both exits; DE9A coordinate child excluded |
+| `$07:D2C6` | Slosh permission, direction, handler and frame-mask branches |
+| `$08:F6D9` | Far coordinate-prep wrapper; F671 body excluded |
+| `$09:8FBA` | Dash-dust spawn entry and shared success/failure paths, including the 80C3 return wrapper; allocation and SetXY bodies excluded |
+| `$09:8FC1` | Charging-dust entry and the same shared paths, with the actual zero flag |
+
+The existing `$08:F6FE` long OAM wrapper and `$08:F6E1` XY child are admitted
+at the actual `$09:AE20` dash-dust call. `$09:AE1C` uses the newly priced
+F6D9 wrapper rather than entering F671 directly. No child is charged twice.
+No existing fixture's owned-PC set changes. The selection prefix retains its
+own early-return epilogue; the new BE49 scope owns that epilogue only after
+entering the mutation suffix.
+
+The secret caller's BCS cannot be inferred from its semantic replacement
+tile: missing and low-kind records both return no replacement but leave
+different carry values. The helper now retains that ROM carry alongside the
+unchanged tile result, solely to select the actual caller markers. Prices
+come from decoded ROM blocks and native branch operands. No residual supplies
+a price; no classifier, matcher, P2, polling or gameplay behavior changes.
+
+Eight new unmodified-ROM fixtures explicitly construct lag-free states:
+
+- `prefix33_secret_lookup_every_rom_record_and_missing_screen_matches_rom`
+- `prefix33_powder_adjustment_and_memorized_tile_guards_match_rom`
+- `prefix33_tool_mutation_suffix_excludes_prefix_and_all_children`
+- `prefix33_special_overworld_exit_all_tiles_screens_and_scan_edges_match_rom`
+- `prefix33_scroll_exit_wrapper_excludes_scroll_and_exit_children`
+- `prefix33_slosh_permission_all_masks_frames_and_handlers_match_rom`
+- `prefix33_dash_dust_long_draw_children_all_clip_paths_match_rom`
+- `prefix33_dash_dust_spawn_both_entries_all_allocations_and_facings_match_rom`
+
+Secret lookup executes **7,856 whole calls**, covering every immutable ROM
+record, all 256 screen bytes, absence, event/follower guards and powder states.
+All realizable conditional edges are checked. The zero-kind BEQ at C8DE is
+untaken for every ROM record: the immutable secret table has no zero-kind
+record. Other fixtures cover both mutation carry outcomes, all terrain
+comparisons, all exit tiles/screens and scan edges, frame masks, both spawn
+entries, all 32 five-slot occupancy masks, allocation success/failure, four
+facings and OAM clipping paths. All eight fixtures and eight generator tests
+pass; `owners-and-fixtures.json` records ownership and fixture names.
+
+### ROM census and classification
+
+The required eight-slice seeded ROM helper reports **PASS**, unexplained
+**0**, complete **1,473,123 iterations**. Missing/excess/FP improves
+**1,420/0/0 -> 1,384/0/0**. All **36 changed holds** recover one source lag
+NMI, with zero exposed rows throughout the full census.
+
+| Missing before iteration | ROM missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 47/0/0 -> 43/0/0 |
+| 380,243 | 94/0/0 -> 89/0/0 |
+| 461,989 | 140/0/0 -> 133/0/0 |
+
+Classification is regenerated against the hash-verified source instruction
+totals and current native work. Through 461,989 it changes **104 (a), 14 (c),
+22 (d) -> 97 (a), 14 (c), 22 (d)**. Recoveries are **158,558; 174,033;
+180,178; 180,182; 255,529; 400,064; 457,151**. All **33 protected predictor
+records are byte-identical**: the 14 uploads, seven polygon rows, eleven other
+inverse-threshold rows and 101,031. This includes every predictor field and
+the observed elapsed value. `classification-before/after.json`,
+`classification.json`, `rom-comparison.json`, `rom-changed-holds.json` and
+`protected-row-verification.json` retain the complete checks.
+
+### Remaining early owner partitions
+
+The 26 previously unresolved early rows are profiled individually with the
+frozen binary. Six gain **15,284 instruction clocks**; four recover, receiving
+**12,224** of those clocks. The other two gain **3,060** clocks. Already
+recovered 150,378 gains another 1,988 clocks, giving **17,272** added clocks
+across all 28 profiled rows. These are measured gains from independently
+priced owners, never prices inferred from a shortfall.
+
+| Iteration | Outcome / remaining signed sprite, object, other owner clocks |
+| --- | --- |
+| 158,558 | Recovered (+1,130 instruction clocks) |
+| 160,109 | 848/0/-22 |
+| 161,123 | 3,544/0/-174 |
+| 162,301 | 3,636/0/3,284 |
+| 162,819 | 3,636/0/3,018 |
+| 174,033 | Recovered (+970 instruction clocks) |
+| 174,034 | 1,414/0/114 |
+| 180,178 | Recovered (+5,062 instruction clocks) |
+| 180,182 | Recovered (+5,062 instruction clocks) |
+| 181,568 | 2,524/0/-22 |
+| 187,779 | 0/0/3,360 |
+| 189,344 | 192/0/4,440 |
+| 189,368 | 840/0/2,828 |
+| 190,815 | 192/0/944 |
+| 194,994 | 3,470/0/2,904 |
+| 196,051 | 0/0/8,090 |
+| 198,239 | 2,890/0/1,100 |
+| 198,240 | 2,890/0/982 |
+| 209,808 | 0/0/15,104 |
+| 215,857 | 0/0/982 |
+| 215,858 | 0/0/982 |
+| 215,859 | 0/0/982 |
+| 217,220 | 0/0/1,100 |
+| 217,221 | 0/0/982 |
+| 217,222 | 0/0/982 |
+| 225,257 | 0/-803,282/808,246 |
+
+`early-owner-partitions.csv/json` keeps every physical owner with both signs,
+before/after values and the complete caller partition. Every sum reconciles
+to its row's source/native instruction difference. Sprite and object totals
+are unchanged. Large caller/child aliases are retained, including the offset
+at 225,257. Collision and movement caller partitions that cancel against
+already priced children are not additional unpriced work. Twenty-two early
+(a) rows remain. No new owner at 407,899 is priced; later recoveries are
+incidental effects of the general owners.
+
+### Live poll attribution
+
+The single seeded live census reports **PASS**, unexplained **0**, complete
+**1,473,123 iterations**. Missing/excess/FP changes **1,571/61/13 ->
+1,640/252/72**. There are **192 changed holds**: **36 shared ROM recoveries**
+and **156 live-only changes**, all attributed, with **zero unattributed rows**.
+All three live metrics worsen overall. The command receipt records exactly
+one launch and exit zero. Its five complete prefix results are:
+
+| Missing before iteration | Live missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 47/0/0 -> 43/0/0 |
+| 380,243 | 103/9/2 -> 98/9/2 |
+| 461,989 | 149/9/2 -> 142/9/2 |
+
+Attribution compares all four lanes: baseline/candidate live and ROM. It uses
+**3,475 changed live-vs-ROM instruction/VWF work events** and **294 changed
+native context/poll events**, a union of **3,478 iterations**, independently
+of the changed-hold set. Recovery ends at the first actual reseed after the
+last changed execution when that precedes its containing 2,000-iteration
+boundary, otherwise that boundary. Every live-only changed hold lies inside
+its independently established episode; there are no unassigned execution
+events.
+
+Source context, reads/writes and start/end counters agree across **all
+1,473,123 rows**. Cartridge APUI answers are disabled on every trace row.
+Both normalized source SHA-256 values are
+`a3da76b73786f97ec20c3ce3476432200463b968d43136fe847b3c40e3afb20f`.
+All **20** retained unmodified-ROM bus observations are hash-verified and
+checked against the current trace's source reads at every episode start and
+source first zero. Source PCs are established directly: pendant `$08:C3FD`,
+crystal `$08:C606`. No PC is inferred from changed holds.
+
+| Source episode | Direct source PC | Source first zero | Native first zero before -> after | Last changed execution | Recovery end | Live-only rows | Delta missing/excess/FP |
+| --- | --- | ---: | --- | ---: | ---: | ---: | --- |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 -> 94,854 | — | 96,000 | 0 | +0/+0/+0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,088 -> 142,088 | — | 144,000 | 0 | +0/+0/+0 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,036 -> 229,036 | — | 230,000 | 0 | +0/+0/+0 |
+| 380,243 | `$08:C606` | 380,881 | 380,881 -> 380,881 | — | 382,000 | 0 | +0/+0/+0 |
+| 461,989 | `$08:C606` | 462,628 | 462,627 -> 462,627 | — | 464,000 | 0 | +0/+0/+0 |
+| 626,618 | `$08:C606` | 627,256 | 627,256 -> 627,256 | — | 628,000 | 0 | +0/+0/+0 |
+| 735,229 | `$08:C606` | 735,867 | 735,868 -> 735,867 | 736,633 | 738,000 | 6 | -12/-12/-3 |
+| 881,095 | `$08:C606` | 881,734 | 881,734 -> 881,733 | 884,326 | 884,327 | 135 | +234/+230/+67 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,734 -> 1,064,734 | — | 1,066,000 | 0 | +0/+0/+0 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,336 -> 1,318,335 | 1,320,899 | 1,320,900 | 15 | -117/-27/-5 |
+
+All **156 live-only changed holds** are listed below; both ROM holds are
+unchanged at each row. `live-only-attributed-rows.csv/json` retains the first
+zeros, execution endpoints and recovery boundaries for every row.
+
+| Iteration | Source episode / direct PC | Source lag | Live hold before -> after |
+| --- | --- | ---: | --- |
+| 735,937 | 735,229 / `$08:C606` | 1 | 0 -> 1 |
+| 735,938 | 735,229 / `$08:C606` | 0 | 1 -> 0 |
+| 735,947 | 735,229 / `$08:C606` | 5 | 0 -> 4 |
+| 735,948 | 735,229 / `$08:C606` | 0 | 4 -> 0 |
+| 736,420 | 735,229 / `$08:C606` | 8 | 0 -> 7 |
+| 736,422 | 735,229 / `$08:C606` | 0 | 7 -> 0 |
+| 881,794 | 881,095 / `$08:C606` | 0 | 0 -> 1 |
+| 881,795 | 881,095 / `$08:C606` | 1 | 1 -> 0 |
+| 881,804 | 881,095 / `$08:C606` | 0 | 0 -> 4 |
+| 881,805 | 881,095 / `$08:C606` | 5 | 4 -> 0 |
+| 882,275 | 881,095 / `$08:C606` | 8 | 8 -> 0 |
+| 882,276 | 881,095 / `$08:C606` | 0 | 0 -> 8 |
+| 882,475 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,476 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,477 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,484 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,485 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,486 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,529 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,530 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,531 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,538 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,539 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,540 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,591 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,592 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,593 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,600 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,601 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,602 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,676 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,677 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,678 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,686 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,687 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,688 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,740 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,741 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,742 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,750 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,751 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,752 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,804 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,805 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,806 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,814 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,815 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,816 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,893 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,894 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,895 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,919 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,920 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,921 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,957 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,958 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,959 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 882,983 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,984 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 882,985 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,053 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,054 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,055 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,071 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,072 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,073 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,117 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,118 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,119 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,135 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,136 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,137 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,181 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,182 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,183 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,199 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,200 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,201 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,272 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,273 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,274 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,298 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,299 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,300 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,338 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,339 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,340 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,364 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,365 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,366 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,398 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,399 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,400 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,424 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,425 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,426 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,483 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,484 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,485 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,509 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,510 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,511 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,539 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,540 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,541 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,565 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,566 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,567 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,601 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,602 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,603 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,627 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,628 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,629 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,697 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,698 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,699 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,724 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,725 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,726 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,727 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,728 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,729 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,754 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,755 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,756 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,765 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,766 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,767 | 881,095 / `$08:C606` | 2 | 2 -> 0 |
+| 883,792 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,793 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,794 | 881,095 / `$08:C606` | 0 | 0 -> 2 |
+| 883,842 | 881,095 / `$08:C606` | 7 | 7 -> 0 |
+| 883,881 | 881,095 / `$08:C606` | 0 | 0 -> 7 |
+| 883,977 | 881,095 / `$08:C606` | 7 | 7 -> 0 |
+| 884,319 | 881,095 / `$08:C606` | 0 | 0 -> 59 |
+| 884,320 | 881,095 / `$08:C606` | 0 | 0 -> 6 |
+| 884,321 | 881,095 / `$08:C606` | 0 | 0 -> 25 |
+| 884,322 | 881,095 / `$08:C606` | 59 | 59 -> 1 |
+| 884,323 | 881,095 / `$08:C606` | 6 | 6 -> 1 |
+| 884,324 | 881,095 / `$08:C606` | 25 | 25 -> 1 |
+| 1,318,396 | 1,317,697 / `$08:C606` | 1 | 0 -> 1 |
+| 1,318,397 | 1,317,697 / `$08:C606` | 0 | 1 -> 0 |
+| 1,318,406 | 1,317,697 / `$08:C606` | 4 | 0 -> 4 |
+| 1,318,407 | 1,317,697 / `$08:C606` | 0 | 4 -> 0 |
+| 1,318,878 | 1,317,697 / `$08:C606` | 8 | 0 -> 8 |
+| 1,318,879 | 1,317,697 / `$08:C606` | 0 | 8 -> 0 |
+| 1,320,353 | 1,317,697 / `$08:C606` | 0 | 7 -> 0 |
+| 1,320,357 | 1,317,697 / `$08:C606` | 7 | 0 -> 7 |
+| 1,320,542 | 1,317,697 / `$08:C606` | 7 | 0 -> 7 |
+| 1,320,544 | 1,317,697 / `$08:C606` | 0 | 7 -> 0 |
+| 1,320,895 | 1,317,697 / `$08:C606` | 58 | 0 -> 58 |
+| 1,320,896 | 1,317,697 / `$08:C606` | 6 | 0 -> 6 |
+| 1,320,897 | 1,317,697 / `$08:C606` | 24 | 0 -> 24 |
+| 1,320,898 | 1,317,697 / `$08:C606` | 1 | 0 -> 1 |
+| 1,320,899 | 1,317,697 / `$08:C606` | 1 | 0 -> 1 |
+
+Crystal **735,229 improves by -12/-12/-3** and crystal **1,317,697 improves
+by -117/-27/-5**. Crystal **881,095 worsens by +234/+230/+67**. Their net
+**+105/+191/+59**, plus the 36 shared ROM recoveries **-36/0/0**, gives the
+complete live change **+69/+191/+59**. These source-grounded poll episodes
+explain the live regression; they do not waive it or establish live timing
+parity. No per-episode price, compensation, poll matcher or P2 change is
+introduced. `live-work-events`, `live-context-poll-events`, `live-poll-clusters`,
+`live-reseeds`, `poll-attribution`, `live-trace-agreement`,
+`live-attribution-verification`, `live-comparison`, `live-command` and the
+independent gate-tools `live-counts.txt` retain the full derivation.
+
+### Verification boundary
+
+Filtered groups pass: **67 overworld**, **52 ancilla**, **60 player** tests,
+including all eight new fixtures. All **eight generator** tests pass. The
+production build is warning-free; the 24 test warning headers match baseline.
+The CPU-only picture census passes with unexplained **0**, complete
+**1,473,123 iterations**, retaining **1,462,997 exact pictures**. Every one of
+the eight picture-hash streams is byte-identical to the hash-verified baseline;
+all slice exits are zero. `cpu-picture-agreement.json`, `cpu-commands.json`
+and `cpu-gate.txt` retain this independent picture boundary.
+
+The required full default library suite runs **once**, after all source and
+fixture changes. SNES: **505 passed, 7 ignored**. Zelda: **3,168 passed,
+3 ignored**, with only
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`
+failing. There are **zero unexpected failures**, no fixture owned-PC edits
+and no corrective full-suite rerun. All **24** warning headers match baseline.
+`test-verification.json`, `full-library-command.json` and `full-library.log`
+retain this boundary, including exit 101 for the permitted failure:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+No commit/push, cargo fmt, new environment switch, classifier/matcher/P2 edit,
+GPU, external Snes9x process, `--video`, cached A/V or authority write is part
+of this batch. Every Zelda CLI invocation uses CPU-only logical replay. Only
+reproducible compiler caches under this worktree's target are removed; retained
+evidence is intact. These are seeded logical and CPU-picture checks, with
+continuous cold A/V and complete lagless acceptance outside their boundary.
+
+Final readback verifies **14 unchanged authorities**, **132 unchanged retained
+hunt-32 artifacts** and **1,615 unchanged frozen source/fixture files**. The
+Cargo binary and frozen replay binary retain the same SHA-256. All launched
+replays, profilers, trace-analysis children and tests have exited. Target
+occupies **13.61 GB allocated**, below 16 GB. `verification.json`,
+`authorities-after.json`, `prior-artifact-final-agreement.json`,
+`source-freeze-agreement.json`, `profile-census-agreement.json` and
+`artifact-hashes.json` retain the readback receipts. The 22 unresolved early
+(a) rows and the dedicated 407,899 callers remain for subsequent work.

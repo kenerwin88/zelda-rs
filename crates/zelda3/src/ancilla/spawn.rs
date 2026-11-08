@@ -326,7 +326,12 @@ impl ZeldaState {
     }
 
     fn add_dashing_dust_ex(&mut self, a: u8, y: u8, flag: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(if flag == 0 {0x098fc1} else {0x098fba}));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(if flag == 0 {0x098fc1} else {0x098fba});
+        b.block(0x098fc6);
         if let Some(k) = self.ancilla_add_simple(a, y) {
+            b.block(0x098fcb); b.block(0x098fcd);
             let j = self.game_state.player.follower_link.facing_index();
             {
                 let mut dust = self.ancilla_slot_view_mut(k);
@@ -336,12 +341,16 @@ impl ZeldaState {
                 dust.set_direction(j as u8);
             }
             if flag == 0 {
+                b.block(0x098fe5);
+                b.block(0x0980c3);
                 self.ancilla_set_xy(
                     k,
                     self.game_state.player.follower_link.x(),
                     self.game_state.player.follower_link.y().wrapping_add(20),
                 );
             } else {
+                b.taken(0x098fe3); b.block(0x098ff8);
+                b.block(0x0980c3);
                 self.ancilla_set_xy(
                     k,
                     self.game_state
@@ -356,7 +365,8 @@ impl ZeldaState {
                         .wrapping_add(ADD_DASHING_DUST_EX_ADD_DASHING_DUST_Y[j] as i16 as u16),
                 );
             }
-        }
+            b.block(0x0980c6);
+        } else { b.block(0x098fcb); b.taken(0x098fcb); b.block(0x09900f); }
     }
 
     pub(in crate::zelda_rtl) fn ancilla_add_dash_dust(&mut self, a: u8, y: u8) {

@@ -2776,6 +2776,10 @@ impl ZeldaState {
             .room_tilemaps
             .bg2_tile_by_byte_pos(pos);
         self.price_overworld_tool_tile_prefix(attr);
+        // The selection prefix retains its early exits. This scope owns only
+        // the mutation suffix; secret, packet and spawn children stay separate.
+        let _suffix = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bbe49));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         let mut yv = 0u16;
         let mut check_secret = false;
         let mut memoize = false;
@@ -2791,18 +2795,24 @@ impl ZeldaState {
                     if position_mode != 1 {
                         return attr;
                     }
+                    b.block(0x1bbe49);
                     if self.game_state.world.location.overworld_screen_index() == 0x2a
-                        && pos == 0x0492
                     {
-                        self.set_overworld_hole_tilemap_pos(pos);
-                    }
+                        b.block(0x1bbe50);
+                        if pos == 0x0492 { b.block(0x1bbe55); self.set_overworld_hole_tilemap_pos(pos); }
+                        else { b.taken(0x1bbe53); }
+                    } else { b.taken(0x1bbe4e); }
+                    b.block(0x1bbe58);
                     yv = 0x0dc9;
                     check_secret = true;
                     memoize = true;
                 } else if attr == 0x037e {
+                    b.block(0x1bbe5d);
                     if position_mode == 1 {
+                        b.block(0x1bbe68); b.block(0x1bbf1a);
                         return attr;
                     }
+                    b.taken(0x1bbe66); b.block(0x1bbe6b);
                     self.tile_detect_position_mut()
                         .set_interaction_scratch_y(x.wrapping_mul(8).wrapping_sub(8));
                     self.tile_detect_position_mut()
@@ -2816,7 +2826,11 @@ impl ZeldaState {
 
             if !memoize {
                 if attr == 0x036 || attr == 0x072a {
+                    b.block(0x1bbe8d);
                     if position_mode != 1 {
+                        b.block(0x1bbe98);
+                        if attr == 0x072a { b.block(0x1bbeb7); }
+                        else { b.taken(0x1bbeb5); }
                         self.tile_detect_position_mut()
                             .set_interaction_scratch_y((x & !1).wrapping_mul(8));
                         self.tile_detect_position_mut()
@@ -2827,7 +2841,7 @@ impl ZeldaState {
                         yv = if attr == 0x072a { 0x0dc8 } else { 0x0dc7 };
                         check_secret = true;
                         memoize = true;
-                    }
+                    } else { b.taken(0x1bbe96); b.block(0x1bbeda); }
                 } else {
                     return attr;
                 }
@@ -2844,18 +2858,26 @@ impl ZeldaState {
 
         if memoize {
             if check_secret {
-                let secret = self.overworld_reveal_secret(pos);
+                b.block(0x1bbeba);
+                let (secret, carry) = self.overworld_reveal_secret_result(pos);
+                b.block(0x1bbebf);
+                if carry { b.taken(0x1bbebf); }
+                else { b.block(0x1bbec1); }
                 if secret != 0 {
                     yv = secret;
                 }
             }
+            b.block(0x1bbec3);
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, yv);
             self.overworld_memorize_map16_change(pos, yv);
+            b.block(0x1bbecb);
             self.overworld_draw_map16(pos, yv);
+            b.block(0x1bbecf);
             self.set_bg_vram_load_mode(1);
         }
 
+        b.block(0x1bbedf);
         let map8_index = attr as usize * 4 + (((y & 8) >> 2) | (x & 1)) as usize;
         let map16_to_map8 = self
             .asset_raw(70)
@@ -2867,6 +2889,7 @@ impl ZeldaState {
         let tile_attr = tile_attrs[(map8 & 0x01ff) as usize] as u16;
         let terrain = self.game_state.player.tile_detection.interacting_tile();
         if terrain != 0 {
+            b.block(0x1bbf10);
             let sx = self
                 .game_state
                 .player
@@ -2878,8 +2901,10 @@ impl ZeldaState {
                 .tile_detection
                 .interaction_scratch_x();
             self.sprite_spawn_immediately_smashed_terrain(terrain as u8, sx, sy);
+            b.block(0x1bbf14);
             self.ancilla_add_bush_poof(sx, sy);
-        }
+        } else { b.taken(0x1bbf0e); }
+        b.block(0x1bbf18); b.block(0x1bbf1a);
         tile_attr
     }
 
@@ -8147,10 +8172,15 @@ impl ZeldaState {
 
     /// ROM: `Overworld_Memorize_Map16_Change`
     pub(super) fn overworld_memorize_map16_change(&mut self, pos: u16, value: u16) {
-        if value == 0x0dc5 || value == 0x0dc9 {
-            return;
-        }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0edd40));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0edd40);
+        if value == 0x0dc5 { b.taken(0x0edd43); b.block(0x0edd60); return; }
+        b.block(0x0edd45);
+        if value == 0x0dc9 { b.taken(0x0edd48); b.block(0x0edd60); return; }
+        b.block(0x0edd4a);
         self.memorized_tile_mut().append_entry(pos, value);
+        b.block(0x0edd60);
     }
 
     fn overworld_bg2_byte_pos(&self, x: u16, y: u16) -> u16 {
@@ -8162,13 +8192,26 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_reveal_secret(&mut self, pos: u16) -> u16 {
+        self.overworld_reveal_secret_result(pos).0
+    }
+
+    // The caller's BCS observes the routine's SEC/CLC, independently of the
+    // semantic replacement tile. A missing record and a low-kind record both
+    // return no replacement but leave different carry values in the ROM.
+    fn overworld_reveal_secret_result(&mut self, pos: u16) -> (u16, bool) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bc8a4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bc8a4);
         self.dungeon_secret_scratch_mut().clear_pending_kind();
 
         let screen = u16::from(self.game_state.world.location.overworld_screen_index()) as usize;
         if screen >= 0x80 {
+            b.taken(0x1bc8b4); b.block(0x1bc933);
             self.adjust_secret_for_powder();
-            return 0;
+            b.block(0x1bc936);
+            return (0, false);
         }
+        b.block(0x1bc8b6);
 
         let secret_offsets = self
             .asset_raw(157)
@@ -8182,27 +8225,56 @@ impl ZeldaState {
             | (u16::from(secret_offsets[screen * 2 + 1]) << 8);
         let mut ptr = ptr as usize;
         loop {
+            b.block(0x1bc8c6);
             let x = u16::from(secrets[ptr]) | (u16::from(secrets[ptr + 1]) << 8);
             if x == 0xffff {
+                b.taken(0x1bc8ce); b.block(0x1bc933);
                 self.adjust_secret_for_powder();
-                return 0;
+                b.block(0x1bc936);
+                return (0, false);
             }
+            b.block(0x1bc8d0);
             if x & 0x7fff == pos {
                 break;
             }
+            b.taken(0x1bc8d5);
             ptr += 3;
         }
 
         let data = secrets[ptr + 2];
+        b.block(0x1bc8d7);
+        if data == 0 { b.taken(0x1bc8de); }
+        else {
+            b.block(0x1bc8e0);
+            if data >= 0x80 { b.taken(0x1bc8e3); }
+            else { b.block(0x1bc8e5); }
+        }
         if data != 0 && data < 0x80 {
             self.dungeon_secret_scratch_mut().or_pending_kind(data);
         }
+        b.block(0x1bc8e8);
         if data < 0x80 {
+            b.taken(0x1bc8ee); b.block(0x1bc93a);
             self.adjust_secret_for_powder();
-            return 0;
+            b.block(0x1bc93d);
+            return (0, true);
         }
 
+        b.block(0x1bc8f0);
         self.dungeon_secret_scratch_mut().set_pending_kind(0xff);
+        if data == 0x84 { b.taken(0x1bc8fe); }
+        else {
+            b.block(0x1bc900);
+            if self.game_state.world.overworld.event_info.event_info(screen) & 2 != 0 { b.taken(0x1bc909); }
+            else {
+                b.block(0x1bc90b);
+                if screen != 0x5b { b.taken(0x1bc910); }
+                else {
+                    b.block(0x1bc912);
+                    if self.game_state.sprites.follower_runtime.indicator() != 13 { b.taken(0x1bc91c); }
+                }
+            }
+        }
         if data != 0x84
             && self
                 .game_state
@@ -8214,22 +8286,32 @@ impl ZeldaState {
                 == 0
         {
             if screen == 0x5b && self.game_state.sprites.follower_runtime.indicator() != 13 {
+                b.block(0x1bc933);
                 self.adjust_secret_for_powder();
-                return 0;
+                b.block(0x1bc936);
+                return (0, false);
             }
+            b.block(0x1bc91e);
             self.set_sound_effect_2(0x1b);
         } else if data == 0x82 && self.game_state.enhanced_features.has(4096) {
             self.set_sound_effect_2(0x1b);
         }
 
+        b.block(0x1bc927); b.block(0x1bc933);
         self.adjust_secret_for_powder();
-        OVERWORLD_SECRET_TILE_BY_TYPE[((data & 0x0f) >> 1) as usize]
+        b.block(0x1bc936);
+        (OVERWORLD_SECRET_TILE_BY_TYPE[((data & 0x0f) >> 1) as usize], false)
     }
 
     fn adjust_secret_for_powder(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bc943));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bc943);
         if self.game_state.player.follower_link.item_in_hand_has(0x40) {
+            b.block(0x1bc94b);
             self.dungeon_secret_scratch_mut().set_powder_pending_kind();
-        }
+        } else { b.taken(0x1bc949); }
+        b.block(0x1bc951);
     }
 
     pub(super) fn HandlePegPuzzles(&mut self, pos: u16) {
@@ -8802,28 +8884,56 @@ impl ZeldaState {
     }
 
     pub(super) fn ScrollAndCheckForSOWExit(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02ab7b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02ab7b);
         if self.has_screen_transition_direction_bits() {
+            b.block(0x02ab80);
             self.OverworldHandleMapScroll();
-        }
+        } else { b.taken(0x02ab7e); }
+        b.block(0x02ab83);
+        self.overworld_check_special_overworld_exit();
+        b.block(0x02ab87);
+    }
 
+    fn overworld_check_special_overworld_exit(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0edee3));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0edee3);
         let map8 = self.overworld_get_map16_of_link_mult8();
+        b.block(0x0edee8); b.block(0x0edef4);
         let a = map8[0] & 0x01ff;
         for i in (0..3).rev() {
-            if SPECIAL_SWITCH_AREA_B_TILE_IDS[i] == a
-                && SPECIAL_SWITCH_AREA_B_SCREENS[i]
-                    == u16::from(self.game_state.world.location.overworld_screen_index())
-            {
+            b.block(0x0edef6); b.block(0x0edefa);
+            if SPECIAL_SWITCH_AREA_B_TILE_IDS[i] != a { b.taken(0x0edefe); continue; }
+            b.block(0x0edf00);
+            if SPECIAL_SWITCH_AREA_B_SCREENS[i] == u16::from(self.game_state.world.location.overworld_screen_index()) {
+                b.block(0x0edf08);
                 let direction = SPECIAL_SWITCH_AREA_B_DIRECTIONS[i];
                 self.follower_link_state_mut().set_direction(direction);
+                // The ROM inlines the same direction scan twice, for 0418
+                // and 069C. Neither loop is an additional semantic child.
+                for (head,branch) in [(0x0edf12,0x0edf14),(0x0edf1e,0x0edf20)] {
+                    let mut shift = direction;
+                    loop {
+                        b.block(head);
+                        if shift & 1 != 0 { break; }
+                        b.taken(branch); shift >>= 1;
+                    }
+                    if head == 0x0edf12 { b.block(0x0edf16); }
+                }
+                b.block(0x0edf22);
                 let trans = self.DirToEnum(direction as i32) as u16;
                 self.set_screen_transition_word(trans);
                 self.set_transition_direction_enum(trans as u8);
                 self.set_submodule(36);
                 self.set_subsubmodule(0);
                 self.set_dungeon_room_index(0);
-                break;
+                return;
             }
+            b.taken(0x0edf06); b.block(0x0edef4);
         }
+        b.block(0x0edef6); b.taken(0x0edef8); b.block(0x0edee0);
     }
 
     /// ROM: `Overworld_GetMap16OfLink_Mult8`
@@ -9587,6 +9697,10 @@ mod tests;
 #[cfg(test)]
 #[path = "overworld_prefix32_tests.rs"]
 mod prefix32_tests;
+
+#[cfg(test)]
+#[path = "overworld_prefix33_tests.rs"]
+mod prefix33_tests;
 
 #[cfg(test)]
 mod prefix4_tests {
