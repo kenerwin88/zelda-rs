@@ -228,6 +228,9 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn overworld_get_link_map16_coords_result(&self) -> (u16, u16, u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bbf64));
+        // $1B:BF64..BF9C, M16/X16. Caller REP/SEP and map reads are excluded.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1bbf64);
         let dir = self.game_state.player.follower_link.facing_index();
         let x = self
             .game_state

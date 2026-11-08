@@ -3,6 +3,10 @@
 use super::*;
 
 #[cfg(test)]
+#[path = "../player_prefix32_tests.rs"]
+mod prefix32_tests;
+
+#[cfg(test)]
 mod marker30_tests {
     use super::*;
 
@@ -593,15 +597,39 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn repel_dash(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0791f1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0791f1);
+        if !self.game_state.player.follower_link.is_running() {
+            b.taken(0x0791f4); b.block(0x0791fd); b.block(0x079290);
+        } else {
+            b.block(0x0791f6);
+            if self.game_state.player.follower_link.dash_counter() == 64 {
+                b.block(0x0791fd); b.block(0x079290);
+            } else { b.taken(0x0791fb); }
+        }
         if self.game_state.player.follower_link.is_running()
             && self.game_state.player.follower_link.dash_counter() != 64
         {
+            b.block(0x079200);
             self.link_reset_swimming_state();
+            b.block(0x079204);
             self.ancilla_add_dash_tremor(29, 1);
+            b.block(0x07920c);
             self.prepare_apply_rumble_to_sprites();
+            b.block(0x079210);
+            if self.game_state.system_signals.sound_effect_2() & 0x3f == 27 {
+                b.taken(0x079217);
+            } else {
+                b.block(0x079219);
+                if self.game_state.system_signals.sound_effect_2() & 0x3f == 50 {
+                    b.taken(0x07921b);
+                }
+            }
             if self.game_state.system_signals.sound_effect_2() & 0x3f != 27
                 && self.game_state.system_signals.sound_effect_2() & 0x3f != 50
             {
+                b.block(0x07921d);
                 self.ancilla_sfx3_near(3);
             }
             self.link_apply_tile_rebound();
@@ -615,6 +643,17 @@ impl ZeldaState {
     }
 
     pub(super) fn link_apply_tile_rebound(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079222));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x079222);
+        if self.game_state.player.follower_link.flag_moving() == 0 {
+            b.taken(0x07923c);
+        } else { b.block(0x07923e); }
+        b.block(0x079273);
+        if self.game_state.player.follower_link.last_direction_moved_towards() & 2 != 0 {
+            b.taken(0x079288); b.block(0x07928e);
+        } else { b.block(0x07928a); }
+        b.block(0x079290);
         let dir = self
             .game_state
             .player
@@ -985,6 +1024,13 @@ impl ZeldaState {
     }
 
     pub(super) fn link_add_in_velocity_y_falling(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07c1e4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07c1e4);
+        if self.game_state.player.follower_link.y_velocity_signed().is_negative() {
+            b.block(0x07c1ef);
+        } else { b.taken(0x07c1ed); }
+        b.block(0x07c1f3);
         let adjust = i16::from(self.game_state.player.tile_detection.y_low() & 7)
             - if self
                 .game_state
@@ -1007,6 +1053,13 @@ impl ZeldaState {
     }
 
     pub(super) fn link_add_in_velocity_y(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07c29f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07c29f);
+        if self.game_state.player.follower_link.y_velocity() < 0x80 {
+            b.taken(0x07c2a9);
+        } else { b.block(0x07c2ab); }
+        b.block(0x07c2ae);
         let y =
             self.game_state.player.follower_link.y().wrapping_sub(
                 self.game_state.player.follower_link.y_velocity() as i8 as i16 as u16,

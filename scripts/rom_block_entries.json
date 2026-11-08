@@ -1164,5 +1164,17 @@
   {"entry": "1ee2c6", "end": "1ee2e9", "index_max": 15},
   {"entry": "0594b5", "end": "059500", "index_max": 15},
   {"entry": "06c049", "end": "06c04e", "index_max": 15},
-  {"entry": "06ad03", "end": "06ad50", "index_max": 15}
+  {"entry": "06ad03", "end": "06ad50", "index_max": 15},
+  {"entry":"1bbf64","end":"1bbf9d","m8":false,"x8":false},
+  {"entry":"1bc980","end":"1bc983","m8":false,"x8":false},
+  {"entry":"1bc983","end":"1bc9de","m8":false,"x8":false},
+  {"entry":"1bca69","end":"1bca9f","m8":false,"x8":false},
+  {"entry":"02ad85","end":"02ae5e","m8":false,"x8":false},
+  {"entry":"02b150","end":"02b16b"},
+  {"entry":"02b19e","end":"02b1bb"},
+  {"entry":"07c1e4","end":"07c1ff"},
+  {"entry":"07c29f","end":"07c2ba"},
+  {"entry":"0791f1","end":"079222"},
+  {"entry":"079222","end":"079291"},
+  {"entry":"079290","end":"079291"}
 ]

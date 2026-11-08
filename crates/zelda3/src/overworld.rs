@@ -8487,15 +8487,42 @@ impl ZeldaState {
 
     /// ROM: `Overworld_Func1C`
     pub(super) fn overworld_func1c(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b150));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02b150);
+        if self.game_state.display.palette_filter.countdown() & 1 != 0 {
+            b.block(0x02b157);
+        } else { b.taken(0x02b155); }
+        {
+            let _child = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c2f6));
+            b.block(0x02c2f6);
+        }
         self.overworld_reset_mosaic_down();
+        b.block(0x02b162);
+        b.block(0x02b165);
+        {
+            let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781));
+            b.block(0x008781);
+        }
+        // JumpTableLocal's pulled-return tail belongs to this dispatch owner.
+        b.block(0x008784);
+        b.block(0x008799);
         match self.game_state.frame.subsubmodule {
             0 => self.overworld_mosaic_transition_load_sprite_graphics_and_set_mosaic(),
             1 => {
+                b.block(0x02b195);
                 self.graphics_incremental_vram_upload();
+                b.block(0x02b199);
                 self.apply_palette_filter_bounce();
+                b.block(0x02b19d);
             }
             _ => {
+                b.block(0x02b19e);
                 if self.game_state.world.location.overworld_screen_index() < 0x80 {
+                    b.block(0x02b1a4);
+                    if self.game_state.world.location.overworld_screen_index() & 0x3f != 0 {
+                        b.taken(0x02b1ad);
+                    } else { b.block(0x02b1af); }
                     let music_control =
                         if self.game_state.world.location.overworld_screen_index() & 0x3f != 0 {
                             2
@@ -8503,7 +8530,8 @@ impl ZeldaState {
                             5
                         };
                     self.set_music_control(music_control);
-                }
+                } else { b.taken(0x02b1a2); }
+                b.block(0x02b1b4);
                 self.set_submodule(8);
                 self.set_subsubmodule(0);
             }
@@ -9046,6 +9074,10 @@ impl ZeldaState {
     }
 
     fn overworld_do_map_update32x32(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02ad85));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // Includes the four JSLs, excludes DrawMap16 and its VRAM-address child.
+        b.block(0x02ad85);
         let i = self.game_state.memorized_tiles.count() as usize;
         let j = (self.game_state.dungeon.doors.door_open_counter() >> 1) as usize;
         let base = self
@@ -9060,10 +9092,13 @@ impl ZeldaState {
             (base.wrapping_add(0x82), OVERWORLD_DOOR_ANIM_TILES[j + 3]),
         ];
         for (n, (pos, tile)) in entries.into_iter().enumerate() {
+            if n != 0 { b.block([0, 0x02adb0, 0x02adda, 0x02ae06][n]); }
             self.memorized_tile_mut().set_entry_addr(i + n * 2, pos);
             self.memorized_tile_mut().set_entry_value(i + n * 2, tile);
-            self.overworld_draw_map16_persist(pos, tile);
+            self.dungeon_room_tilemaps_mut().set_bg2_tile_by_byte_pos(pos, tile);
+            self.overworld_draw_map16_anywhere(pos, tile);
         }
+        b.block(0x02ae32);
         let upload = self.game_state.display.vram_upload_cursor_usize();
         self.write_vram_upload_buffer_word(upload, 0xffff);
         self.memorized_tile_mut().set_count((i + 8) as u16);
@@ -9078,6 +9113,10 @@ impl ZeldaState {
                 1
             });
         self.dungeon_doors_mut().set_door_animation_step(step);
+        if self.game_state.dungeon.doors.door_open_counter() == 32 {
+            b.block(0x02ae50);
+        } else { b.taken(0x02ae4e); }
+        b.block(0x02ae53);
         self.set_bg_vram_load_mode(1);
         self.dungeon_doors_mut().increment_door_open_counter_low();
     }
@@ -9089,7 +9128,17 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_draw_map16(&mut self, pos: u16, value: u16) {
-        let vram_pos = Self::overworld_find_map16_vram_address(pos);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bc980));
+        // LDY #0 falls through into the shared M16/X16 body.
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1bc980);
+        self.overworld_draw_map16_anywhere(pos, value);
+    }
+
+    fn overworld_draw_map16_anywhere(&mut self, pos: u16, value: u16) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bc983));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1bc983);
+        let vram_pos = self.overworld_find_map16_vram_address(pos);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1bc994);
         let dst = self.game_state.display.current_vram_upload_data_address();
         let src = value as usize * 4;
         let map8 = self
@@ -9103,7 +9152,14 @@ impl ZeldaState {
         self.advance_vram_upload_cursor_by(16);
     }
 
-    fn overworld_find_map16_vram_address(addr: u16) -> u16 {
+    fn overworld_find_map16_vram_address(&self, addr: u16) -> u16 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1bca69));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1bca69);
+        if addr & 0x3f < 0x20 { b.taken(0x1bca73); } else { b.block(0x1bca75); }
+        b.block(0x1bca7a);
+        if addr & 0xfff < 0x800 { b.taken(0x1bca82); } else { b.block(0x1bca84); }
+        b.block(0x1bca8b);
         (if addr & 0x3f >= 0x20 { 0x0400 } else { 0 })
             + (if addr & 0x0fff >= 0x0800 { 0x0800 } else { 0 })
             + (addr & 0x001f)
@@ -9527,6 +9583,10 @@ impl ZeldaState {
 #[cfg(test)]
 #[path = "overworld_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "overworld_prefix32_tests.rs"]
+mod prefix32_tests;
 
 #[cfg(test)]
 mod prefix4_tests {

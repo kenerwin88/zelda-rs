@@ -13111,3 +13111,260 @@ in the full ROM census. **101,031 and 407,899 remain unresolved**, and the early
 also prevents a claim of complete upload-record identity. Numerical ROM,
 live-attribution, CPU-picture and full-suite gates pass within their stated
 boundaries; this is not complete lagless or continuous A/V acceptance.
+
+## Lagless prefix hunt 32
+
+Baseline is `7f0fe30f` on `codex/prefix-hunt32`. Evidence is in
+`target/prefix-hunt32/`. The retained hunt-31 source snapshot, selected
+artifacts and all 14 authority hashes match before reuse; the freshly
+regenerated ledger still contains 1,473,123 iterations. The candidate changes
+instruction ownership only: no classifier, matcher, P2, polling, behavior,
+scene table or residual-derived price changes.
+
+### Owners and ROM fixtures
+
+| ROM owner | Newly priced work / excluded children |
+| --- | --- |
+| `$1B:BF64` | Map16 coordinates, all M16/X16 instructions through RTS |
+| `$1B:C980` | The zero-offset LDY entry; falls into the separately owned C983 body |
+| `$1B:C983` | Map16 upload packet, including its JSR; CA69 owns the address calculation |
+| `$1B:CA69` | VRAM address selection, both outcomes of both quadrant branches |
+| `$02:AD85` | Four-tile map update, four JSL instructions and both animation-step paths; C983/CA69 excluded |
+| `$02:B150` | Mosaic dispatch, countdown branch, pulled-return dispatch tail and selected step; C2F6, graphics and palette children excluded |
+| `$07:C1E4` | Falling Y rollback/snap with the actual velocity sign |
+| `$07:C29F` | Signed Y velocity rollback |
+| `$07:91F1` | RepelDash guards, calls and sound branches; early-return RTS retained, rebound and called bodies excluded |
+| `$07:9222` | Shared rebound body and its RTS; direction and swimming branches |
+
+Every price comes from the ROM block generator's explicit entry widths and
+executed native branch markers. Map-update calls enter C983 directly; ordinary
+map draws enter C980. This keeps the wrapper's LDY out of the four direct
+calls. RepelDash's successful fall-through transfers the rebound PCs to 9222;
+its guard exits retain 9290 under 91F1. No existing fixture's owned-PC set was
+changed. The existing C2F6 and JumpTableLocal children gain their real call-site
+scopes in B150, with their bodies excluded from its fixture.
+
+Eight new unmodified-ROM fixtures construct a `lag_free` state:
+
+- `prefix32_map_coordinates_match_all_directions_and_wrapping`
+- `prefix32_map_vram_address_matches_all_quadrants`
+- `prefix32_map_packet_direct_and_zero_offset_entries_match_rom`
+- `prefix32_four_tile_map_update_excludes_draw_children_and_matches_both_steps`
+- `prefix32_mosaic_dispatch_all_steps_parities_and_music_paths_match_rom`
+- `prefix32_y_velocity_rollback_and_falling_snap_match_all_byte_inputs`
+- `prefix32_rebound_all_directions_and_swimming_paths_match_rom`
+- `prefix32_repel_dash_all_guards_and_sound_branches_exclude_children`
+
+The fixtures cover all conditional outcomes of the priced owners, all four
+map-facing directions, direct/wrapper entries, all 256 Y velocity bytes and
+all eight snap offsets. `owners-and-fixtures.json` and the retained ROM
+listings identify their scopes. Initial fixture failures exposed omitted
+post-call continuation markers; those were corrected before the final build.
+
+### ROM census and prefix results
+
+The supplied eight-slice helper reports **PASS**, unexplained **0**, complete
+**1,473,123 iterations**. ROM missing/excess/FP changes **1,427/0/0 ->
+1,420/0/0**: seven recoveries, no exposed rows. Whole-route instruction work
+increases by **21,458,156 clocks**, over 53,405 changed records.
+
+| Missing before iteration | ROM missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 49/0/0 -> 47/0/0 |
+| 380,243 | 98/0/0 -> 94/0/0 |
+| 461,989 | 144/0/0 -> 140/0/0 |
+
+Recovered rows are **150,378, 160,154, 242,103, 242,122, 820,731, 820,735 and
+907,544**. Their combined instruction gain is **36,234 clocks**;
+`recovered-row-work.json` records each row. Through 461,989, classification
+changes **108(a)/14(c)/22(d) ->
+104(a)/14(c)/22(d)**. The first row recovers **16,202** instruction clocks;
+160,154 recovers **950**. Rows 180,178 and 180,182 each gain **2,002** clocks
+but remain held short. `rom-comparison.json`, `rom-changed-holds.json` and
+`early-row-recovery.json` preserve the complete comparison.
+
+All upload budgets and holds, eleven other inverse-threshold rows, 101,031
+and seven polygon rows retain their budgets and holds. One upload record has
+an observational exception: **174,280** changes only `native_elapsed`
+**23 -> 22**. Its instruction budget, predictor costs, shortfall and accepted
+hold count are identical. Complete upload-record byte identity is therefore
+not claimed.
+
+### Remaining owner partitions
+
+| Iteration | Outcome / remaining signed sprite, object, other owner clocks |
+| --- | --- |
+| 150,378 | Recovered (+16,202 instruction clocks) |
+| 158,558 | 782/0/1,114 |
+| 160,109 | 848/0/-22 |
+| 160,154 | Recovered (+950 instruction clocks) |
+| 161,123 | 3,544/0/1,916 |
+| 162,301 | 3,636/0/3,284 |
+| 162,819 | 3,636/0/3,018 |
+| 174,033 | 1,414/0/796 |
+| 174,034 | 1,414/0/1,084 |
+| 180,178 | 208/0/8,018 |
+| 180,182 | 208/0/10,380 |
+| 181,568 | 2,524/0/-22 |
+| 187,779 | 0/0/3,360 |
+| 189,344 | 192/0/4,440 |
+| 189,368 | 840/0/2,828 |
+| 190,815 | 192/0/944 |
+| 194,994 | 3,470/0/2,904 |
+| 196,051 | 0/0/8,090 |
+| 198,239 | 2,890/0/1,100 |
+| 198,240 | 2,890/0/982 |
+| 209,808 | 0/0/15,104 |
+| 215,857 | 0/0/982 |
+| 215,858 | 0/0/982 |
+| 215,859 | 0/0/982 |
+| 217,220 | 0/0/1,100 |
+| 217,221 | 0/0/982 |
+| 217,222 | 0/0/982 |
+| 225,257 | 0/-803,282/808,246 |
+
+All 28 rows are individually profiled again with the frozen candidate. The
+signed partitions above are source-minus-native ownership audits, not prices.
+`early-owner-partitions.csv/json` retain every physical routine, both signs,
+before/after values, and the complete non-sprite caller partition. The sum of
+every row agrees with its source/native instruction difference. Sprite and
+object ownership are unchanged; all added clocks belong to the other owners.
+Large positive and negative aliases are retained, including the object/caller
+offset at 225,257. No individual positive alias is claimed as additive work.
+
+Twenty-six early rows remain unresolved. No owner at 407,899 is priced in
+this batch. The two additional recoveries before 380,243 are incidental results
+of the general owners; this is not completion of the early instruction hunt.
+
+### Live poll attribution
+
+The single seeded live census reports **PASS**, unexplained **0**, complete
+**1,473,123 iterations**. Missing/excess/FP changes **1,557/129/12 ->
+1,571/61/13**. Thus missing increases by 14 and FP by one, while excess
+decreases by 68. There are **34 changed holds**: seven shared ROM recoveries
+and **27 live-only changes**, all attributed, with **zero unattributed rows**.
+The command receipt records exactly one launch and exit zero.
+
+| Missing before iteration | Live missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 49/0/0 -> 47/0/0 |
+| 380,243 | 107/9/2 -> 103/9/2 |
+| 461,989 | 153/9/2 -> 149/9/2 |
+
+Attribution compares all four lanes: baseline/candidate live and ROM. It uses
+**2,256 changed live-vs-ROM instruction/VWF work events** and **262 changed
+native context/poll events**, a union of **2,257 iterations**, independently
+of the changed-hold set. Recovery ends at the first actual reseed after the
+last execution event when that reseed precedes the containing 2,000-iteration
+boundary, otherwise that boundary. Every live-only changed hold falls inside
+its independently established episode.
+
+Source context, reads/writes and start/end counters agree across **all
+1,473,123 rows**; cartridge APUI answers are disabled on every trace row.
+The normalized source SHA-256 is `a3da76b73786f97ec20c3ce3476432200463b968d43136fe847b3c40e3afb20f` on both sides. Source PCs are established directly by the
+hash-verified cold unmodified-ROM APUI bus observations at every episode start
+and source first-zero iteration: pendant **`$08:C3FD`**, crystal **`$08:C606`**.
+No held-row pattern supplies a PC. `poll-source-identity.json`,
+`poll-source-verification.json` and `live-trace-agreement.json` retain the
+observations, hashes and exact serialization.
+
+| Source episode | Direct source PC | Source first zero | Native first zero before -> after | Last changed execution | Recovery end | Live-only rows | Delta missing/excess/FP |
+| --- | --- | ---: | --- | ---: | ---: | ---: | --- |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 -> 94,854 | — | 96,000 | 0 | +0/+0/+0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,088 -> 142,088 | — | 144,000 | 0 | +0/+0/+0 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,036 -> 229,036 | — | 230,000 | 0 | +0/+0/+0 |
+| 380,243 | `$08:C606` | 380,881 | 380,881 -> 380,881 | — | 382,000 | 0 | +0/+0/+0 |
+| 461,989 | `$08:C606` | 462,628 | 462,627 -> 462,627 | — | 464,000 | 0 | +0/+0/+0 |
+| 626,618 | `$08:C606` | 627,256 | 627,256 -> 627,256 | — | 628,000 | 0 | +0/+0/+0 |
+| 735,229 | `$08:C606` | 735,867 | 735,868 -> 735,868 | — | 736,000 | 0 | +0/+0/+0 |
+| 881,095 | `$08:C606` | 881,734 | 881,734 -> 881,734 | — | 882,000 | 0 | +0/+0/+0 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,735 -> 1,064,734 | 1,066,962 | 1,066,963 | 12 | -96/-95/-4 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,335 -> 1,318,336 | 1,320,899 | 1,320,900 | 15 | +117/+27/+5 |
+
+All 27 live-only changed holds are listed below. Their ROM holds are
+unchanged. `live-only-attributed-rows.csv/json` retains both ROM holds, first
+zeros and recovery endpoints; `live-changed-rows.csv/json` lists all 34 changes.
+
+| Iteration | Source episode / direct PC | Source lag | Live hold before -> after |
+| --- | --- | ---: | --- |
+| 1,064,798 | 1,064,096 / `$08:C606` | 1 | 0 -> 1 |
+| 1,064,799 | 1,064,096 / `$08:C606` | 0 | 1 -> 0 |
+| 1,064,808 | 1,064,096 / `$08:C606` | 5 | 0 -> 4 |
+| 1,064,809 | 1,064,096 / `$08:C606` | 0 | 4 -> 0 |
+| 1,065,281 | 1,064,096 / `$08:C606` | 8 | 0 -> 7 |
+| 1,065,282 | 1,064,096 / `$08:C606` | 0 | 7 -> 0 |
+| 1,066,543 | 1,064,096 / `$08:C606` | 0 | 7 -> 0 |
+| 1,066,544 | 1,064,096 / `$08:C606` | 7 | 0 -> 7 |
+| 1,066,958 | 1,064,096 / `$08:C606` | 59 | 0 -> 59 |
+| 1,066,959 | 1,064,096 / `$08:C606` | 6 | 59 -> 6 |
+| 1,066,960 | 1,064,096 / `$08:C606` | 24 | 6 -> 24 |
+| 1,066,961 | 1,064,096 / `$08:C606` | 1 | 24 -> 1 |
+| 1,318,396 | 1,317,697 / `$08:C606` | 1 | 1 -> 0 |
+| 1,318,397 | 1,317,697 / `$08:C606` | 0 | 0 -> 1 |
+| 1,318,406 | 1,317,697 / `$08:C606` | 4 | 4 -> 0 |
+| 1,318,407 | 1,317,697 / `$08:C606` | 0 | 0 -> 4 |
+| 1,318,878 | 1,317,697 / `$08:C606` | 8 | 8 -> 0 |
+| 1,318,879 | 1,317,697 / `$08:C606` | 0 | 0 -> 8 |
+| 1,320,353 | 1,317,697 / `$08:C606` | 0 | 0 -> 7 |
+| 1,320,357 | 1,317,697 / `$08:C606` | 7 | 7 -> 0 |
+| 1,320,542 | 1,317,697 / `$08:C606` | 7 | 7 -> 0 |
+| 1,320,544 | 1,317,697 / `$08:C606` | 0 | 0 -> 7 |
+| 1,320,895 | 1,317,697 / `$08:C606` | 58 | 58 -> 0 |
+| 1,320,896 | 1,317,697 / `$08:C606` | 6 | 6 -> 0 |
+| 1,320,897 | 1,317,697 / `$08:C606` | 24 | 24 -> 0 |
+| 1,320,898 | 1,317,697 / `$08:C606` | 1 | 1 -> 0 |
+| 1,320,899 | 1,317,697 / `$08:C606` | 1 | 1 -> 0 |
+
+Crystal **1,064,096 improves by −96/−95/−4**; crystal **1,317,697 worsens
+by +117/+27/+5**. Their net **+21/−68/+1**, plus the seven shared ROM
+recoveries **−7/0/0**, gives the complete live change **+14/−68/+1**. The
+batch therefore does not improve all live metrics. No per-episode price,
+compensation, poll matcher or P2 change is introduced. `live-work-events`,
+`live-context-poll-events`, `live-poll-clusters`, `live-reseeds`,
+`poll-attribution`, `live-comparison`, `live-command` and the independent
+gate-tools `live-counts.txt` retain the full derivation.
+
+### Verification boundary
+
+Filtered checks pass: **62 overworld** tests and **59 player** tests, including
+the **eight new fixtures**, plus **eight pricing-generator** tests. The frozen
+production build is warning-free. The CPU-picture census retains **1,462,997
+exact pictures out of 1,473,123 iterations**. All eight picture-hash streams
+are byte-identical to baseline, covering every iteration; every slice exits
+zero and the combined gate passes. `cpu-picture-agreement.json`,
+`cpu-commands.json` and `cpu-gate.txt` retain that separate picture boundary.
+The requested full default library suite runs **once**, after all source and
+fixture changes:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+SNES: **505 passed, 7 ignored**. Zelda: **3,160 passed, 3 ignored**, with only
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`
+failing. There are **zero unexpected failures**, no fixture owned-PC edits,
+and no corrective full-suite rerun. All **24** warning headers match baseline;
+the production build is warning-free. `test-verification.json`,
+`full-library-command.json` and `full-library.log` retain the exact boundary
+(exit 101 for the permitted failure).
+
+
+All source and fixture changes precede the frozen final binary and the full
+default suite. No commit/push, cargo fmt, external Snes9x process, GPU,
+`--video`, cached-A/V or authority write is part of this batch. Every Zelda
+CLI invocation uses CPU-only logical replay. Only reproducible compiler cache
+under this worktree's own target was removed; retained prior evidence is intact.
+This is seeded logical/picture evidence, not continuous cold A/V or complete
+lagless acceptance. Twenty-six early (a) rows and 407,899 remain unresolved.
+
+Final readback verifies **14 unchanged authorities**, **463 unchanged retained
+hunt-31 artifacts** and **1,494 frozen source/fixture files**. The Cargo and frozen
+binary SHA-256 values are identical. All launched replays, profilers, trace
+analysis children and tests have exited. Target occupies **13.04 GB allocated**,
+below 16 GB. `verification.json`, `read-only-agreement.json`,
+`source-freeze-agreement.json`, `prior-artifact-agreement.json` and
+`artifact-hashes.json` retain the readback receipts.
