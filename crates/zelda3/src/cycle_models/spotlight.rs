@@ -649,6 +649,75 @@ mod tests {
         )
         .unwrap()
     }
+
+    #[test]
+    fn prefix30_spotlight_vcounter_all_phases_match_unmodified_rom() {
+        use snes::{CpuBusWorkload, CpuFieldTiming, CpuRasterPosition, RomCpuTimingProbe,
+            SourcePpuReadState};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).unwrap();
+        let mut cases = 0;
+        let mut equality = 0;
+        let mut instructions = 0;
+        for odd in [false, true] {
+            for line in 0..262u16 {
+                for h in [0u16, 514, 1340] {
+                    // M16 LDA $2137 also reads OAMDATA. Keep the reset-owned
+                    // physical OAM port rather than an unowned Snes::new bus.
+                    let mut machine = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom)
+                        .unwrap().machine().snes().clone();
+                    machine.write(0x2100, 0x80);
+                    machine.cpu.e = false;
+                    machine.cpu.unpack_flags(0);
+                    machine.cpu.pc = 0xf3a3;
+                    let mut cpu = NativeNmiContext { a: 0, x: 0, y: 0, d: 0, db: 0,
+                        bank: 0, pc: 0xf3a3, sp: machine.cpu.sp, p: 0 };
+                    let timeline = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(line, h),
+                        CpuBusWorkload::default(), CpuFieldTiming::non_interlace(odd));
+                    let mut source = RomCpuTimingProbe::new(machine, timeline,
+                        SourcePpuReadState::snes9x_reset()).unwrap();
+                    let mut clock = source.timeline().clone();
+                    let ports = RefCell::new(apu(clock.clock_master_cycles()));
+                    source.attach_apu_port_owner(apu(clock.clock_master_cycles())).unwrap();
+                    let ppu = RefCell::new(super::super::native_ppu::NativePpuState::reset(&clock));
+                    ppu.borrow_mut().write(0x2100, 0x80, clock.synchronous_beam_position().unwrap());
+                    let beam = Cell::new(None);
+                    let mut ram = source.snes().ram.clone();
+                    let mut work = Spotlight { pc: 0xf3a3, calls: Vec::new(), reset: None, complete: false };
+                    let (mut passes, mut master) = (0u64, 0u64);
+                    while cpu.pc != 0xf3b4 {
+                        let pc = cpu.pc;
+                        passes += u64::from(pc == 0xf3a3);
+                        assert!(passes < 3000, "one physical field must reach the ROM target");
+                        compare_instruction_with_devices(&format!("odd={odd} V={line} H={h} PC={pc:04x}"),
+                            &mut cpu, &mut clock, &mut source, &mut ram, &rom, None,
+                            |at, access| match access {
+                                Access::Read(a, 1) if (0x2137..=0x2140).contains(&a) => {
+                                    Some(if a == 0x2140 { u16::from(ports.borrow_mut().read_cpu_port_at(at, 0).unwrap()) }
+                                        else { u16::from(ppu.borrow_mut().read(a as u16, beam.get().unwrap()).unwrap()) })
+                                }
+                                _ => None,
+                            }, |cpu, clock, bus| {
+                                master += work.step(cpu, clock, DeviceBus { callback: bus,
+                                    beam: &beam, ppu: &ppu, apu: &ports }).unwrap();
+                            });
+                        instructions += 1;
+                    }
+                    assert_eq!(master, passes * 178 - 6);
+                    assert!(cpu.a >= 192);
+                    if line == 191 && h == 1340 {
+                        assert_eq!((passes, cpu.a), (1, 192), "equality exits, not another field");
+                        equality += 1;
+                    }
+                    if (192..256).contains(&line) && h == 0 { assert_eq!(passes, 1); }
+                    if line >= 256 { assert!(passes > 1); }
+                    cases += 1;
+                }
+            }
+        }
+        assert_eq!((cases, equality), (1572, 2));
+        eprintln!("{cases} unmodified-ROM wait cases, {instructions} exact instruction/bus boundaries; both equality exits");
+    }
     #[test]
     fn native_spotlight_bus_registers_and_table_progress_match_source() {
         let rom = std::fs::read(

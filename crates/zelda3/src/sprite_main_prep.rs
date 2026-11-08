@@ -2532,7 +2532,12 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_72_fairy_pond(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // The entry conditions and ordinary pond handoff only. Sparkle and
+        // queen suffixes retain their existing, separate pricing boundary.
+        b.block(0x06c319);
         if self.sprite_slot_view(k).a() != 0 {
+            b.taken(0x06c31c);
             self.sprite_slot_view_mut(k).decrement_c();
             if self.sprite_slot_view(k).c() == 0 {
                 self.sprite_slot_view_mut(k).set_state(0);
@@ -2544,7 +2549,9 @@ impl ZeldaState {
             self.sprite_draw_single_small(k, SpriteSingleSmallEntry::Rom06DCEF);
             return;
         }
+        b.block(0x06c31e);
         if self.sprite_slot_view(k).b() != 0 {
+            b.taken(0x06c321);
             self.faerie_queen_draw(k);
             let graphics = self.game_state.frame.frame_counter >> 4 & 1;
             self.sprite_slot_view_mut(k).set_graphics(graphics);
@@ -2570,7 +2577,11 @@ impl ZeldaState {
             }
             return;
         }
+        b.block(0x06c323);
+        // $E41A is the safe wrapper: an offscreen double return consumes
+        // that wrapper's frame and still reaches this caller's JMP $C41D.
         let _ = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Safe);
+        b.block(0x06c326);
         self.sprite_wish_pond2(k);
     }
 
@@ -2582,7 +2593,10 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_wish_pond2(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06c41d);
         self.wish_pond2_draw(k);
+        b.block(0x06c420);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -3117,24 +3131,47 @@ impl ZeldaState {
     }
 
     pub(super) fn wish_pond2_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06c4b5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06c4b5);
         if self.game_state.world.location.dungeon_room() as u8 == 21 {
+            b.taken(0x06c4b9); b.block(0x06c4fc);
             return;
         }
         let t = self.sprite_slot_view(k).ai_state();
+        b.block(0x06c4bb);
+        if t == 5 { b.taken(0x06c4c0); }
+        else {
+            b.block(0x06c4c2);
+            if t == 6 { b.taken(0x06c4c4); }
+            else {
+                b.block(0x06c4c6);
+                if t == 11 { b.taken(0x06c4c8); }
+                else {
+                    b.block(0x06c4ca);
+                    if t == 12 { b.taken(0x06c4cc); }
+                }
+            }
+        }
         if !matches!(t, 5 | 6 | 11 | 12) {
+            b.block(0x06c4ce); b.block(0x06c4fc);
             return;
         }
+        b.block(0x06c4d0);
         let g = self.sprite_slot_view(k).graphics() as usize;
         let mut f = WISH_POND_ITEM_OAM_FLAGS[g];
         if f == 0xff {
+            b.block(0x06c4de);
             f = 5;
-        }
+        } else { b.taken(0x06c4dc); }
+        b.block(0x06c4e0);
         self.sprite_slot_view_mut(k).set_oam_flags((f & 7) * 2);
         let start = ((RECEIVE_ITEM_PREP_DRAW_FRAME_START_BYTES[g] >> 1) * 4) as usize;
         self.sprite_draw_multiple(
             k,
             &WISH_POND2_DRAW_WISH_POND_ITEM_DRAW_FRAMES[start..start + 4],
         );
+        b.block(0x06c4fc);
     }
 
     pub(super) fn pink_ball_handle_deceleration(&mut self, k: usize) {

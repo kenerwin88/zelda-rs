@@ -1132,5 +1132,12 @@
   ,{"entry":"07bdba","end":"07be99"}
   ,{"entry":"07a006","end":"07a0ba","index_max":6}
   ,{"entry":"07a002","end":"07a003"}
-  ,{"entry":"07ab25","end":"07ab6c"}
+  ,{"entry":"07ab25","end":"07ab6c"},
+  {"entry": "1dc414", "end": "1dc41c", "index_max": 15},
+  {"entry": "1dc41c", "end": "1dc423", "index_max": 15},
+  {"entry": "1dc4bf", "end": "1dc4eb", "index_max": 15},
+  {"entry": "1dc5d0", "end": "1dc5ee", "index_max": 15},
+  {"entry": "06c319", "end": "06c329", "index_max": 15},
+  {"entry": "06c41d", "end": "06c423", "index_max": 15},
+  {"entry": "06c4b5", "end": "06c4fd", "index_max": 15}
 ]

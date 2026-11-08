@@ -4484,6 +4484,38 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x06c2df, 0x06c2e4, true, true, 52, 0x06c2e2, &[]),
     // $06:C2E4: fixed cost
     (0x06c2e4, 0x06c2e5, true, true, 42, 0x000000, &[]),
+    // $06:C319: 06c319 +6 if the index crosses a page; 06c31c taken +6
+    (0x06c319, 0x06c31e, true, true, 48, 0x06c31c, &[0x06c319]),
+    // $06:C31E: 06c31e +6 if the index crosses a page; 06c321 taken +6
+    (0x06c31e, 0x06c323, true, true, 48, 0x06c321, &[0x06c31e]),
+    // $06:C323: fixed cost
+    (0x06c323, 0x06c326, true, true, 46, 0x000000, &[]),
+    // $06:C326: fixed cost
+    (0x06c326, 0x06c329, true, true, 24, 0x000000, &[]),
+    // $06:C41D: fixed cost
+    (0x06c41d, 0x06c420, true, true, 46, 0x000000, &[]),
+    // $06:C420: fixed cost
+    (0x06c420, 0x06c423, true, true, 46, 0x000000, &[]),
+    // $06:C4B5: 06c4b9 taken +6
+    (0x06c4b5, 0x06c4bb, true, true, 56, 0x06c4b9, &[]),
+    // $06:C4BB: 06c4bb +6 if the index crosses a page; 06c4c0 taken +6
+    (0x06c4bb, 0x06c4c2, true, true, 64, 0x06c4c0, &[0x06c4bb]),
+    // $06:C4C2: 06c4c4 taken +6
+    (0x06c4c2, 0x06c4c6, true, true, 32, 0x06c4c4, &[]),
+    // $06:C4C6: 06c4c8 taken +6
+    (0x06c4c6, 0x06c4ca, true, true, 32, 0x06c4c8, &[]),
+    // $06:C4CA: 06c4cc taken +6
+    (0x06c4ca, 0x06c4ce, true, true, 32, 0x06c4cc, &[]),
+    // $06:C4CE: fixed cost
+    (0x06c4ce, 0x06c4d0, true, true, 22, 0x000000, &[]),
+    // $06:C4D0: 06c4d2 +6 if the index crosses a page; 06c4dc taken +6
+    (0x06c4d0, 0x06c4de, true, true, 154, 0x06c4dc, &[0x06c4d2]),
+    // $06:C4DE: fixed cost
+    (0x06c4de, 0x06c4e0, true, true, 16, 0x000000, &[]),
+    // $06:C4E0: 06c4eb +6 if the index crosses a page; 06c4f0 +6 if the index crosses a page
+    (0x06c4e0, 0x06c4fc, true, true, 340, 0x000000, &[0x06c4eb, 0x06c4f0]),
+    // $06:C4FC: fixed cost
+    (0x06c4fc, 0x06c4fd, true, true, 42, 0x000000, &[]),
     // $06:CBA2: 06cba2 +6 if the index crosses a page; 06cba5 taken +6
     (0x06cba2, 0x06cba7, true, true, 48, 0x06cba5, &[0x06cba2]),
     // $06:CBA7: fixed cost
@@ -10896,6 +10928,40 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x1dc215, 0x1dc219, true, true, 62, 0x000000, &[]),
     // $1D:C219: fixed cost
     (0x1dc219, 0x1dc21a, true, true, 42, 0x000000, &[]),
+    // $1D:C414: 1dc414 +6 if the index crosses a page; 1dc417 taken +6
+    (0x1dc414, 0x1dc419, true, true, 48, 0x1dc417, &[0x1dc414]),
+    // $1D:C419: fixed cost
+    (0x1dc419, 0x1dc41c, true, true, 24, 0x000000, &[]),
+    // $1D:C41C: fixed cost
+    (0x1dc41c, 0x1dc420, true, true, 62, 0x000000, &[]),
+    // $1D:C420: fixed cost
+    (0x1dc420, 0x1dc423, true, true, 46, 0x000000, &[]),
+    // $1D:C4BF: 1dc4bf +6 if the index crosses a page; 1dc4c2 taken +6
+    (0x1dc4bf, 0x1dc4c4, true, true, 48, 0x1dc4c2, &[0x1dc4bf]),
+    // $1D:C4C4: 1dc4c6 taken +6
+    (0x1dc4c4, 0x1dc4c8, true, true, 32, 0x1dc4c6, &[]),
+    // $1D:C4C8: 1dc4c9 taken +6
+    (0x1dc4c8, 0x1dc4cb, true, true, 30, 0x1dc4c9, &[]),
+    // $1D:C4CB: fixed cost
+    (0x1dc4cb, 0x1dc4ce, true, true, 38, 0x000000, &[]),
+    // $1D:C4CE: 1dc4cf taken +6
+    (0x1dc4ce, 0x1dc4d1, true, true, 30, 0x1dc4cf, &[]),
+    // $1D:C4D1: fixed cost
+    (0x1dc4d1, 0x1dc4d2, true, true, 42, 0x000000, &[]),
+    // $1D:C4D2: fixed cost
+    (0x1dc4d2, 0x1dc4d5, true, true, 46, 0x000000, &[]),
+    // $1D:C4D5: 1dc4d8 taken +6
+    (0x1dc4d5, 0x1dc4da, true, true, 68, 0x1dc4d8, &[]),
+    // $1D:C4DA: 1dc4df +6 if the index crosses a page
+    (0x1dc4da, 0x1dc4e8, true, true, 154, 0x000000, &[0x1dc4df]),
+    // $1D:C4E8: fixed cost
+    (0x1dc4e8, 0x1dc4eb, true, true, 46, 0x000000, &[]),
+    // $1D:C5D0: 1dc5d3 +6 if the index crosses a page
+    (0x1dc5d0, 0x1dc5e9, true, true, 300, 0x000000, &[0x1dc5d3]),
+    // $1D:C5E9: fixed cost
+    (0x1dc5e9, 0x1dc5ed, true, true, 62, 0x000000, &[]),
+    // $1D:C5ED: fixed cost
+    (0x1dc5ed, 0x1dc5ee, true, true, 42, 0x000000, &[]),
     // $1D:C9DF: fixed cost
     (0x1dc9df, 0x1dc9e2, true, true, 46, 0x000000, &[]),
     // $1D:C9E2: fixed cost

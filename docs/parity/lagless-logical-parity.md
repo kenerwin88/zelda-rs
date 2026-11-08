@@ -12813,3 +12813,11 @@ has exited. Only this worktree's reproducible compiler incremental cache was
 removed to maintain the target-size limit; prior evidence is retained.
 
 The final worktree target occupies **9.68 GB allocated**, below the **16 GB** limit. All launched gate, test, replay and trace-analysis processes have completed.
+
+## Prefix hunt 30 (spotlight wait audit + fairy pricing)
+
+- The spotlight wait (ROM `$00:F3A3..$00:F3B4`, a `$2137`/`$213D` V-counter loop that exits at V>=192) was already modeled exactly by the native lagless wait. All 14 retained spotlight-wait (d) rows execute this loop and exit at V=192. `cycle_models::spotlight::prefix30_spotlight_vcounter_all_phases_match_unmodified_rom` pins it across all 262 lines, both field parities and the equality exit (1,572 cases).
+- The constant main+shortfall totals at those rows came from wait *entry*: unpriced sprite work (Fairy Pond `$06:C319`/`$06:C41D`/`$06:C4B5` with the offscreen double return through `$E41A`, Big Fairy/Fairy Cloud `$1D:C414`/`$1D:C41C`/`$1D:C4BF`/`$1D:C5D0`) entered the wait one field early. Pricing these by ROM block markers (all-path unmodified-ROM fixtures in `sprite_prefix30_tests.rs`) adds 2,324 clocks at 109,016 / 174,296 / 295,089 / 299,434, moving entry past V=256 so the existing wait yields the source's two holds.
+- The 11 "other" (d) rows run no raster polls; their repeated totals are inverse hold thresholds of map construction / decompression / gameplay work, not a wait. Left unchanged.
+- ROM 1,450/0/0 -> 1,446/0/0 (prefixes 2/7/52/105/155 -> 2/6/50/101/151; classes 108a/14c/29d). Live 1,715/151/18 -> 1,702/142/16; the 4 live-only changed holds are all pendant episode 228,499 at `$08:C3FD`. CPU pictures unchanged.
+- Codex hit its usage limit after verification but before this note; the reviewer appended it from the retained evidence in `target/prefix-hunt30/`.

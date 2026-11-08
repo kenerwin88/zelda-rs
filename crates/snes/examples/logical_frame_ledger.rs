@@ -386,15 +386,36 @@ fn checkpoint_hardware_audit(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     writeln!(registers, "host,pc,master,address,value,channel,size,mode,source,indirect,hdma_active")?;
     let mut events = BufWriter::new(fs::File::create(out.join("events.csv"))?);
     writeln!(events, "host,master,event")?;
+    let mut polls = BufWriter::new(fs::File::create(out.join("poll-registers.csv"))?);
+    writeln!(polls, "host,pc,master,address,value,width,end_v,end_h")?;
+    let mut poll_work = BufWriter::new(fs::File::create(out.join("poll-instructions.csv"))?);
+    writeln!(poll_work, "host,pc,master,end_master,next_pc,a,p,work,end_v,end_h")?;
     let mut observer = cpu.machine().timeline().synchronous_event_observer();
     let mut channels = cpu.machine().snes().dma.channel;
     for host in 0..count {
         cpu.run_until_main_loop_return_with_quiescent_step_hook(|step, exec| -> Result<(), Box<dyn Error>> {
+            let machine = exec.machine();
+            let beam = machine.timeline().synchronous_beam_position().expect("source beam");
+            if matches!(step.origin_pc, 0x008038 | 0x00805a | 0x00805d)
+                || (0x00f3a3..=0x00f3b4).contains(&step.origin_pc) {
+                let cpu = &machine.snes().cpu;
+                let work: u64 = step.transactions.iter().map(|t| u64::from(t.duration_master_cycles)).sum();
+                writeln!(poll_work, "{host},{:06x},{},{},{:02x}{:04x},{},{},{work},{},{}",
+                    step.origin_pc, step.started_at.master_cycles(), step.ended_at.master_cycles(),
+                    cpu.k, cpu.pc, cpu.a, cpu.pack_flags(), beam.scanline, beam.cycles)?;
+            }
             if step.origin_pc==0x008038 {
                 writeln!(boundaries,"{host},{},{:06x},{:x}",step.started_at.master_cycles(),step.origin_pc,
                     Sha256::digest(&exec.machine().snes().ram))?;
             }
             for access in &step.accesses {
+                if system_bank(access.address)
+                    && matches!(access.address & 65535, 0x2137..=0x213f | 0x4212)
+                    && let SourceCpuBusAccessKind::Read { value, width } = access.kind {
+                    writeln!(polls, "{host},{:06x},{},{:04x},{value},{width},{},{}",
+                        step.origin_pc, access.timestamp.master_cycles(), access.address & 65535,
+                        beam.scanline, beam.cycles)?;
+                }
                 if system_bank(access.address) && (0x4200..=0x437f).contains(&(access.address & 65535))
                     && let SourceCpuBusAccessKind::Write { value, .. } = access.kind {
                     let address = access.address & 65535;
@@ -420,7 +441,7 @@ fn checkpoint_hardware_audit(args: Vec<String>) -> Result<(), Box<dyn Error>> {
             Ok(())
         })?;
     }
-    registers.flush()?; events.flush()?; boundaries.flush()?;
+    registers.flush()?; events.flush()?; boundaries.flush()?; polls.flush()?; poll_work.flush()?;
     Ok(())
 }
 

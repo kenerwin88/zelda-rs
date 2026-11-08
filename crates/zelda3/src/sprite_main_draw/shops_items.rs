@@ -1499,10 +1499,17 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BigFaerie_Draw(int k) {  // 9dc5d0
     pub(super) fn big_faerie_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dc5d0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dc5d0);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
+        { let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8549)); b.block(0x1d8549); }
         let mut info = self.sprite_draw_multiple(k, &BIG_FAERIE_DRAW_FRAMES[base..base + 4]);
+        { let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8549)); b.block(0x1d854d); }
+        b.block(0x1dc5e9);
         // ROM $1D:C5E9
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x1dc5ed);
     }
 
     // -----------------------------------------------------------------------
@@ -1520,9 +1527,13 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_C8_BigFairy(int k) {  // 9dc414
     pub(super) fn sprite_c8_big_fairy(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dc414);
         if self.sprite_slot_view(k).head_direction() != 0 {
+            b.taken(0x1dc417);
             self.sprite_fairy_cloud(k);
         } else {
+            b.block(0x1dc419);
             self.sprite_big_fairy(k);
         }
     }
@@ -1530,7 +1541,12 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_FairyCloud(int k) {  // 9dc41c
     pub(super) fn sprite_fairy_cloud(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // Only the two child-call opcodes are owned here; the active cloud
+        // suffix remains unpriced. Both children retain their own work.
+        b.block(0x1dc41c);
         self.sprite_prep_oam_coord(k);
+        b.block(0x1dc420);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -1597,25 +1613,40 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BigFairy(int k) {  // 9dc4bf
     pub(super) fn sprite_big_fairy(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        // Price the draw/inactive prefix on every branch, independently of
+        // the still-unpriced active AI dispatch which follows $C4E8.
+        b.block(0x1dc4bf);
         let mut i = self.sprite_slot_view(k).delay_aux2();
+        if i == 0 { b.taken(0x1dc4c2); }
+        else { b.block(0x1dc4c4); if i >= 0x40 { b.taken(0x1dc4c6); } }
         if i != 0 && i < 0x40 {
+            b.block(0x1dc4c8);
             i = i.wrapping_sub(1);
             if i == 0 {
+                b.block(0x1dc4cb);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
-            }
+            } else { b.taken(0x1dc4c9); }
+            b.block(0x1dc4ce);
             if (i & 1) != 0 {
+                b.block(0x1dc4d1);
                 return;
             }
+            b.taken(0x1dc4cf);
         }
+        b.block(0x1dc4d2);
         self.big_faerie_draw(k);
+        b.block(0x1dc4d5);
         self.sprite_slot_view_mut(k).subtract_g(1);
         if sign8(self.sprite_slot_view(k).g()) {
+            b.block(0x1dc4da);
             let value = 5;
             self.sprite_slot_view_mut(k).set_g(value);
             let value = self.sprite_slot_view(k).graphics().wrapping_add(1) & 3;
             self.sprite_slot_view_mut(k).set_graphics(value);
-        }
+        } else { b.taken(0x1dc4d8); }
+        b.block(0x1dc4e8);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
