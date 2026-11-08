@@ -330,8 +330,13 @@ impl ZeldaState {
     //   sprite_y_vel[k] <<= 1;
     // }
     pub(super) fn hinox_face_link(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x069fe1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x069fe1);
         let dir = self.sprite_direction_to_face_link(k);
+        b.block(0x069fe4);
         self.hinox_set_direction(k, dir);
+        b.block(0x069fe8);
         let mut sprite = self.sprite_slot_view_mut(k);
         sprite.shift_x_velocity_left(1);
         sprite.shift_y_velocity_left(1);
@@ -347,10 +352,14 @@ impl ZeldaState {
     //   sprite_y_vel[k] = kHinox_Yvel[dir];
     // }
     pub(super) fn hinox_set_direction(&mut self, k: usize, dir: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a004));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a004);
         // ROM Hinox_SetDirection $06:A007: `JSL GetRandomNumber : AND #$3F :
         // ADC #$60` consumes the RNG carry-out (the C port drops it; route
         // boundaries 15/17: delay $70 vs the carry-less $6F).
         let r = self.get_random_number_with_carry();
+        b.block(0x06a00b); b.block(0x06a024);
         let idx = (dir as usize) & 3;
         let mut sprite = self.sprite_slot_view_mut(k);
         sprite.set_direction(dir);

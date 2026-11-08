@@ -5055,8 +5055,7 @@ impl ZeldaState {
                     self.complete_smithy_tempered_sword_receipt();
                 }
                 SpriteMainItemReceiptSuffix::HeartPiece => {
-                    self.sprite_slot_view_mut(sprite_slot).set_state(0);
-                    self.heart_upgrade_set_obtained_flag(sprite_slot);
+                    self.complete_heart_piece_item_receipt(sprite_slot);
                 }
                 SpriteMainItemReceiptSuffix::FluteKidShovel => {
                     self.sprite_slot_view_mut(sprite_slot).set_ai_state(0);

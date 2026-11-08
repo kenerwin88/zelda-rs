@@ -140,7 +140,7 @@ fn prefix25_water_terminal_helpers_and_transmute_guard_match_rom() {
         let random=std::cell::RefCell::new(Vec::new());
         crate::cycle_ledger::assert_rom_marker_work(owner,s,|s| {
             if s.cpu.k==13&&s.cpu.pc==0xba7f {random.borrow_mut().push(crate::RomRandomSample::with_carry(0,s.cpu.a as u8,s.cpu.c));}
-            s.cpu.k==6 && match owner {0x06e0ab=>(0xe0ab..0xe0bf).contains(&s.cpu.pc),0x06e0f6=>(0xe0f6..0xe115).contains(&s.cpu.pc),0x06e095=>(0xe095..0xe09b).contains(&s.cpu.pc),_=>(0xe22f..0xe239).contains(&s.cpu.pc)||s.cpu.pc==0xe26d}
+            s.cpu.k==6 && match owner {0x06e0ab=>(0xe0ab..0xe0bf).contains(&s.cpu.pc),0x06e0f6=>(0xe0f6..0xe115).contains(&s.cpu.pc),0x06e095=>(0xe095..0xe09b).contains(&s.cpu.pc),_=>(0xe22f..0xe239).contains(&s.cpu.pc)||(s.cpu.pc==0xe26d && ty!=0xec)}
         },|| {
             n.install_rom_random_replay(random.borrow().clone(),0);n.rom_random_replay.begin_frame();
             match owner {0x06e0ab=>n.sprite_func8(slot),0x06e0f6|0x06e095=>n.sprite_func22(slot),_=>n.throwable_scenery_transmute_if_valid(slot)}

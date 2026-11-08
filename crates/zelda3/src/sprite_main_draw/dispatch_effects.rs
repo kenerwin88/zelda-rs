@@ -15,11 +15,17 @@ impl ZeldaState {
     //   Sprite_Get16BitCoords(k);
     // }
     pub(in crate::zelda_rtl) fn sprite_draw_big_shadow(&mut self, k: usize, anim: i32) {
-        self.sprite_draw_big_shadow_body(k, anim, false);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1dd1a8));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1dd1a8); b.block(0x1dd1bf);
+        self.sprite_draw_big_shadow_body(k, anim, true, true);
     }
 
-    fn sprite_draw_big_shadow_body(&mut self, k: usize, anim: i32, marked: bool) {
+    fn sprite_draw_big_shadow_body(&mut self, k: usize, anim: i32, marked: bool, entry_children: bool) {
         let b = crate::cycle_ledger::blocks(marked && self.lag_free);
+        // D1A8 admits these child wrappers here. Keep D1AF's existing
+        // partial ownership intact; its callers include spotlight waits.
+        let children = crate::cycle_ledger::blocks(entry_children && self.lag_free);
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let z = self.sprite_slot_view(k).z() as u16;
         self.sprite_workspace_mut()
@@ -31,9 +37,13 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(4));
         let base = (anim as usize) * 3;
+        { let _far = (entry_children && self.lag_free).then(|| crate::cycle_ledger::routine(0x1d8549)); children.block(0x1d8549); }
         self.sprite_draw_multiple(k, &LARGE_SHADOW_DRAW_FRAMES[base..base + 3]);
+        { let _far = (entry_children && self.lag_free).then(|| crate::cycle_ledger::routine(0x1d8549)); children.block(0x1d854d); }
         b.block(0x1dd1f7);
+        { let _coords = (entry_children && self.lag_free).then(|| crate::cycle_ledger::routine(0x0684bd)); children.block(0x0684bd); }
         self.sprite_get16_bit_coords(k);
+        { let _coords = (entry_children && self.lag_free).then(|| crate::cycle_ledger::routine(0x0684bd)); children.block(0x0684c0); }
         b.block(0x1dd1fb);
     }
 
@@ -424,7 +434,7 @@ impl ZeldaState {
         if z < 4 { b.taken(0x1dd1bb); } else { b.block(0x1dd1bd); }
         let z = z.min(4);
         b.block(0x1dd1bf);
-        self.sprite_draw_big_shadow_body(k, z as i32, true);
+        self.sprite_draw_big_shadow_body(k, z as i32, true, false);
     }
 
     // -----------------------------------------------------------------------

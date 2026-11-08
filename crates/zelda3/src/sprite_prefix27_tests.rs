@@ -177,7 +177,7 @@ fn prefix27_heart_piece_prefix_all_initialization_active_and_collision_paths_exc
         for a in 0x12000..0x14000 {n.write_wram_byte(a,tile);}
         n.sync_native_game_state_from_ram();let s=marker29_machine(&n,0x05f020,slot).unwrap();
         crate::cycle_ledger::assert_rom_marker_work(0x05f020,s,
-            |s|s.cpu.k==5 && (0xf020..0xf059).contains(&s.cpu.pc),||n.sprite_heart_piece(slot));
+            |s|s.cpu.k==5 && (0xf020..0xf0cd).contains(&s.cpu.pc),||n.sprite_heart_piece(slot));
     } } } } }
 }
 

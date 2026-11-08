@@ -2,6 +2,37 @@ use super::*;
 use crate::game_state::constants::{ANIMATED_TILE_DATA_SRC, ANIMATED_TILE_VRAM_ADDR};
 
 #[test]
+fn prefix28_polygon_dma_all_pending_paths_match_unmodified_rom_and_existing_hardware_charge() {
+    use crate::rom_cpu_timing::{RomCpuCheckpoint,RomCpuTimingRun};
+    let rom=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")).unwrap();
+    for pending in [0,1,255] {
+        let mut n=ZeldaState::new();n.set_lag_free(true);n.ram.fill(0);
+        n.write_wram_byte(0x1f0c,pending);n.sync_native_game_state_from_ram();
+        let checkpoint=RomCpuCheckpoint {entry_pc:0x009347,stop_pc:0x008000,a:0,x:0,y:0,
+            sp:0x1fd,dp:0,db:0,carry:false,zero:false,overflow:false,negative:false,
+            interrupt_disable:true,decimal:false,accumulator_is_8_bit:true,index_is_8_bit:true,
+            emulation:false,waiting:false,stack_address:0x1fe,stack_bytes:&[0xff,0x7f]};
+        let ram=n.wram_image();
+        let mut source=RomCpuTimingRun::new(&rom,&ram,&n.sram,&n.ppu,&n.dma,[0;4],checkpoint).unwrap();
+        let mut dma=0;
+        for _ in 0..100 {
+            if source.is_complete() {break;}
+            source.step();dma+=u64::from(source.drain_started_dma_master_cycles());
+        }
+        assert!(source.is_complete());
+        n.nmi_dma_accounting=Some(NmiDmaAccounting::default());n.nmi_update_irqgfx();
+        let native=n.nmi_dma_accounting.take().unwrap();
+        assert_eq!(native.master_cycles(),dma);
+        assert_eq!(native.bytes,if pending==0 {0}else{0x800});
+        assert_eq!(dma,if pending==0 {0}else{18+8+8*0x800});
+        if pending!=0 {
+            let opening=NmiDmaAccounting{runs:native.runs+1,channels:native.channels+1,bytes:native.bytes+544};
+            assert_eq!(opening.master_cycles(),20_788);
+        }
+    }
+}
+
+#[test]
 fn held_nmi_reported_cycles_match_source_handler_and_rti() {
     use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
     let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

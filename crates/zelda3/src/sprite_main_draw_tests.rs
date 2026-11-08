@@ -15,6 +15,8 @@ mod prefix25;
 mod prefix26;
 #[path = "sprite_prefix27_tests.rs"]
 mod prefix27;
+#[path = "sprite_prefix28_tests.rs"]
+mod prefix28;
 
 #[test]
 fn prefix10_intro_dispatch_and_fade_markers_match_rom() {
@@ -2340,7 +2342,7 @@ fn marker37_damage_body_matches_rom() {
         let Some(machine) = marker29_machine(&native,0x06f154,slot) else {return};
         // The F154 prefix is independently priced from the F15C child.
         let source = crate::cycle_ledger::assert_rom_marker_work(0x06f15c,machine,
-            |s|s.cpu.k==6 && ((0xf15c..0xf1f6).contains(&s.cpu.pc) || (0xe25a..0xe26e).contains(&s.cpu.pc))
+            |s|s.cpu.k==6 && (0xf15c..0xf1f6).contains(&s.cpu.pc)
                 && !(floor!=0 && s.cpu.pc==0xf1d7 || floor!=0 && s.cpu.pc==0xf1d8),||{
                 native.sprite_check_damage_to_link_same_layer_marked(slot);
             });

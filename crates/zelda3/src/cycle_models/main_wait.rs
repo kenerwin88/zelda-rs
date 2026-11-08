@@ -412,6 +412,41 @@ mod tests {
     }
 
     #[test]
+    fn prefix28_profile_cut_excludes_only_the_executed_return_branch() {
+        use snes::{CartType, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline,
+            CpuRasterPosition, RomCpuTimingProbe, Snes, SourcePpuReadState};
+        let rom = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../saves/zelda3.sfc")).expect("unmodified development ROM");
+        for latch in [0, 1, 255] { for frame in [0, 255] {
+            let mut machine = Snes::new();
+            machine.cart.load(CartType::LoRom, &rom, 0x2000);
+            machine.cpu.e = false; machine.cpu.unpack_flags(0x30);
+            machine.cpu.sp = 0x1ff; machine.cpu.pc = 0x805d;
+            machine.ram[0x12] = latch; machine.ram[0x1a] = frame;
+            let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(10, 100),
+                CpuBusWorkload::default(), CpuFieldTiming::non_interlace(false));
+            let mut source = RomCpuTimingProbe::new(machine, clock,
+                SourcePpuReadState::snes9x_reset()).unwrap();
+            let mut phase = MainLoopCallerPhase::SpritePreparation;
+            let mut profiled = 0; let mut executed = 0;
+            for pc in [0x805d, 0x805f] {
+                let receipt = source.step().unwrap();
+                assert_eq!(receipt.origin_pc, pc);
+                let work: u32 = receipt.transactions.iter().map(|t|u32::from(t.duration_master_cycles)).sum();
+                let native = phase.step_return_to_wait().unwrap();
+                assert_eq!(native.master_cycles, work);
+                executed += work;
+                // logical_frame_ledger closes the main profile after STZ $12.
+                if pc == 0x805d { profiled += work; }
+            }
+            assert_eq!((profiled, executed, profiled as i32 - executed as i32), (24, 46, -22));
+            assert_eq!(source.snes().cpu.pc, 0x8034);
+            assert_eq!(source.snes().ram[0x12], 0);
+            assert_eq!(phase, MainLoopCallerPhase::Waiting);
+        } }
+    }
+
+    #[test]
     fn held_branch_observes_the_pre_interrupt_load_until_the_next_lda() {
         let mut wait = MainWait::default();
         assert_eq!(wait.step(0).loaded_latch, Some(0));

@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn prefix28_swamp_overlay_clear_all_stores_and_width_restoration_match_rom() {
+    let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut base=ZeldaState::new();base.set_lag_free(true);
+    base.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    for fill in [0u8,0x55,0xff] {for index in [0,4,255] {
+        let mut n=base.clone();n.write_wram_byte(0xb0,1);n.write_wram_byte(0x45c,index);
+        for a in 0x4000..0x6000 {n.write_wram_byte(a,fill);}
+        n.sync_native_game_state_from_ram();
+        let mut source=load4_rom_machine(&n,0x01efec,0);source.cpu.db=0;
+        let source=crate::cycle_ledger::assert_rom_marker_work(0x01efec,source,
+            |s|s.cpu.k==1 && (0xefec..0xf046).contains(&s.cpu.pc),||n.module07_0b_drain_swamp_pool());
+        for a in 0x4000..0x6000 {assert_eq!(n.read_wram_byte(a),source.snes().ram[a],"address {a:x}");}
+        assert_eq!(n.read_wram_byte(0xb0),source.snes().ram[0xb0]);
+        assert!(source.snes().cpu.mf && source.snes().cpu.xf);
+    } }
+}
+
+#[test]
 fn prefix27_room_object_callers_all_sizes_planes_and_rupee_guard_exclude_children() {
     let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let rom=std::fs::read(root.join("saves/zelda3.sfc")).unwrap();

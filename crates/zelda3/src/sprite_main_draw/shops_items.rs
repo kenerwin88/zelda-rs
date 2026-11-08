@@ -447,6 +447,7 @@ impl ZeldaState {
             b.block(0x05f02b);
             if self.sprite_slot_view(k).state() == 0 {
                 b.taken(0x05f02e);
+                b.block(0x05f089);
                 return;
             }
         } else { b.taken(0x05f023); }
@@ -462,6 +463,7 @@ impl ZeldaState {
         b.block(0x05f03b);
         if busy {
             b.taken(0x05f03b);
+            b.block(0x05f089);
             return;
         }
 
@@ -481,25 +483,42 @@ impl ZeldaState {
         b.block(0x05f056);
         // ROM $05:F056
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x05f059);
         if sign8(self.sprite_slot_view(k).z()) {
+            b.block(0x05f05e);
             let value = 0;
             self.sprite_slot_view_mut(k).set_z(value);
             let value = ((self.sprite_slot_view(k).z_velocity() ^ 255) & 248) >> 1;
             self.sprite_slot_view_mut(k).set_z_velocity(value);
-            let value = (self.sprite_slot_view(k).x_velocity() as i8 >> 1) as u8;
-            self.sprite_slot_view_mut(k).set_x_velocity(value);
-        }
+            let velocity = self.sprite_slot_view(k).x_velocity();
+            if velocity == 0 { b.taken(0x05f06f); }
+            else {
+                b.block(0x05f071);
+                let value = (velocity as i8 >> 1) as u8;
+                self.sprite_slot_view_mut(k).set_x_velocity(value);
+                if value == 0xff {
+                    b.block(0x05f07b);
+                    self.sprite_slot_view_mut(k).set_x_velocity(0);
+                } else { b.taken(0x05f079); }
+            }
+        } else { b.taken(0x05f05c); }
 
-        if self.sprite_slot_view(k).delay_aux4() != 0
-            // ROM $05:F083
-            || !self.sprite_check_damage_same_layer_long_marked(k)
-        {
+        b.block(0x05f07e);
+        if self.sprite_slot_view(k).delay_aux4() != 0 {
+            b.taken(0x05f081); b.block(0x05f089);
             return;
         }
+        b.block(0x05f083);
+        let touching = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x05f087);
+        if !touching { b.block(0x05f089); return; }
+        b.taken(0x05f087); b.block(0x05f08a);
 
         let heart_pieces = self.player_resources_mut().advance_heart_piece_count();
         if heart_pieces == 0 {
+            b.block(0x05f097);
             self.link_cancel_dash();
+            b.block(0x05f09c);
             self.follower_link_state_mut().set_item_receipt_method(0);
             if self
                 .link_receive_item_from(
@@ -514,12 +533,33 @@ impl ZeldaState {
             {
                 return;
             }
+            self.complete_heart_piece_item_receipt(k);
+            return;
         } else {
+            b.taken(0x05f095); b.block(0x05f0a8);
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x2d);
+            b.block(0x05f0ae);
+            if heart_pieces == 3 { b.crossing(0x05f0b7); }
             self.sprite_show_message_unconditional(HEART_PIECE_MESSAGES[usize::from(heart_pieces)]);
         }
+        self.complete_heart_piece_pickup(k);
+    }
+
+    pub(in crate::zelda_rtl) fn complete_heart_piece_item_receipt(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05f020));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05f0a5);
+        self.complete_heart_piece_pickup(k);
+    }
+
+    fn complete_heart_piece_pickup(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05f020));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05f0c0);
         let value = 0;
         self.sprite_slot_view_mut(k).set_state(value);
+        if self.game_state.world.location.is_outdoors() {
+            b.taken(0x05f0c5); b.block(0x05f0ca);
+        } else { b.block(0x05f0c7); }
         self.heart_upgrade_set_obtained_flag(k);
     }
 

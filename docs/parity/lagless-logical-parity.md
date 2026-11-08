@@ -12091,3 +12091,358 @@ No commit, push or `cargo fmt` occurs. The worktree target remains below
 These are seeded logical, CPU-picture and unmodified-ROM instruction proofs.
 The 190 listed instruction/protocol/wait/phase blockers remain as classified.
 Cold exact A/V acceptance is a separate boundary.
+
+## Lagless prefix hunt 28
+
+Instruction pricing on `codex/prefix-hunt28`, based on main **`f5279bb8`**.
+Evidence is in `target/prefix-hunt28/`. The frozen admission binary is
+`zelda3-final`, SHA-256
+`b735eda5a0f8cc9f69617795ee6f957ff10cd18788e01eec23f3cac1b5767e06`.
+
+The ROM census improves **1,530/0/0 → 1,500/0/0**, recovering **30 rows**
+with **zero exposed**. Main work gains **332,105,232 instruction clocks**.
+Live totals worsen **1,566/36/7 → 1,735/144/14**; all **43 live-only changed
+holds** are attributed to direct `$08:C606` crystal-poll episodes. CPU pictures
+remain **1,462,997 exact**. The final full library suite has only the permitted
+spotlight failure.
+
+### Diagnosis: return boundary and interrupt-phase ownership
+
+The seven 146,786–146,810 rows do **not** establish an accumulating
+inter-iteration hardware deficit. On every row, `main_master + cost_shortfall`
+is **230,464**. Main CPU work falls while the inverse diagnostic shortfall
+grows. The source main CPU changes from 227,742 to 215,710 clocks; native
+changes from 227,764 to 215,732. Main refresh falls from 6,840 to 6,480 source
+clocks. No per-iteration debt is added to the runtime.
+
+| Iteration | Source main CPU | Native main CPU | Signed gap | Diagnostic shortfall | Main + shortfall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 146,786 | 227,742 | 227,764 | -22 | 2,700 | 230,464 |
+| 146,790 | 227,840 | 227,862 | -22 | 2,602 | 230,464 |
+| 146,794 | 225,430 | 225,452 | -22 | 5,012 | 230,464 |
+| 146,798 | 222,620 | 222,642 | -22 | 7,822 | 230,464 |
+| 146,802 | 220,028 | 220,050 | -22 | 10,414 | 230,464 |
+| 146,806 | 218,156 | 218,178 | -22 | 12,286 | 230,464 |
+| 146,810 | 215,710 | 215,732 | -22 | 14,732 | 230,464 |
+
+The recurring **-22** is an executed return-boundary convention. The source
+main profile closes at `STZ $12` at `$00:805D`. Native also charges the
+following `BRA $8034` at `$00:805F`, exactly 22 clocks. The unmodified-ROM
+fixture `prefix28_profile_cut_excludes_only_the_executed_return_branch`
+executes the 24-clock store and complete 46-clock suffix with multiple latch
+and frame values. This explains the same convention at 97,658 and 172,413;
+it does not justify subtracting 22 from physical execution.
+
+The existing source example gains `--checkpoint-hardware-audit` to retain
+actual register writes, hardware events, ROM identity and boundary WRAM
+hashes. The first opening NMI is replayed from the earlier 146,148 receiver;
+the following six openings reproduce their retained checkpoint WRAM hashes.
+These are resumed diagnostics, not a new cold picture or A/V acceptance run.
+
+| Actual opening NMI write | Channels / mode | A-bus source | Transfer bytes | Existing hardware-law clocks |
+| --- | --- | --- | ---: | ---: |
+| `$00:8BCA` → `$420B=1` | one, channel 0 / mode 0 | `$00:0800` | 544 | 4,378 |
+| `$00:9374` → `$420B=1` | one, channel 0 / mode 1 | `$7E:E800` | 2,048 | 16,410 |
+| `$00:8135`, `$00:82C4` → `$420C=0` | zero active HDMA channels | none | 0 | 0 transfer clocks |
+
+There are 225 scheduled HDMA-start events per field, **zero active transfer
+lines**, and no nonzero HDMA-enable write in the seven audited windows.
+DMA already uses **18 per run + 8 per channel + 8 per byte**. Fixture
+`prefix28_polygon_dma_all_pending_paths_match_unmodified_rom_and_existing_hardware_charge`
+checks pending values 0, 1 and 255 against executed ROM and proves the existing
+2,048-byte upload charge; with OAM the two runs total **20,788** clocks.
+
+The source opening-handler profile contains **5,230 CPU + 20,788 DMA + 800
+refresh = 26,818** clocks. Opening edge to main entry is 26,858 or 26,880,
+including the actual hardware-entry phase. The source IRQ contains **1,528
+CPU + 80 refresh = 1,608**; lag NMI **3,226 + 120 = 3,346**. The polygon
+lane contains about **212,992 CPU + 6,400 refresh = 219,392** clocks.
+The first audit also contains **222,264 CPU + 6,720 refresh** clocks of
+main-loop idle polling, outside main work; idle padding is not a new work
+price. Main wall time falls **234,582 → 222,190**, while source idle
+padding rises **228,984 → 241,374** clocks. This is existing field-time
+partitioning, not an accumulating new transfer charge. These separately profiled lanes must not all be added to main: their
+boundaries cross main/idle/interrupt intervals.
+
+Native assigns the seven rows the **9,344-clock** entry handler and their
+adjacent entries **30,812 clocks**. Source main-entry to main-done is
+348,414 down to 336,022 clocks, unlike the native phase estimate. The
+unrepresented source work belongs to **NMI polygon upload and polygon/IRQ
+phase ownership**, rather than an absent DMA byte/channel law, active HDMA,
+growing refresh, or the 22-clock return. `nmi_update_irqgfx` already charges
+the upload when the pending generation actually executes. Moving that work
+between handlers would change phase ownership; this batch leaves it and P2
+unchanged; an exact interrupt-phase repair remains unresolved in class (d).
+All seven protected rows retain their instruction budgets and
+holds. `part-a-components.json`, `part-a-summary.csv/json`,
+`hardware-first-opening.json`, `hardware-boundary-agreement.json` and
+`native-hardware-window.csv` retain the observations.
+
+### Owners and unmodified-ROM fixtures
+
+All new lagless marker fixtures construct `lag_free` states. Markers price
+executed ROM blocks, exclude child work and preserve actual call/return
+ownership. The existing prefix-25/27 fixtures are updated where the newly
+priced suffix/child now belongs to a separate scope. The sprite-family audit
+finds **zero negative families** after the changes.
+
+| Owner / actual entries | Fixture names (common `prefix28_` prefix) |
+| --- | --- |
+| Heart-piece suffix `$05:F059–F0CC`, retained fourth-piece receipt | `heart_piece_all_bounce_delay_and_pickup_paths_exclude_children`; `fourth_heart_piece_retained_return_prices_only_its_suffix` |
+| Hinox `$06:9F05`, idle `9FBC`, walk `A029`, throw `9F4A`, face/direction `9FE1/A004` | `hinox_all_states_timers_random_faces_and_spawn_paths_exclude_children` |
+| Guard idle/alert/approach/attack `$05:CE74/CF44/CF85/D045` | `guard_idle_alert_approach_and_throw_all_paths_exclude_children` |
+| Bank-1E recoil `$1E:FE9B–FF1D`, actual collision wrapper `$1E:8B2E` | `bank1e_recoil_all_returns_masks_and_collision_paths_exclude_children` |
+| Post-overlap damage `$06:F2D3–F313` and `F2A9`, excluding type dispatch | `damage_post_overlap_all_action_and_transmutation_paths_exclude_dispatch` |
+| Thrown debris `$06:AC41–AD02`, four spawn attempts and garnish scan | `thrown_scatter_all_sizes_slots_allocations_and_clip_paths_exclude_children` |
+| Breakage `$06:E25A/E26D`; remove duplicate leaf charges in its callers | `breakage_all_flags_and_slots_excludes_callers` |
+| Arrghus puffs `$1E:B6E9–B817`, all 512 angles, signed wave/wrap and actual 13-entry loop | `arrghus_puffs_all_angles_quadrants_waves_and_wraps_exclude_children` |
+| Arrghus caller `$1E:B433–B4BD`, hit transition `B5EE` | `arrghus_prefix_all_states_hit_recoil_and_collision_paths_exclude_children`; `arrghus_hit_transition_all_slots_excludes_sound` |
+| Arrghus draw `$1E:B840–B8B3`, actual `$1E:87F0` entry | `arrghus_draw_all_states_waves_clips_and_page_crossings_exclude_children` |
+| Arrgi `$1E:B8C4–B9A8` | `arrgi_all_tether_home_damage_and_return_paths_exclude_children` |
+| Big-shadow entry `$1D:D1A8`, actual `$1D:8549/$06:84BD` wrappers | `big_shadow_entry_all_z_and_clip_paths_excludes_draw_and_coordinates` |
+| Swamp overlay clear `$01:EFEC–F045`, 256 × 16 word stores in ROM order | `swamp_overlay_clear_all_stores_and_width_restoration_match_rom` |
+
+The heart bounce now follows the ROM's final `INC` after the signed shift:
+shifted X velocity `$FF` becomes zero. This is the only behavior correction
+in the suffix; its admission is the complete CPU-picture census below.
+The swamp clear gains **215,798** instruction clocks at 451,842, including
+its actual loop and width restoration. No wait price is introduced.
+
+An initial candidate inadvertently shared 194 newly priced wrapper clocks
+with the already priced `$1D:D1AF` large-shadow entry. The correction confines
+those wrappers to the actual new `$1D:D1A8` entry and restores existing
+`D1AF` accounting. The final profiles, gates and live census use the corrected
+binary. The superseded full-suite log is retained separately; it is not
+claimed as final-source validation.
+
+### Classification, signed remainders and admission
+
+Classification remains diagnostic: executed upload-protocol work is (c);
+source VCounter polling or insufficient complete signed nonpoll work is (d);
+otherwise signed nonpoll work at or above the frozen boundary is (a). There
+is no independent arrival proof for (b). Main totals include VWF.
+
+Retained source/authority hashes are checked before reuse. All 942 base
+source hashes agree with the main baseline; fresh baseline profiling agrees
+with all 29,500 retained routine rows. Final native profiles cover all **282**
+selected rows. Complete sprite/object/caller partitions, including the VWF
+continuation and negative attribution aliases, conserve every full signed
+instruction gap. `source-profile-selection.json` records which source copy
+owns each iteration; duplicated retained source receipts are counted once.
+`routine-vectors.csv/json`, `non-sprite-vectors.csv/json`,
+`object-vectors.csv/json`, `remaining-sprite-residuals.csv/json`,
+`blocker-decomposition.json` and `signed-partition-agreement.csv/json`
+retain the concrete owners and offsets, rather than an undifferentiated
+"other caller" remainder.
+
+The complete ROM route gains **332,105,232 main instruction clocks**, all
+positive deltas, recovering **30 rows** and exposing **zero**. The 190 old
+missing rows through 461,989 gain **1,756,220** clocks; five recover:
+**255,517 / 255,521 / 255,525 / 451,842 / 456,721**. The 282-row selected
+set gains **1,763,370** clocks. These measured gains are consequences of ROM
+prices, never inputs to a price.
+
+| Cohort | (a) before → after | (b) | (c) before → after | (d) before → after | Recovered | Exposed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Before 141,568 | 0 → 0 | 0 | 5 → 5 | 2 → 2 | 0 | 0 |
+| 141,568–228,499 | 50 → 50 | 0 | 3 → 3 | 14 → 14 | 0 | 0 |
+| 228,499–380,243 | 46 → 43 | 0 | 4 → 4 | 11 → 11 | 3 | 0 |
+| 380,243–461,989 | 46 → 44 | 0 | 2 → 2 | 7 → 7 | 2 | 0 |
+| **Total** | **142 → 137** | **0** | **14 → 14** | **34 → 34** | **5** | **0** |
+
+The canonical missing-row set and classification agree exactly. All fourteen
+upload rows retain identical instruction budgets and holds. All 28 classified
+upload/source-VCounter rows retain their holds, and **no full-route hold
+change has a native raster-wait owner**. The seven -22 rows are byte-identical
+in the before/after predictor CSVs. There is no upload, spotlight-wait,
+classifier, matcher or P2 modification. Shared requested prices add **1,100**
+instruction clocks to spotlight row 403,304 (Hinox) and **192** to 407,899
+(damage); their holds stay unchanged. These are instruction prices, with no
+spotlight wait or arrival correction. Class (a) remains nonempty, so this
+batch does not extend source classification into 461,989–600,000.
+
+| Concrete remaining owner | Signed decomposition / result |
+| --- | --- |
+| Heart-piece `$eb` | Suffix now priced; **294** remains: outer `$05:F018` wrapper **190** and bank-6 `$06:C0A3` bounce **104**. Parent draw/damage aliases cancel. |
+| Hinox `$11` | All **ten selected family instances** have **zero** signed family remainder; total gain **14,928** clocks. Any remaining row blocker belongs to another owner. |
+| Guard `$48`, 180,178 | State work gains **6,878**; remaining **460 = 230 `$06:EB0A` Sprite_IsRightOfLocation + 230 `$06:EB1D` Sprite_IsBelowLocation**. Other guard parent/child offsets cancel. |
+| Thrown `$ec`, 356,806 | Remaining **2,926**: CarriedSprite_CheckForThrow `$06:DF6D` **1,300**, scenery interaction `$06:E164` **1,140**, single-sprite hit `$06:E1B2` **682**, sound pan `$0D:BBA1/BB8A/BB98` **408/220/152**, with actual `$06:E149/E02A` offsets **-268/-708**. Draw, active-dispatch and collision aliases cancel separately. |
+| Eyegore `$83/$84` | Recoil and post-overlap children are priced. `$84` facing remainder **194 = 104 `$1E:FE69` + 90 `$06:EAA0`** where executed. At 367,291 and 367,394, `$83` retains **4,216 = 2,486 sword damage `$06:ED3F` + 842 damage dispatch `$06:F2B4` + 584 zap `$06:EC02` + 470 pan `$0D:BBA1` - 166 post-overlap scope offset**. |
+| Terrorpin `$8e`, 372,814 | **1,584 → 938**, gain **646**. Remaining **938 = 1,008 type-damage dispatch `$06:F2B4` - 166 priced prelude alias + 96 weapon tink `$06:F69F`**. Other signed caller/child pairs cancel. |
+| Arrghus active `$8c` | Puff/draw/caller/hit work gains **1,154,440** clocks across selected instances. Normal active-state remainders **274/292/356** include the actual `$1E:87F4` **42-clock RTS** plus still-unpriced state bodies. At 456,900, **356 = 1,538 `$1E:8B19` - 1,224 `$1E:B433` + 42**. |
+| Arrgi `$8d` | Active paths are exact in 28 instances; selected family gain **341,410**. The state-08 instance at 456,721 retains **50,348 = 43,394 Sprite_ReturnIfBossFinished `$06:8F1C` + 14,174 execute attribution `$06:84E2` - 7,410 initialization `$06:864D` + 190 Arrghus_HandlePuffs `$1E:B8B4`**. The accompanying `$8c` state-08 remainder is **3,480 = 3,338 + 712 - 570** across those same first three owners. |
+
+At 297,585, the **2,404** non-sprite remainder is concrete: Y movement
+caller/children `$07:BA0A/BDB1/BEF8` sum to **1,716**, CancelDash **96**,
+ResetSwimmingState **286**, HandleYItem **150**, UnequipCape **178**, and
+main return **-22**. Main/overworld, Link/default, X movement and velocity/
+sand-drag attribution pairs cancel. At 456,900, the **19,630** non-sprite
+vector explicitly contains hookshot RTS-dispatch `$08:833C` **5,388**,
+single-sprite collision `$08:8DAE` **5,320**, AddHookshot `$09:9B10` **1,210**,
+tile/camera/OAM/sound entries and their signed dispatcher offsets. Every entry
+is retained in `remaining-blockers.csv/json`; none is priced from its residual.
+
+| Missing before iteration | ROM before → after |
+| --- | ---: |
+| 94,334 | 2 → 2 |
+| 141,568 | 7 → 7 |
+| 228,499 | 74 → 74 |
+| 380,243 | 135 → 132 |
+| 461,989 | 190 → 185 |
+
+The final eight-slice seeded ROM helper reports **PASS**, **unexplained 0**,
+complete **1,473,123 iterations**, **1,530/0/0 → 1,500/0/0** missing/excess/FP.
+`rom-comparison.json`, `rom-gate.txt`, `rom-counts.txt` and
+`final-replay-commands.json` identify the exact binary and every changed row.
+
+### Single seeded live census and direct poll attribution
+
+Exactly **one** full seeded `--live-apu-reads --pacing-predictor` census runs
+on the frozen binary. Its totals **worsen** from **1,566/36/7 to
+1,735/144/14** missing/excess/FP. There are **73 changed live holds**:
+**30 shared ROM changes** and **43 live-only changes**. All 43 belong to four
+crystal song-end episodes, directly sourced at **`$08:C606`**;
+**zero changed rows are unattributed**. The pendant `$08:C3FD` episodes have
+no changed live-only holds.
+
+Source context, APUI reads and APUI writes agree on **every one of the
+1,473,123 trace rows**. Their normalized SHA-256 is
+`a85696ffff0f15dd054297a8a36d421583ccb319440192fc3e16c90fc35307d5`
+on both sides. Cartridge APUI answers are disabled throughout. The source
+PC identities come from the hash-verified direct cold-ROM APUI bus receipts,
+read again in `poll-source-identity.json`, rather than inferred from held rows.
+
+Episode recovery bounds use actual native boolean-poll clusters, **3,676
+changed four-lane live-vs-ROM work events**, **278 context/poll events** and
+actual reseeds. The combined event union has 3,677 iterations. Bounds are
+established before assigning changed holds: last execution event, then the
+first actual reseed before the containing 2,000-iteration boundary, otherwise
+that boundary. They do not use the changed-hold set as a boundary.
+`live-execution-events.json`, `live-reseeds.json`, `live-poll-clusters.json`
+and `poll-attribution.json` retain those independent observations.
+
+| Source episode | Direct source PC | Source first zero | Native first zero before → after | Last changed execution event | Recovery end | Live-only rows | Δ missing/excess/FP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 → 94,854 | — | 96,000 | 0 | +0/+0/+0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,088 → 142,088 | — | 144,000 | 0 | +0/+0/+0 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,036 → 229,036 | — | 230,000 | 0 | +0/+0/+0 |
+| 380,243 | `$08:C606` | 380,881 | 380,881 → 380,881 | — | 382,000 | 0 | +0/+0/+0 |
+| 461,989 | `$08:C606` | 462,628 | 462,628 → 462,627 | 464,051 | 466,000 | 6 | +13/+13/+3 |
+| 626,618 | `$08:C606` | 627,256 | 627,257 → 627,256 | 629,601 | 629,845 | 10 | -27/-27/-5 |
+| 735,229 | `$08:C606` | 735,867 | 735,867 → 735,867 | — | 736,000 | 0 | +0/+0/+0 |
+| 881,095 | `$08:C606` | 881,734 | 881,734 → 881,734 | — | 882,000 | 0 | +0/+0/+0 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,734 → 1,064,735 | 1,066,962 | 1,066,963 | 12 | +96/+95/+4 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,335 → 1,318,336 | 1,320,899 | 1,320,900 | 15 | +117/+27/+5 |
+
+Every live-only changed hold is listed below. The source PC in every row is
+**`$08:C606`**; each episode's directly observed first zero and independent
+recovery bound are in the table above. `live-only-changed-rows.csv/json`
+additionally retain the ROM before/after holds, source lag, native first-zero
+observations and recovery end for each individual row.
+
+| Iteration | Source episode / PC | Source lag | Live hold before → after |
+| --- | --- | ---: | ---: |
+| 462,699 | 461,989 / `$08:C606` | 0 | 0 → 1 |
+| 462,700 | 461,989 / `$08:C606` | 1 | 1 → 0 |
+| 462,709 | 461,989 / `$08:C606` | 0 | 0 → 4 |
+| 462,710 | 461,989 / `$08:C606` | 5 | 4 → 0 |
+| 463,179 | 461,989 / `$08:C606` | 0 | 0 → 8 |
+| 463,180 | 461,989 / `$08:C606` | 8 | 8 → 0 |
+| 627,317 | 626,618 / `$08:C606` | 1 | 0 → 1 |
+| 627,318 | 626,618 / `$08:C606` | 0 | 1 → 0 |
+| 627,327 | 626,618 / `$08:C606` | 5 | 0 → 4 |
+| 627,328 | 626,618 / `$08:C606` | 0 | 4 → 0 |
+| 627,800 | 626,618 / `$08:C606` | 8 | 0 → 8 |
+| 627,801 | 626,618 / `$08:C606` | 0 | 8 → 0 |
+| 629,325 | 626,618 / `$08:C606` | 7 | 0 → 7 |
+| 629,327 | 626,618 / `$08:C606` | 0 | 7 → 0 |
+| 629,458 | 626,618 / `$08:C606` | 0 | 7 → 0 |
+| 629,462 | 626,618 / `$08:C606` | 7 | 0 → 7 |
+| 1,064,798 | 1,064,096 / `$08:C606` | 1 | 1 → 0 |
+| 1,064,799 | 1,064,096 / `$08:C606` | 0 | 0 → 1 |
+| 1,064,808 | 1,064,096 / `$08:C606` | 5 | 4 → 0 |
+| 1,064,809 | 1,064,096 / `$08:C606` | 0 | 0 → 4 |
+| 1,065,281 | 1,064,096 / `$08:C606` | 8 | 7 → 0 |
+| 1,065,282 | 1,064,096 / `$08:C606` | 0 | 0 → 7 |
+| 1,066,543 | 1,064,096 / `$08:C606` | 0 | 0 → 7 |
+| 1,066,544 | 1,064,096 / `$08:C606` | 7 | 7 → 0 |
+| 1,066,958 | 1,064,096 / `$08:C606` | 59 | 59 → 0 |
+| 1,066,959 | 1,064,096 / `$08:C606` | 6 | 6 → 59 |
+| 1,066,960 | 1,064,096 / `$08:C606` | 24 | 24 → 6 |
+| 1,066,961 | 1,064,096 / `$08:C606` | 1 | 1 → 24 |
+| 1,318,396 | 1,317,697 / `$08:C606` | 1 | 1 → 0 |
+| 1,318,397 | 1,317,697 / `$08:C606` | 0 | 0 → 1 |
+| 1,318,406 | 1,317,697 / `$08:C606` | 4 | 4 → 0 |
+| 1,318,407 | 1,317,697 / `$08:C606` | 0 | 0 → 4 |
+| 1,318,878 | 1,317,697 / `$08:C606` | 8 | 8 → 0 |
+| 1,318,879 | 1,317,697 / `$08:C606` | 0 | 0 → 8 |
+| 1,320,353 | 1,317,697 / `$08:C606` | 0 | 0 → 7 |
+| 1,320,357 | 1,317,697 / `$08:C606` | 7 | 7 → 0 |
+| 1,320,542 | 1,317,697 / `$08:C606` | 7 | 7 → 0 |
+| 1,320,544 | 1,317,697 / `$08:C606` | 0 | 0 → 7 |
+| 1,320,895 | 1,317,697 / `$08:C606` | 58 | 58 → 0 |
+| 1,320,896 | 1,317,697 / `$08:C606` | 6 | 6 → 0 |
+| 1,320,897 | 1,317,697 / `$08:C606` | 24 | 24 → 0 |
+| 1,320,898 | 1,317,697 / `$08:C606` | 1 | 1 → 0 |
+| 1,320,899 | 1,317,697 / `$08:C606` | 1 | 1 → 0 |
+
+| Missing before iteration | Live missing/excess/FP before → after |
+| --- | --- |
+| 94,334 | 2/0/0 → 2/0/0 |
+| 141,568 | 7/0/0 → 7/0/0 |
+| 228,499 | 74/0/0 → 74/0/0 |
+| 380,243 | 144/9/2 → 141/9/2 |
+| 461,989 | 199/9/2 → 194/9/2 |
+
+The four changed crystal episodes contribute **+199 missing, +108 excess,
++7 FP**; the 30 shared ROM recoveries contribute **-30 missing**. These sum
+exactly to the full live change **+169/+108/+7**. No hold, poll matcher,
+source answer, acceptance threshold or per-episode runtime price is changed
+to compensate for the song-end timing shifts. `live-command.json` records
+one launch, and `live-counts.txt` independently checks the final metrics.
+
+### CPU-picture and verification boundary
+
+The final seeded `--cpu-video` census retains **1,462,997 / 1,473,123 exact
+pictures**. All eight complete per-iteration picture-hash streams are
+**byte-for-byte identical to main**; all slices are WRAM-clean and exit zero.
+`cpu-picture-agreement.json`, `cpu-gate.txt` and `cpu-commands.json` retain the
+counts, hashes and exact CPU-only commands. This admits the heart velocity
+correction without changing the established image result. It is not a GPU,
+continuous cold A/V or live audio acceptance claim.
+
+Filtered touched-module groups pass: draw **318** (rerun after the shadow
+entry correction), sprite **120**, guard **13**, Mothula/Arrghus **7**, Hinox
+**8**, dungeon **65**, main wait **7**, NMI **10**, and cycle ledger **9**.
+All **17 new fixtures**, **8 generator tests**, and **6 source-example tests**
+pass. The final production binary and source example build without warnings.
+The default library build retains exactly the baseline warning-header sequence
+(24 emitted headers, 16 distinct), with no added warnings.
+
+The final-source full default suite executes the requested command exactly:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+SNES: **505 passed, 7 ignored**. Zelda: **3,114 passed, 3 ignored**, with the
+sole permitted failure:
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There are **zero unexpected failures**. One earlier full-suite invocation was
+already running when the shared-shadow census effect required correction; its
+superseded log is retained, and the corrected-source full suite is run once.
+Both runs have only that permitted failure. `test-verification.json`,
+`full-library-command.json`, `full-library.log`,
+`full-library-superseded-result.json` and `warning-agreement.json` preserve
+that distinction.
+
+The final source freeze covers **943 files**. All **14 authority hashes** and
+**496 reused evidence receipts** remain unchanged. Source fixtures and resumed
+hardware diagnostics establish ownership; seeded ROM/live prediction and CPU
+pictures establish their separate admission results. No cached-A/V, GPU,
+`--video`, external Snes9x process, classifier/matcher/P2 change, commit or push
+is part of this batch. All Zelda executable commands use CPU-only logical
+replay modes; all launched processes complete. Only this worktree's build
+incremental cache is removed to maintain the target-size limit.
+
+The worktree target occupies **9.75 GB allocated**, below the **16 GB** limit. All gate, test, diagnostic and trace-analysis processes have exited.

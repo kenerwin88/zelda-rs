@@ -4897,8 +4897,9 @@ impl ZeldaState {
     }
 
     pub(super) fn arrghus_handle_puffs(&mut self, k: usize) {
-        #[cfg(feature = "rom-shadow-audit")]
-        let _audit = crate::rom_shadow_audit::local_scope(0x1eb6e9,None);
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1eb6e9));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eb6e9);
         // The orbit-phase accumulator is a 16-bit value at OVERLORD_X_LO that the C
         // reads/writes raw, spanning overlord slots 0 and 1's x_low bytes (NOT slot 0's
         // packed x_low|x_high). Use the adjacent-x-low-word accessor, exactly like
@@ -4910,21 +4911,28 @@ impl ZeldaState {
         self.overlord_slot_view_mut(0).set_adjacent_x_low_word(base);
 
         if self.game_state.frame.frame_counter & 3 == 0 {
+            b.block(0x1eb701);
             self.sprite_slot_view_mut(k).increment_a();
             if self.sprite_slot_view(k).a() == 13 {
+                b.block(0x1eb70b);
                 self.sprite_slot_view_mut(k).set_a(0);
-            }
-        }
+            } else { b.taken(0x1eb709); }
+        } else { b.taken(0x1eb6ff); }
+        b.block(0x1eb70e);
         if self.game_state.frame.frame_counter & 7 == 0 {
+            b.block(0x1eb714);
             self.sprite_slot_view_mut(k).increment_b();
             if self.sprite_slot_view(k).b() == 13 {
+                b.block(0x1eb71e);
                 self.sprite_slot_view_mut(k).set_b(0);
-            }
-        }
+            } else { b.taken(0x1eb71c); }
+        } else { b.taken(0x1eb712); }
+        b.block(0x1eb721);
 
         let sprite_x = self.sprite_get_x(k) as i32;
         let sprite_y = self.sprite_get_y(k) as i32;
         for i in 0..13 {
+            b.block(0x1eb724);
             let r0 = base.wrapping_add(ARRGHUS_HANDLE_PUFFS_PUFF_ORBIT_BASE_ANGLES[i])
                 ^ ARRGHUS_HANDLE_PUFFS_PUFF_ORBIT_ANGLE_XOR_MASKS[i];
             let r14 = self
@@ -4941,11 +4949,33 @@ impl ZeldaState {
             );
             let sin_val = super::sprite_main_draw::arrgi_sin(r0, sin_arg) as i32;
             let cos_val = super::sprite_main_draw::arrgi_sin(r0.wrapping_add(0x80), cos_arg) as i32;
+            if super::sprite_main_draw::SHARED_SINE_LOOKUP_TABLE[usize::from(r0 as u8)] >> 8 == 0 {
+                b.block(0x1eb79a);
+                { let _delay = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8a85)); b.block(0x1e8a85); }
+                b.block(0x1eb7a0);
+            } else { b.taken(0x1eb798); }
+            b.block(0x1eb7a8);
+            if r0 & 0x100 == 0 { b.taken(0x1eb7aa); } else { b.block(0x1eb7ac); }
+            b.block(0x1eb7af);
+            if sin_val >= 0 { b.taken(0x1eb7b3); } else { b.block(0x1eb7b5); }
+            b.block(0x1eb7b7);
+            if super::sprite_main_draw::SHARED_SINE_LOOKUP_TABLE[usize::from((r0 as u8).wrapping_add(0x80))] >> 8 == 0 {
+                b.block(0x1eb7d4);
+                { let _delay = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8a85)); b.block(0x1e8a85); }
+                b.block(0x1eb7da);
+            } else { b.taken(0x1eb7d2); }
+            b.block(0x1eb7e2);
+            if r0.wrapping_add(0x80) & 0x100 == 0 { b.taken(0x1eb7e4); } else { b.block(0x1eb7e6); }
+            b.block(0x1eb7e9);
+            if cos_val >= 0 { b.taken(0x1eb7ed); } else { b.block(0x1eb7ef); }
+            b.block(0x1eb7f1);
 
             let tx = (sprite_x + sin_val) as u16;
             let ty = (sprite_y + cos_val - 0x10) as u16;
             self.armos_knight_home_position_mut(i).set_position(tx, ty);
+            if i == 12 { b.taken(0x1eb812); } else { b.block(0x1eb814); }
         }
+        b.block(0x1eb817);
         self.temp_counter_mut().set(13);
     }
 

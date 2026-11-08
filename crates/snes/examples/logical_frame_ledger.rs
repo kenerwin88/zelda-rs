@@ -364,9 +364,72 @@ fn write_seed(path: PathBuf, snes: &snes::Snes) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Resume an authenticated source receiver for bounded hardware diagnostics.
+/// No state is seeded into the native engine and no authority is overwritten.
+/// Usage: --checkpoint-hardware-audit CHECKPOINT HOST_CALLS OUT_DIR.
+fn checkpoint_hardware_audit(args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    if args.len() != 3 { return Err("expected CHECKPOINT HOST_CALLS OUT_DIR".into()); }
+    let checkpoint = serde_json::from_reader(zstd::Decoder::new(fs::File::open(&args[0])?)?)?;
+    let mut cpu = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint)?;
+    let count: usize = args[1].parse()?;
+    let out = PathBuf::from(&args[2]); fs::create_dir_all(&out)?;
+    fs::write(out.join("initial-dma.json"), serde_json::to_vec_pretty(&cpu.machine().snes().dma)?)?;
+    fs::write(out.join("identity.json"), serde_json::to_vec_pretty(&serde_json::json!({
+        "checkpoint": args[0], "host_calls": count,
+        "rom_sha256": format!("{:x}", Sha256::digest(&cpu.machine().snes().cart.rom)),
+        "field": cpu.machine().timeline().field_index(),
+        "master": cpu.machine().timeline().clock_master_cycles(),
+    }))?)?;
+    let mut boundaries = BufWriter::new(fs::File::create(out.join("boundaries.csv"))?);
+    writeln!(boundaries,"host,master,pc,wram_sha256")?;
+    let mut registers = BufWriter::new(fs::File::create(out.join("registers.csv"))?);
+    writeln!(registers, "host,pc,master,address,value,channel,size,mode,source,indirect,hdma_active")?;
+    let mut events = BufWriter::new(fs::File::create(out.join("events.csv"))?);
+    writeln!(events, "host,master,event")?;
+    let mut observer = cpu.machine().timeline().synchronous_event_observer();
+    let mut channels = cpu.machine().snes().dma.channel;
+    for host in 0..count {
+        cpu.run_until_main_loop_return_with_quiescent_step_hook(|step, exec| -> Result<(), Box<dyn Error>> {
+            if step.origin_pc==0x008038 {
+                writeln!(boundaries,"{host},{},{:06x},{:x}",step.started_at.master_cycles(),step.origin_pc,
+                    Sha256::digest(&exec.machine().snes().ram))?;
+            }
+            for access in &step.accesses {
+                if system_bank(access.address) && (0x4200..=0x437f).contains(&(access.address & 65535))
+                    && let SourceCpuBusAccessKind::Write { value, .. } = access.kind {
+                    let address = access.address & 65535;
+                    for (channel, dma) in channels.iter().enumerate() {
+                        if address == 0x420b && value & (1 << channel) != 0 {
+                            writeln!(registers, "{host},{:06x},{},{address:04x},{value},{channel},{},{},{:02x}{:04x},{},{}",
+                                step.origin_pc, access.timestamp.master_cycles(), dma.size, dma.mode,
+                                dma.a_bank, dma.a_adr, dma.indirect, dma.hdma_active)?;
+                        }
+                    }
+                    if address != 0x420b {
+                        writeln!(registers,"{host},{:06x},{},{address:04x},{value},,,,,,",step.origin_pc,access.timestamp.master_cycles())?;
+                    }
+                }
+            }
+            exec.machine().timeline().observe_processed_synchronous_events(&mut observer, |event| {
+                if matches!(event, snes::CpuSynchronousTimelineEvent::Bus(
+                    snes::CpuBusEvent::HdmaInit | snes::CpuBusEvent::HdmaStart | snes::CpuBusEvent::WramRefresh)) {
+                    writeln!(events,"{host},{},{event:?}",step.started_at.master_cycles()).expect("event receipt");
+                }
+            });
+            channels = exec.machine().snes().dma.channel;
+            Ok(())
+        })?;
+    }
+    registers.flush()?; events.flush()?; boundaries.flush()?;
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = env::args().skip(1);
     let first = args.next().ok_or("missing ROM path")?;
+    if first == "--checkpoint-hardware-audit" {
+        return checkpoint_hardware_audit(args.collect());
+    }
     if first == "--coverage-source" {
         return coverage::run(args.collect());
     }

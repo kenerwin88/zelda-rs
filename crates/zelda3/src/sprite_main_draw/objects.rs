@@ -91,11 +91,20 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void ThrowableScenery_ScatterIntoDebris(int k) {  // 86ac41
     pub(in crate::zelda_rtl) fn throwable_scenery_scatter_into_debris(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ac41));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ac41);
+        if sign8(self.sprite_slot_view(k).c()) { b.taken(0x06ac44); }
+        else { b.block(0x06ac46); if self.sprite_slot_view(k).c() < 6 { b.taken(0x06ac48); } }
         if !sign8(self.sprite_slot_view(k).c()) && self.sprite_slot_view(k).c() >= 6 {
+            b.block(0x06ac4a);
             for i in (0..4).rev() {
+                b.block(0x06ac4e);
                 let mut info = SpriteSpawnInfo::default();
                 let j = self.sprite_spawn_dynamically(k, 0xec, &mut info);
+                b.block(0x06ac54);
                 if j >= 0 {
+                    b.block(0x06ac56);
                     let j = j as usize;
                     let value = self.sprite_slot_view(k).z();
                     self.sprite_slot_view_mut(j).set_z(value);
@@ -110,17 +119,25 @@ impl ZeldaState {
                     let value = 1;
                     self.sprite_slot_view_mut(j).set_c(value);
                     self.sprite_schedule_for_breakage(j);
+                    b.block(0x06ac8a);
                     let value = if self.sprite_slot_view(k).c() < 7 {
                         12
                     } else {
                         0
                     };
+                    if self.sprite_slot_view(k).c() < 7 { b.block(0x06ac94); }
+                    else { b.taken(0x06ac92); }
+                    b.block(0x06ac96);
                     self.sprite_slot_view_mut(j).set_oam_flags(value);
-                }
+                } else { b.taken(0x06ac54); }
+                b.block(0x06ac99);
+                if i != 0 { b.taken(0x06ac9b); }
             }
+            b.block(0x06ac9d);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
         } else {
+            b.block(0x06aca1);
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             self.throwable_scenery_scatter_after_state_clear(k);
@@ -131,19 +148,29 @@ impl ZeldaState {
     /// `sprite_state[k] = 0` publication. This source statement can be exposed
     /// at a host boundary before the OAM-coordinate helper returns.
     pub(in crate::zelda_rtl) fn throwable_scenery_scatter_after_state_clear(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ac41));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06aca4);
         let Some(t) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        b.block(0x06aca7);
         let info = PrepOamCoordsRet::from_tuple(t);
         let mut j: i32 = 29;
         while {
             let old = j as usize;
             let filled = self.garnish_slot_view(old).garnish_type() != 0;
+            b.block(0x06acab);
             j -= 1;
+            if filled {
+                b.block(0x06acb1);
+                if j >= 0 { b.taken(0x06acb2); } else { b.block(0x06acb4); }
+            } else { b.taken(0x06acaf); }
             filled && j >= 0
         } {}
         j += 1;
         let j = j as usize;
+        b.block(0x06acb5);
         let value = 22;
         self.garnish_slot_view_mut(j).set_garnish_type(value);
         self.garnish_state_mut().set_active_type(22);

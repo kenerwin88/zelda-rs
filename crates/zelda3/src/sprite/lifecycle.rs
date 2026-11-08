@@ -612,7 +612,6 @@ impl ZeldaState {
         b.block(0x06e236);
         self.garnish_state_mut().set_repulsespark_timer(0);
         self.throwable_scenery_transmute_to_debris(k);
-        b.block(0x06e26d);
     }
 
     // void ThrowableScenery_TransmuteToDebris(int k) {  // 86e239
@@ -893,6 +892,9 @@ impl ZeldaState {
     //   sprite_flags2[k] += 4;
     // }
     pub(in crate::zelda_rtl) fn sprite_schedule_for_breakage(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e25a));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06e25a);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06e26d);
         let value = 31;
         self.sprite_slot_view_mut(k).set_delay_main(value);
         let value = 6;

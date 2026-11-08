@@ -133,10 +133,20 @@ impl ZeldaState {
                 self.AdjustWaterHDMAWindow();
             }
             1 => {
+                // $01:EFEC..F045. Sixteen long stores per X position,
+                // then INX/INX/CPX/BNE; the caller's long dispatch is separate.
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01efec));
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x01efec);
                 let tile = self.tile_word(0x01e0, 0);
-                for i in 0..0x1000usize {
-                    self.dungeon_room_tilemaps_mut().set_bg1_tile(i, tile);
+                for x in 0..0x100usize {
+                    b.block(0x01eff7);
+                    for plane in 0..16 {
+                        self.dungeon_room_tilemaps_mut().set_bg1_tile(plane * 0x100 + x, tile);
+                    }
+                    if x != 0xff { b.taken(0x01f03c); }
                 }
+                b.block(0x01f03e);
                 self.dungeon_room_load_mut().clear_quadrant_upload_index();
                 self.increment_subsubmodule();
             }

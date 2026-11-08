@@ -575,6 +575,18 @@ pub(crate) fn assert_rom_marker_work(
     owns: impl Fn(&snes::Snes) -> bool,
     native: impl FnOnce(),
 ) -> snes::RomCpuTimingProbe {
+    assert_rom_marker_owners_work(&[routine], machine, owns, native)
+}
+
+/// Some ROM JMP/stack-pop tails are split across native scopes. Compare the
+/// complete physical owner set without treating a profiling alias as work.
+#[cfg(test)]
+pub(crate) fn assert_rom_marker_owners_work(
+    routines: &[u32],
+    machine: snes::Snes,
+    owns: impl Fn(&snes::Snes) -> bool,
+    native: impl FnOnce(),
+) -> snes::RomCpuTimingProbe {
     use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
         RomCpuTimingProbe, SourcePpuReadState};
     let clock = CpuMasterTimeline::at_raster(0, CpuRasterPosition::new(0, 0),
@@ -602,9 +614,9 @@ pub(crate) fn assert_rom_marker_work(
     MARKER_TRAIL.with(|t| assert!(t.borrow_mut().replace(Vec::new()).is_none()));
     native();
     let trail = MARKER_TRAIL.with(|t| t.borrow_mut().take().unwrap());
-    let actual: u64 = trail.iter().filter(|t| t.0 == routine).map(|t| t.3).sum();
+    let actual: u64 = trail.iter().filter(|t| routines.contains(&t.0)).map(|t| t.3).sum();
     assert_eq!(actual, expected,
-        "routine {routine:06x}: native marker trail {trail:?}; source instruction work {source_work:x?}");
+        "routines {routines:x?}: native marker trail {trail:?}; source instruction work {source_work:x?}");
     source
 }
 

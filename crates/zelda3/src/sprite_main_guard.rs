@@ -1602,51 +1602,78 @@ impl ZeldaState {
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.sprite_zero_velocity_xy(k);
+                let _state = self.lag_free.then(|| crate::cycle_ledger::routine(0x05ce74));
+                b.block(0x05ce74);
+                self.guard_zero_velocity_marked(k);
+                b.block(0x05ce77);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x05ce7c);
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     // ROM $85CE6E: `AND #$7F : ADC #$50` inherits the RNG
                     // routine's final LSR carry (oracle sample 0x86/C=1 wrote
                     // 0x57 at route frame 68627).
                     let delay = self.get_random_number_with_carry().masked_adc(0x7f, 0x50);
+                    b.block(0x05ce83);
                     self.sprite_slot_view_mut(k).set_delay_main(delay);
                     let jbak = self.sprite_slot_view(k).direction();
                     let direction = self.get_random_number() & 3;
+                    b.block(0x05ce92);
                     self.sprite_slot_view_mut(k).set_direction(direction);
-                    if direction != jbak && ((direction ^ jbak) & 2) == 0 {
-                        self.sprite_slot_view_mut(k).set_delay_aux1(12);
+                    if direction == jbak { b.taken(0x05ce9b); }
+                    else {
+                        b.block(0x05ce9d);
+                        if ((direction ^ jbak) & 2) == 0 {
+                            b.block(0x05cea4);
+                            self.sprite_slot_view_mut(k).set_delay_aux1(12);
+                        } else { b.taken(0x05cea2); }
                     }
-                }
+                } else { b.taken(0x05ce7a); }
+                b.block(0x05cea9);
             }
             1 => self.archer_walking(k),
             2 => {
                 self.archer_scanning(k);
             }
             3 => {
-                self.sprite_zero_velocity_xy(k);
-                let direction = self.sprite_direction_to_face_link(k);
+                let _state = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cf44));
+                b.block(0x05cf44);
+                self.guard_zero_velocity_marked(k);
+                b.block(0x05cf47);
+                let direction = self.guard_direction_to_face_link_marked(k);
+                b.block(0x05cf4a);
                 self.sprite_slot_view_mut(k).set_head_direction(direction);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x05cf53);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(4);
                     sprite.set_delay_main(60);
                     sprite.set_subtype2(0);
-                }
+                } else { b.taken(0x05cf51); }
+                b.block(0x05cf60);
             }
             4 => {
+                let _state = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cf85));
+                b.block(0x05cf85);
                 let mut j = usize::from(self.sprite_slot_view(k).direction() & 3);
+                let blocked = self.sprite_slot_view(k).wall_collision() & SOLDIER_THROWING_ATTACK_DIRECTION_FLAGS[j] != 0;
+                if blocked { b.taken(0x05cf8e); }
+                else { b.block(0x05cf90); if self.sprite_slot_view(k).delay_main()!=0 { b.taken(0x05cf93); } }
                 if (self.sprite_slot_view(k).wall_collision()
                     & SOLDIER_THROWING_ATTACK_DIRECTION_FLAGS[j])
                     != 0
                     || self.sprite_slot_view(k).delay_main() == 0
                 {
+                    b.block(0x05cf95);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.increment_ai_state();
                     sprite.set_delay_main(24);
                     return;
                 }
+                b.block(0x05cf9e);
                 if ((self.game_state.frame.frame_counter ^ (k as u8)) & 7) == 0 {
-                    let dir = self.sprite_direction_to_face_link(k);
+                    b.block(0x05cfa5);
+                    let dir = self.guard_direction_to_face_link_marked(k);
+                    b.block(0x05cfa8);
                     {
                         let mut sprite = self.sprite_slot_view_mut(k);
                         sprite.set_direction(dir);
@@ -1654,8 +1681,10 @@ impl ZeldaState {
                     }
                     j = usize::from(dir & 3);
                     if self.sprite_slot_view(k).sprite_type() == 0x48 {
+                        b.block(0x05cfb6);
                         j += 4;
-                    }
+                    } else { b.taken(0x05cfb4); }
+                    b.block(0x05cfba);
                     let x = self
                         .game_state
                         .player
@@ -1668,39 +1697,64 @@ impl ZeldaState {
                         .follower_link
                         .y()
                         .wrapping_add(SOLDIER_THROWING_ATTACK_Y_VELOCITIES[j] as i16 as u16);
-                    let pt = self.sprite_project_speed_towards_location(k, x, y, 24);
+                    let pt = self.sprite_project_speed_towards_location_long_marked(k, x, y, 24);
+                    b.block(0x05cfde);
                     {
                         let mut sprite = self.sprite_slot_view_mut(k);
                         sprite.set_x_velocity(pt.x);
                         sprite.set_y_velocity(pt.y);
                     }
+                    // The ROM retains Y difference in $0E and X in $0F.
+                    if pt.ydiff.wrapping_add(6) >= 12 { b.taken(0x05cfef); }
+                    else {
+                        b.block(0x05cff1);
+                        if pt.xdiff.wrapping_add(6) < 12 { b.taken(0x05cff8); }
+                    }
                     if pt.xdiff.wrapping_add(6) < 12 && pt.ydiff.wrapping_add(6) < 12 {
+                        b.block(0x05cf95);
                         let mut sprite = self.sprite_slot_view_mut(k);
                         sprite.increment_ai_state();
                         sprite.set_delay_main(24);
                         return;
                     }
-                }
+                } else { b.taken(0x05cfa3); }
+                b.block(0x05cffa);
                 self.sprite_slot_view_mut(k).increment_subtype2();
                 self.soldier_throwing_agitated_step(k);
+                b.block(0x05d000);
             }
             5 => {
+                let _state = self.lag_free.then(|| crate::cycle_ledger::routine(0x05d045));
+                b.block(0x05d045);
                 let dir = usize::from(self.sprite_slot_view(k).direction() & 3);
                 self.sprite_slot_view_mut(k)
                     .set_anim_clock(SOLDIER_REACQUIRE_ANIM_CLOCK_BY_DIRECTION[dir]);
-                self.sprite_zero_velocity_xy(k);
+                self.guard_zero_velocity_marked(k);
+                b.block(0x05d051);
                 let j = self.sprite_slot_view(k).delay_main();
                 if j == 0 {
+                    b.block(0x05d056); b.block(0x05c417);
+                    self.guard_zero_velocity_marked(k);
+                    b.block(0x05c41a);
                     let mut sprite = self.sprite_slot_view_mut(k);
                     sprite.set_ai_state(2);
                     sprite.set_delay_main(160);
                     return;
                 }
+                b.taken(0x05d054); b.block(0x05d059);
+                if j >= 40 { b.block(0x05d060); } else { b.taken(0x05d05e); }
+                b.block(0x05d063);
                 self.sprite_slot_view_mut(k)
                     .set_subtype2(if j >= 40 { 255 } else { 0 });
                 if j == 12 {
+                    b.block(0x05d067);
                     self.guard_launch_projectile(k);
-                }
+                    b.block(0x05d06b);
+                } else { b.taken(0x05d065); }
+                b.block(0x05d06c);
+                if self.sprite_slot_view(k).sprite_type() == 0x48 { b.block(0x05d080); }
+                else { b.taken(0x05d07e); }
+                b.block(0x05d083);
                 let base = dir * 8
                     + usize::from(j >> 3)
                     + if self.sprite_slot_view(k).sprite_type() == 0x48 {
@@ -1713,6 +1767,12 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    fn guard_zero_velocity_marked(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05c4f9));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05c4f9);
+        self.sprite_zero_velocity_xy(k);
     }
 
     /// The complete $05:CEAA walking caller; probe and animation own children.
