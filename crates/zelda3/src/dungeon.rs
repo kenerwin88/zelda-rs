@@ -518,3 +518,6 @@ pub(crate) mod m3a_fixtures;
 #[cfg(test)]
 #[path = "dungeon_prefix34_tests.rs"]
 mod prefix34_tests;
+#[cfg(test)]
+#[path = "dungeon_prefix35_tests.rs"]
+mod prefix35_tests;

@@ -344,6 +344,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_Zora_Main(int k) {  // 859725
     pub(super) fn sprite_zora_main(&mut self, k: usize) {
+        // The selector and the entire pre-inactive prefix remain unpriced
+        // globally. Inactive exits never reach the dispatch owner below.
         if self.sprite_slot_view(k).ai_state() == 0 {
             self.sprite_prep_oam_coord(k);
         } else {
@@ -352,41 +354,70 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059736));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059736);
+        let ai = self.sprite_slot_view(k).ai_state();
+        if ai == 0 { b.taken(0x059739); }
+        else {
+            b.block(0x05973b);
+            if ai == 1 { b.taken(0x05973c); b.block(0x059747); }
+            else {
+                b.block(0x05973e);
+                if ai == 2 { b.taken(0x05973f); b.block(0x059744); }
+                else { b.block(0x059741); }
+            }
+        }
 
         match self.sprite_slot_view(k).ai_state() {
             0 => self.zora_submerged(k),
             1 => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0597c5));
+                b.block(0x0597c5);
                 let value = self.sprite_slot_view(k).delay_main();
                 self.sprite_slot_view_mut(k).set_ignore_projectile(value);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x0597cd);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     let value = 127;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     self.sprite_slot_view_mut(k).and_flags3(!0x40);
                 } else {
+                    b.taken(0x0597cb); b.block(0x0597de);
                     let value = ZORA_SURFACING_GRAPHICS
                         [usize::from(self.sprite_slot_view(k).delay_main() >> 3)];
                     self.sprite_slot_view_mut(k).set_graphics(value);
                 }
             }
             2 => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0597f1));
+                b.block(0x0597f1);
                 // $05:97F1 JSR $05:AB93: both complete damage calls.
                 self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
+                b.block(0x0597f4);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x0597f9);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     let value = 23;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 } else {
+                    b.taken(0x0597f7); b.block(0x059802);
                     if self.sprite_slot_view(k).delay_main() == 48 {
+                        b.block(0x059806);
                         let _ = self.sprite_spawn_fireball(k);
-                    }
+                        b.block(0x05980b);
+                    } else { b.taken(0x059804); }
+                    b.block(0x05980c);
                     let value = SPRITE_ZORA_MAIN_ATTACK_GFX
                         [usize::from(self.sprite_slot_view(k).delay_main() >> 4)];
                     self.sprite_slot_view_mut(k).set_graphics(value);
                 }
             }
             3 => {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059824));
+                b.block(0x059824);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x059829);
                     let value = 128;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let value = 0;
@@ -394,6 +425,7 @@ impl ZeldaState {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                 } else {
+                    b.taken(0x059827); b.block(0x059835);
                     let value = SPRITE_ZORA_MAIN_SUBMERGE_GFX
                         [usize::from(self.sprite_slot_view(k).delay_main() >> 2)];
                     self.sprite_slot_view_mut(k).set_graphics(value);

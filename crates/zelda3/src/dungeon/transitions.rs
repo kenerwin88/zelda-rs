@@ -1858,6 +1858,12 @@ impl ZeldaState {
 
     /// ROM: `Module07_03_OverlayChange`
     pub(in crate::zelda_rtl) fn module07_03_overlay_change(&mut self) {
+        // $01:B83E: the cursor distinguishes fresh drawing from resumed
+        // attribute/DMA work. The drawing, DMA and attribute bodies own
+        // their instructions, including the drawing child's cursor advance.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01b83e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01b83e);
         let overlay_index = self.game_state.dungeon.room_load.overlay_to_load() as usize;
         let overlay_offs = self.asset_u16(49, overlay_index) as usize;
         let overlay_data = self
@@ -1865,20 +1871,36 @@ impl ZeldaState {
             .expect("missing dungeon room overlay asset")
             .to_vec();
         let overlay = &overlay_data[overlay_offs..];
-        self.dungeon_draw_room_overlay(overlay);
+        if self.game_state.dungeon.room_load.load_ptr_offset() == 0 {
+            b.block(0x01b844);
+            self.dungeon_room_load_mut().set_draw_height_indicator_word(0);
+            self.dungeon_draw_room_overlay(overlay);
+            b.block(0x01b85f);
+            self.dungeon_room_load_mut().set_load_ptr_offset(0);
+            self.dungeon_room_load_mut().set_draw_height_indicator_word(0);
+        } else { b.taken(0x01b842); }
+        b.block(0x01b866);
         let mut dst_pos = 0usize;
-        let mut offset = 0usize;
+        let mut offset = usize::from(self.game_state.dungeon.room_load.load_ptr_offset());
         loop {
+            b.block(0x01b868);
             let marker = overlay[offset] as u16 | ((overlay[offset + 1] as u16) << 8);
             if marker == 0xffff {
+                b.taken(0x01b86f);
                 break;
             }
+            b.block(0x01b871);
             let p =
                 ((overlay[offset] as u16 >> 2) | ((overlay[offset + 1] as u16 >> 2) << 6)) as usize;
-            dst_pos = self.dungeon_prep_overlay_dma_next_prep(dst_pos, (p * 2) as u16);
-            self.dungeon_draw_room_overlay_apply(p);
             offset += 3;
+            self.dungeon_room_load_mut().set_load_ptr_offset(offset as u16);
+            dst_pos = self.dungeon_prep_overlay_dma_next_prep(dst_pos, (p * 2) as u16);
+            b.block(0x01b891);
+            self.dungeon_draw_room_overlay_apply(p);
+            b.block(0x01b895);
         }
+        b.block(0x01b897);
+        self.terminate_overworld_tile_upload_words(dst_pos);
         self.request_nmi_copy_packets();
         self.set_submodule(0);
     }

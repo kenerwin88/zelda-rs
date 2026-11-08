@@ -1892,18 +1892,26 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_DrawRoomOverlay`
     pub(super) fn dungeon_draw_room_overlay(&mut self, src: &[u8]) {
-        let mut offset = 0usize;
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01f967));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let mut offset = usize::from(self.game_state.dungeon.room_load.load_ptr_offset());
         loop {
+            b.block(0x01f967);
             self.dungeon_room_load_mut()
                 .set_draw_width_indicator_word(0);
             self.dungeon_room_load_mut()
                 .set_draw_height_indicator_word(0);
             let marker = src[offset] as u16 | ((src[offset + 1] as u16) << 8);
             if marker == 0xffff {
+                b.taken(0x01f974);
+                b.block(0x01f97d);
                 break;
             }
+            b.block(0x01f976);
             self.dungeon_draw_overlay_one(&src[offset..]);
             offset += 3;
+            self.dungeon_room_load_mut().set_load_ptr_offset(offset as u16);
+            b.block(0x01f97b);
         }
     }
 

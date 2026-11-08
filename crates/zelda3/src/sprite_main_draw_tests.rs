@@ -6642,3 +6642,5 @@ fn prefix11_recoil_entry_guards_match_zero_and_nonzero_paths() {
 }
 #[path = "sprite_prefix34_tests.rs"]
 mod prefix34;
+#[path = "sprite_prefix35_tests.rs"]
+mod prefix35;

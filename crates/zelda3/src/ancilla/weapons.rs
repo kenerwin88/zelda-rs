@@ -7,6 +7,10 @@ const SPIN_SPARK_TRAIL_CHARS: [u8; 3] = [0xb7, 0x80, 0x83];
 use crate::tile_definition::{NativeTile};
 use crate::types::{abs16, sign16, sign8, ProjectSpeedRet};
 
+#[cfg(test)]
+#[path = "../ancilla_prefix35_tests.rs"]
+mod prefix35_tests;
+
 impl ZeldaState {
     fn boomerang_cheat_when_no_ones_looking(&self, k: usize, pt: &mut ProjectSpeedRet) {
         let x = self
@@ -230,50 +234,84 @@ impl ZeldaState {
     }
 
     fn hookshot_check_proximity_to_link(&self, x: i32, y: i32) -> bool {
-        abs16(
-            self.game_state
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08f7dc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08f7dc);
+        let dy = self.game_state
                 .player
                 .follower_link
                 .y()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
                 .wrapping_add(12)
                 .wrapping_sub(y as u16)
-                .wrapping_sub(4),
-        ) < 12
-            && abs16(
-                self.game_state
+                .wrapping_sub(4);
+        if dy & 0x8000 == 0 { b.taken(0x08f7fa); } else { b.block(0x08f7fc); }
+        b.block(0x08f800);
+        if abs16(dy) >= 12 {
+            b.taken(0x08f803); b.block(0x08f820); return false;
+        }
+        b.block(0x08f805);
+        let dx = self.game_state
                     .player
                     .follower_link
                     .x()
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
                     .wrapping_add(8)
                     .wrapping_sub(x as u16)
-                    .wrapping_sub(4),
-            ) < 12
+                    .wrapping_sub(4);
+        if dx & 0x8000 == 0 { b.taken(0x08f811); } else { b.block(0x08f813); }
+        b.block(0x08f817);
+        if abs16(dx) >= 12 {
+            b.taken(0x08f81a); b.block(0x08f820); false
+        } else { b.block(0x08f81c); true }
     }
 
     fn hookshot_should_i_even_bother_with_tiles(&self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08fa2d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08fa2d);
+        if k >= 6 { b.crossing(0x08fa2f); }
         let x = self.ancilla_get_x(k);
         let y = self.ancilla_get_y(k);
         if self.game_state.world.location.is_outdoors() {
+            b.block(0x08fa47);
             let area = (self.game_state.world.region.current_area_of_player() >> 1) as usize;
             let bound = self.overworld_right_bottom_scroll_bound();
             if self.ancilla_slot_view(k).direction() & 2 == 0 {
+                b.block(0x08fa51);
                 let t = y.wrapping_sub(ANCILLA_OVERWORLD_AREA_BASE_Y[area]);
-                return t < 4 || t >= bound;
+                if t < 4 { b.taken(0x08fa5e); b.block(0x08fa7b); return true; }
+                b.block(0x08fa60);
+                if t >= bound { b.taken(0x08fa63); b.block(0x08fa7b); return true; }
+                b.block(0x08fa65); b.block(0x08fa81); return false;
             } else {
+                b.taken(0x08fa4f); b.block(0x08fa67);
                 let t = x.wrapping_sub(ANCILLA_OVERWORLD_AREA_BASE_X[area]);
-                return t < 6 || t >= bound;
+                if t < 6 { b.taken(0x08fa74); b.block(0x08fa7b); return true; }
+                b.block(0x08fa76);
+                if t < bound { b.taken(0x08fa79); b.block(0x08fa81); false }
+                else { b.block(0x08fa7b); true }
             }
-        }
-        if self.ancilla_slot_view(k).direction() & 2 == 0 {
-            (y & 0x1ff) < 4
-                || (y & 0x1ff) >= 0x1e8
-                || (y & 0x200) != (self.game_state.player.follower_link.y() & 0x200)
         } else {
-            (x & 0x1ff) < 4
-                || (x & 0x1ff) >= 0x1f0
-                || (x & 0x200) != (self.game_state.player.follower_link.x() & 0x200)
+            b.taken(0x08fa45); b.block(0x08fa87);
+            let horizontal = self.ancilla_slot_view(k).direction() & 2 != 0;
+            let (coordinate, player, upper, low_pc, high_pc, lane_pc, return_pc) = if horizontal {
+                b.taken(0x08fa8f); b.block(0x08faa2);
+                (x, self.game_state.player.follower_link.x(), 0x1f0, 0x08faaa, 0x08faaf, 0x08fac7, 0x08fad7)
+            } else {
+                b.block(0x08fa91);
+                (y, self.game_state.player.follower_link.y(), 0x1e8, 0x08fa99, 0x08fa9e, 0x08fab3, 0x08fac3)
+            };
+            if coordinate & 0x1ff < 4 { b.taken(low_pc); b.block(0x08fa7b); return true; }
+            b.block(if horizontal {0x08faac} else {0x08fa9b});
+            if coordinate & 0x1ff >= upper { b.taken(high_pc); b.block(0x08fa7b); return true; }
+            b.block(if horizontal {0x08fab1} else {0x08faa0});
+            b.block(lane_pc);
+            if coordinate & 0x200 == player & 0x200 {
+                b.taken(return_pc); b.block(0x08fadb); false
+            } else {
+                b.block(if horizontal {0x08fad9} else {0x08fac5}); true
+            }
         }
     }
 
@@ -1315,18 +1353,33 @@ impl ZeldaState {
             }
         }
 
+        self.hookshot_draw(k);
+    }
+
+    fn hookshot_draw(&mut self, k: usize) {
+        // $08:BEDC..C002 is the shared drawing tail, reached from paused,
+        // interlocked, extending and retracting hookshots. Prep, proximity
+        // and XY children retain their own instruction scopes.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08bedc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08bedc);
         let (info_x, info_y) = self.ancilla_prep_oam_coord(k);
+        b.block(0x08bedf);
         if self.ancilla_slot_view(k).l() != 0 {
+            b.block(0x08bee4);
             self.oam_state_mut().set_priority_word(0x3000);
-        }
+        } else { b.taken(0x08bee2); }
+        b.block(0x08bee8);
         let mut oam = self.game_state.oam.current_pointer_usize();
 
         let mut j = self.ancilla_slot_view(k).direction() as usize * 3;
         let mut x = info_x;
         let mut y = info_y;
         for i in (0..=2).rev() {
+            b.block(0x08bf07);
             if ANCILLA1_F_HOOKSHOT_HOOKSHOT_DRAW_CHAR[j] != 0xff {
-                self.ancilla_set_oam(
+                b.block(0x08bf10);
+                self.ancilla_set_oam_marked(
                     oam,
                     x,
                     y,
@@ -1336,51 +1389,75 @@ impl ZeldaState {
                         | self.game_state.oam.priority_high(),
                     0,
                 );
+                b.block(0x08bf13);
                 oam += 4;
+            } else { b.taken(0x08bf0e); }
+            b.block(0x08bf32);
+            if i == 0 { b.taken(0x08bf3d); }
+            else {
+                b.block(0x08bf3f);
+                if i != 1 { b.taken(0x08bf41); } else { b.block(0x08bf43); }
             }
             if i == 1 {
-                x = x.wrapping_sub(8);
-                y = y.wrapping_add(8);
+                x = info_x;
+                y = (y & 0xff00) | u16::from((y as u8).wrapping_add(8));
             } else {
-                x = x.wrapping_add(8);
+                x = (x & 0xff00) | u16::from((x as u8).wrapping_add(8));
             }
             j += 1;
         }
 
+        b.block(0x08bf50);
         let mut r10 = 0i32;
         let mut n = (self.ancilla_slot_view(k).item_to_link() >> 1) as i32;
         if n >= 7 {
+            b.block(0x08bf62);
             r10 = n - 7;
             n = 6;
-        }
-        if n == 0 {
-            return;
-        }
+        } else { b.taken(0x08bf60); }
+        b.block(0x08bf6b);
+        // BF6D observes CMP #7 on the short path, or LDA #6 on
+        // the long path. STA $08 preserves those flags: even a zero
+        // half-length enters the inclusive chain loop once.
+        b.taken(0x08bf6d); b.block(0x08bf72);
         if self.ancilla_slot_view(k).direction() & 1 != 0 {
+            b.block(0x08bf79);
             r10 = -r10;
-        }
+            if r10 == 0 { b.taken(0x08bf82); } else { b.block(0x08bf84); }
+        } else { b.taken(0x08bf77); }
+        b.block(0x08bf8a);
         let mut x = info_x;
         let mut y = info_y;
         let j = self.ancilla_slot_view(k).direction() as usize;
         if ANCILLA1_F_HOOKSHOT_HOOKSHOT_MOVE_Y[j] == 0 {
+            b.block(0x08bf99);
             y = y.wrapping_add(4);
-        }
+        } else { b.taken(0x08bf97); }
+        b.block(0x08bfa1);
         if ANCILLA1_F_HOOKSHOT_HOOKSHOT_MOVE_X[j] == 0 {
+            b.block(0x08bfa6);
             x = x.wrapping_add(4);
-        }
+        } else { b.taken(0x08bfa4); }
         loop {
+            b.block(0x08bfb0);
             if ANCILLA1_F_HOOKSHOT_HOOKSHOT_MOVE_Y[j] != 0 {
+                b.block(0x08bfb7);
                 y = y.wrapping_add(
                     (ANCILLA1_F_HOOKSHOT_HOOKSHOT_MOVE_Y[j] as i32 + r10) as i16 as u16,
                 );
-            }
+            } else { b.taken(0x08bfb5); }
+            b.block(0x08bfba);
             if ANCILLA1_F_HOOKSHOT_HOOKSHOT_MOVE_X[j] != 0 {
+                b.block(0x08bfc6);
                 x = x.wrapping_add(
                     (ANCILLA1_F_HOOKSHOT_HOOKSHOT_MOVE_X[j] as i32 + r10) as i16 as u16,
                 );
-            }
+            } else { b.taken(0x08bfc4); }
+            b.block(0x08bfc9);
             if !self.hookshot_check_proximity_to_link(x as i32, y as i32) {
-                self.ancilla_set_oam(
+                b.block(0x08bfd5);
+                b.block(0x08bfd7);
+                self.ancilla_set_oam_marked(
                     oam,
                     x,
                     y,
@@ -1390,13 +1467,16 @@ impl ZeldaState {
                         | self.game_state.oam.priority_high(),
                     0,
                 );
+                b.block(0x08bfda);
                 oam += 4;
-            }
+            } else { b.block(0x08bfd5); b.taken(0x08bfd5); }
+            b.block(0x08bffd);
             n -= 1;
             if n < 0 {
                 break;
-            }
+            } else { b.taken(0x08bfff); }
         }
+        b.block(0x08c001);
     }
 
     pub(super) fn ancilla3_c_spin_attack_charge_sparkle(&mut self, k: usize) {
