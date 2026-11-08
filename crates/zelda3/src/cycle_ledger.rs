@@ -164,6 +164,12 @@ pub fn take_routine_profile() -> BTreeMap<u32, [u64; 3]> {
     PROFILE.with(|profile| profile.borrow_mut().take().map_or_else(BTreeMap::new, |p| p.rows))
 }
 
+/// Non-consuming phase observation of the active diagnostic profile.
+pub(crate) fn snapshot_routine_profile() -> BTreeMap<u32, [u64; 3]> {
+    PROFILE.with(|profile| profile.borrow().as_ref()
+        .filter(|p| p.active).map_or_else(BTreeMap::new, |p| p.rows.clone()))
+}
+
 /// Take the object breakdown before taking the ordinary routine profile.
 /// The key is (subtype << 8 | object ID, original routine address).
 pub fn take_dungeon_object_profile() -> BTreeMap<(u16, u32), [u64; 3]> {

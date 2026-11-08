@@ -166,7 +166,9 @@ impl ZeldaState {
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x1dd185);
         let base = (((self.sprite_slot_view(k).subtype2() >> 3) & 3) as usize) * 4;
+        { let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8549)); b.block(0x1d8549); }
         self.sprite_draw_multiple(k, &BOULDER_DRAW_FRAMES[base..base + 4]);
+        { let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x1d8549)); b.block(0x1d854d); }
         b.block(0x1dd1a3);
         self.sprite_draw_large_shadow2(k);
         b.block(0x1dd1a7);
@@ -1179,7 +1181,7 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom06FF78) {
             return;
         }
         // $06:9C3A JSR $06:D88B: both complete damage calls.
@@ -1215,7 +1217,7 @@ impl ZeldaState {
             }
             1 => {
                 self.sprite_slot_view_mut(k).add_b(1);
-                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
                 if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced) != 0 {
                     self.sprite_slot_view_mut(k).xor_direction(3);
                 }
@@ -1231,7 +1233,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
                 let value = SPRITE_0_E_SNAPDRAGON_LOCAL_Y_VELOCITIES[j] as u8;
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
-                self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+                self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(4);
                 if sign8(self.sprite_slot_view(k).z()) {
                     let value = 0;

@@ -20,33 +20,53 @@ impl ZeldaState {
     }
 
     pub(super) fn entity_apply_rumble_to_sprites(&mut self, hb: &mut SpriteHitBox) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ad03));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ad03);
         for j in (0..=15).rev() {
-            if self.sprite_slot_view(j).deflection_bits() & 2 == 0
-                || self.sprite_slot_view(j).e() == 0
-            {
-                continue;
-            }
-            if self.game_state.sprites.system.chr_halfslot_state() != 0x0e {
-                self.sprite_setup_hit_box(j, hb, SpriteHitBoxEntry::Unpriced);
-                if !self.check_if_hit_boxes_overlap(hb) {
-                    continue;
+            b.block(0x06ad05);
+            'sprite: {
+                if self.sprite_slot_view(j).deflection_bits() & 2 == 0 {
+                    b.taken(0x06ad0a); break 'sprite;
+                }
+                b.block(0x06ad0c);
+                if self.sprite_slot_view(j).e() == 0 {
+                    b.taken(0x06ad0f); break 'sprite;
+                }
+                b.block(0x06ad11);
+                if self.game_state.sprites.system.chr_halfslot_state() != 0x0e {
+                    b.block(0x06ad18);
+                    self.sprite_setup_hit_box(j, hb, SpriteHitBoxEntry::Unpriced);
+                    b.block(0x06ad1d);
+                    let hit = self.check_if_hit_boxes_overlap(hb);
+                    b.block(0x06ad21);
+                    if !hit { b.taken(0x06ad21); break 'sprite; }
+                } else {
+                    b.taken(0x06ad16);
+                }
+                b.block(0x06ad23);
+                let value = 0;
+                self.sprite_slot_view_mut(j).set_e(value);
+                self.set_sound_effect_2(0x30);
+                let value = 0x30;
+                self.sprite_slot_view_mut(j).set_z_velocity(value);
+                let value = 0x10;
+                self.sprite_slot_view_mut(j).set_x_velocity(value);
+                let value = 0x30;
+                self.sprite_slot_view_mut(j).set_delay_aux3(value);
+                let value = 255;
+                self.sprite_slot_view_mut(j).set_stunned(value);
+                if self.sprite_slot_view(j).sprite_type() == 0xd8 {
+                    b.block(0x06ad48);
+                    self.sprite_transmute_to_bomb(j);
+                } else {
+                    b.taken(0x06ad46);
                 }
             }
-            let value = 0;
-            self.sprite_slot_view_mut(j).set_e(value);
-            self.set_sound_effect_2(0x30);
-            let value = 0x30;
-            self.sprite_slot_view_mut(j).set_z_velocity(value);
-            let value = 0x10;
-            self.sprite_slot_view_mut(j).set_x_velocity(value);
-            let value = 0x30;
-            self.sprite_slot_view_mut(j).set_delay_aux3(value);
-            let value = 255;
-            self.sprite_slot_view_mut(j).set_stunned(value);
-            if self.sprite_slot_view(j).sprite_type() == 0xd8 {
-                self.sprite_transmute_to_bomb(j);
-            }
+            b.block(0x06ad4c);
+            if j != 0 { b.taken(0x06ad4d); }
         }
+        b.block(0x06ad4f);
     }
 
     pub(in crate::zelda_rtl) fn sprite_setup_hit_box(

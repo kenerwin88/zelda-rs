@@ -413,7 +413,10 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_red_potion150(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef16e);
         self.sprite_draw_shop_item(k);
+        b.block(0x1ef171);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -455,7 +458,10 @@ impl ZeldaState {
     //   sprite_flags4[k] = 0x1c;
     // }
     pub(super) fn shop_item_fighter_shield(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef1f2);
         self.sprite_draw_shop_item(k);
+        b.block(0x1ef1f5);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -503,7 +509,10 @@ impl ZeldaState {
     //   sprite_flags4[k] = 0x1c;
     // }
     pub(super) fn shop_item_fire_shield(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef230);
         self.sprite_draw_shop_item(k);
+        b.block(0x1ef233);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -567,7 +576,10 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_heart(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef27d);
         self.sprite_draw_shop_item(k);
+        b.block(0x1ef280);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -606,7 +618,10 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_arrows(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef2af);
         self.sprite_draw_shop_item(k);
+        b.block(0x1ef2b2);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -651,7 +666,10 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_bombs(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef2f0);
         self.sprite_draw_shop_item(k);
+        b.block(0x1ef2f3);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -695,7 +713,10 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn shop_item_bee(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ef322);
         self.sprite_draw_shop_item(k);
+        b.block(0x1ef325);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }

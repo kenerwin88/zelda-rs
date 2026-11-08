@@ -1206,8 +1206,8 @@ impl ZeldaState {
     pub(super) fn sprite_dash_item(&mut self, k: usize) {
         // $05:FBF7..FBFD and the inherited $00:8784..879B dispatch tail.
         // The three table-selected bodies retain their own ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05fbf7));
         {
-            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05fbf7));
             let b = crate::cycle_ledger::blocks(self.lag_free);
             b.block(0x05fbf7);
             { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
@@ -1224,18 +1224,34 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BonkKey(int k) {  // 85fc04
     pub(super) fn sprite_bonk_key(&mut self, k: usize) {
-        self.sprite_draw_thin_and_tall(k);
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05fc04);
+        {
+            let _draw = self.lag_free.then(|| crate::cycle_ledger::routine(0x06dd38));
+            self.sprite_draw_thin_and_tall(k);
+        }
+        b.block(0x05fc08);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
         // ROM $05:FC0B
-        if self.sprite_check_damage_same_layer_long_marked(k) {
+        b.block(0x05fc0b);
+        let hit = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x05fc0f);
+        if hit {
+            b.block(0x05fc11);
             let value = 3;
             self.sprite_slot_view_mut(k).set_ai_state(value);
+        } else {
+            b.taken(0x05fc0f);
         }
         self.dash_item_move_and_bounce(k, true);
+        b.block(0x05fc3f);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
+                b.block(0x05fc4e);
                 if self
                     .game_state
                     .sprites
@@ -1243,24 +1259,35 @@ impl ZeldaState {
                     .current_sprite_x()
                     .wrapping_sub(self.game_state.player.follower_link.x())
                     .wrapping_add(16)
-                    < 33
-                    && self
+                    >= 33 {
+                    b.taken(0x05fc5d);
+                } else {
+                    b.block(0x05fc5f);
+                    if self
                         .game_state
                         .sprites
                         .workspace
                         .current_sprite_y()
                         .wrapping_sub(self.game_state.player.follower_link.y())
                         .wrapping_add(24)
-                        < 41
-                    && (self.game_state.world.scroll.bg1_x_offset()
-                        | self.game_state.world.scroll.bg1_y_offset())
-                        != 0
-                {
-                    let value = 1;
-                    self.sprite_slot_view_mut(k).set_ai_state(value);
+                        >= 41 {
+                        b.taken(0x05fc6c);
+                    } else {
+                        b.block(0x05fc6e);
+                        if (self.game_state.world.scroll.bg1_x_offset()
+                            | self.game_state.world.scroll.bg1_y_offset()) == 0 {
+                            b.taken(0x05fc74);
+                        } else {
+                            b.block(0x05fc76);
+                            let value = 1;
+                            self.sprite_slot_view_mut(k).set_ai_state(value);
+                        }
+                    }
                 }
+                b.block(0x05fc79);
             }
             1 => {
+                b.block(0x05fd1b);
                 let value = 32;
                 self.sprite_slot_view_mut(k).set_z_velocity(value);
                 let value = (-5i8) as u8;
@@ -1270,12 +1297,19 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(value);
             }
             2 => {
+                b.block(0x05fd2e);
                 if self.sprite_slot_view(k).z() == 0 {
+                    b.block(0x05fd33);
                     let value = self.game_state.player.follower_link.lower_level_state();
                     self.sprite_slot_view_mut(k).set_floor(value);
+                } else {
+                    b.taken(0x05fd31);
                 }
+                b.block(0x05fd39);
             }
             3 => {
+                b.block(0x05fc7e);
+                if self.sprite_slot_view(k).die_action() > 0x83 { b.crossing(0x05fc91); }
                 self.player_resources_mut().increment_keys();
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
@@ -1288,6 +1322,7 @@ impl ZeldaState {
                 self.dungeon_savegame_state_mut()
                     .set_savegame_state_bits(bits);
                 self.sprite_sfx_queue_sfx3_with_pan(k, 0x2f);
+                b.block(0x05fc9d);
             }
             _ => {}
         }
@@ -1296,17 +1331,39 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BookOfMudora(int k) {  // 85fc9e
     pub(super) fn sprite_book_of_mudora(&mut self, k: usize) {
+        if !self.book_of_mudora_before_ai(k) { return; }
+        self.book_of_mudora_ai(k);
+    }
+
+    /// $05:FC9E..FCDF, ending at the local AI dispatch.
+    pub(super) fn book_of_mudora_before_ai(&mut self, k: usize) -> bool {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05fc9e);
         // ROM $05:FC9E JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
-            return;
+        b.block(0x05fca2);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
+            return false;
         }
         // ROM $05:FCA5
-        if self.sprite_check_damage_same_layer_long_marked(k) {
+        b.block(0x05fca5);
+        let hit = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x05fca9);
+        if hit {
+            b.block(0x05fcab);
             let value = 3;
             self.sprite_slot_view_mut(k).set_ai_state(value);
+        } else {
+            b.taken(0x05fca9);
         }
         self.dash_item_move_and_bounce(k, false);
+        b.block(0x05fcd9);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
+        true
+    }
+
+    fn book_of_mudora_ai(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if !self.game_state.player.follower_link.has_facing()
@@ -1380,11 +1437,17 @@ impl ZeldaState {
     }
 
     fn dash_item_move_and_bounce(&mut self, k: usize, sfx3: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let offset = if sfx3 { 0 } else { 0x9a };
+        b.block(0x05fc16 + offset);
         // $05:FC16 JSR $05:F9ED: complete body, caller opcode unchanged.
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
+        b.block(0x05fc19 + offset);
         self.sprite_slot_view_mut(k).subtract_z_velocity(1);
-        self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+        self.sprite_move_z(k, SpriteMoveZEntry::Rom05FA2E);
+        b.block(0x05fc1f + offset);
         if sign8(self.sprite_slot_view(k).z()) {
+            b.block(0x05fc24 + offset);
             let value = 0;
             self.sprite_slot_view_mut(k).set_y_velocity(value);
             let value = 0;
@@ -1392,12 +1455,17 @@ impl ZeldaState {
             let value = 0u8.wrapping_sub(self.sprite_slot_view(k).z_velocity()) >> 2;
             self.sprite_slot_view_mut(k).set_z_velocity(value);
             if (self.sprite_slot_view(k).z_velocity() & 254) != 0 {
+                b.block(0x05fc39 + offset);
                 if sfx3 {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x14);
                 } else {
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x21);
                 }
+            } else {
+                b.taken(0x05fc37 + offset);
             }
+        } else {
+            b.taken(0x05fc22 + offset);
         }
     }
 

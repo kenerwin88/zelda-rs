@@ -390,12 +390,49 @@ fn checkpoint_hardware_audit(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     writeln!(polls, "host,pc,master,address,value,width,end_v,end_h")?;
     let mut poll_work = BufWriter::new(fs::File::create(out.join("poll-instructions.csv"))?);
     writeln!(poll_work, "host,pc,master,end_master,next_pc,a,p,work,end_v,end_h")?;
+    let mut prefix_work = BufWriter::new(fs::File::create(out.join("prefix-routines.csv"))?);
+    writeln!(prefix_work, "host,master,routine,exclusive")?;
+    let mut prefix_rows = std::collections::BTreeMap::<u32,u64>::new();
+    let mut prefix_stack = Vec::<(u32,u16)>::new();
+    let mut prefix_sp = cpu.machine().snes().cpu.sp;
+    let mut prefix_depth = 0u32;
+    let mut prefix_observed = false;
     let mut observer = cpu.machine().timeline().synchronous_event_observer();
     let mut channels = cpu.machine().snes().dma.channel;
     for host in 0..count {
         cpu.run_until_main_loop_return_with_quiescent_step_hook(|step, exec| -> Result<(), Box<dyn Error>> {
             let machine = exec.machine();
             let beam = machine.timeline().synchronous_beam_position().expect("source beam");
+            let prefix_cpu = &machine.snes().cpu;
+            if step.origin_pc == 0x008038 && prefix_depth == 0 {
+                prefix_rows.clear();prefix_stack.clear();prefix_observed = false;
+            }
+            if prefix_depth == 0 && prefix_sp >> 8 == 1 {
+                if step.origin_pc == 0x00f3a3 && !prefix_observed {
+                    for (routine, exclusive) in &prefix_rows {
+                        writeln!(prefix_work,"{host},{},{routine:06x},{exclusive}",step.started_at.master_cycles())?;
+                    }
+                    prefix_observed = true;
+                }
+                let end = match step.accepted_interrupt {
+                    Some(SourceCpuAcceptedInterrupt::Nmi { started_at, .. })
+                    | Some(SourceCpuAcceptedInterrupt::Irq { started_at, .. }) => started_at,
+                    None => step.ended_at,
+                };
+                let work:u64 = step.transactions.iter().filter(|t|t.started_at < end)
+                    .map(|t|u64::from(t.duration_master_cycles)).sum();
+                *prefix_rows.entry(prefix_stack.last().map_or(0x008034,|f|f.0)).or_default() += work;
+                let (next_pc,next_sp) = match step.accepted_interrupt {
+                    Some(SourceCpuAcceptedInterrupt::Nmi { interrupted_pc, .. })
+                    | Some(SourceCpuAcceptedInterrupt::Irq { interrupted_pc, .. }) => (interrupted_pc,prefix_cpu.sp.wrapping_add(4)),
+                    None => ((u32::from(prefix_cpu.k)<<16)|u32::from(prefix_cpu.pc),prefix_cpu.sp),
+                };
+                if matches!(step.opcode,0x20|0xfc|0x22) {prefix_stack.push((next_pc&0x7fffff,next_sp));}
+                while prefix_stack.last().is_some_and(|f|next_sp > f.1) {prefix_stack.pop();}
+            }
+            if step.opcode == RTI {prefix_depth = prefix_depth.saturating_sub(1);}
+            if step.accepted_interrupt.is_some() {prefix_depth += 1;}
+            prefix_sp = prefix_cpu.sp;
             if matches!(step.origin_pc, 0x008038 | 0x00805a | 0x00805d)
                 || (0x00f3a3..=0x00f3b4).contains(&step.origin_pc) {
                 let cpu = &machine.snes().cpu;

@@ -21,6 +21,8 @@ mod prefix28;
 mod prefix29;
 #[path = "sprite_prefix30_tests.rs"]
 mod prefix30;
+#[path = "sprite_prefix31_tests.rs"]
+mod prefix31;
 
 #[test]
 fn prefix10_intro_dispatch_and_fade_markers_match_rom() {
@@ -1789,8 +1791,10 @@ fn lag6_dash_item_dispatch_matches_rom() {
                 |s| {
                     let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
                     if [0x05fc04, 0x05fc9e, 0x05fd4d].contains(&pc) { dispatching.set(false); }
-                    dispatching.get() && ((0x05fbf7..0x05fbfe).contains(&pc)
-                        || (0x008784..0x00879c).contains(&pc))
+                    (0x05fbf7..0x05fbfe).contains(&pc)
+                        || graphics < 2 && (pc == 0x05fc04 || pc == 0x05fc08
+                            || pc == 0x05fc9e || pc == 0x05fca2)
+                        || dispatching.get() && (0x008784..0x00879c).contains(&pc)
                 }, || native.sprite_dash_item(k));
             native.set_lag_free(false);
             assert_eq!(crate::cycle_ledger::measure_routine_self_work(0x05fbf7,

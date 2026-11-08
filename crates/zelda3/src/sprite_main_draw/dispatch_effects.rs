@@ -23,8 +23,8 @@ impl ZeldaState {
 
     fn sprite_draw_big_shadow_body(&mut self, k: usize, anim: i32, marked: bool, entry_children: bool) {
         let b = crate::cycle_ledger::blocks(marked && self.lag_free);
-        // D1A8 admits these child wrappers here. Keep D1AF's existing
-        // partial ownership intact; its callers include spotlight waits.
+        // Both entries execute the same bank-local DrawMultiple and
+        // coordinate wrappers; their children keep separate scopes.
         let children = crate::cycle_ledger::blocks(entry_children && self.lag_free);
         let cur_y = self.game_state.sprites.workspace.current_sprite_y();
         let z = self.sprite_slot_view(k).z() as u16;
@@ -191,7 +191,17 @@ impl ZeldaState {
             0x38 => self.sprite_38_eye_statue(k),
             0x39 => self.sprite_39_locksmith(k),
             0x3a => self.sprite_3_a_magic_bat(k),
-            0x3b => self.sprite_dash_item(k),
+            0x3b => {
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x06c049);
+                {
+                let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05fbef));
+                b.block(0x05fbef);
+                self.sprite_dash_item(k);
+                b.block(0x05fbf5);
+                }
+                b.block(0x06c04d);
+            }
             0x3c => {
                 crate::cycle_ledger::blocks(self.lag_free).block(0x06c04e);
                 self.sprite_kakariko_boy(k);
@@ -434,7 +444,7 @@ impl ZeldaState {
         if z < 4 { b.taken(0x1dd1bb); } else { b.block(0x1dd1bd); }
         let z = z.min(4);
         b.block(0x1dd1bf);
-        self.sprite_draw_big_shadow_body(k, z as i32, true, false);
+        self.sprite_draw_big_shadow_body(k, z as i32, true, true);
     }
 
     // -----------------------------------------------------------------------

@@ -1112,7 +1112,7 @@ impl ZeldaState {
             return;
         }
         b.block(0x069e25);
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom06FF78) {
             return;
         }
         b.block(0x069e28);
@@ -1144,7 +1144,7 @@ impl ZeldaState {
             }
             1 => {
                 b.block(0x069e5d);
-                self.sprite_move_xy(k, SpriteMoveEntry::Unpriced);
+                self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
                 b.block(0x069e60);
                 let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
                 b.block(0x069e63);
@@ -1153,7 +1153,7 @@ impl ZeldaState {
                     self.sprite_zero_velocity_xy(k);
                 } else { b.taken(0x069e66); }
                 b.block(0x069e6b);
-                self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+                self.sprite_move_z(k, SpriteMoveZEntry::Rom06E96C);
                 b.block(0x069e6e);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if sign8(self.sprite_slot_view(k).z()) {
@@ -1290,31 +1290,50 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_58_Crab(int k) {  // 8594b5
     pub(super) fn sprite_58_crab(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0594b5);
         self.crab_draw(k);
+        b.block(0x0594b8);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        b.block(0x0594bb);
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom05F971) {
             return;
         }
         // $05:94BE JSR $05:AB93: both complete damage calls.
+        b.block(0x0594be);
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom05AB93);
         // ROM $05:94C1
+        b.block(0x0594c1);
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         // ROM $05:94C4 -> $05:B88D -> $06:E496
-        if self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) != 0 || self.sprite_slot_view(k).delay_main() == 0 {
+        b.block(0x0594c4);
+        let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
+        b.block(0x0594c7);
+        if collision != 0 { b.taken(0x0594c7); }
+        else {
+            b.block(0x0594c9);
+            if self.sprite_slot_view(k).delay_main() != 0 { b.taken(0x0594cc); }
+        }
+        if collision != 0 || self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x0594ce);
             // ROM Sprite_58_Crab $05:94CE: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
             let value = self.get_random_number_with_carry().masked_adc(63, 32);
+            b.block(0x0594d2);
             self.sprite_slot_view_mut(k).set_delay_main(value);
             let value = self.sprite_slot_view(k).delay_main() & 3;
             self.sprite_slot_view_mut(k).set_direction(value);
         }
+        b.block(0x0594de);
         let j = self.sprite_slot_view(k).direction();
         let value = SPRITE_58_CRAB_LOCAL_X_VELOCITIES[usize::from(j & 3)] as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         let value = SPRITE_58_CRAB_LOCAL_Y_VELOCITIES[usize::from(j & 3)] as u8;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
         self.sprite_slot_view_mut(k).add_subtype2(1);
+        if j < 2 { b.taken(0x0594f6); } else { b.block(0x0594f8); }
+        b.block(0x0594fa);
         let value = (self.sprite_slot_view(k).subtype2() >> if j < 2 { 1 } else { 3 }) & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
     }

@@ -6,6 +6,39 @@ use crate::zelda_rtl::sprite::{
 use super::*;
 
 #[test]
+fn prefix31_rumble_all_filter_overlap_transmute_and_loop_paths_match_rom() {
+    let edges=std::cell::RefCell::new(std::collections::BTreeSet::new());
+    for slot in [0,15] {for flags in [0u8,2] {for enabled in [0u8,1] {
+        for chr in [0u8,14] {for kind in [0x08u8,0xd8] {for contact in [false,true] {
+            let mut native=marker31_state();
+            for (a,v) in [(0xdd0,9),(0xe20,kind),(0xcaa,flags),(0xe90,enabled),
+                (0xd10,0x40),(0xd00,0x40)] {native.write_wram_byte(a+slot,v);}
+            native.write_wram_byte(0xfc6,chr);native.write_wram_byte(0xfa0,slot as u8);
+            native.write_wram_byte(0,if contact {0x40}else{0});
+            native.write_wram_byte(1,if contact {0x40}else{0});
+            native.write_wram_byte(2,32);native.write_wram_byte(3,32);
+            native.sync_native_game_state_from_ram();
+            let machine=marker31_machine(&native,0x06ad03,slot).unwrap();
+            let mut hb=empty_sprite_hit_box();hb.r0_xlo=if contact {0x40}else{0};hb.r1_ylo=hb.r0_xlo;hb.r2=32;hb.r3=32;
+            let source=crate::cycle_ledger::assert_rom_marker_work(0x06ad03,machine,
+                |s| {
+                    let owns=s.cpu.k==6 && (0xad03..0xad50).contains(&s.cpu.pc);
+                    if owns {let taken=match s.cpu.pc {0xad0a|0xad0f|0xad16=>Some(s.cpu.z),
+                        0xad21=>Some(!s.cpu.c),0xad46=>Some(!s.cpu.z),0xad4d=>Some(!s.cpu.n),_=>None};
+                        if let Some(t)=taken {edges.borrow_mut().insert((s.cpu.pc,t));}}
+                    owns
+                },||native.entity_apply_rumble_to_sprites(&mut hb));
+            for a in [0xe20,0xe90,0xf80,0xd50,0xee0,0xb58] {
+                assert_eq!(native.read_wram_byte(a+slot),source.snes().ram[a+slot],"rumble {a:x}");
+            }
+        }}}
+    }}}
+    for pc in [0xad0a,0xad0f,0xad16,0xad21,0xad46,0xad4d] {for taken in [false,true] {
+        assert!(edges.borrow().contains(&(pc,taken)),"uncovered rumble branch {pc:x}/{taken}");
+    }}
+}
+
+#[test]
 fn marker44_thrown_sprite_scan_matches_rom() {
     // Every rejection stage, the $E1B2 child call, early returns, and the
     // descending slot loop. Child hit boxes are far apart to isolate the scan.

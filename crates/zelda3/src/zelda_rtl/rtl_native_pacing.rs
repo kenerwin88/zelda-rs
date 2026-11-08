@@ -318,6 +318,9 @@ impl ZeldaState {
                 elapsed[2], raster / 1364, raster % 1364,
                 raster_poll_wait(elapsed[2], line, mask, sample_master, loop_master),
                 self.native_bus_lease_decline());
+            for (routine, [calls, inclusive, exclusive]) in crate::cycle_ledger::snapshot_routine_profile() {
+                eprintln!("native-raster-prefix main={main} routine={routine:06x} calls={calls} inclusive={inclusive} exclusive={exclusive}");
+            }
         }
         self.native_pacing.raster_barriers.push((main, line, mask, sample_master, loop_master));
         for (i, work) in elapsed.into_iter().enumerate() {

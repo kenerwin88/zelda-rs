@@ -974,14 +974,19 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BombShopEntity_Draw(int k) {  // 9ee2c6
     pub(super) fn bomb_shop_entity_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ee2c6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ee2c6);
         let base = usize::from(self.sprite_slot_view(k).subtype2()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
         let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &BOMB_SHOP_ENTITY_DRAW_FRAMES[base..base + 1],
         );
+        b.block(0x1ee2e4);
         // ROM $1E:E2E4
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x1ee2e8);
     }
 
     // -----------------------------------------------------------------------
@@ -1087,6 +1092,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_B5_BombShop(int k) {  // 9ee111
     pub(super) fn sprite_b5_bomb_shop(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ee111);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).subtype2() {
             0 => self.sprite_bomb_shop_clerk(k),
             1 => self.sprite_bomb_shop_bomb(k),
@@ -1099,7 +1108,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BombShop_Clerk(int k) {  // 9ee134
     pub(super) fn sprite_bomb_shop_clerk(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ee134);
         self.bomb_shop_entity_draw(k);
+        b.block(0x1ee137);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -1133,7 +1145,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BombShop_Bomb(int k) {  // 9ee190
     pub(super) fn sprite_bomb_shop_bomb(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ee190);
         self.bomb_shop_entity_draw(k);
+        b.block(0x1ee193);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
@@ -1174,7 +1189,10 @@ impl ZeldaState {
         &mut self,
         k: usize,
     ) -> bool {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ee1df);
         self.bomb_shop_entity_draw(k);
+        b.block(0x1ee1e2);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return false;
         }
@@ -1224,6 +1242,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BB_Shopkeeper(int k) {  // 9eeeef
     pub(super) fn sprite_bb_shopkeeper(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eeeef);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).subtype2() {
             0 => self.shopkeeper_standard_clerk(k),
             1 => self.chest_game_guy(k),
@@ -1245,10 +1267,15 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Shopkeeper_StandardClerk(int k) {  // 9eef12
     pub(super) fn shopkeeper_standard_clerk(&mut self, k: usize) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1eef12);
         if self.game_state.world.region.is_in_dark_world() {
+            b.block(0x1eef17);
             self.oam_allocate_defer_to_player(k);
             // ROM $1E:EF1B JSL $06:DBF0
+            b.block(0x1eef1b);
             self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
+            b.block(0x1eef1f);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
@@ -1256,9 +1283,12 @@ impl ZeldaState {
                 | ((self.game_state.frame.frame_counter << 3) & 64);
             self.sprite_slot_view_mut(k).set_oam_flags(value);
         } else {
+            b.taken(0x1eef15);
+            b.block(0x1eef50);
             let value = 7;
             self.sprite_slot_view_mut(k).set_oam_flags(value);
             self.shopkeeper_draw(k);
+            b.block(0x1eef59);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
