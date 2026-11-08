@@ -472,3 +472,7 @@ impl ZeldaState {
 #[cfg(test)]
 #[path = "ancilla_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ancilla_prefix27_tests.rs"]
+mod prefix27_tests;

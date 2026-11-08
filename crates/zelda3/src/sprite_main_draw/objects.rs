@@ -1757,20 +1757,38 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_38_EyeStatue(int k) {  // 86c03f
     pub(super) fn sprite_38_eye_statue(&mut self, k: usize) {
+        let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e62b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05e62b);
+        self.sprite_arrow_trigger(k);
+        b.block(0x05e631);
+    }
+
+    fn sprite_arrow_trigger(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e633));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05e633);
         if self.sprite_slot_view(k).b() == 0 {
+            b.block(0x05e638);
             self.sprite_prep_oam_coord(k);
-            if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+            b.block(0x05e63c);
+            if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
                 return;
             }
-            if self.sprite_direction_to_face_link(k) == 2
-                && self.sprite_slot_view(k).draw_work_byte_2() == 9
-            {
+            b.block(0x05e63f);
+            let direction = self.sprite_direction_and_offset_to_face_link_bank5(k).0;
+            b.block(0x05e642);
+            if direction != 2 { b.taken(0x05e644); }
+            else { b.block(0x05e646); if self.sprite_slot_view(k).draw_work_byte_2() != 9 { b.taken(0x05e64b); } }
+            if direction == 2 && self.sprite_slot_view(k).draw_work_byte_2() == 9 {
+                b.block(0x05e64d);
                 self.dungeon_environment_mut()
                     .increment_water_puzzle_state_changed();
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_b(value);
             }
-        }
+        } else { b.taken(0x05e636); }
+        b.block(0x05e655);
     }
 
     // -----------------------------------------------------------------------

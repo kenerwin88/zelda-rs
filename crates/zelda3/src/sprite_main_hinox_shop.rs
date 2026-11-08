@@ -370,10 +370,14 @@ impl ZeldaState {
     //   SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn hinox_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a1f9));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a1f9);
         let j = self.sprite_slot_view(k).graphics() as usize;
         let start = HINOX_DRAW_FRAME_STARTS[j] as usize;
         let count = HINOX_DRAW_FRAME_COUNTS[j] as usize;
         let mut info = self.sprite_draw_multiple(k, &HINOX_DRAW_FRAMES[start..start + count]);
+        b.block(0x06a210); b.block(0x06dc64);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Unpriced);
     }
 

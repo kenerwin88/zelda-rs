@@ -626,10 +626,17 @@ impl ZeldaState {
                     }
                     self.room_write_current(dsto + (count + 1) * 64, self.tile_word(src, 2));
                 } else {
+                    // $01:9120 JMP-selected vertical solid line; size is a child.
+                    let b = crate::cycle_ledger::blocks(self.lag_free);
+                    b.block(0x019120);
+                    self.price_room_draw_size_ato_aplus15();
                     let tile = self.tile_word(src, 0);
                     for i in 0..count {
+                        b.block(0x019126);
                         self.room_write_current(dsto + i * 64, tile);
+                        if i + 1 < count { b.taken(0x019133); }
                     }
+                    b.block(0x019135);
                 }
             }
             0x6a | 0x6b | 0x79 | 0x7a | 0x8d | 0x8e => {
@@ -689,10 +696,17 @@ impl ZeldaState {
                 self.room_write_current(dst + 65, self.tile_word(src, 5));
             }
             0x70 | 0x94 => {
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x0190f9);
+                self.price_room_draw_size_1to16();
                 let count = size_1to16(width, height);
                 for i in 0..count {
+                    b.block(0x0190fe);
                     self.room_draw_4x4(src, dsto + i * 4 * 64);
+                    b.block(0x019103);
+                    if i + 1 < count { b.taken(0x01910e); }
                 }
+                b.block(0x019110);
             }
             0x73 | 0x74 => {
                 let count = size_1to16(width, height);
@@ -1253,10 +1267,16 @@ impl ZeldaState {
                 self.room_draw_rightwards2x2(src, dsto);
             }
             0x12 => {
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x019aa9);
                 if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x1000 == 0 {
+                    b.block(0x019ab1);
+                    if self.room_plane_offset() != 0 { b.block(0x019ac2); }
+                    else { b.taken(0x019ac0); }
                     let dst = dsto | self.room_plane_offset();
                     let src = 0x1dd6;
                     for i in 0..3 {
+                        b.block(0x019ac7);
                         let col = i * 2;
                         self.room_write_bg2(dst + col, self.tile_word(src, 0));
                         self.room_write_bg2(dst + col + 3 * 64, self.tile_word(src, 0));
@@ -1264,8 +1284,10 @@ impl ZeldaState {
                         self.room_write_bg2(dst + col + 64, self.tile_word(src, 1));
                         self.room_write_bg2(dst + col + 4 * 64, self.tile_word(src, 1));
                         self.room_write_bg2(dst + col + 7 * 64, self.tile_word(src, 1));
+                        if i != 2 { b.taken(0x019aeb); }
                     }
-                }
+                } else { b.taken(0x019aaf); }
+                b.block(0x019aed);
             }
             0x14 | 0x4e | 0x67 | 0x68 | 0x6c | 0x6d | 0x79 => {
                 self.room_draw_1x3_rightwards(src, dsto, 4);
@@ -1365,9 +1387,14 @@ impl ZeldaState {
             0x28 => self.room_draw_lower_door_stairs_down(src, dsto, true),
             0x29 => self.room_draw_lower_door_stairs_down(src, dsto, false),
             0x2a => {
+                let b = crate::cycle_ledger::blocks(self.lag_free);
+                b.block(0x019de5);
                 self.room_draw_single_lamp_cone(0x0514, 0x16dc);
+                b.block(0x019dee);
                 self.room_draw_single_lamp_cone(0x0554, 0x17f6);
+                b.block(0x019df7);
                 self.room_draw_single_lamp_cone(0x1514, 0x1914);
+                b.block(0x019e00);
                 self.room_draw_single_lamp_cone(0x1554, 0x1a2a);
             }
             0x2b => {

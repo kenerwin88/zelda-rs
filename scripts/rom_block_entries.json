@@ -1017,4 +1017,52 @@
   {"entry":"05943a","end":"05944c","index_max":15},
   {"entry":"05944c","end":"059468","index_max":15},
   {"entry":"059468","end":"0594af","index_max":15}
+  ,{"entry":"08fadd","end":"08fb23","data_bank":8}
+  ,{"entry":"08fb23","end":"08fb2b","data_bank":8}
+  ,{"entry":"08da17","end":"08da4c"}
+  ,{"entry":"08f6fe","end":"08f702"}
+  ,{"entry":"0ff764","end":"0ff8eb"}
+  ,{"entry":"0ffa37","end":"0ffa43"}
+  ,{"entry":"0ffa43","end":"0ffa6f"}
+  ,{"entry":"088da2","end":"088daa"}
+  ,{"entry":"08923b","end":"089243"}
+  ,{"entry":"019120","end":"019136","m8":false,"x8":false}
+  ,{"entry":"0190f9","end":"019111","m8":false,"x8":false}
+  ,{"entry":"019aa9","end":"019aee","m8":false,"x8":false}
+  ,{"entry":"019de5","end":"019e06","m8":false,"x8":false}
+  ,{"entry":"01ca17","end":"01ca66","m8":false}
+  ,{"entry":"06a50c","end":"06a540","index_max":15}
+  ,{"entry":"05e62b","end":"05e656","index_max":15}
+  ,{"entry":"1ebce8","end":"1ebe00","index_max":15}
+  ,{"entry":"1ecacf","end":"1ecaf4","index_max":15}
+  ,{"entry":"1eb26f","end":"1eb292","index_max":15}
+  ,{"entry":"1eb2a7","end":"1eb30e","index_max":15}
+  ,{"entry":"1eb30e","end":"1eb39f","index_max":15}
+  ,{"entry":"1eb3a3","end":"1eb405","index_max":15}
+  ,{"entry":"06aae0","end":"06ab5a","index_max":15}
+  ,{"entry":"06a1f9","end":"06a213","index_max":15}
+  ,{"entry":"05f020","end":"05f059","index_max":15}
+  ,{"entry":"05c6de","end":"05c6e0","index_max":15}
+  ,{"entry":"05ca09","end":"05ca10","index_max":15}
+  ,{"entry":"05e633","end":"05e656","index_max":15}
+  ,{"entry":"088d19","end":"088d68"}
+  ,{"entry":"08fb44","end":"08fba6"}
+  ,{"entry":"08fba6","end":"08fbc9"}
+  ,{"entry":"08fbc9","end":"08fbd6"}
+  ,{"entry":"08fbd6","end":"08fbed"}
+  ,{"entry":"08a752","end":"08a756"}
+  ,{"entry":"099dd3","end":"099e24"}
+  ,{"entry":"0ff67b","end":"0ff74d"}
+  ,{"entry":"0ff64d","end":"0ff64f"}
+  ,{"entry":"05f91b","end":"05f93f","index_max":15}
+  ,{"entry":"0dc3e1","end":"0dc401","index_max":15}
+  ,{"entry":"05e3dc","end":"05e3f3","index_max":15}
+  ,{"entry":"1af88c","end":"1af954","index_max":15}
+  ,{"entry":"1ef4ce","end":"1ef4f3","index_max":15}
+  ,{"entry":"06c0bc","end":"06c0c1","index_max":15}
+  ,{"entry":"06c04e","end":"06c053","index_max":15}
+  ,{"entry":"06c058","end":"06c05d","index_max":15}
+  ,{"entry":"0dc4a5","end":"0dc4ad","index_max":15}
+  ,{"entry":"05ceaa","end":"05cf13","index_max":15}
+  ,{"entry":"05cee2","end":"05cf13","index_max":15}
 ]

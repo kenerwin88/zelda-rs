@@ -1528,18 +1528,26 @@ impl ZeldaState {
 
     // ------------------------------------------------------------------
     // void Soldier_Func12(int k) {  // 85c500
-    fn soldier_throwing_agitated_step(&mut self, k: usize) {
+    pub(super) fn soldier_throwing_agitated_step(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05cee2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05cee2);
         self.sprite_slot_view_mut(k).increment_subtype2();
         if (self.sprite_slot_view(k).subtype2() & 0x0f) == 0 {
+            b.block(0x05ceec);
             self.sprite_slot_view_mut(k).increment_a();
             if self.sprite_slot_view(k).a() == 2 {
+                b.block(0x05cef6);
                 self.sprite_slot_view_mut(k).set_a(0);
-            }
-        }
+            } else { b.taken(0x05cef4); }
+        } else { b.taken(0x05ceea); }
+        b.block(0x05cef9);
         let sprite = self.sprite_slot_view(k);
         let base = usize::from(sprite.direction() & 3) * 4
             + usize::from(sprite.a())
-            + if sprite.sprite_type() == 0x48 { 16 } else { 0 };
+            + if sprite.sprite_type() == 0x48 { b.block(0x05cf08); 16 }
+                else { b.taken(0x05cf06); 0 };
+        b.block(0x05cf0b);
         self.sprite_slot_view_mut(k)
             .set_graphics(SOLDIER_ANIMATION_GRAPHICS[base & 31]);
     }
@@ -1610,25 +1618,7 @@ impl ZeldaState {
                     }
                 }
             }
-            1 => {
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    let mut sprite = self.sprite_slot_view_mut(k);
-                    sprite.set_ai_state(2);
-                    sprite.set_delay_main(160);
-                    return;
-                }
-                self.sprite_guard_send_out_probe(k);
-                if (self.sprite_slot_view(k).wall_collision() & 0x0f) != 0 {
-                    self.sprite_slot_view_mut(k).xor_direction(1);
-                    self.guard_set_glance_to12(k);
-                }
-                let j = usize::from(self.sprite_slot_view(k).direction() & 3);
-                let mut sprite = self.sprite_slot_view_mut(k);
-                sprite.set_x_velocity(SOLDIER_X_VELOCITY_BY_DIRECTION[j] as u8);
-                sprite.set_y_velocity(SOLDIER_Y_VELOCITY_BY_DIRECTION[j] as u8);
-                sprite.set_head_direction(j as u8);
-                self.soldier_throwing_agitated_step(k);
-            }
+            1 => self.archer_walking(k),
             2 => {
                 self.archer_scanning(k);
             }
@@ -1723,6 +1713,36 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// The complete $05:CEAA walking caller; probe and animation own children.
+    pub(super) fn archer_walking(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05ceaa));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05ceaa);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x05ceaf);
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_ai_state(2);
+            sprite.set_delay_main(160);
+            return;
+        }
+        b.taken(0x05cead);
+        b.block(0x05ceba);
+        self.sprite_guard_send_out_probe(k);
+        b.block(0x05cebd);
+        if (self.sprite_slot_view(k).wall_collision() & 0x0f) != 0 {
+            b.block(0x05cec4);
+            self.sprite_slot_view_mut(k).xor_direction(1);
+            self.guard_set_glance_to12(k);
+        } else { b.taken(0x05cec2); }
+        b.block(0x05cecf);
+        let j = usize::from(self.sprite_slot_view(k).direction() & 3);
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.set_x_velocity(SOLDIER_X_VELOCITY_BY_DIRECTION[j] as u8);
+        sprite.set_y_velocity(SOLDIER_Y_VELOCITY_BY_DIRECTION[j] as u8);
+        sprite.set_head_direction(j as u8);
+        self.soldier_throwing_agitated_step(k);
     }
 
     pub(super) fn soldier_move_if_clear(&mut self, k: usize) {

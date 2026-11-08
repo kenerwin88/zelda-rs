@@ -703,9 +703,9 @@ impl ZeldaState {
             flags: tuple.2,
         };
         let d = usize::from(self.sprite_slot_view(k).direction() & 3);
-        self.guard_animate_head(k, ARCHER_SOLDIER_DRAW_HEAD_OAM_OFFS[d] >> 2, &guard_info);
+        self.soldier_draw1_ex(k, ARCHER_SOLDIER_DRAW_HEAD_OAM_OFFS[d] >> 2, &guard_info);
         b.block(0x05d399);
-        self.guard_animate_body(k, ARCHER_SOLDIER_DRAW_BODY_OAM_OFFS[d] >> 2, &guard_info);
+        self.soldier_draw2_ex(k, ARCHER_SOLDIER_DRAW_BODY_OAM_OFFS[d] >> 2, &guard_info);
         b.block(0x05d3a3);
         self.sprite_draw_archer_weapon(
             k,

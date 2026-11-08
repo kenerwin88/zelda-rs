@@ -156,9 +156,14 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn add_sword_beam(&mut self, y: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ff67b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0ff67b);
         let Some(k) = self.ancilla_add_simple(0x0c, y) else {
+            b.block(0x0ff684); b.taken(0x0ff684); b.block(0x0ff64d);
             return;
         };
+        b.block(0x0ff684); b.block(0x0ff686);
         let mut j = self.game_state.player.follower_link.facing() as usize * 2;
         self.effect_angle_scratch_mut()
             .set_angles4(&ADD_SWORD_BEAM_SWORD_BEAM_TRAILING_ANGLES, j);
@@ -186,18 +191,22 @@ impl ZeldaState {
         self.ether_orbit_mut()
             .set_swordbeam_temp(swordbeam_temp_x, swordbeam_temp_y);
 
-        if self.ancilla_check_initial_tile_a(k) >= 0 {
+        let collision = self.ancilla_check_initial_tile_a(k) >= 0;
+        b.block(0x0ff702);
+        if collision {
+            b.taken(0x0ff702); b.block(0x0ff706);
             self.ancilla_set_xy(
                 k,
                 swordbeam_temp_x.wrapping_add(ADD_SWORD_BEAM_SWORD_BEAM_X[j] as i16 as u16),
                 swordbeam_temp_y.wrapping_add(ADD_SWORD_BEAM_SWORD_BEAM_Y[j] as i16 as u16),
             );
             self.set_sound_effect_2_with_ancilla_pan(k, 1);
+            b.block(0x0ff737);
             let mut ancilla = self.ancilla_slot_view_mut(k);
             ancilla.set_ancilla_type(4);
             ancilla.set_timer(7);
             ancilla.set_num_sprites(16);
-        }
+        } else { b.block(0x0ff704); }
     }
 
     pub(in crate::zelda_rtl) fn ancilla_spawn_sword_charge_sparkle(&mut self) {

@@ -16,11 +16,14 @@ impl ZeldaState {
     // void SpriteDraw_ShopItem(int k) {  // 9ef4ce — sprite_main.c:25333
     // -----------------------------------------------------------------------
     pub(in crate::zelda_rtl) fn sprite_draw_shop_item(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ef4ce));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1ef4ce);
         let base = (self.sprite_slot_view(k).subtype2().wrapping_sub(7) as usize) * 5;
         self.sprite_draw_multiple_player_deferred(
             k,
             &SHOP_KEEPER_ITEM_WITH_PRICE_DRAW_FRAMES[base..base + 5],
         );
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1ef4f2);
     }
 
     // -----------------------------------------------------------------------
@@ -433,30 +436,49 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_HeartPiece(int k) {  // 85f020
     pub(super) fn sprite_heart_piece(&mut self, k: usize) {
+        // $05:F020..F058 prefix. Pickup/receipt and bounce suffix stay separate.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05f020));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05f020);
         if self.sprite_slot_view(k).ai_state() == 0 {
+            b.block(0x05f025);
             self.sprite_slot_view_mut(k).add_ai_state(1);
             self.heart_upgrade_check_if_already_obtained(k);
+            b.block(0x05f02b);
             if self.sprite_slot_view(k).state() == 0 {
+                b.taken(0x05f02e);
                 return;
             }
-        }
+        } else { b.taken(0x05f023); }
+        b.block(0x05f030);
         // ROM $05:F030 JSL $06:DBF0
         self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Rom06DBF0);
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+        b.block(0x05f034);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
-        if self.sprite_check_if_link_is_busy() {
+        b.block(0x05f037);
+        let busy = self.sprite_check_if_link_is_busy();
+        b.block(0x05f03b);
+        if busy {
+            b.taken(0x05f03b);
             return;
         }
 
         // ROM $05:F03D -> $05:B88D -> $06:E496
-        if (self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D) & 3) != 0 {
+        b.block(0x05f03d);
+        let collision = self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom05B88D);
+        b.block(0x05f040);
+        if collision & 3 != 0 {
+            b.block(0x05f047);
             let value = 0u8.wrapping_sub(self.sprite_slot_view(k).x_velocity());
             self.sprite_slot_view_mut(k).set_x_velocity(value);
-        }
+        } else { b.taken(0x05f045); }
 
+        b.block(0x05f050);
         self.sprite_slot_view_mut(k).subtract_z_velocity(1);
-        self.sprite_move_z(k, SpriteMoveZEntry::Unpriced);
+        self.sprite_move_z(k, SpriteMoveZEntry::Rom05FA2E);
+        b.block(0x05f056);
         // ROM $05:F056
         self.sprite_move_xy(k, SpriteMoveEntry::Rom05FA00);
         if sign8(self.sprite_slot_view(k).z()) {

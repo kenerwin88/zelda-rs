@@ -450,9 +450,13 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_check_initial_tile_a(&mut self, k: usize) -> i32 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x099dd3));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x099dd3);
         let mut j = self.ancilla_slot_view(k).direction() as usize * 3;
         let mut i = 2i32;
         loop {
+            b.block(0x099de6);
             let x = self
                 .game_state
                 .player
@@ -466,13 +470,24 @@ impl ZeldaState {
                 .y()
                 .wrapping_add(ANCILLA_CHECK_INITIAL_TILE_A_YOFFS_HB[j] as i16 as u16);
             self.ancilla_set_xy(k, x, y);
-            if self.ancilla_check_tile_collision(k) != 0 {
+            let collision = {
+                let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x08923b));
+                b.block(0x08923b);
+                let result = self.ancilla_check_tile_collision(k);
+                b.block(0x089241); result
+            };
+            b.block(0x099e13);
+            if collision != 0 {
+                b.taken(0x099e14); b.block(0x099e20);
                 break;
             }
+            b.block(0x099e16);
             i -= 1;
             if i < 0 {
+                b.block(0x099e1c);
                 break;
             }
+            b.taken(0x099e1a);
             j += 1;
         }
         i
@@ -572,6 +587,8 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_get_radial_projection(&self, a: u8, r8: u8) -> AncillaRadialProjection {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08fadd));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x08fadd);
         let a = a as usize;
         let p0 = u16::from(ANCILLA_GET_RADIAL_PROJECTION_RADIAL_PROJECTION_PRIMARY_MAGNITUDE[a])
             * u16::from(r8);
@@ -586,6 +603,13 @@ impl ZeldaState {
     }
 
     pub(super) fn sparkle_prep_oam_from_radial(&self, p: AncillaRadialProjection) -> Point16U {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08da17));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08da17);
+        if p.r2 == 0 { b.taken(0x08da1d); } else { b.block(0x08da1f); }
+        b.block(0x08da23);
+        if p.r6 == 0 { b.taken(0x08da35); } else { b.block(0x08da37); }
+        b.block(0x08da3b);
         Point16U {
             y: self
                 .game_state
@@ -1450,21 +1474,6 @@ impl ZeldaState {
         self.ancilla_check_damage_to_sprite_preset(k, dmg);
     }
 
-    pub(super) fn ancilla_check_sprite_collision(&mut self, k: usize) -> Option<usize> {
-        (0..16).rev().find(|&j| {
-            (self.ancilla_slot_view(k).ancilla_type() == 9
-                || self.ancilla_slot_view(k).ancilla_type() == 0x1f
-                || (((j as u8 ^ self.game_state.frame.frame_counter) & 3)
-                    | self.sprite_slot_view(j).pause())
-                    == 0)
-                && self.sprite_slot_view(j).state() >= 9
-                && (self.sprite_slot_view(j).deflection_bits() & 2 != 0
-                    || self.ancilla_slot_view(k).object_priority() == 0)
-                && self.ancilla_slot_view(k).floor() == self.sprite_slot_view(j).floor()
-                && self.ancilla_check_sprite_collision_single(k, j)
-        })
-    }
-
     fn ancilla_check_sprite_collision_single(&mut self, k: usize, j: usize) -> bool {
         let mut hb = self.ancilla_setup_hit_box(k);
         self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Rom0683EA);
@@ -1691,6 +1700,39 @@ impl ZeldaState {
         }
         b.block(0x08f6f7);
         self.ancilla_set_oam(oam, x, y, charnum, flags, big);
+    }
+
+    pub(super) fn ancilla_set_oam_long_marked(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08f6fe));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08f6fe);
+        self.ancilla_set_oam_marked(oam, x, y, charnum, flags, big);
+        b.block(0x08f701);
+    }
+
+    pub(super) fn ancilla_get_radial_projection_long(&self, a: u8, radius: u8) -> AncillaRadialProjection {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08fb23));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08fb23);
+        let result = self.ancilla_get_radial_projection(a, radius);
+        b.block(0x08fb29);
+        result
+    }
+
+    pub(super) fn ancilla_move_sword_beam_axis(&mut self, k: usize, horizontal: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let _wrapper = (horizontal && self.lag_free).then(|| crate::cycle_ledger::routine(0x0ffa37));
+        if horizontal { b.block(0x0ffa37); }
+        {
+            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0ffa43));
+            b.block(0x0ffa43);
+            let velocity = if horizontal { self.ancilla_slot_view(k).x_velocity() } else { self.ancilla_slot_view(k).y_velocity() };
+            if velocity & 0x80 == 0 { b.taken(0x0ffa5c); } else { b.block(0x0ffa5e); }
+            b.block(0x0ffa61);
+            if k + if horizontal {10} else {0} >= 6 { b.crossing(0x0ffa61); }
+            if horizontal { self.ancilla_slot_view_mut(k).move_x(); } else { self.ancilla_slot_view_mut(k).move_y(); }
+        }
+        if horizontal { b.block(0x0ffa3f); }
     }
 
     pub(super) fn ancilla_set_oam(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {

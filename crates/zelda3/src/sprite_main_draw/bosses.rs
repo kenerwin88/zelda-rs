@@ -1932,7 +1932,8 @@ impl ZeldaState {
             self.sprite_attempt_damage_to_link_plus_recoil(k);
         }
         b.block(0x1e8a79);
-        self.sprite_correct_oam_entries_long(k, 16, 2);
+        // $1E:8A7B loads $0f: the correction's inclusive counter visits 16 entries.
+        self.sprite_correct_oam_entries_long(k, 15, 2);
         b.block(0x1e8a81);
         if let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) {
             b.block(0x1e8a84);

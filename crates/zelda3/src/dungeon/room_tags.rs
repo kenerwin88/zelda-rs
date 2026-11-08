@@ -1196,6 +1196,9 @@ impl ZeldaState {
 
     /// ROM: `RoomTag_MovingWallTorchesCheck`
     pub(super) fn room_tag_moving_wall_torches_check(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x01ca17));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x01ca17);
         if u16::from(
             self.game_state
                 .dungeon
@@ -1203,8 +1206,15 @@ impl ZeldaState {
                 .water_puzzle_state_changed(),
         ) == 0
         {
+            b.block(0x01ca21);
             let mut count = 0;
             for i in 0..16 {
+                b.block(0x01ca26);
+                if self.game_state.dungeon.object_tracking.object_tilemap_pos(i) & 0x8000 != 0 {
+                    b.block(0x01ca2c);
+                } else { b.taken(0x01ca2a); }
+                b.block(0x01ca2e);
+                if i != 15 { b.taken(0x01ca33); }
                 count += u8::from(
                     self.game_state
                         .dungeon
@@ -1214,10 +1224,13 @@ impl ZeldaState {
                         != 0,
                 );
             }
+            b.block(0x01ca35);
             if count < 4 {
+                b.taken(0x01ca3a); b.block(0x01ca60);
                 return;
             }
-        }
+        } else { b.taken(0x01ca1f); }
+        b.block(0x01ca3c);
         let flags = self
             .game_state
             .dungeon
@@ -1234,6 +1247,7 @@ impl ZeldaState {
         self.set_ambient_sound_effect(7);
         self.follower_link_state_mut().immobilize();
         self.set_modal_pause_flag(1);
+        b.block(0x01ca60);
     }
 
     /// ROM: `MovingWall_MoveALittle`

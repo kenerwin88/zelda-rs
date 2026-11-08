@@ -1,6 +1,49 @@
 use super::*;
 
 #[test]
+fn prefix27_room_object_callers_all_sizes_planes_and_rupee_guard_exclude_children() {
+    let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let rom=std::fs::read(root.join("saves/zelda3.sfc")).unwrap();
+    let mut base=ZeldaState::new();base.set_lag_free(true);
+    base.set_assets(&std::fs::read(root.join("zelda3_assets.dat")).unwrap()).unwrap();
+    for (kind,idx,entry,end) in [(1,0x70,0x0190f9,0x019111),(1,0x71,0x019120,0x019136),
+        (3,0x12,0x019aa9,0x019aee),(3,0x2a,0x019de5,0x019e06)] {
+        for width in 0..4 {for height in 0..4 {for plane in [0x2000u16,0x4000] {for obtained in [0,0x1000] {
+            let mut n=base.clone();let dst=0x140u16;
+            for row in 0..11 {
+                let off=crate::rom_cpu_timing::lorom_offset(0x018719+row*3).unwrap();
+                let pointer=u16::from_le_bytes([rom[off],rom[off+1]])-0x4000+plane;
+                let address=0xbf+row as usize*3;n.write_wram_word(address,pointer);n.write_wram_byte(address+2,0x7e);
+            }
+            n.write_wram_word(0xb2,width);n.write_wram_word(0xb4,height);n.write_wram_word(8,dst*2);
+            n.write_wram_word(0x402,obtained);n.sync_native_game_state_from_ram();
+            let src=if kind==1 {objects::object_subtype1_param(idx)}else{objects::object_subtype3_param(idx)}.unwrap();
+            let mut s=load4_rom_machine(&n,entry,0);s.cpu.db=0;s.cpu.a=dst*2;s.cpu.y=dst*2;s.cpu.x=src as u16;
+            crate::cycle_ledger::assert_rom_marker_work(0x01893c,s,
+                |s|s.cpu.k==1 && (entry as u16..end as u16).contains(&s.cpu.pc),||{
+                    let _scope=crate::cycle_ledger::routine(0x01893c);
+                    if kind==1 {n.LoadType1ObjectSubtype1(idx,width as u8,height as u8,dst);}
+                    else {n.LoadType1ObjectSubtype3(idx,dst);}
+                });
+        } } } }
+    }
+}
+
+#[test]
+fn prefix27_moving_wall_torch_scan_all_count_and_guard_paths_match_rom() {
+    for tag in 0..2 { for changed in [0,1] { for lit in 0..=16 {
+        let mut n = ZeldaState::new(); n.set_lag_free(true);
+        n.write_wram_byte(0x642,changed); n.write_wram_byte(0x0e,tag as u8);
+        for i in 0..16 { n.write_wram_word(0x540+i*2,if i<lit {0x8000} else {0}); }
+        n.sync_native_game_state_from_ram();
+        let s = load4_rom_machine(&n,0x01ca17,0x10);
+        crate::cycle_ledger::assert_rom_marker_work(0x01ca17,s,
+            |s| s.cpu.k==1 && (0xca17..0xca66).contains(&s.cpu.pc),
+            || n.room_tag_moving_wall_torches_check(tag));
+    } } }
+}
+
+#[test]
 fn prefix5_object_dispatch_all_paths_exclude_selected_children() {
     use snes::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
         RomCpuTimingProbe, SourcePpuReadState};
@@ -105,7 +148,8 @@ fn object_tail_prices_match_executed_rom_paths() {
         0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd1, 0xd2, 0xd9,
         0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8,
         0x4c, 0x4d, 0x4e, 0x4f, 0x6a, 0x6b, 0x79, 0x7a, 0x8d, 0x8e,
-        0x76, 0x77, 0x8f, 0xdd, 0xa0, 0xa1, 0xa2, 0xa3, 0xcd];
+        0x76, 0x77, 0x8f, 0xdd, 0xa0, 0xa1, 0xa2, 0xa3, 0xcd,
+        0x70, 0x71, 0x94];
     // Complete calls include independent children exactly once. Every encoded
     // width/height and both planes exercise the loop and plane branch paths.
     for (kind, idx, fixed_entry) in ids.into_iter().map(|idx| (1, idx, 0))
@@ -114,7 +158,7 @@ fn object_tail_prices_match_executed_rom_paths() {
             (2,0x3e,0x019a0c),(2,0x31,0x01a26d),(2,0x38,0x01a4b4),
             (2,0x3b,0x01a584),(3,0x1c,0x01a31c),(3,0x4d,0x019a0c),
             (3,0x5d,0x019a0c),(3,0x55,0x01a194),(3,0x5b,0x01a194),
-            (3,0x5a,0x019d6c)]) {
+            (3,0x5a,0x019d6c),(3,0x12,0x019aa9),(3,0x2a,0x019de5)]) {
         let extended = kind != 1;
         for width in 0..4u8 {
             for height in 0..4u8 {

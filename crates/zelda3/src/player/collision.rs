@@ -3261,7 +3261,7 @@ impl ZeldaState {
         {
             blocks.block(0x07b7ee);
             self.follower_link_state_mut().set_tile_coll_flag(2);
-            self.player_tile_detect_nearby();
+            self.player_tile_detect_nearby_marked();
             self.check_primary_collision_layer_after_nearby();
             return;
         }
@@ -3378,13 +3378,13 @@ impl ZeldaState {
                 self.finish_cardinal_collision_after_primary();
             }
             CardinalCollisionTail::PrimaryFootprint => {
-                self.player_tile_detect_nearby();
+                self.player_tile_detect_nearby_marked();
                 self.check_primary_collision_layer_after_nearby();
                 self.create_velocity_from_moving_background(MovingBackgroundEntry::Unpriced);
                 self.finish_cardinal_collision_after_primary();
             }
             CardinalCollisionTail::FinalFootprint { collision_two } => {
-                self.player_tile_detect_nearby();
+                self.player_tile_detect_nearby_marked();
                 self.finish_cardinal_collision_after_nearby(collision_two);
             }
             CardinalCollisionTail::SlopeChecks {
@@ -3484,7 +3484,7 @@ impl ZeldaState {
         if collision == 2 {
             blocks.taken(0x07b850);
             blocks.block(0x07b88f);
-            self.player_tile_detect_nearby();
+            self.player_tile_detect_nearby_marked();
             self.finish_cardinal_collision_after_nearby(true);
             return;
         } else if collision == 3 {
@@ -3513,7 +3513,7 @@ impl ZeldaState {
         {
             self.cardinal_stationary_dispatch_markers();
             blocks.block(0x07b876);
-            self.player_tile_detect_nearby();
+            self.player_tile_detect_nearby_marked();
             self.finish_cardinal_collision_after_nearby(false);
             return;
         } else {

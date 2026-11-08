@@ -108,7 +108,7 @@ impl ZeldaState {
         self.sprite_active_main_jsr(k);
     }
 
-    fn sprite_active_main_dispatch(&mut self, k: usize) {
+    pub(super) fn sprite_active_main_dispatch(&mut self, k: usize) {
         // A handler that charges nothing is not annotated yet: the ledger
         // prefix it ran in is incomplete (see `cycle_ledger::probe_annotation`).
         let _probe = crate::cycle_ledger::probe_annotation();
@@ -155,7 +155,16 @@ impl ZeldaState {
             0x27 => self.sprite_27_deadrock(k),
             0x28 => self.sprite_28_dark_world_hint_npc(k),
             0x29 => self.sprite_human_multi_1(k),
-            0x2a => self.sprite_sweeping_lady(k),
+            0x2a => {
+                crate::cycle_ledger::blocks(self.lag_free).block(0x06c0bc);
+                {
+                    let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dc4a5));
+                    crate::cycle_ledger::blocks(self.lag_free).block(0x0dc4a5);
+                    self.sprite_sweeping_lady(k);
+                    crate::cycle_ledger::blocks(self.lag_free).block(0x0dc4ab);
+                }
+                crate::cycle_ledger::blocks(self.lag_free).block(0x06c0c0);
+            }
             0x2b => self.sprite_2_b_hobo(k),
             0x2c => self.sprite_lumberjacks(k),
             0x2d => self.sprite_2_d_telepathic_tile(k),
@@ -173,7 +182,11 @@ impl ZeldaState {
             0x39 => self.sprite_39_locksmith(k),
             0x3a => self.sprite_3_a_magic_bat(k),
             0x3b => self.sprite_dash_item(k),
-            0x3c => self.sprite_kakariko_boy(k),
+            0x3c => {
+                crate::cycle_ledger::blocks(self.lag_free).block(0x06c04e);
+                self.sprite_kakariko_boy(k);
+                crate::cycle_ledger::blocks(self.lag_free).block(0x06c052);
+            }
             0x3d => self.sprite_old_snitch_lady(k),
             0x3e => self.sprite_17_hoarder(k),
             0x3f => self.sprite_tutorial_guard_or_barrier(k),
@@ -229,7 +242,11 @@ impl ZeldaState {
             0x71 => self.sprite_71_leever(k),
             0x72 => self.sprite_72_fairy_pond(k),
             0x73 => self.sprite_73_uncle_and_priest(k),
-            0x74 => self.sprite_running_boy(k),
+            0x74 => {
+                crate::cycle_ledger::blocks(self.lag_free).block(0x06c058);
+                self.sprite_running_boy(k);
+                crate::cycle_ledger::blocks(self.lag_free).block(0x06c05c);
+            }
             0x75 => self.sprite_bottle_vendor(k),
             0x76 => self.sprite_76_zelda(k),
             0x77 => self.sprite_15_antifairy(k),

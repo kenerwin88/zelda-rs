@@ -113,7 +113,7 @@ impl ZeldaState {
         }
         b.block(0x1df3b5);
         let base = (self.sprite_slot_view(k).graphics() as usize) * 5;
-        self.sprite_draw_multiple(k, &DRAW_FOUR_AROUND_ONE_DRAW_FRAMES[base..base + 5]);
+        self.sprite_draw_multiple_from(k, &DRAW_FOUR_AROUND_ONE_DRAW_FRAMES[base..base + 5], super::super::sprite::DrawMultipleEntry::Bank1d);
         b.block(0x1df3d2);
     }
 
@@ -885,13 +885,18 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_15_Antifairy(int k) {  // 86a50c
     pub(in crate::zelda_rtl) fn sprite_15_antifairy(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a50c));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x06a50c);
         self.sprite_draw_antfairy(k);
         self.sprite_15_antifairy_after_draw(k);
     }
 
     fn sprite_15_antifairy_after_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a50c));
         if self.antifairy_after_draw_before_bounce(k) {
+            crate::cycle_ledger::blocks(self.lag_free).block(0x06a53b);
             self.sprite_bounce_from_tile_collision(k);
+            crate::cycle_ledger::blocks(self.lag_free).block(0x06a53f);
         }
     }
 
@@ -901,21 +906,34 @@ impl ZeldaState {
     }
 
     fn antifairy_after_draw_before_bounce(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06a50c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06a510);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return false;
         }
-        if self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced) && self.sprite_slot_view(k).delay_main() == 0 {
+        b.block(0x06a513);
+        let hit = self.sprite_check_damage_to_link(k, SpriteDamageToEntry::Unpriced);
+        b.block(0x06a516);
+        if !hit { b.taken(0x06a516); }
+        else { b.block(0x06a518); if self.sprite_slot_view(k).delay_main() != 0 { b.taken(0x06a51b); } }
+        if hit && self.sprite_slot_view(k).delay_main() == 0 {
+            b.block(0x06a51d);
             let value = 16;
             self.sprite_slot_view_mut(k).set_delay_main(value);
             let t = i16::from(self.game_state.inventory.player_resources.magic.amount()) - 8;
             if t < 0 {
+                b.block(0x06a52b);
                 self.player_magic_mut().set_magic_power(0);
             } else {
+                b.taken(0x06a529); b.block(0x06a52f);
                 self.set_sound_effect_2(0x1d);
                 self.player_magic_mut().set_magic_power(t as u8);
             }
+            b.block(0x06a534);
         }
         // $06:A538 JSR $06:E92C: complete body, caller opcode unchanged.
+        b.block(0x06a538);
         self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
         true
     }

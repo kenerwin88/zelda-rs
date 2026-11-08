@@ -659,20 +659,32 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_EC_ThrownItem(int k) {  // 86aae0
     pub(super) fn sprite_ec_thrown_item(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06aae0));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06aae0);
         if self.game_state.sprites.system.chr_halfslot_state() < 3 {
+            b.block(0x06aae7);
+            if !self.game_state.oam.has_sprite_sorting() { b.taken(0x06aaea); }
+            else { b.block(0x06aaec); if self.sprite_slot_view(k).floor() == 0 { b.taken(0x06aaef); } }
             if self.game_state.oam.has_sprite_sorting() && self.sprite_slot_view(k).floor() != 0 {
+                b.block(0x06aaf1);
                 let spr_slot = 0x2c + (k & 3);
                 self.oam_state_mut()
                     .set_current_pointer((0x0800 + spr_slot * 4) as u16);
                 self.oam_state_mut()
                     .set_current_extended_pointer((0x0a20 + spr_slot) as u16);
             }
+            b.block(0x06ab04);
             let value = self.sprite_slot_view(k).state();
             self.sprite_slot_view_mut(k).set_ignore_projectile(value);
             if self.sprite_slot_view(k).c() >= 6 {
+                b.block(0x06ab11);
                 self.sprite_draw_thrown_item_gigantic(k);
+                b.block(0x06ab14);
             } else {
+                b.taken(0x06ab0f); b.block(0x06ab16);
                 self.sprite_draw_single_large(k, SpriteSingleLargeEntry::Unpriced);
+                b.block(0x06ab19);
                 let oam = self.game_state.oam.current_pointer_usize();
                 let t = self
                     .game_state
@@ -681,6 +693,9 @@ impl ZeldaState {
                     .indoor_flag
                     .wrapping_add(self.game_state.world.region.dark_world_region_index());
                 let j = usize::from(self.sprite_slot_view(k).c());
+                if t < 2 { b.taken(0x06ab26); } else { b.block(0x06ab28); }
+                b.block(0x06ab2a);
+                if (oam & 0xff) + 3 > 0xff { b.crossing(0x06ab33); }
                 let charnum = THROWABLE_SCENERY_CHARS[j + if t >= 2 { 6 } else { 0 }];
                 self.oam_state_mut().set_entry_char(oam, charnum);
                 self.oam_state_mut()
@@ -689,13 +704,17 @@ impl ZeldaState {
                     | (self.game_state.oam.entry_flags(oam) & 0x0f);
                 self.sprite_slot_view_mut(k).set_oam_flags(value);
             }
-        }
+        } else { b.taken(0x06aae5); }
+        b.block(0x06ab4c);
         if self.sprite_slot_view(k).state() == 9 {
+            b.block(0x06ab53);
             if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
                 return;
             }
+            b.block(0x06ab56);
             self.throwable_scenery_interact_with_sprites_and_tiles(k);
-        }
+        } else { b.taken(0x06ab51); }
+        b.block(0x06ab59);
     }
 
     // -----------------------------------------------------------------------

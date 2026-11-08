@@ -1035,7 +1035,7 @@ impl ZeldaState {
                 b.block(0x05e8f7);
                 self.sprite_track_body_to_head(k);
                 b.block(0x05e8fb);
-                let j = self.sprite_direction_to_face_link(k);
+                let j = self.sprite_direction_and_offset_to_face_link_bank5(k).0;
                 b.block(0x05e8fe);
                 let value = j ^ 3;
                 self.sprite_slot_view_mut(k).set_head_direction(value);
@@ -1189,25 +1189,33 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Shopkeeper_Draw(int k) {  // 85f91b
     pub(super) fn shopkeeper_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05f91b));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05f91b);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &SHOPKEEPER_DRAW_FRAMES[base..base + 2],
         );
         // ROM $05:F939
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05f939);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05f93d);
     }
 
     // -----------------------------------------------------------------------
     // void FluteBoyFather_Draw(int k) {  // 8dc3e1
     pub(super) fn flute_boy_father_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dc3e1));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0dc3e1);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &FLUTE_BOY_FATHER_DRAW_FRAMES[base..base + 2],
         );
         // ROM $0D:C3FC
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0dc3fc);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x0dc400);
     }
 
     // -----------------------------------------------------------------------
@@ -1241,9 +1249,13 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void InnKeeper_Draw(int k) {  // 85e3dc
     pub(super) fn inn_keeper_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e3dc));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05e3dc);
         let mut info = self.sprite_draw_multiple_player_deferred(k, &INN_KEEPER_DRAW_FRAMES);
         // ROM $05:E3EE
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05e3ee);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x05e3f2);
     }
 
     // -----------------------------------------------------------------------
@@ -2004,13 +2016,18 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DrinkingGuy_Draw(int k) {  // 9af88c
     pub(super) fn drinking_guy_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1af88c));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1af88c);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1af94a);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
         let mut info = self.sprite_draw_multiple_player_deferred(
             k,
             &DRINKING_GUY_DRAW_FRAMES[base..base + 3],
         );
         // ROM $1A:F94E
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1af94e);
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        crate::cycle_ledger::blocks(self.lag_free).block(0x1af952);
     }
 
     // -----------------------------------------------------------------------
@@ -2497,7 +2514,7 @@ impl ZeldaState {
         b.block(0x05ff70);
         self.sprite_track_body_to_head(k);
         b.block(0x05ff74);
-        let value = self.sprite_direction_to_face_link(k) ^ 3;
+        let value = self.sprite_direction_and_offset_to_face_link_bank5(k).0 ^ 3;
         b.block(0x05ff77);
         self.sprite_slot_view_mut(k).set_head_direction(value);
 

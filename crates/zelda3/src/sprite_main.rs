@@ -52,14 +52,24 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_head(&mut self, k: usize, oam_offs: u8, poc: &PrepOamCoordsRet) {
-        let _scope = crate::cycle_ledger::routine(0x05_c6de);
+        self.guard_animate_head_from(k, oam_offs, poc, true);
+    }
+
+    pub(super) fn soldier_draw1_ex(&mut self, k: usize, oam_offs: u8, poc: &PrepOamCoordsRet) {
+        self.guard_animate_head_from(k, oam_offs, poc, false);
+    }
+
+    fn guard_animate_head_from(&mut self, k: usize, oam_offs: u8, poc: &PrepOamCoordsRet, set_y: bool) {
+        let _scope = crate::cycle_ledger::routine(if set_y {0x05c6de} else {0x05c6e0});
+        // The alternate Archer entry already has Y; it skips only LDY #0.
+        if set_y { crate::cycle_ledger::blocks(true).block(0x05c6de); }
         let sprite = self.sprite_slot_view(k);
         let dir = sprite.head_direction() as usize;
         let graphics = sprite.graphics() as usize;
         // $05:C6DE-C70A (624), clipping at C70C-C70F (78) or
         // the taken BCC (6), then C711-C72C (442).
         let y = poc.y.wrapping_sub(SOLDIER_DRAW1_YD[graphics] as i16 as u16);
-        crate::cycle_ledger::charge(624 + if y.wrapping_add(16) < 256 { 6 } else { 78 } + 442);
+        crate::cycle_ledger::charge(608 + if y.wrapping_add(16) < 256 { 6 } else { 78 } + 442);
         self.set_sprite_main_guard_oam(
             oam_offs as usize,
             poc.x,
@@ -71,9 +81,19 @@ impl ZeldaState {
     }
 
     pub(super) fn guard_animate_body(&mut self, k: usize, oam_idx: u8, poc: &PrepOamCoordsRet) {
-        let _scope = crate::cycle_ledger::routine(0x05_ca09);
+        self.guard_animate_body_from(k, oam_idx, poc, true);
+    }
+
+    pub(super) fn soldier_draw2_ex(&mut self, k: usize, oam_idx: u8, poc: &PrepOamCoordsRet) {
+        self.guard_animate_body_from(k, oam_idx, poc, false);
+    }
+
+    fn guard_animate_body_from(&mut self, k: usize, oam_idx: u8, poc: &PrepOamCoordsRet, load_y: bool) {
+        let _scope = crate::cycle_ledger::routine(if load_y {0x05ca09} else {0x05ca10});
+        // $CA09 reads direction and the OAM offset; Archer supplies that Y.
+        if load_y { crate::cycle_ledger::blocks(true).block(0x05ca09); }
         // $05:CA09-CA1D: set up the four-entry loop.
-        crate::cycle_ledger::charge(256);
+        crate::cycle_ledger::charge(178);
         let mut oam_offset = oam_idx as usize;
         for i in (0..=3).rev() {
             if self.guard_animate_body_entry(k, oam_offset, poc, i) {

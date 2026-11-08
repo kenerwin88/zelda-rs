@@ -1526,14 +1526,20 @@ impl ZeldaState {
         }
         crate::cycle_ledger::charge(132);
         let right = self.sprite_is_right_of_link(k);
-        crate::cycle_ledger::charge_routine(0x06_ead1, if right.a != 0 { 238 } else { 230 });
+        // Lag-free predicates price their own ROM blocks; the legacy path
+        // still needs its caller-owned scalar charge.
+        if !self.lag_free {
+            crate::cycle_ledger::charge_routine(0x06_ead1, if right.a != 0 { 238 } else { 230 });
+        }
         if right.b.wrapping_add(0x10) >= 0x20 {
             crate::cycle_ledger::charge(6 + 42);
             return;
         }
         crate::cycle_ledger::charge(132);
         let below = self.sprite_is_below_link(k);
-        crate::cycle_ledger::charge_routine(0x06_eae8, if below.a != 0 { 446 } else { 438 });
+        if !self.lag_free {
+            crate::cycle_ledger::charge_routine(0x06_eae8, if below.a != 0 { 446 } else { 438 });
+        }
         if below.b.wrapping_add(0x20) >= 0x48 {
             crate::cycle_ledger::charge(6 + 42);
             return;

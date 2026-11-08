@@ -867,7 +867,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_aux1() != 0 && self.sprite_slot_view(k).direction() != 3 {
             b.block(0x1df598);
             let d = usize::from(self.sprite_slot_view(k).direction());
-            self.sprite_draw_multiple(k, &GORIYA_DRAW_FRAMES_2[d..d + 1]);
+            self.sprite_draw_multiple_from(k, &GORIYA_DRAW_FRAMES_2[d..d + 1], super::super::sprite::DrawMultipleEntry::Bank1d);
         }
 
         b.block(0x1df5a8);
@@ -878,9 +878,10 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let g = usize::from(self.sprite_slot_view(k).graphics());
-        let mut info = self.sprite_draw_multiple(
+        let mut info = self.sprite_draw_multiple_from(
             k,
             &GORIYA_DRAW_FRAMES[GORIYA_DRAW_OFFSETS[g]..GORIYA_DRAW_OFFSETS[g + 1]],
+            super::super::sprite::DrawMultipleEntry::Bank1d,
         );
         b.block(0x1df5c8);
         self.sprite_slot_view_mut(k).subtract_flags2(1);
@@ -2129,11 +2130,22 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn eyegore_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1ecacf));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1ecacf);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        let mut info = self.sprite_draw_multiple(k, &EYEGORE_DRAW_FRAMES[base..base + 4]);
+        let mut info = {
+            let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87f0));
+            b.block(0x1e87f0);
+            let result = self.sprite_draw_multiple(k, &EYEGORE_DRAW_FRAMES[base..base + 4]);
+            b.block(0x1e87f4); result
+        };
+        b.block(0x1ecae8);
         if self.sprite_slot_view(k).pause() == 0 {
-            self.sprite_draw_shadow_custom(k, &mut info, 14, SpriteShadowEntry::Unpriced);
-        }
+            b.block(0x1ecaed);
+            self.sprite_draw_shadow_custom(k, &mut info, 14, SpriteShadowEntry::Rom06DC5C);
+        } else { b.taken(0x1ecaeb); }
+        b.block(0x1ecaf3);
     }
 
     pub(in crate::zelda_rtl) fn chain_chomp_draw(&mut self, k: usize) {

@@ -11409,3 +11409,685 @@ The remaining instruction owners, upload caller/receiver/return placement,
 spotlight waiting, signed child/caller offsets and actual arrival/acceptance
 ownership remain unresolved as listed. Cold exact A/V acceptance is a
 separate boundary.
+
+## Lagless prefix hunt 27
+
+Instruction pricing on `codex/prefix-hunt27`, based on main **`5bfe6ca7`**.
+Evidence is in `target/prefix-hunt27/`. The immutable final admission binary is
+`zelda3-admission-final`, SHA-256
+`0f0d985a88a9c12a6761ae6b15c3455ed8e9217a9b0d297a2f086f2ab1b5a840`.
+
+The complete ROM census improves from **1,626 to 1,530 missing**, with **0 excess
+and 0 false positives**. There are **116 recovered rows and 20 newly exposed
+rows**, a net reduction of **96**. Main instruction work changes by a net
+**+997,233,074 master clocks** across the route: positive per-iteration deltas
+sum to 1,103,416,314 clocks, and negative deltas from the overcount corrections
+and their combinations sum to 106,183,240. These are measured consequences,
+never prices. The 209 baseline missing rows through 461,989 gain a net
+**517,344 instruction clocks**; 26 recover and seven previously exact rows
+become missing. `rom-comparison.json` and `recovered-prefix-rows.csv/json`
+retain every change.
+
+### Classification and source identity
+
+The initial worktree is clean at the requested base. All 935 retained base
+source hashes agree. Reused hunt-24/25 source profiles, hunt-26 baselines and
+the direct song-poll bus receipts are hash-verified before reuse. The regenerated
+ledger contains **1,473,123 iterations**. ROM, assets, SRAM, ledger, oracle and
+gate-helper authorities remain unchanged.
+
+Fresh native baseline profiles agree with all 22,282 retained routine rows
+on the original 214 selected iterations. Cold unmodified-ROM CPU extensions
+cover the additional classified cohort and newly exposed rows; there are
+**282 profiled prefix rows** in all. Every new source routine total equals
+its independently summed per-PC instruction receipts. Final native profiles
+are regenerated on the final binary. `baseline-profile-agreement.json`,
+`source-new-instruction-agreement.json`,
+`source-supplement-instruction-agreement.json`, `analytical-basis.json`
+and `profile-clean-agreement.json` retain the evidence.
+
+Class (a) has a complete signed nonpoll instruction remainder at or above the
+frozen diagnostic boundary. Class (c) has an executed upload-protocol owner.
+Class (d) retains source spotlight polling or insufficient signed instruction
+work to reach that boundary. There is no independent arrival proof for class
+(b). This classification is diagnostic; the runtime classifier, matcher and P2
+are unchanged. Main instruction totals already include VWF. Inclusive totals,
+positive aliases, sampled counts, deficits and boundary sizes are never prices.
+
+| Cohort | (a) before → after | (b) | (c) before → after | (d) before → after | Old rows recovered | Newly exposed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Before 141,568 | 0 → 0 | 0 | 5 → 5 | 2 → 2 | 0 | 0 |
+| 141,568–228,499 | 50 → 50 | 0 | 3 → 3 | 13 → 14 | 0 | 1 |
+| 228,499–380,243 | 66 → 46 | 0 | 4 → 4 | 10 → 11 | 24 | 5 |
+| 380,243–461,989 | 47 → 46 | 0 | 2 → 2 | 7 → 7 | 2 | 1 |
+| **Total** | **163 → 142** | **0** | **14 → 14** | **32 → 34** | **26** | **7** |
+
+At 380,243, the previous **116 (a) / 12 (c) / 25 (d)** becomes
+**96 / 12 / 27**. Through 461,989, **209 → 190** rows remain:
+**142 (a), 14 (c), 34 (d)**. The classification equals the canonical ROM
+missing-row set exactly. All 282 signed partitions conserve the complete
+source-minus-native instruction total.
+`classification.csv/json`, `signed-partition-agreement.csv/json`,
+`routine-vectors.csv/json`, `non-sprite-vectors.csv/json`,
+`object-vectors.csv/json` and `remaining-sprite-residuals.csv`
+retain the full signed vectors.
+
+Upload and spotlight mechanisms are byte-identical. Shared instruction prices
+incidentally recover spotlight row **406,065** with **162** added instruction
+clocks; the overcount corrections expose spotlight row **403,249**. Neither is
+a wait, arrival or acceptance repair. All fourteen upload rows remain blocked.
+The seven **146,786–146,810** rows retain identical instruction budgets and
+holds, including their **-22** residual. `protected-minus22-rows.csv/json`
+records that check.
+
+### Concrete ownership of the other signed remainder
+
+At **367,256**, the old **+8,914** non-sprite remainder decomposes exactly:
+
+- Nearby tiles `$07:CF12`: **+3,124**.
+- Moving-wall torch scan `$01:CA17`: **+2,814**.
+- Y cardinal caller `$07:BA0A` and its signed child offsets: **+1,200**.
+- X cardinal caller `$07:C4D4` and its signed child offsets: **+920**.
+- Moving-wall east `$01:C8D4`: **+524**; tag `$01:C43E`: **+354**.
+- Main-loop offset: **-22**.
+
+The apparent +3,164 module dispatcher cancels -2,752 Dungeon, -108 floor
+indicator and -304 HUD work. Link_ControlHandler +2,318 cancels
+LinkState_Default -2,318. Velocity +2,416 cancels movement -1,870 and sand
+drag -546. Those aliases are not independently priced. Nearby-tile work gains
+3,116 clocks and the torch scan gains 2,814, leaving **+2,984** signed
+non-sprite work. The complete iteration gains **6,076** clocks and recovers.
+
+At **367,347**, the **+43,134** non-sprite remainder includes sword-beam
+caller **6,008**, collision scan **4,202**, radial projection **3,224**,
+nearby tiles **3,124**, torches **2,814**, radial sparkle OAM **2,624**,
+initial tile work **2,610**, OAM XY **1,664**, AddSwordBeam **1,662**,
+Y clipping **1,424**, plus the actual far wrappers, axis entries and
+beam-hit caller. Signed parent/child offsets are retained. Pricing reduces
+that non-sprite remainder to **+3,610**; the complete iteration gains
+**40,108** clocks and recovers.
+
+A new **-6,946** routine residual at BeamHit `$08:8D19` is an attribution
+alias: the source RTS-selected body remains in Ancilla_ExecuteOne
+`$08:833C`, whose residual is **+7,368**. Together they retain **+422**.
+The physical per-PC audit proves the affected native counts and clocks do not
+exceed source. This routine-level negative is not an overcharged sprite family.
+
+At **375,434**, concrete object gains are **22,704** for `$171`,
+**2,830** for `$170`, **768** for `$312` and **330** for `$32a`:
+**26,632** clocks before the independent 238-clock crystal-switch correction.
+The actual main-budget gain is **26,394**, recovering the row. LampCones'
+old parent **-107,034** and child **+107,364** sum to only **+330**; the child
+is already priced and is not charged again. The remaining **+3,554** non-sprite
+vector includes spiral adjustment **+1,656**, follower initialization **+770**
+and warp-pad work **+492**, with the door, torch and HUD aliases still signed.
+
+The twelve recovered 367,254–367,394 rows and all other prefix recoveries are
+listed in `recovered-prefix-rows.csv/json`. Row **367,327** remains blocked.
+The remaining `$8e` family at **372,814** is **+1,584**, within a complete
+signed gap of **+5,814**. The ROM dispatch is **Terrorpin** at `$1E:B26F`;
+Pokey is `$c7`. Pricing follows the actual dispatch, not the inherited label.
+
+### Owners and unmodified-ROM fixtures
+
+All **24 new fixtures** explicitly construct a `lag_free` state. New caller
+markers exclude children; overcount fixtures also compare complete routine
+totals to detect duplicate child charges. Fixtures execute unmodified ROM
+across the supported caller branches, loop bounds, directions, guards,
+graphics and clip/page-crossing paths. The existing
+`marker32_nearby_tiles_matches_rom` proves the nearby-tile body now selected
+by the five cardinal call/resume sites.
+
+| Owner / actual entries | Fixture names |
+| --- | --- |
+| Radial projection and far wrapper: `08fadd`, `08fb23` | `prefix27_radial_projection_all_angles_radii_and_far_entry_match_rom` |
+| Radial sparkle OAM: `08da17`; OAM far wrapper: `08f6fe` | `prefix27_radial_oam_all_sign_and_coordinate_paths_match_rom`; sword-beam caller fixture |
+| Actual sword-beam X/Y entries: `0ffa37`, `0ffa43` | `prefix27_sword_beam_axis_wrappers_all_slots_and_velocity_signs_match_rom` |
+| Sword-beam caller: `0ff764`; scan/tile far entries `088da2`, `08923b` | `prefix27_sword_beam_all_caller_branches_exclude_children` |
+| BeamHit caller/BRL tail and coordinate/clipping helpers: `088d19`, `08fb44`, `08fba6`, `08fbc9`, `08fbd6` | `prefix27_beam_hit_all_timer_clipping_sign_and_oam_crossing_paths_match_rom` |
+| Initial-tile caller: `099dd3` | `prefix27_initial_tile_all_directions_collision_and_clear_paths_exclude_children` |
+| AddSwordBeam and actual failure return: `0ff67b`, `0ff64d` | `prefix27_add_sword_beam_all_spawn_facing_and_initial_collision_paths_exclude_children` |
+| Nearby tiles: `07cf12`; moving-wall torches: `01ca17` | `marker32_nearby_tiles_matches_rom`; `prefix27_moving_wall_torch_scan_all_count_and_guard_paths_match_rom` |
+| Objects `$170/$171/$312/$32a`: `0190f9`, `019120`, size children `01b0ac/01b0af`, `019aa9`, `019de5` | `prefix27_room_object_callers_all_sizes_planes_and_rupee_guard_exclude_children`; extended `object_tail_prices_match_executed_rom_paths` |
+| Spike caller and states: `1ebce8` | `prefix27_spike_all_stationary_transient_and_motion_states_exclude_children` |
+| Red/green Eyegore drawing: `1ecacf`, actual multiple/shadow wrappers | `prefix27_eyegore_drawing_all_graphics_pause_and_clips_exclude_children` |
+| Eye-statue caller and arrow trigger: `05e62b`, `05e633` | `prefix27_eye_statue_all_arrow_trigger_paths_exclude_children` |
+| Terrorpin caller/states and hammer guards: `1eb26f`, `1eb2a7`, `1eb30e`, `1eb3a3` | `prefix27_terrorpin_both_states_all_caller_paths_exclude_children`; `prefix27_terrorpin_hammer_all_guards_overlap_and_toggle_paths_exclude_children` |
+| Hinox draw prefix/JMP and default shadow load: `06a1f9` | `prefix27_hinox_draw_all_graphics_and_clips_exclude_children` |
+| Thrown item `$ec` caller: `06aae0` | `prefix27_thrown_item_all_sorting_size_state_and_world_paths_exclude_children` |
+| Heart piece `$eb` prefix through `05f058` | `prefix27_heart_piece_prefix_all_initialization_active_and_collision_paths_exclude_children` |
+| Antifairy caller: `06a50c`; actual Goriya/antifairy draw wrapper | `prefix27_antifairy_all_damage_and_magic_paths_exclude_children`; existing Goriya draw fixtures |
+| Shared red-spear/archer walking and animation: `05ceaa`, `05cee2` | `prefix27_guard_walking_all_timer_collision_direction_and_animation_paths_exclude_children` |
+| NPC/shop draw callers: `05f91b`, `0dc3e1`, `05e3dc`, `1af88c`, `1ef4ce` | `prefix27_npc_and_shop_draw_callers_all_frames_and_clips_exclude_children` |
+| Sweeping-lady, Kakariko-boy and running-boy bounces; actual bank-5 direction entries | `prefix27_npc_bank_six_bounces_and_sweeping_wrapper_exclude_children`; existing bank-5 direction fixtures |
+
+Sword-beam movement now follows ROM Y-then-X order. Helmasaur's correction
+count is a ROM-exact behavior correction. Both retain the baseline CPU
+picture hashes. No arrival, upload, spotlight, polling-price or P2 change is
+used. The legacy non-lag-free predicate charge is retained where the marker
+body is disabled; an obsolete unmarked collision scan is removed.
+
+The generator adds **297 blocks (5,977 → 6,274)**, preserving every old tuple.
+Across all 282 selected rows, expanded marker work changes by **+610,078**
+clocks, scalar work by **-102,480**, and complete instruction work by
+**+507,598**. Every affected after-marker count and clock total is at or below
+the source at all **8,655 affected per-PC rows**. Signed routine partitions
+conserve the same totals. `generated-block-preservation.json`,
+`instruction-conservation.json` and `per-pc-conservation.csv` retain the proof.
+
+### Negative-family overcount audit
+
+The audit covers every negative family residual on all 282 profiled rows:
+**58** in total, including the **32** on the original missing-row set.
+All are real overcharges, not family attribution aliases. No negative family
+residual remains. `negative-family-audit.csv/json` records every row, its
+before/after residual, finding and fixture.
+
+| Family | Negative rows | ROM finding and correction | Fixture |
+| --- | ---: | --- | --- |
+| Crystal switch `$1e/$09` | 25 | Oam_AllocateDeferToPlayer duplicated predicate work already owned by `06ead1/06eae8`. All audited residuals become zero. | `prefix27_defer_all_relative_branches_charge_each_helper_once` |
+| Fake sword `$e8/$09` | 5 | Same duplicate; **-126 → +104**. Remaining caller work is unpriced. | Same defer fixture |
+| Storyteller `$28/$09` | 1 | Same duplicate; **-388 → +948**. | Same defer fixture |
+| Blue/green archer `$46/$47, $09` | 7 | Actual entries are `05c6e0/05ca10`; the full entries add an unexecuted 16+78 clocks per draw. All audited residuals become zero. | `prefix27_archer_actual_head_and_body_entries_skip_only_the_rom_prefixes` |
+| Helmasaur `$92/$09` | 20 | ROM `1e8a7b` loads **15**, for **16** correction visits. Native visited 17. Savings follow actual clip paths; at 378,096/098/105 the **1,554**-clock correction changes **-1,316 → +238**. | `prefix27_helmasaur_tail_correction_visits_exactly_sixteen_entries` |
+
+The overcount corrections expose seven prefix rows:
+172,413; 378,077/080/092/093/094; and 403,249.
+At **172,413**, the corrected native instruction price is **298,550** against
+source **298,528**, leaving **-22** and only a **two-clock** diagnostic shortfall.
+There is no missing instruction owner to price. This explains the one-count
+increase before 228,499; it is left unfitted. At **378,093**, the remaining
+1,324 instruction clocks are below the 1,364-clock boundary, so the exposed
+row is (d). `newly-exposed-prefix-rows.csv/json` retains all seven findings.
+
+### Remaining blockers through 461,989
+
+| Family | Remaining rows with nonzero family work | Signed sum | Largest row |
+| --- | ---: | ---: | ---: |
+| Crystal switch `$1e` | 2 | +2,200 | +1,100 |
+| Spike `$8a` | 1 | +702 | +702 |
+| Red Eyegore `$84` | 1 | +96 | +96 |
+| Green Eyegore `$83` | 1 | +1,166 | +1,166 |
+| Eye statue `$38` | 1 | +104 | +104 |
+| Terrorpin (actual dispatch) `$8e` | 2 | +1,752 | +1,584 |
+| Heart piece `$eb` | 16 | +7,570 | +718 |
+| Thrown item `$ec` | 4 | +15,684 | +10,178 |
+| Red spear guard `$48` | 5 | +10,174 | +7,338 |
+| Hinox `$11` | 10 | +14,928 | +2,298 |
+| Antifairy `$15` | 0 | +0 | +0 |
+
+These are remaining *signed* family totals on missing rows, not new prices.
+The heart-piece pickup/bounce suffix, thrown-item children, Hinox behavior,
+remaining guard states, Eyegore recoil/damage and Terrorpin damage children
+are not claimed complete. Further cohort-C owners, including Arrghus/Arrgi,
+also remain. The table below gives every remaining row.
+`remaining-blockers.csv/json` contains the same inventory; the full concrete
+routine/object/sprite vectors are retained beside it.
+
+| Iteration | Class | Diagnostic clocks short | Signed nonpoll gap | Blocker |
+| --- | --- | ---: | ---: | --- |
+| 34,318 | c | 262,698 | +18,222 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +18,222. |
+| 48,556 | c | 67,802 | +18,176 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +18,176. |
+| 95,127 | c | 153,534 | +18,338 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +18,338. |
+| 101,031 | d | 160,288 | +14,600 | Spotlight wait/arrival unresolved (1,429 source V-counter reads); mechanism unchanged. sprite $3b/$09 +2,588; other signed caller/child work +12,012. |
+| 109,000 | c | 110,360 | +26,464 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +26,464. |
+| 109,016 | d | 151,160 | +2,302 | Spotlight wait/arrival unresolved (1,428 source V-counter reads); mechanism unchanged. sprite $c8/$09 +1,600; sprite $72/$09 +724; other signed caller/child work -22. |
+| 129,746 | c | 155,150 | +31,212 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +31,212. |
+| 146,148 | c | 38,076 | +75,156 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +75,156. |
+| 146,786 | d | 2,700 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 2,700 short. other signed caller/child work -22. |
+| 146,790 | d | 2,602 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 2,602 short. other signed caller/child work -22. |
+| 146,794 | d | 5,012 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 5,012 short. other signed caller/child work -22. |
+| 146,798 | d | 7,822 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 7,822 short. other signed caller/child work -22. |
+| 146,802 | d | 10,414 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 10,414 short. other signed caller/child work -22. |
+| 146,806 | d | 12,286 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 12,286 short. other signed caller/child work -22. |
+| 146,810 | d | 14,732 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 14,732 short. other signed caller/child work -22. |
+| 150,378 | a | 21,708 | +49,376 | Remaining instruction owners: sprite $ec/$06 +10,178; other signed caller/child work +39,198. |
+| 154,637 | a | 380 | +4,720 | Remaining instruction owners: sprite $55/$09 +2,004; sprite $52/$09 +902; sprite $eb/$09 +516; other signed caller/child work +1,298. |
+| 158,519 | a | 224 | +2,896 | Remaining instruction owners: sprite $55/$09 +1,076; sprite $eb/$09 +516; other signed caller/child work +1,304. |
+| 158,558 | a | 1,798 | +2,602 | Remaining instruction owners: sprite $55/$09 +782; sprite $eb/$09 +516; other signed caller/child work +1,304. |
+| 158,729 | a | 138 | +496 | Remaining instruction owners: sprite $eb/$09 +294; sprite $55/$09 +218; other signed caller/child work -16. |
+| 160,109 | a | 720 | +918 | Remaining instruction owners: sprite $37/$09 +848; sprite $58/$09 +92; other signed caller/child work -22. |
+| 160,154 | a | 906 | +1,428 | Remaining instruction owners: sprite $55/$09 +500; other signed caller/child work +928. |
+| 161,123 | a | 5,586 | +6,178 | Remaining instruction owners: sprite $55/$09 +3,544; sprite $eb/$09 +718; other signed caller/child work +1,916. |
+| 162,301 | a | 1,386 | +7,214 | Remaining instruction owners: sprite $52/$09 +3,636; sprite $eb/$09 +294; other signed caller/child work +3,284. |
+| 162,819 | a | 6,524 | +6,948 | Remaining instruction owners: sprite $52/$09 +3,636; sprite $eb/$09 +294; other signed caller/child work +3,018. |
+| 168,346 | d | 83,650 | +8,290 | Instruction work cannot cover the pacing boundary: +8,290 nonpoll gap vs 83,650 short. sprite $55/$09 +500; other signed caller/child work +7,790. |
+| 171,309 | d | 21,452 | +8,290 | Instruction work cannot cover the pacing boundary: +8,290 nonpoll gap vs 21,452 short. sprite $2b/$09 +1,684; other signed caller/child work +6,606. |
+| 171,310 | d | 63,452 | +1,662 | Instruction work cannot cover the pacing boundary: +1,662 nonpoll gap vs 63,452 short. sprite $2b/$09 +1,684; other signed caller/child work -22. |
+| 172,380 | d | 143,322 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 143,322 short. other signed caller/child work -22. |
+| 172,413 | d | 2 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 2 short. other signed caller/child work -22. |
+| 174,033 | a | 665 | +2,210 | Remaining instruction owners: sprite $d4/$09 +888; sprite $d9/$09 +526; other signed caller/child work +796. |
+| 174,034 | a | 1,185 | +2,498 | Remaining instruction owners: sprite $d4/$09 +888; sprite $d9/$09 +526; other signed caller/child work +1,084. |
+| 174,280 | c | 112,958 | +26,464 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +26,464. |
+| 174,296 | d | 152,714 | +2,302 | Spotlight wait/arrival unresolved (1,427 source V-counter reads); mechanism unchanged. sprite $c8/$09 +1,600; sprite $72/$09 +724; other signed caller/child work -22. |
+| 180,178 | a | 15,372 | +20,086 | Remaining instruction owners: sprite $48/$09 +7,338; sprite $ec/$06 +1,428; sprite $c5/$09 +208; other signed caller/child work +11,112. |
+| 180,182 | a | 9,084 | +15,216 | Remaining instruction owners: sprite $ec/$06 +1,152; sprite $48/$09 +382; sprite $c5/$09 +208; other signed caller/child work +13,474. |
+| 181,568 | a | 724 | +2,692 | Remaining instruction owners: sprite $c4/$09 +920; sprite $dc/$09 +600; sprite $d9/$09 +600; other signed caller/child work +168. |
+| 186,606 | a | 242 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,608 | a | 830 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,614 | a | 392 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,616 | a | 942 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,618 | a | 50 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,620 | a | 488 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,622 | a | 112 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,624 | a | 706 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,626 | a | 174 | +1,060 | Remaining instruction owners: sprite $17/$09 +892; other signed caller/child work +168. |
+| 186,664 | a | 1,014 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,668 | a | 964 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,670 | a | 482 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,672 | a | 892 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,684 | a | 2,002 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,686 | a | 1,890 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,690 | a | 1,106 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,694 | a | 1,820 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,696 | a | 196 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 186,698 | a | 1,234 | +2,898 | Remaining instruction owners: sprite $33/$09 +1,234; sprite $17/$09 +892; sprite $79/$09 +604; other signed caller/child work +168. |
+| 187,779 | a | 3,170 | +3,360 | Remaining instruction owners: other signed caller/child work +3,360. |
+| 189,344 | a | 5,586 | +6,014 | Remaining instruction owners: sprite $c2/$09 +1,192; sprite $27/$09 +192; other signed caller/child work +4,630. |
+| 189,368 | a | 3,536 | +4,860 | Remaining instruction owners: sprite $c2/$09 +1,192; sprite $ad/$09 +840; other signed caller/child work +2,828. |
+| 189,923 | d | 224,566 | +1,170 | Spotlight wait/arrival unresolved (1,423 source V-counter reads); mechanism unchanged. sprite $c2/$09 +1,192; other signed caller/child work -22. |
+| 190,815 | a | 1,836 | +2,220 | Remaining instruction owners: sprite $c2/$09 +894; sprite $27/$09 +192; other signed caller/child work +1,134. |
+| 194,151 | c | 19,768 | +43,808 | Upload caller/receiver/return placement unresolved; mechanism unchanged. object $1c1 +3,316; object $1aa +2,368; object $1ab +2,288; other signed caller/child work +31,014. |
+| 194,994 | a | 3,508 | +6,374 | Remaining instruction owners: sprite $87/$09 +3,024; sprite $18/$09 +230; sprite $86/$09 +216; other signed caller/child work +2,904. |
+| 196,051 | a | 7,518 | +8,090 | Remaining instruction owners: other signed caller/child work +8,090. |
+| 198,239 | a | 540 | +3,990 | Remaining instruction owners: sprite $a7/$09 +1,760; sprite $18/$09 +882; sprite $e4/$09 +248; other signed caller/child work +1,100. |
+| 198,240 | a | 124 | +3,872 | Remaining instruction owners: sprite $a7/$09 +1,760; sprite $18/$09 +882; sprite $e4/$09 +248; other signed caller/child work +982. |
+| 209,808 | a | 5,088 | +15,104 | Remaining instruction owners: other signed caller/child work +15,104. |
+| 215,857 | a | 714 | +982 | Remaining instruction owners: other signed caller/child work +982. |
+| 215,858 | a | 716 | +982 | Remaining instruction owners: other signed caller/child work +982. |
+| 215,859 | a | 714 | +982 | Remaining instruction owners: other signed caller/child work +982. |
+| 217,220 | a | 714 | +1,100 | Remaining instruction owners: other signed caller/child work +1,100. |
+| 217,221 | a | 298 | +982 | Remaining instruction owners: other signed caller/child work +982. |
+| 217,222 | a | 714 | +982 | Remaining instruction owners: other signed caller/child work +982. |
+| 225,257 | a | 3,242 | +4,964 | Remaining instruction owners: object $239 +854; object $232 +352; other signed caller/child work +3,758. |
+| 242,100 | d | 44,504 | -22 | Instruction work cannot cover the pacing boundary: -22 nonpoll gap vs 44,504 short. other signed caller/child work -22. |
+| 242,103 | a | 476 | +928 | Remaining instruction owners: other signed caller/child work +928. |
+| 242,122 | a | 728 | +1,032 | Remaining instruction owners: other signed caller/child work +1,032. |
+| 253,040 | c | 3,568 | +28,930 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +28,930. |
+| 254,154 | d | 228,538 | +272 | Spotlight wait/arrival unresolved (1,428 source V-counter reads); mechanism unchanged. sprite $eb/$09 +294; other signed caller/child work -22. |
+| 255,517 | a | 172 | +1,942 | Remaining instruction owners: sprite $48/$09 +818; other signed caller/child work +1,124. |
+| 255,521 | a | 780 | +2,140 | Remaining instruction owners: sprite $48/$09 +818; other signed caller/child work +1,322. |
+| 255,525 | a | 466 | +2,140 | Remaining instruction owners: sprite $48/$09 +818; other signed caller/child work +1,322. |
+| 255,529 | a | 582 | +1,322 | Remaining instruction owners: other signed caller/child work +1,322. |
+| 255,572 | a | 1,022 | +2,556 | Remaining instruction owners: sprite $33/$09 +1,234; other signed caller/child work +1,322. |
+| 256,490 | c | 56,980 | +41,164 | Upload caller/receiver/return placement unresolved; mechanism unchanged. object $1db +4,476; object $31e +2,800; object $232 +1,056; other signed caller/child work +32,336. |
+| 281,028 | a | 7,050 | +8,550 | Remaining instruction owners: sprite $1c/$09 +460; other signed caller/child work +8,090. |
+| 282,475 | a | 160 | +740 | Remaining instruction owners: sprite $41/$05 +718; sprite $1c/$09 +460; other signed caller/child work -438. |
+| 294,833 | a | 9,554 | +13,308 | Remaining instruction owners: sprite $4a/$06 +7,492; sprite $11/$09 +2,274; sprite $22/$09 +1,918; other signed caller/child work +1,624. |
+| 294,835 | a | 10,282 | +17,876 | Remaining instruction owners: sprite $4a/$06 +7,594; sprite $41/$09 +2,728; sprite $11/$09 +2,274; other signed caller/child work +3,362. |
+| 294,837 | a | 12,132 | +14,662 | Remaining instruction owners: sprite $4a/$06 +6,420; sprite $41/$09 +2,728; sprite $11/$09 +2,274; other signed caller/child work +1,322. |
+| 294,844 | d | 7,502 | +7,442 | Instruction work cannot cover the pacing boundary: +7,442 nonpoll gap vs 7,502 short. sprite $4a/$06 +7,372; sprite $11/$09 +92; other signed caller/child work -22. |
+| 295,089 | d | 147,092 | +2,302 | Spotlight wait/arrival unresolved (1,427 source V-counter reads); mechanism unchanged. sprite $c8/$09 +1,600; sprite $72/$09 +724; other signed caller/child work -22. |
+| 297,585 | a | 7,012 | +7,944 | Remaining instruction owners: sprite $55/$09 +3,920; sprite $45/$09 +1,104; sprite $eb/$09 +516; other signed caller/child work +2,404. |
+| 297,638 | a | 1,442 | +6,706 | Remaining instruction owners: sprite $55/$09 +1,776; sprite $45/$09 +1,104; sprite $eb/$09 +516; other signed caller/child work +3,310. |
+| 297,863 | d | 130,988 | +5,974 | Spotlight wait/arrival unresolved (1,426 source V-counter reads); mechanism unchanged. sprite $bb/$09 +5,048; sprite $28/$09 +948; other signed caller/child work -22. |
+| 299,434 | d | 147,848 | +2,302 | Spotlight wait/arrival unresolved (1,427 source V-counter reads); mechanism unchanged. sprite $c8/$09 +1,600; sprite $72/$09 +724; other signed caller/child work -22. |
+| 299,510 | c | 232,210 | +18,442 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +18,442. |
+| 304,890 | a | 11,756 | +15,634 | Remaining instruction owners: sprite $0f/$06 +11,456; sprite $10/$09 +4,010; other signed caller/child work +168. |
+| 307,022 | d | 234,416 | +2,666 | Spotlight wait/arrival unresolved (1,405 source V-counter reads); mechanism unchanged. sprite $58/$09 +2,582; other signed caller/child work +84. |
+| 307,040 | c | 123,564 | +46,014 | Upload caller/receiver/return placement unresolved; mechanism unchanged. object $1dc +12,810; other signed caller/child work +33,204. |
+| 310,875 | a | 10,058 | +20,736 | Remaining instruction owners: sprite $0f/$06 +11,518; sprite $10/$09 +4,010; sprite $55/$09 +676; other signed caller/child work +4,532. |
+| 310,980 | d | 171,138 | +7,790 | Instruction work cannot cover the pacing boundary: +7,790 nonpoll gap vs 171,138 short. other signed caller/child work +7,790. |
+| 310,982 | d | 84,542 | +710 | Instruction work cannot cover the pacing boundary: +710 nonpoll gap vs 84,542 short. other signed caller/child work +710. |
+| 313,078 | a | 9,672 | +10,304 | Remaining instruction owners: sprite $19/$09 +8,560; sprite $41/$09 +716; other signed caller/child work +1,028. |
+| 313,255 | a | 13,568 | +13,672 | Remaining instruction owners: sprite $19/$09 +9,850; sprite $41/$09 +2,704; other signed caller/child work +1,118. |
+| 317,588 | a | 3,970 | +8,098 | Remaining instruction owners: sprite $45/$09 +92; other signed caller/child work +8,006. |
+| 322,193 | a | 9,984 | +10,876 | Remaining instruction owners: sprite $22/$09 +2,170; sprite $11/$09 +1,150; sprite $4a/$09 +1,082; other signed caller/child work +4,634. |
+| 327,434 | a | 508 | +574 | Remaining instruction owners: other signed caller/child work +574. |
+| 336,035 | a | 28 | +574 | Remaining instruction owners: other signed caller/child work +574. |
+| 336,046 | a | 152 | +470 | Remaining instruction owners: other signed caller/child work +470. |
+| 337,925 | a | 2,192 | +5,062 | Remaining instruction owners: sprite $26/$09 +1,876; other signed caller/child work +3,186. |
+| 338,240 | a | 1,166 | +6,626 | Remaining instruction owners: sprite $26/$09 +2,340; sprite $1e/$09 +1,100; other signed caller/child work +3,186. |
+| 338,673 | a | 8,148 | +8,992 | Remaining instruction owners: sprite $26/$09 +8,144; other signed caller/child work +848. |
+| 344,246 | a | 4,258 | +5,390 | Remaining instruction owners: sprite $8a/$08 +702; sprite $8e/$08 +168; sprite $1c/$08 +142; other signed caller/child work +4,378. |
+| 347,334 | a | 3,634 | +8,992 | Remaining instruction owners: sprite $26/$09 +8,144; other signed caller/child work +848. |
+| 348,203 | a | 3,224 | +5,096 | Remaining instruction owners: other signed caller/child work +5,096. |
+| 353,572 | a | 2,890 | +4,968 | Remaining instruction owners: other signed caller/child work +4,968. |
+| 354,592 | a | 132 | +470 | Remaining instruction owners: other signed caller/child work +470. |
+| 354,595 | d | 588 | +574 | Instruction work cannot cover the pacing boundary: +574 nonpoll gap vs 588 short. other signed caller/child work +574. |
+| 354,619 | a | 314 | +574 | Remaining instruction owners: other signed caller/child work +574. |
+| 356,806 | a | 1,402 | +6,654 | Remaining instruction owners: sprite $ec/$0a +2,926; sprite $1e/$09 +1,100; sprite $d9/$09 +300; other signed caller/child work +2,328. |
+| 367,327 | a | 4,494 | +5,128 | Remaining instruction owners: sprite $83/$09 +1,166; sprite $38/$09 +104; sprite $84/$09 +96; other signed caller/child work +3,762. |
+| 370,567 | a | 1,276 | +1,510 | Remaining instruction owners: other signed caller/child work +1,510. |
+| 372,814 | a | 4,278 | +5,814 | Remaining instruction owners: sprite $8e/$09 +1,584; sprite $da/$09 +108; other signed caller/child work +4,122. |
+| 378,071 | a | 842 | +2,132 | Remaining instruction owners: sprite $92/$09 +1,562; other signed caller/child work +570. |
+| 378,077 | a | 232 | +1,748 | Remaining instruction owners: sprite $92/$09 +102; other signed caller/child work +1,646. |
+| 378,080 | a | 188 | +1,188 | Remaining instruction owners: sprite $92/$09 +102; other signed caller/child work +1,086. |
+| 378,092 | a | 802 | +1,324 | Remaining instruction owners: sprite $92/$09 +238; other signed caller/child work +1,086. |
+| 378,093 | d | 1,364 | +1,324 | Instruction work cannot cover the pacing boundary: +1,324 nonpoll gap vs 1,364 short. sprite $92/$09 +238; other signed caller/child work +1,086. |
+| 378,094 | a | 980 | +1,324 | Remaining instruction owners: sprite $92/$09 +238; other signed caller/child work +1,086. |
+| 378,096 | a | 1,100 | +2,166 | Remaining instruction owners: sprite $92/$09 +238; other signed caller/child work +1,928. |
+| 378,098 | a | 656 | +1,198 | Remaining instruction owners: sprite $92/$09 +238; other signed caller/child work +960. |
+| 378,105 | a | 154 | +1,198 | Remaining instruction owners: sprite $92/$09 +238; other signed caller/child work +960. |
+| 378,541 | a | 4,908 | +6,364 | Remaining instruction owners: sprite $92/$09 +4,454; other signed caller/child work +1,910. |
+| 378,830 | a | 1,068 | +5,414 | Remaining instruction owners: sprite $92/$09 +4,454; other signed caller/child work +960. |
+| 380,956 | d | 19,320 | +766 | Instruction work cannot cover the pacing boundary: +766 nonpoll gap vs 19,320 short. other signed caller/child work +766. |
+| 383,633 | a | 5,726 | +7,198 | Remaining instruction owners: other signed caller/child work +7,198. |
+| 389,654 | a | 38,208 | +47,408 | Remaining instruction owners: other signed caller/child work +47,408. |
+| 390,579 | a | 14,912 | +22,044 | Remaining instruction owners: sprite $12/$09 +9,046; sprite $4a/$06 +7,474; sprite $11/$09 +2,274; other signed caller/child work +1,720. |
+| 390,877 | a | 5,784 | +12,380 | Remaining instruction owners: sprite $4a/$06 +6,540; sprite $11/$09 +2,298; sprite $22/$09 +1,918; other signed caller/child work +1,624. |
+| 390,887 | d | 6,968 | +6,490 | Instruction work cannot cover the pacing boundary: +6,490 nonpoll gap vs 6,968 short. sprite $4a/$06 +6,420; sprite $11/$09 +92; other signed caller/child work -22. |
+| 400,064 | a | 9,414 | +13,398 | Remaining instruction owners: sprite $41/$09 +6,098; sprite $22/$09 +4,322; sprite $11/$09 +1,100; other signed caller/child work +796. |
+| 401,366 | a | 5,188 | +5,380 | Remaining instruction owners: sprite $aa/$09 +3,132; sprite $d3/$09 +1,530; sprite $41/$09 +344; other signed caller/child work +374. |
+| 401,471 | d | 137,418 | +5,410 | Spotlight wait/arrival unresolved (1,421 source V-counter reads); mechanism unchanged. sprite $bb/$09 +5,432; other signed caller/child work -22. |
+| 401,612 | d | 230,738 | +2,694 | Spotlight wait/arrival unresolved (1,426 source V-counter reads); mechanism unchanged. sprite $bb/$09 +2,716; other signed caller/child work -22. |
+| 401,764 | a | 2,044 | +2,962 | Remaining instruction owners: sprite $aa/$09 +2,588; other signed caller/child work +374. |
+| 403,249 | d | 228,489 | +2,070 | Spotlight wait/arrival unresolved (1,417 source V-counter reads); mechanism unchanged. sprite $b5/$09 +2,092; other signed caller/child work -22. |
+| 403,304 | d | 237,646 | +9,198 | Spotlight wait/arrival unresolved (1,380 source V-counter reads); mechanism unchanged. sprite $0e/$09 +3,526; sprite $12/$09 +2,556; sprite $22/$09 +1,932; other signed caller/child work +84. |
+| 405,837 | c | 338,940 | +28,930 | Upload caller/receiver/return placement unresolved; mechanism unchanged. other signed caller/child work +28,930. |
+| 407,899 | d | 243,696 | +8,402 | Spotlight wait/arrival unresolved (1,425 source V-counter reads); mechanism unchanged. sprite $aa/$09 +3,132; sprite $a9/$09 +3,090; sprite $12/$09 +1,116; other signed caller/child work +84. |
+| 410,098 | c | 280,306 | +27,798 | Upload caller/receiver/return placement unresolved; mechanism unchanged. object $237 +328; other signed caller/child work +27,470. |
+| 411,310 | a | 2,082 | +2,720 | Remaining instruction owners: sprite $d2/$09 +2,076; sprite $eb/$09 +516; other signed caller/child work +128. |
+| 411,514 | a | 4,368 | +5,364 | Remaining instruction owners: sprite $d2/$09 +4,474; sprite $eb/$09 +516; other signed caller/child work +374. |
+| 411,545 | a | 464 | +2,720 | Remaining instruction owners: sprite $d2/$09 +2,076; sprite $eb/$09 +516; other signed caller/child work +128. |
+| 411,549 | a | 1,218 | +3,012 | Remaining instruction owners: sprite $d2/$09 +2,076; sprite $eb/$09 +516; sprite $0c/$09 +292; other signed caller/child work +128. |
+| 411,555 | a | 532 | +2,720 | Remaining instruction owners: sprite $d2/$09 +2,076; sprite $eb/$09 +516; other signed caller/child work +128. |
+| 411,556 | a | 2,478 | +2,720 | Remaining instruction owners: sprite $d2/$09 +2,076; sprite $eb/$09 +516; other signed caller/child work +128. |
+| 427,806 | a | 706 | +6,728 | Remaining instruction owners: sprite $9a/$08 +322; sprite $81/$08 +126; sprite $c6/$09 +108; object $232 +704; object $31d +544; object $331 +484; other signed caller/child work +4,126. |
+| 435,694 | a | 1,248 | +6,098 | Remaining instruction owners: sprite $21/$09 +5,568; sprite $23/$09 +232; sprite $9a/$09 +178; other signed caller/child work +120. |
+| 435,695 | a | 452 | +6,098 | Remaining instruction owners: sprite $21/$09 +5,568; sprite $23/$09 +232; sprite $9a/$09 +178; other signed caller/child work +120. |
+| 435,696 | a | 692 | +6,098 | Remaining instruction owners: sprite $21/$09 +5,568; sprite $23/$09 +232; sprite $9a/$09 +178; other signed caller/child work +120. |
+| 440,926 | a | 2,612 | +6,484 | Remaining instruction owners: sprite $9a/$08 +322; sprite $81/$08 +126; sprite $c6/$09 +108; object $232 +704; object $31d +544; object $331 +484; other signed caller/child work +3,882. |
+| 451,842 | a | 187,580 | +222,524 | Remaining instruction owners: sprite $21/$09 +5,568; sprite $24/$09 +232; sprite $9a/$09 +178; other signed caller/child work +216,546. |
+| 452,255 | a | 1,998 | +2,270 | Remaining instruction owners: sprite $37/$09 +848; sprite $9a/$09 +730; sprite $24/$09 +464; other signed caller/child work +120. |
+| 456,721 | a | 15,294 | +98,616 | Remaining instruction owners: sprite $8d/$08 +91,954; sprite $8c/$08 +3,480; object $301 +184; other signed caller/child work +2,998. |
+| 456,849 | a | 70,992 | +78,326 | Remaining instruction owners: sprite $8c/$09 +46,602; sprite $8d/$09 +12,194; other signed caller/child work +19,530. |
+| 456,855 | a | 80,820 | +82,566 | Remaining instruction owners: sprite $8c/$09 +46,616; sprite $8d/$09 +12,194; other signed caller/child work +23,756. |
+| 456,856 | a | 83,004 | +84,556 | Remaining instruction owners: sprite $8c/$09 +46,384; sprite $8d/$09 +12,194; other signed caller/child work +25,978. |
+| 456,857 | a | 83,004 | +84,478 | Remaining instruction owners: sprite $8c/$09 +46,210; sprite $8d/$09 +12,194; other signed caller/child work +26,074. |
+| 456,858 | a | 82,820 | +85,904 | Remaining instruction owners: sprite $8c/$09 +46,296; sprite $8d/$09 +12,194; other signed caller/child work +27,414. |
+| 456,859 | a | 81,256 | +86,980 | Remaining instruction owners: sprite $8c/$09 +46,412; sprite $8d/$09 +12,194; other signed caller/child work +28,374. |
+| 456,860 | a | 83,004 | +88,204 | Remaining instruction owners: sprite $8c/$09 +46,296; sprite $8d/$09 +12,194; other signed caller/child work +29,714. |
+| 456,861 | a | 83,004 | +89,382 | Remaining instruction owners: sprite $8c/$09 +46,514; sprite $8d/$09 +12,194; other signed caller/child work +30,674. |
+| 456,862 | a | 83,004 | +89,252 | Remaining instruction owners: sprite $8c/$09 +46,296; sprite $8d/$09 +12,194; other signed caller/child work +30,762. |
+| 456,863 | a | 80,788 | +91,358 | Remaining instruction owners: sprite $8c/$09 +46,560; sprite $8d/$09 +12,194; other signed caller/child work +32,604. |
+| 456,864 | a | 82,586 | +89,284 | Remaining instruction owners: sprite $8c/$09 +46,328; sprite $8d/$09 +12,194; other signed caller/child work +30,762. |
+| 456,865 | a | 78,702 | +96,816 | Remaining instruction owners: sprite $8c/$09 +46,658; sprite $8d/$09 +12,194; other signed caller/child work +37,964. |
+| 456,900 | a | 64,096 | +78,384 | Remaining instruction owners: sprite $8c/$09 +46,560; sprite $8d/$09 +12,194; other signed caller/child work +19,630. |
+| 456,901 | a | 75,900 | +77,268 | Remaining instruction owners: sprite $8c/$09 +46,778; sprite $8d/$09 +12,194; other signed caller/child work +18,296. |
+| 456,902 | a | 76,368 | +77,018 | Remaining instruction owners: sprite $8c/$09 +46,560; sprite $8d/$09 +12,194; other signed caller/child work +18,264. |
+| 456,903 | a | 74,462 | +79,294 | Remaining instruction owners: sprite $8c/$09 +46,760; sprite $8d/$09 +12,194; other signed caller/child work +20,340. |
+| 456,904 | a | 76,368 | +79,030 | Remaining instruction owners: sprite $8c/$09 +46,528; sprite $8d/$09 +12,194; other signed caller/child work +20,308. |
+| 456,905 | a | 76,368 | +81,212 | Remaining instruction owners: sprite $8c/$09 +46,634; sprite $8d/$09 +12,194; other signed caller/child work +22,384. |
+| 456,906 | a | 76,368 | +80,962 | Remaining instruction owners: sprite $8c/$09 +46,416; sprite $8d/$09 +12,194; other signed caller/child work +22,352. |
+| 456,907 | a | 74,620 | +83,670 | Remaining instruction owners: sprite $8c/$09 +46,220; sprite $8d/$09 +12,194; other signed caller/child work +25,256. |
+| 457,143 | a | 58,342 | +59,788 | Remaining instruction owners: sprite $8c/$09 +46,680; sprite $8d/$09 +11,256; sprite $8d/$06 +194; other signed caller/child work +1,658. |
+| 457,147 | a | 58,508 | +59,560 | Remaining instruction owners: sprite $8c/$09 +46,452; sprite $8d/$09 +11,256; sprite $8d/$06 +194; other signed caller/child work +1,658. |
+| 457,151 | a | 58,402 | +59,948 | Remaining instruction owners: sprite $8c/$09 +46,568; sprite $8d/$09 +11,256; sprite $8d/$06 +194; other signed caller/child work +1,930. |
+| 457,309 | a | 73,956 | +76,992 | Remaining instruction owners: sprite $8c/$09 +46,472; sprite $8d/$09 +11,256; other signed caller/child work +19,264. |
+| 457,445 | a | 68,470 | +75,738 | Remaining instruction owners: sprite $8c/$09 +46,626; sprite $8d/$09 +10,318; other signed caller/child work +18,794. |
+
+### Complete ROM and CPU-picture admission
+
+The supplied eight-slice ROM helper passes **1,473,123 iterations** with
+**unexplained 0**, **1,530 missing / 0 excess / 0 false positives**.
+`clean-admission-commands.json`, `rom-gate-final.txt`,
+`rom-counts-final.txt` and `admission-clean/rom.csv` retain the final run.
+Both final binary and final source identities are checked across all gates.
+
+| Missing before iteration | ROM before → after | Live before → after |
+| --- | ---: | ---: |
+| 94,334 | 2 → 2 | 2 → 2 |
+| 141,568 | 7 → 7 | 7 → 7 |
+| 228,499 | 73 → 74 | 73 → 74 |
+| 380,243 | 153 → 135 | 153 → 144 |
+| 461,989 | 209 → 190 | 209 → 199 |
+
+The independent eight-slice `--cpu-video` gate passes all **1,473,123
+iterations / unexplained 0** and retains **1,462,997 exact pictures**.
+All eight picture-hash files are byte-identical to main.
+`cpu-picture-agreement.json`, `cpu-gate.txt` and
+`cpu-admission-final/` retain the CPU-only proof.
+
+### One continuous live census and direct poll attribution
+
+Exactly **one continuous seeded** `--live-apu-reads --pacing-predictor`
+process completes **1,473,123 iterations**, carrying SPC state across seeds.
+Its gate passes with **unexplained 0**. Live totals improve from
+**1,899 → 1,566 missing**, **269 → 36 excess** and **75 → 7 false positives**.
+`live-command.json`, `live-gate.txt`, `live-counts.txt`, `live.csv` and
+`live-timing.jsonl.zst` retain the single launch and complete run.
+
+There are **281 changed live hold rows**. **136** have exactly the same
+changed ROM before/after pair. Every other **145** is directly attributed:
+**four** to the pendant episode at 228,499 (`$08:C3FD`), **six** to the
+crystal episode at 735,229 and **135** to the crystal episode at 881,095
+(both `$08:C606`). **Zero rows are unattributed.**
+The shared ROM contribution is **-96 / 0 / 0** missing/excess/FP;
+the song-poll contribution is **-237 / -233 / -68**, giving the full
+**-333 / -233 / -68** live delta.
+
+The two crystal first-zero polls now agree with source. The pendant first
+zero moves one iteration later and contributes **+9 / +9 / +2**; this
+regression is retained, not hidden or fitted away. No polling-price or
+polling mechanism changes are made.
+
+The source PCs are established by **20 direct APUI bus receipts**: start
+and first-zero reads in ten episodes from the hash-verified cold unmodified-ROM
+CPU replay. Every receipt is rechecked against the retained source bus file.
+The sampled source main-loop status reads at `$00:80E1` are separate from
+these game song-end predicates. PCs are not inferred from sprite labels.
+`poll-source-identity.json`, `poll-source-verification.json` and
+`source-poll-episode-proof.json` retain the source evidence. The complete
+source context/read payload hashes agree across both traces, with zero
+source payload differences.
+
+Bounds are derived **without changed holds**. Actual native boolean-poll
+clusters overlap the direct source intervals. Live-versus-ROM differences
+are measured separately for main-without-VWF and VWF in each version,
+removing intended common instruction prices. Actual native/source contexts
+and before/after boolean-poll differences also locate divergent execution.
+Recovery ends at the first actual reseed before the containing 2,000-iteration
+boundary, otherwise at that boundary after the final independently observed
+event. `live-execution-events.json` and `poll-attribution.json` retain these
+cues and bounds.
+
+| Episode | Direct source PC | Source first zero | Native first zero before → after | Last execution event | Recovery end | Live-only rows | Delta missing / excess / FP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 → 94,854 | — | 96,000 | 0 | +0 / +0 / +0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,088 → 142,088 | — | 144,000 | 0 | +0 / +0 / +0 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,035 → 229,036 | 229,069 | 230,000 | 4 | +9 / +9 / +2 |
+| 380,243 | `$08:C606` | 380,881 | 380,881 → 380,881 | — | 382,000 | 0 | +0 / +0 / +0 |
+| 461,989 | `$08:C606` | 462,628 | 462,628 → 462,628 | — | 464,000 | 0 | +0 / +0 / +0 |
+| 626,618 | `$08:C606` | 627,256 | 627,257 → 627,257 | 629,601 | 629,845 | 0 | +0 / +0 / +0 |
+| 735,229 | `$08:C606` | 735,867 | 735,868 → 735,867 | 736,633 | 738,000 | 6 | -12 / -12 / -3 |
+| 881,095 | `$08:C606` | 881,734 | 881,733 → 881,734 | 884,326 | 884,327 | 135 | -234 / -230 / -67 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,734 → 1,064,734 | — | 1,066,000 | 0 | +0 / +0 / +0 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,335 → 1,318,335 | — | 1,320,000 | 0 | +0 / +0 / +0 |
+
+Every live-only changed hold row is listed below. `changed-live-holds.csv/json`
+contains the same budgets, metric deltas and direct-PC attribution;
+`all-changed-live-holds.csv` includes all 136 shared ROM changes.
+
+| Iteration | Source lag | ROM holds before → after | Live holds before → after | Episode / direct source PC |
+| --- | ---: | ---: | ---: | --- |
+| 229,036 | 5 | 5 → 5 | 5 → 0 | 228,499 / `$08:C3FD` |
+| 229,037 | 0 | 0 → 0 | 0 → 5 | 228,499 / `$08:C3FD` |
+| 229,039 | 4 | 4 → 4 | 4 → 0 | 228,499 / `$08:C3FD` |
+| 229,042 | 0 | 0 → 0 | 0 → 4 | 228,499 / `$08:C3FD` |
+| 735,937 | 1 | 1 → 1 | 0 → 1 | 735,229 / `$08:C606` |
+| 735,938 | 0 | 0 → 0 | 1 → 0 | 735,229 / `$08:C606` |
+| 735,947 | 5 | 4 → 4 | 0 → 4 | 735,229 / `$08:C606` |
+| 735,948 | 0 | 0 → 0 | 4 → 0 | 735,229 / `$08:C606` |
+| 736,420 | 8 | 7 → 7 | 0 → 7 | 735,229 / `$08:C606` |
+| 736,422 | 0 | 0 → 0 | 7 → 0 | 735,229 / `$08:C606` |
+| 881,794 | 0 | 0 → 0 | 1 → 0 | 881,095 / `$08:C606` |
+| 881,795 | 1 | 1 → 1 | 0 → 1 | 881,095 / `$08:C606` |
+| 881,804 | 0 | 0 → 0 | 4 → 0 | 881,095 / `$08:C606` |
+| 881,805 | 5 | 4 → 4 | 0 → 4 | 881,095 / `$08:C606` |
+| 882,275 | 8 | 8 → 8 | 0 → 8 | 881,095 / `$08:C606` |
+| 882,276 | 0 | 0 → 0 | 8 → 0 | 881,095 / `$08:C606` |
+| 882,475 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,476 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,477 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,484 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,485 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,486 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,529 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,530 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,531 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,538 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,539 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,540 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,591 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,592 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,593 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,600 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,601 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,602 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,676 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,677 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,678 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,686 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,687 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,688 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,740 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,741 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,742 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,750 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,751 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,752 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,804 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,805 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,806 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,814 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,815 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,816 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,893 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,894 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,895 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,919 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,920 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,921 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,957 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,958 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,959 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 882,983 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,984 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 882,985 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,053 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,054 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,055 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,071 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,072 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,073 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,117 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,118 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,119 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,135 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,136 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,137 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,181 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,182 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,183 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,199 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,200 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,201 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,272 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,273 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,274 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,298 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,299 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,300 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,338 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,339 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,340 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,364 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,365 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,366 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,398 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,399 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,400 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,424 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,425 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,426 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,483 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,484 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,485 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,509 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,510 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,511 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,539 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,540 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,541 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,565 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,566 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,567 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,601 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,602 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,603 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,627 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,628 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,629 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,697 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,698 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,699 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,724 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,725 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,726 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,727 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,728 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,729 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,754 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,755 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,756 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,765 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,766 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,767 | 2 | 2 → 2 | 0 → 2 | 881,095 / `$08:C606` |
+| 883,792 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,793 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,794 | 0 | 0 → 0 | 2 → 0 | 881,095 / `$08:C606` |
+| 883,842 | 7 | 7 → 7 | 0 → 7 | 881,095 / `$08:C606` |
+| 883,881 | 0 | 0 → 0 | 7 → 0 | 881,095 / `$08:C606` |
+| 883,977 | 7 | 7 → 7 | 0 → 7 | 881,095 / `$08:C606` |
+| 884,319 | 0 | 0 → 0 | 59 → 0 | 881,095 / `$08:C606` |
+| 884,320 | 0 | 0 → 0 | 6 → 0 | 881,095 / `$08:C606` |
+| 884,321 | 0 | 0 → 0 | 25 → 0 | 881,095 / `$08:C606` |
+| 884,322 | 59 | 59 → 59 | 1 → 59 | 881,095 / `$08:C606` |
+| 884,323 | 6 | 6 → 6 | 1 → 6 | 881,095 / `$08:C606` |
+| 884,324 | 25 | 25 → 25 | 1 → 25 | 881,095 / `$08:C606` |
+
+
+### Verification boundary
+
+The touched-module groups pass: ancilla **50**, dungeon **64**, sprite draw
+**304**, sprite **120**, sprite main **16**, guard **13**, Mothula/spike
+**seven**, Hinox/shop **eight**, and player **50**, including all **24 new
+ROM fixtures**. Generator tests pass (**eight**). Production builds are
+warning-free. Library compilation retains the baseline **16 distinct warning
+headers**, with no additions. `filtered-summary.json`, `cleanup-commands.json`,
+`generator-tests.log` and `warning-agreement.json` retain the results.
+
+After all runtime and fixture changes, the full default library suite ran
+**once**, with `CARGO_INCREMENTAL=0` solely to bound rebuildable cache size:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+SNES records **505 passed / seven ignored**. Zelda records **3,097 passed /
+one failed / three ignored**. The sole failure is the explicitly permitted
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There is no other failure and no post-full repair or repeat.
+`full-library-command.json` and `full-library.log` preserve the complete run.
+
+All **942** frozen source files and the final binary retain their hashes
+across the final ROM, CPU-picture, selected-profile, live and library checks.
+The previous documentation is preserved byte-for-byte before this appended
+section. Final authority and reused-artifact checks are unchanged.
+
+
+Final source, binary, authority, reused-artifact and resource checks are in
+`runtime-source-agreement.json`, `authorities-after.json`,
+`prior-final-verification.json`, `resources.json`, `verification.json`,
+`runtime.patch` and `artifact-hashes.json`.
+Every launched process has completed. Every game-binary invocation uses
+CPU-only `--logical-replay`. There is no GPU, `--video`, cached-A/V or
+external Snes9x run, new runtime environment switch, classifier, matcher or
+P2 edit. The ledger, oracle cache and gate helpers remain read-only.
+No commit, push or `cargo fmt` occurs. The worktree target remains below
+**12,000,000,000 bytes**.
+
+These are seeded logical, CPU-picture and unmodified-ROM instruction proofs.
+The 190 listed instruction/protocol/wait/phase blockers remain as classified.
+Cold exact A/V acceptance is a separate boundary.
