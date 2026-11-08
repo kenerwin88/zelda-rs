@@ -139,7 +139,7 @@ fn prefix28_arrghus_draw_all_states_waves_clips_and_page_crossings_exclude_child
             n.write_wram_word(0x90,oam);n.sync_native_game_state_from_ram();
             let source=marker29_machine(&n,0x1eb840,slot).unwrap();
             crate::cycle_ledger::assert_rom_marker_owners_work(&[0x1eb840,0x1e87f0],source,
-                |s|s.cpu.k==0x1e && ((0xb840..0xb8b4).contains(&s.cpu.pc)||(0x87f0..0x87f4).contains(&s.cpu.pc)),
+                |s|s.cpu.k==0x1e && ((0xb840..0xb8b4).contains(&s.cpu.pc)||(0x87f0..0x87f5).contains(&s.cpu.pc)),
                 ||n.arrghus_draw(slot));
         } }
     } } } }

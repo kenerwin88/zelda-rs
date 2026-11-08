@@ -3,6 +3,7 @@
 use super::*;
 use crate::game_state::constants::FORCE_MOVE_ANY_DIRECTION;
 use crate::game_state::{CollisionAxis, CollisionDirection, CollisionOrder, MovementProbeKind};
+use crate::types::sign8;
 
 impl ZeldaState {
     pub(super) fn handle_nudging(&mut self, arg_r0: i8) {
@@ -83,11 +84,17 @@ impl ZeldaState {
             return;
         }
 
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07bdb1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07bdb1); b.taken(0x07bdb5); b.block(0x07bdba);
         let mut used_swim_axis_reprobe = false;
         if self.game_state.player.follower_link.handler_state() == 4 {
+            b.block(0x07bdc0);
             if self.game_state.dungeon.moving_floor.floor_y_velocity_low() == 0 {
+                b.block(0x07bdc5);
                 self.reset_all_acceleration();
-            }
+            } else { b.taken(0x07bdc3); }
+            b.block(0x07bdc8);
             if self
                 .game_state
                 .player
@@ -95,9 +102,18 @@ impl ZeldaState {
                 .num_orthogonal_directions()
                 != 0
             {
+                b.block(0x07bdcc);
                 self.link_add_in_velocity_y_falling();
+                b.block(0x07bdcf);
                 used_swim_axis_reprobe = true;
-            }
+            } else { b.taken(0x07bdca); }
+        } else { b.taken(0x07bdbe); }
+
+        if !used_swim_axis_reprobe {
+            b.block(0x07bdd1);
+            if r14&2!=0 { b.taken(0x07bdd5); }
+            else { b.block(0x07bdd7); if r14&5!=5 { b.taken(0x07bddd); } }
+            if r14&2!=0 || r14&5==5 { b.block(0x07bddf); b.block(0x07bde5); b.block(0x07bde8); }
         }
 
         if r14 & 2 != 0 || (r14 & 5) == 5 {
@@ -115,12 +131,18 @@ impl ZeldaState {
         r14: u16,
         used_swim_axis_reprobe: bool,
     ) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07bdeb));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        if !used_swim_axis_reprobe { b.block(0x07bdeb); }
         self.follower_link_state_mut().set_pit_correction_active();
 
         if !used_swim_axis_reprobe {
             if r14 & 2 == 2 {
+                b.block(0x07bdf8);
                 self.link_add_in_velocity_y_falling();
+                b.block(0x07bdfb);
             } else {
+                b.taken(0x07bdf6); b.block(0x07bdfd);
                 if self
                     .game_state
                     .player
@@ -128,10 +150,13 @@ impl ZeldaState {
                     .num_orthogonal_directions()
                     == 1
                 {
+                    b.block(0x07be03); b.block(0x07bea3); b.block(0x07beae);
                     self.handle_pushing_bonking_snaps_return();
                     return;
                 }
+                b.taken(0x07be01); b.block(0x07be06);
                 self.link_add_in_velocity_y_falling();
+                b.block(0x07be09);
                 if self
                     .game_state
                     .player
@@ -139,12 +164,40 @@ impl ZeldaState {
                     .num_orthogonal_directions()
                     == 2
                 {
+                    b.taken(0x07be0d); b.block(0x07be03); b.block(0x07bea3); b.block(0x07beae);
                     self.handle_pushing_bonking_snaps_return();
                     return;
                 }
             }
         }
 
+        b.block(0x07be0f);
+        if r14&5==5 { b.taken(0x07be15); b.block(0x07be5d); b.block(0x07be60); b.block(0x07be63); }
+        else {
+            b.block(0x07be17);
+            let velocity=self.game_state.player.follower_link.y_velocity();
+            let (test, aligned, bonk)=if r14&4!=0 {
+                b.block(0x07be1b);
+                let difference=if sign8(velocity) { b.taken(0x07be1f); velocity } else { b.block(0x07be21); velocity.wrapping_neg() };
+                b.block(0x07be24);
+                if sign8(difference) { b.block(0x07be26); } else { b.taken(0x07be24); }
+                b.block(0x07be28);
+                (0x07be30,0x07be32,0x07be38)
+            } else {
+                b.taken(0x07be19); b.block(0x07be40);
+                let difference=if sign8(velocity) { b.block(0x07be46); velocity.wrapping_neg() } else { b.taken(0x07be44); velocity };
+                b.block(0x07be49);
+                if sign8(difference) { b.block(0x07be4b); } else { b.taken(0x07be49); }
+                b.block(0x07be4d);
+                (0x07be55,0x07be57,0x07be5d)
+            };
+            if r14&2!=0 { b.taken(test); }
+            else {
+                b.block(aligned);
+                if self.game_state.player.follower_link.x()&7!=0 { b.taken(aligned+4); b.block(0x07be65); b.block(0x07be68); }
+                else { b.block(bonk); b.block(bonk+3); b.block(bonk+6); }
+            }
+        }
         if (r14 & 5) == 5 {
             self.link_bonk_and_smash();
             self.repel_dash();
@@ -181,9 +234,29 @@ impl ZeldaState {
     }
 
     fn finish_pushing_bonking_snaps_y_after_final_bonk(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07be6b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let p=&self.game_state.player.follower_link;
+        b.block(0x07be6b);
+        if p.last_direction_moved_towards().wrapping_mul(2)!=p.facing() { b.taken(0x07be70); }
+        else {
+            b.block(0x07be72);
+            if p.button_b_frames()!=0 { b.taken(0x07be7c); }
+            else {
+                b.block(0x07be7e);
+                if !sign8(p.push_fatigue_timer().wrapping_sub(1)) { b.taken(0x07be81); b.block(0x07beae); }
+            }
+            if p.button_b_frames()!=0 || sign8(p.push_fatigue_timer().wrapping_sub(1)) {
+                b.block(0x07be83);
+                if self.game_state.player.tile_detection.misc_tiles()&0x20==0 { b.taken(0x07be8b); }
+                else { b.block(0x07be8d); }
+                b.block(0x07be94);
+            }
+        }
         if self.handle_pushing_bonking_dragstate_tail() {
             return;
         }
+        b.block(0x07bea3); b.block(0x07beae);
         self.handle_pushing_bonking_snaps_return();
     }
 
@@ -2479,6 +2552,7 @@ impl ZeldaState {
             b.taken(tail + 2);
         } else {
             b.block(tail + 4);
+            if y_axis { b.block(0x07bea3); }
         }
         b.block(tail + 21);
     }

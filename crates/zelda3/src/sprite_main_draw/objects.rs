@@ -1714,27 +1714,54 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_33_RupeePull(int k) {  // 86c017
     pub(super) fn sprite_33_rupee_pull(&mut self, k: usize) {
+        let _bounce = self.lag_free.then(|| crate::cycle_ledger::routine(0x06c017));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06c017);
+        {
+            let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e24d));
+            b.block(0x05e24d);
+            self.sprite_pull_for_rupees(k);
+            b.block(0x05e253);
+        }
+        b.block(0x06c01b);
+    }
+
+    fn sprite_pull_for_rupees(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x05e255));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x05e255);
         self.sprite_prep_oam_coord(k);
-        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
+        b.block(0x05e259);
+        if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom05F94E) {
             return;
         }
+        b.block(0x05e25c);
         if self.sprite_check_if_link_is_busy() {
+            b.block(0x05e260); b.taken(0x05e260); b.block(0x05e28b);
             return;
         }
-        if self.sprite_check_damage_to_link_same_layer(k) {
+        b.block(0x05e260); b.block(0x05e262);
+        if self.sprite_check_damage_same_layer_long_marked(k) {
+            b.block(0x05e266); b.block(0x05e268);
             self.follower_link_state_mut()
                 .set_pull_for_rupees_sprite_need();
             let value = 1;
             self.sprite_slot_view_mut(k).set_a(value);
-        } else if self.sprite_slot_view(k).a() != 0 {
+        } else {
+            b.block(0x05e266); b.taken(0x05e266); b.block(0x05e271);
+            if self.sprite_slot_view(k).a()==0 { b.taken(0x05e274); b.block(0x05e28b); return; }
+            b.block(0x05e276);
             self.follower_link_state_mut()
                 .clear_pull_for_rupees_sprite_need();
             if self.game_state.player.follower_link.state_bits_has(1) {
+                b.block(0x05e280);
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
                 self.rupee_pull_spawn_prize(k);
+                b.block(0x05e287);
                 self.sprite_spawn_poof_garnish(k);
-            }
+            } else { b.taken(0x05e27e); }
+            b.block(0x05e28b);
         }
     }
 

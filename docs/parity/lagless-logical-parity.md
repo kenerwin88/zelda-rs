@@ -12446,3 +12446,370 @@ replay modes; all launched processes complete. Only this worktree's build
 incremental cache is removed to maintain the target-size limit.
 
 The worktree target occupies **9.75 GB allocated**, below the **16 GB** limit. All gate, test, diagnostic and trace-analysis processes have exited.
+
+## Lagless prefix hunt 29
+
+This batch starts from **`cd4e1fbe`**, on `codex/prefix-hunt29`. The frozen
+production executable is `target/prefix-hunt29/zelda3-final`, SHA-256
+`b16f3b997af2460d4a308c9f01b8b16756d4abd4798b7bec052341d2eea37332`.
+All evidence below is in `target/prefix-hunt29/` unless otherwise stated.
+The regenerated full-v2 ledger contains **1,473,123 iterations**. Before reuse,
+all 387 hunt-28 artifact receipts, 341 retained source receipts and 14 authority
+hashes match; `baseline-hash-verification.json`, `prior-artifact-verification.json`,
+`prior-source-verification.json` and `authorities-before.json` retain that check.
+Missing prior hunts 10/11/21/22 are not consulted.
+
+### Concrete owners, source prices and fixtures
+
+The original 50 class-(a) rows in 141,568–228,499 rank by closable source
+families as follows. Family coverage overlaps; these are not independent NMI
+recoveries or fitted prices. All listed family vectors close exactly, including
+the already-priced children. The cohort recovers **22 whole NMI rows**.
+
+| Owner family | Original cohort rows closed | Source-owned clocks newly priced in those rows |
+| --- | ---: | ---: |
+| Hoarder `$17`: covered body, lift and shared leaves | 19 | 16,948 |
+| Rupee pull `$33`: bounce, pause, busy and prize paths | 10 | 12,340 |
+| Bee `$79`: selector and dormant hive | 10 | 6,040 |
+| Heart piece `$eb`: bounce and caller wrappers | 7 | 2,058 |
+| Guard `$48`: shared damage leaves | 1 | 460 |
+
+`cohort-a-family-closure-ranking.json` retains the original-row ranking,
+iteration lists, signed before/after work and actual closures. Every source,
+main and final routine/object/non-sprite/sprite vector is regenerated for all
+282 selected rows. The old sparse vectors agree on every retained key; omitted
+keys are exact before this batch. Exact cells are retained in the new vectors,
+so the signed partitions and negative-family audit are directly reproducible.
+
+Prices use generated unmodified-ROM block markers and routine scopes. The
+fixtures execute the actual unmodified ROM across their branch/path matrices,
+exclude nested children, compare exclusive clocks and explicitly construct a
+`lag_free` state when checking lagless markers. No residual, sampled deficit,
+scene table, threshold, classifier, matcher or P2 change supplies a price.
+
+| Owner | ROM entries | Exact-ROM fixture |
+| --- | --- | --- |
+| location comparisons | `$06:EB0A`, `$06:EB1D` | `prefix29_location_predicates_all_signed_borrow_and_wrap_paths` |
+| dash | `$07:9195` | `prefix29_cancel_dash_all_slots_and_clear_paths` |
+| swim and cape | `$07:983A`, `$07:AE54` | `prefix29_swimming_reset_and_cape_direct_entries_exclude_acceleration_child` |
+| heart callers | `$05:F018`, `$06:C0A3` | `prefix29_heart_piece_callers_all_early_bounce_and_pickup_paths_exclude_children` |
+| sound pan | `$0D:BBA1`, `$0D:BB7C`, `$0D:BB8A`, `$0D:BB98` | `prefix29_sound_pan_all_regions_boundaries_and_busy_channels_exclude_children` |
+| boss finished | `$06:8F1C` | `prefix29_boss_finished_all_slots_flags_and_property_paths` |
+| tink | `$06:F69F` | `prefix29_weapon_tink_busy_and_coordinate_carry_paths_exclude_pan` |
+| sword and calculated damage | `$06:ED3F`, `$06:ED89` | `prefix29_sword_all_flags_running_frames_items_and_damage_lookup_paths_exclude_give_damage` |
+| give damage and stun | `$06:EDC5`, `$06:EE9F` | `prefix29_give_damage_all_classes_special_types_and_stun_paths_exclude_children` |
+| zap | `$06:EC02` | `prefix29_zap_all_types_electric_state_blink_and_sword_paths_exclude_children` |
+| damage type dispatch | `$06:F314` | `prefix29_damage_dispatch_all_types_faces_deflections_and_timer_paths_exclude_children` |
+| throw | `$06:DF6D` | `prefix29_throw_all_return_gate_button_and_facing_paths_exclude_sound` |
+| thrown collision | `$06:E164`, `$06:E1B2` | `prefix29_thrown_collision_all_e_flags_and_single_hit_paths_exclude_children` |
+| Hoarder covered and lift | `$06:A86C`, `$06:A874`, `$06:AA0C`, `$06:AA14` | `prefix29_hoarder_covered_all_gates_proximity_lift_and_spawn_paths_exclude_children` |
+| rupee pull | `$06:C017`, `$05:E24D`, `$05:E255`, `$06:F129`, `$06:F154`, `$06:F15C` | `prefix29_rupee_pull_all_pause_busy_overlap_and_prize_paths_exclude_children` |
+| bee | `$1E:DC5B`, `$1E:DC68` | `prefix29_bee_dispatch_and_hive_all_states_and_allocation_paths_exclude_children` |
+| Arrghus states | `$1E:B593`, `$1E:B5C8`, `$1E:B63D`, `$1E:B4CA`, `$1E:B4EF`, `$1E:B532` | `prefix29_arrghus_states_all_timers_velocity_z_rng_and_garnish_paths_exclude_children` |
+| Arrghus draw return | `$1E:87F0` | `prefix28_arrghus_draw_all_states_waves_clips_and_page_crossings_exclude_children` |
+| AddHookshot | `$09:9B10` | `prefix29_add_hookshot_all_allocation_directions_and_coordinate_wraps_exclude_children` |
+| Y pushing and bonking | `$07:BDB1`, `$07:BDEB`, `$07:BE6B` | `prefix29_y_bonk_all_collision_swim_snap_direction_and_drag_paths_exclude_children` |
+| Y item bow body | `$07:A006` | `prefix29_bow_all_button_animation_allocation_ammo_refund_and_cleanup_paths_exclude_children` |
+| Y item hookshot body | `$07:AB25` | `prefix29_hookshot_item_all_button_door_defense_press_and_allocation_paths_exclude_children` |
+
+The movement entries cover CancelDash, direct ResetSwimmingState/quiet-cape
+calls, and Y-axis pushing/bonking including swim, direction, snap, drag and
+return paths. The Y-item selector was already priced: moving its semantic body
+behind the marked entry adds **zero selector clocks**. Bow and hookshot bodies,
+and AddHookshot's allocation/direction/coordinate paths, supply their own ROM
+blocks. The new `$07:BEA3` block split retains the existing clear-collision
+return work rather than dropping or double-charging it.
+
+Shared sprite leaves cover both location comparisons, weapon tink, zap, damage
+type dispatch, sword/calculated damage, give-damage/stun, throwing, thrown
+scenery/sprite collision and sound pan/queues. The projection helper reuses its
+already-computed location predicates; lift callers omit the shared return
+when the lifted tail already owns it. Damage-dispatch tail/SEC and recoil-timer
+branches are covered explicitly. Nested damage, transform, stun, pan, allocation
+and other children remain excluded from caller fixtures and charged once.
+
+The Hoarder frantic body and active-bee body remain unpriced; their selectors
+and covered/dormant branches are measured independently. Rupee pull routes its
+existing long damage child through its marked entry. All six Arrghus state
+bodies use their physical source scopes, including speed, RNG and garnish-scan
+branches; the draw wrapper now includes its missing **42-clock `$1E:87F4` RTS**.
+BossFinished closes Arrgi's repeated shared calls without pricing its residual.
+No gameplay behavior correction is introduced.
+
+Across the full ROM census, main instruction work increases by
+**183,199,982 master clocks**, with **zero negative main deltas** and **zero
+VWF changes**. The 282 selected rows gain **184,716** clocks, including
+**163,508** in sprite families. The original 185 missing prefix rows gain
+**114,016** clocks: early **0**, cohort A **47,228**, cohort B **33,978**,
+cohort C **32,810**. These are observed recoveries after source-derived pricing,
+not inputs to the prices. `rom-comparison.json`, `profile-budget-agreement.json`,
+`family-deltas.csv/json` and `cohort-clock-recovery.json` retain the measurements.
+
+### Classification and remaining concrete work
+
+| Cohort | (a) instruction before → after | (c) upload before → after | (d) phase/wait before → after | Missing rows recovered / exposed |
+| --- | ---: | ---: | ---: | ---: |
+| Before 141,568 | 0 → 0 | 5 → 5 | 2 → 2 | 0 / 0 |
+| 141,568–228,499 | 50 → 28 | 3 → 3 | 14 → 14 | 22 / 0 |
+| 228,499–380,243 | 43 → 39 | 4 → 4 | 11 → 10 | 5 / 0 |
+| 380,243–461,989 | 44 → 41 | 2 → 2 | 7 → 7 | 3 / 0 |
+| Through 461,989 | **137 → 108** | **14 → 14** | **34 → 33** | **30 / 0** |
+
+There are no class-(b) rows. The complete ROM recovers **50 rows**, exposing
+**none**. `recovered-rom-rows.csv` lists all 50; `recovered-prefix-rows.csv/json`
+lists the 30 prefix rows; `newly-exposed-prefix-rows.csv/json` is empty.
+`classification-before.json`, `classification-all.json`, `classification.json`
+and `remaining-blockers.csv/json` preserve before/after classification and
+concrete signed routine, object and sprite owners. `blocker-decomposition.json`
+and `signed-partition-agreement.json` conserve every selected row's partitions.
+
+The later thrown `$ec` family at 356,806 closes **2,926 → 0**. Its distinct
+spawn wrapper at 150,378 remains **64**. Eyegore `$83` closes **8,432 → 0**
+across 367,291/367,394; `$84` retains **194** per instance, split between
+`$1E:FE69` (**104**) and `$06:EAA0` (**90**). Terrorpin 372,814 closes
+**938 → 0**; 344,246 retains **168**. Normal active Arrghus work is exact;
+456,721's state-08 execute/init difference remains **142**. Arrgi at that row
+moves **50,348 → 6,954**, recovering **43,394** BossFinished clocks; its
+remaining execute/init/puff terms remain separately visible. At 297,585,
+non-sprite work still names Y movement **1,716** and Mirror **150**, with the
+retained **−22** main attribution; dash **96**, swimming **286** and cape
+**178** close. AddHookshot's **1,210** closes from its source fixture.
+Unpriced hookshot `$08:833C`, collision `$08:8DAE`, remaining movement and
+other cohort owners retain their concrete source vectors; they are not inferred
+from aggregate shortfalls.
+
+Upload and wait/interrupt pricing are unchanged. Shared instruction owners
+still affect two previously classified rows and are reported explicitly:
+**146,148 (c)** gains **286** ResetSwimmingState clocks, hold **46 → 46**;
+**254,154 (d, spotlight)** gains **294** heart caller/bounce clocks, hold
+**1 → 2**, recovering its source lag of 2. The latter's nonpoll gap closes
+**272 → −22**; the existing P2 model consequently includes its existing raster
+wait (**269,848**). No wait price or phase rule is changed. Thus the batch does
+not claim that every c/d predictor field is byte-identical.
+
+The original (d) rows split into **9 polygon/IRQ-phase, 14 spotlight-wait,
+11 other**; the remaining split is **9 / 13 / 11** after the shared-instruction
+recovery. The seven protected −22 polygon rows have identical complete predictor
+records before/after, with **main + shortfall = 230,464** throughout (source
+main + the same shortfall = **230,442**). All other (d) rows and their measured
+main/shortfall sums are below; no residual is promoted to an interrupt price.
+
+| Iteration | Source-evidenced (d) kind | Native main before → after | Shortfall before → after | Main + shortfall before → after | Still missing |
+| --- | --- | ---: | ---: | ---: | --- |
+| 101,031 | spotlight wait | 477,054 → 477,054 | 160,288 → 160,288 | 637,342 → 637,342 | yes |
+| 109,016 | spotlight wait | 486,090 → 486,090 | 151,160 → 151,160 | 637,250 → 637,250 | yes |
+| 146,786 | polygon/IRQ phase | 227,764 → 227,764 | 2,700 → 2,700 | 230,464 → 230,464 | yes |
+| 146,790 | polygon/IRQ phase | 227,862 → 227,862 | 2,602 → 2,602 | 230,464 → 230,464 | yes |
+| 146,794 | polygon/IRQ phase | 225,452 → 225,452 | 5,012 → 5,012 | 230,464 → 230,464 | yes |
+| 146,798 | polygon/IRQ phase | 222,642 → 222,642 | 7,822 → 7,822 | 230,464 → 230,464 | yes |
+| 146,802 | polygon/IRQ phase | 220,050 → 220,050 | 10,414 → 10,414 | 230,464 → 230,464 | yes |
+| 146,806 | polygon/IRQ phase | 218,178 → 218,178 | 12,286 → 12,286 | 230,464 → 230,464 | yes |
+| 146,810 | polygon/IRQ phase | 215,732 → 215,732 | 14,732 → 14,732 | 230,464 → 230,464 | yes |
+| 168,346 | other | 6,056,144 → 6,056,144 | 83,650 → 83,650 | 6,139,794 → 6,139,794 | yes |
+| 171,309 | other | 5,047,274 → 5,047,274 | 21,452 → 21,452 | 5,068,726 → 5,068,726 | yes |
+| 171,310 | other | 5,005,274 → 5,005,274 | 63,452 → 63,452 | 5,068,726 → 5,068,726 | yes |
+| 172,380 | other | 5,269,332 → 5,269,332 | 143,322 → 143,322 | 5,412,654 → 5,412,654 | yes |
+| 172,413 | other | 298,550 → 298,550 | 2 → 2 | 298,552 → 298,552 | yes |
+| 174,296 | spotlight wait | 484,536 → 484,536 | 152,714 → 152,714 | 637,250 → 637,250 | yes |
+| 189,923 | spotlight wait | 415,724 → 415,724 | 224,566 → 224,566 | 640,290 → 640,290 | yes |
+| 242,100 | other | 5,023,212 → 5,023,212 | 44,504 → 44,504 | 5,067,716 → 5,067,716 | yes |
+| 254,154 | spotlight wait | 408,548 → 408,842 | 228,538 → 0 | 637,086 → 408,842 | recovered |
+| 294,844 | other | 3,970,322 → 3,970,322 | 7,410 → 7,410 | 3,977,732 → 3,977,732 | yes |
+| 295,089 | spotlight wait | 490,158 → 490,158 | 147,092 → 147,092 | 637,250 → 637,250 | yes |
+| 297,863 | spotlight wait | 506,262 → 506,262 | 130,988 → 130,988 | 637,250 → 637,250 | yes |
+| 299,434 | spotlight wait | 489,402 → 489,402 | 147,848 → 147,848 | 637,250 → 637,250 | yes |
+| 307,022 | spotlight wait | 421,850 → 421,850 | 234,416 → 234,416 | 656,266 → 656,266 | yes |
+| 310,980 | other | 5,968,656 → 5,968,656 | 171,138 → 171,138 | 6,139,794 → 6,139,794 | yes |
+| 310,982 | other | 3,994,972 → 3,994,972 | 84,542 → 84,542 | 4,079,514 → 4,079,514 | yes |
+| 354,595 | other | 297,924 → 297,924 | 588 → 588 | 298,512 → 298,512 | yes |
+| 378,093 | other | 301,536 → 301,536 | 1,364 → 1,364 | 302,900 → 302,900 | yes |
+| 380,956 | polygon/IRQ phase | 1,236,436 → 1,236,436 | 19,320 → 19,320 | 1,255,756 → 1,255,756 | yes |
+| 390,887 | polygon/IRQ phase | 3,969,936 → 3,969,936 | 6,876 → 6,876 | 3,976,812 → 3,976,812 | yes |
+| 401,471 | spotlight wait | 499,832 → 499,832 | 137,418 → 137,418 | 637,250 → 637,250 | yes |
+| 401,612 | spotlight wait | 409,552 → 409,552 | 230,738 → 230,738 | 640,290 → 640,290 | yes |
+| 403,249 | spotlight wait | 411,848 → 411,848 | 228,489 → 228,489 | 640,337 → 640,337 | yes |
+| 403,304 | spotlight wait | 419,812 → 419,812 | 236,546 → 236,546 | 656,358 → 656,358 | yes |
+| 407,899 | spotlight wait | 412,762 → 412,762 | 243,504 → 243,504 | 656,266 → 656,266 | yes |
+
+`d-classification.csv/json` also retains source polygon/IRQ CPU work and
+V-counter reads. `protected-minus22-rows.csv/json` proves complete-record
+identity for the seven protected rows. The signed sprite-family,
+total-main-beyond−22 and nonpoll-main-beyond−22 negative audits are all empty.
+
+| Missing before iteration | ROM missing/excess/FP before → after |
+| --- | --- |
+| 94,334 | 2/0/0 → 2/0/0 |
+| 141,568 | 7/0/0 → 7/0/0 |
+| 228,499 | 74/0/0 → 52/0/0 |
+| 380,243 | 132/0/0 → 105/0/0 |
+| 461,989 | 185/0/0 → 155/0/0 |
+
+The final eight-slice seeded ROM helper reports **PASS**, **unexplained 0**,
+complete **1,473,123 iterations**, **1,500/0/0 → 1,450/0/0** missing/excess/FP.
+`admission-final/rom.csv`, `admission-final/rom.log`, `rom-final-helper.log`
+and `final-replay-commands.json` identify the exact binary and slice commands.
+
+### Single seeded live census and direct poll attribution
+
+Exactly **one** full seeded `--live-apu-reads --pacing-predictor` census runs
+on the frozen production binary and exits zero. Totals change from
+**1,735/144/14 → 1,715/151/18** missing/excess/FP: missing improves by 20,
+while excess rises by 7 and FP by 4. The fifth live prefix worsens and is
+reported without changing poll logic or acceptance rules.
+
+There are **83 changed live holds**: **50 shared ROM recoveries** and
+**33 live-only changes**. Every shared row has exactly the same hold delta as
+ROM; there are **zero mixed ROM/live deltas**. All 33 live-only changes belong
+to three crystal song-end episodes at directly observed source PC **`$08:C606`**;
+**zero rows are unattributed**. The pendant **`$08:C3FD`** episodes have no
+changed live-only holds.
+
+The source PC identities are read directly from the retained cold unmodified-ROM
+APUI bus, after verifying its SHA-256
+`948567a2b5caa2201d51db3c719dacb5934c69299a344f73dff6922429b4798b`
+and its command receipt
+`c0d84a921c1eecd07d539acc01eb7f185a14121726324ddbca98501e213c2efb`.
+`poll-source-identity.json` contains the 20 reread observations at episode entry
+and first source zero, and `poll-source-verification.json` retains the hash
+check. No held-row pattern supplies a source-PC identity.
+
+Source context, APUI reads and APUI writes agree on **all 1,473,123 trace rows**;
+source start/end counters also agree throughout. The normalized source SHA-256
+is `a85696ffff0f15dd054297a8a36d421583ccb319440192fc3e16c90fc35307d5`
+on both sides, matching main's prior receipt. Cartridge APUI answers remain
+disabled throughout. `live-trace-agreement.json` records the exact serialization
+and equality checks.
+
+Attribution uses **2,450 changed four-lane live-vs-ROM work events** and
+**53 context/boolean-poll events**, a union of **2,454 iterations**. Bounds are
+established independently of the changed-hold set: the actual source/native
+poll cluster, last execution event, then the first actual reseed before the
+containing 2,000-iteration boundary, otherwise that boundary. Some episodes
+have work-price differences without a changed exit or hold; they retain their
+observed event bounds too. `live-work-events.json`, `live-context-poll-events.json`,
+`live-execution-events.json`, `live-poll-clusters.json`, `live-reseeds.json` and
+`poll-attribution.json` preserve the complete derivation.
+
+| Source episode | Direct source PC | Source first zero | Native first zero before → after | Last changed execution event | Recovery end | Live-only rows | Δ missing/excess/FP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 → 94,854 | — | 96,000 | 0 | +0/+0/+0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,088 → 142,088 | — | 144,000 | 0 | +0/+0/+0 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,036 → 229,036 | — | 230,000 | 0 | +0/+0/+0 |
+| 380,243 | `$08:C606` | 380,881 | 380,881 → 380,882 | 383,635 | 383,636 | 15 | +114/+90/+5 |
+| 461,989 | `$08:C606` | 462,628 | 462,627 → 462,627 | 463,179 | 464,000 | 0 | +0/+0/+0 |
+| 626,618 | `$08:C606` | 627,256 | 627,256 → 627,256 | — | 628,000 | 0 | +0/+0/+0 |
+| 735,229 | `$08:C606` | 735,867 | 735,867 → 735,868 | 736,633 | 738,000 | 6 | +12/+12/+3 |
+| 881,095 | `$08:C606` | 881,734 | 881,734 → 881,734 | — | 882,000 | 0 | +0/+0/+0 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,735 → 1,064,734 | 1,066,962 | 1,066,963 | 12 | -96/-95/-4 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,336 → 1,318,336 | 1,320,899 | 1,320,900 | 0 | +0/+0/+0 |
+
+Every changed live-only hold is listed below. `live-only-changed-rows.csv/json`
+also retains both ROM holds, source/native first-zero observations and the
+independently established recovery end for each row. `live-changed-rows.csv`
+includes all 83 changed live holds, including the 50 shared ROM recoveries.
+
+| Iteration | Source episode / direct PC | Source lag | Live hold before → after |
+| --- | --- | ---: | ---: |
+| 380,946 | 380,243 / `$08:C606` | 1 | 1 → 0 |
+| 380,947 | 380,243 / `$08:C606` | 0 | 0 → 1 |
+| 380,956 | 380,243 / `$08:C606` | 5 | 4 → 0 |
+| 380,957 | 380,243 / `$08:C606` | 0 | 0 → 4 |
+| 381,426 | 380,243 / `$08:C606` | 8 | 8 → 0 |
+| 381,427 | 380,243 / `$08:C606` | 0 | 0 → 8 |
+| 383,178 | 380,243 / `$08:C606` | 0 | 0 → 7 |
+| 383,181 | 380,243 / `$08:C606` | 7 | 7 → 0 |
+| 383,343 | 380,243 / `$08:C606` | 7 | 7 → 0 |
+| 383,346 | 380,243 / `$08:C606` | 0 | 0 → 7 |
+| 383,631 | 380,243 / `$08:C606` | 59 | 59 → 0 |
+| 383,632 | 380,243 / `$08:C606` | 6 | 6 → 0 |
+| 383,633 | 380,243 / `$08:C606` | 23 | 22 → 0 |
+| 383,634 | 380,243 / `$08:C606` | 1 | 1 → 59 |
+| 383,635 | 380,243 / `$08:C606` | 1 | 1 → 6 |
+| 735,937 | 735,229 / `$08:C606` | 1 | 1 → 0 |
+| 735,938 | 735,229 / `$08:C606` | 0 | 0 → 1 |
+| 735,947 | 735,229 / `$08:C606` | 5 | 4 → 0 |
+| 735,948 | 735,229 / `$08:C606` | 0 | 0 → 4 |
+| 736,420 | 735,229 / `$08:C606` | 8 | 7 → 0 |
+| 736,422 | 735,229 / `$08:C606` | 0 | 0 → 7 |
+| 1,064,798 | 1,064,096 / `$08:C606` | 1 | 0 → 1 |
+| 1,064,799 | 1,064,096 / `$08:C606` | 0 | 1 → 0 |
+| 1,064,808 | 1,064,096 / `$08:C606` | 5 | 0 → 4 |
+| 1,064,809 | 1,064,096 / `$08:C606` | 0 | 4 → 0 |
+| 1,065,281 | 1,064,096 / `$08:C606` | 8 | 0 → 7 |
+| 1,065,282 | 1,064,096 / `$08:C606` | 0 | 7 → 0 |
+| 1,066,543 | 1,064,096 / `$08:C606` | 0 | 7 → 0 |
+| 1,066,544 | 1,064,096 / `$08:C606` | 7 | 0 → 7 |
+| 1,066,958 | 1,064,096 / `$08:C606` | 59 | 0 → 59 |
+| 1,066,959 | 1,064,096 / `$08:C606` | 6 | 59 → 6 |
+| 1,066,960 | 1,064,096 / `$08:C606` | 24 | 6 → 24 |
+| 1,066,961 | 1,064,096 / `$08:C606` | 1 | 24 → 1 |
+
+| Missing before iteration | Live missing/excess/FP before → after |
+| --- | --- |
+| 94,334 | 2/0/0 → 2/0/0 |
+| 141,568 | 7/0/0 → 7/0/0 |
+| 228,499 | 74/0/0 → 52/0/0 |
+| 380,243 | 141/9/2 → 114/9/2 |
+| 461,989 | 194/9/2 → 278/99/7 |
+
+The three changed crystal episodes contribute **+30 missing, +7 excess, +4 FP**;
+the 50 shared ROM recoveries contribute **−50 missing**. These sum exactly to
+the full live change **−20/+7/+4**. No runtime compensation, per-episode price,
+source answer, poll matcher, classifier, wait rule or P2 change is added.
+`live-command.json` records **one launch**, `live-comparison.json` preserves
+all row deltas, and the independent gate-tools `live-counts.txt` confirms the
+final **1,715/151/18** totals.
+
+### CPU-picture and verification boundary
+
+The final seeded `--cpu-video` census retains **1,462,997 exact pictures out
+of 1,473,123 iterations**. All eight complete per-iteration picture-hash streams
+are **byte-for-byte identical to main**; every slice is WRAM-clean and exits
+zero. `cpu-picture-agreement.json`, `cpu-gate.txt`, `cpu-commands.json` and
+`cpu-final/` retain the counts, hashes and exact CPU-only commands. This is
+seeded CPU-picture agreement, not a GPU or continuous cold A/V claim.
+
+Filtered verification passes: **21 prefix-29 fixtures**, the damage-dispatch
+fixture rerun after its final branch-coverage expansion, **17 prefix-28 fixtures**,
+**16 marker-37 fixtures**, and **8 generator tests**. The owner table includes
+21 new fixtures plus the corrected existing Arrghus draw-return fixture.
+`filtered-results.json` contains the exact logs and results. Final production
+builds are **warning-free**; the default library build's **24 warning headers**
+are identical to main, with no added warnings (`warning-agreement.json`).
+
+After all code and test changes, the full default library suite runs exactly
+**once**, using the requested command:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+SNES: **505 passed, 7 ignored**. Zelda: **3,135 passed, 3 ignored**, with the
+sole permitted failure:
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+There are **zero unexpected failures**, so no corrective full-suite rerun is
+needed. The suite exits 101 for that permitted failure. `test-verification.json`,
+`full-library-command.json` and `full-library.log` preserve the result.
+
+The final source freeze covers **944 files**, all unchanged through final
+verification. The current Cargo-built production binary and frozen census
+binary have identical SHA-256. All **14 authority hashes**, **387 hunt-28
+artifact receipts** and **341 retained source receipts** remain unchanged;
+`authorities-after.json`, `read-only-agreement.json`, `tested-source-hashes.json`
+and `source-freeze-agreement.json` retain those checks. `verification.json`
+consolidates the admission results; `artifact-hashes.json` inventories this
+batch's evidence.
+
+Only ROM-derived instruction ownership and its source fixtures are changed.
+Upload/wait/interrupt rules, classifier, matcher and P2 remain unchanged, with
+the two shared c/d instruction effects reported explicitly above. Source fixtures,
+seeded ROM prediction, live poll attribution and seeded CPU pictures establish
+their separate proof boundaries; **108 instruction, 14 upload and 33 phase/wait
+prefix blockers remain**. This batch is not full lagless or continuous A/V
+acceptance. No GPU, `--video`, cached-A/V, external Snes9x process, new environment
+switch, commit or push is part of this batch. Every Zelda executable command
+uses CPU-only logical replay; every launched replay, test and analysis process
+has exited. Only this worktree's reproducible compiler incremental cache was
+removed to maintain the target-size limit; prior evidence is retained.
+
+The final worktree target occupies **9.68 GB allocated**, below the **16 GB** limit. All launched gate, test, replay and trace-analysis processes have completed.

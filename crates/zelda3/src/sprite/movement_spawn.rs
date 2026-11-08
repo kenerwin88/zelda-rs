@@ -32,6 +32,7 @@ impl ZeldaState {
         b.block(0x06ea2d);
         if vel == 0 {
             b.taken(0x06ea31); b.block(0x06ea2a);
+            ProjectSpeedRet::ZERO
         } else {
             let below = self.sprite_is_below_location(k, y);
             let right = self.sprite_is_right_of_location(k, x);
@@ -62,8 +63,8 @@ impl ZeldaState {
             b.block(0x06ea92);
             if right.a == 0 { b.taken(0x06ea96); } else { b.block(0x06ea98); }
             b.block(0x06ea9d);
+            project_speed_from_differences(vel, below, right)
         }
-        self.sprite_project_speed_towards_location(k, x, y, vel)
     }
 
     pub(in crate::zelda_rtl) fn sprite_move_z(&mut self, k: usize, path: SpriteMoveZEntry) {
@@ -462,7 +463,12 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_is_right_of_location(&self, k: usize, x: u16) -> PairU8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb0a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06eb0a);
         let xv = x.wrapping_sub(self.sprite_get_x(k));
+        if sign16(xv) { b.block(0x06eb1b); } else { b.taken(0x06eb19); }
+        b.block(0x06eb1c);
         PairU8 {
             a: u8::from((xv as i16).is_negative()),
             b: xv as u8,
@@ -470,7 +476,12 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn sprite_is_below_location(&self, k: usize, y: u16) -> PairU8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06eb1d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06eb1d);
         let yv = y.wrapping_sub(self.sprite_get_y(k));
+        if sign16(yv) { b.block(0x06eb2e); } else { b.taken(0x06eb2c); }
+        b.block(0x06eb2f);
         PairU8 {
             a: u8::from((yv as i16).is_negative()),
             b: yv as u8,
@@ -1091,7 +1102,15 @@ impl ZeldaState {
     //   Sprite_ReturnIfLiftedPermissive(k);
     // }
     pub(in crate::zelda_rtl) fn sprite_check_if_lifted_permissive(&mut self, k: usize) {
-        let _ = self.sprite_return_if_lifted_permissive(k);
+        let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x06aa0c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06aa0c);
+        {
+            let _near = self.lag_free.then(|| crate::cycle_ledger::routine(0x06aa14));
+            b.block(0x06aa14);
+            if !self.sprite_return_if_lifted_permissive(k) { b.block(0x06aa17); }
+        }
+        b.block(0x06aa12);
     }
 
     // uint8 Sprite_DirectionToFaceLink(int k, PointU8 *coords_out) {  // 86eaa4

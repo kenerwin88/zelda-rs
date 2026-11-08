@@ -214,9 +214,14 @@ impl ZeldaState {
     //   sound_effect_1 = Link_CalculateSfxPan() | 5;
     // }
     pub(in crate::zelda_rtl) fn link_place_weapon_tink(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f69f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06f69f);
         if self.game_state.sprites.garnish_runtime.repulsespark_timer() != 0 {
+            b.taken(0x06f6a2); b.block(0x06f6c9);
             return;
         }
+        b.block(0x06f6a4);
         self.garnish_state_mut().set_repulsespark_timer(5);
         let t = u16::from(self.game_state.player.follower_link.x() as u8)
             + u16::from(self.game_state.player.follower_link.oam_x_offset());
@@ -229,6 +234,7 @@ impl ZeldaState {
         self.garnish_state_mut()
             .set_repulsespark_floor_status(floor);
         self.set_sound_effect_1_with_link_pan(5);
+        b.block(0x06f6c4); b.block(0x06f6c9);
     }
 
     // void Sprite_ApplyRecoilToLink(int k, uint8 vel) {  // 86f688
@@ -657,6 +663,7 @@ impl ZeldaState {
                     }
                 } else { b.taken(0x06f2e2); }
 
+                self.sprite_damage_type_dispatch_markers(k);
                 let ty = self.sprite_slot_view(k).sprite_type();
                 if ty == 0x7b {
                     if !sign8(
@@ -744,6 +751,82 @@ impl ZeldaState {
         }
         self.link_place_weapon_tink();
         CHECK_DAMAGE_FROM_PLAYER_CARRY
+    }
+
+    /// $F314's physical type dispatcher and its local JMP/JSR tails.
+    /// The action prelude, zap, recoil, sound and tink children own themselves.
+    pub(in crate::zelda_rtl) fn sprite_damage_type_dispatch_markers(&self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06f314));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        let sprite = self.sprite_slot_view(k);
+        let ty = sprite.sprite_type();
+        let mut recoiled = false;
+        b.block(0x06f314);
+        if ty == 0x7b {
+            b.block(0x06f31b);
+            if sign8(self.game_state.player.follower_link.button_b_frames().wrapping_sub(9)) {
+                b.taken(0x06f31f); b.block(0x06f324);
+            } else {
+                b.block(0x06f321); b.block(0x06f3af); b.block(0x06f3c7); return;
+            }
+        } else {
+            b.taken(0x06f319); b.block(0x06f34e);
+            if ty == 9 {
+                b.block(0x06f352);
+                if sprite.a()==0 {
+                    b.block(0x06f357); b.block(0x06f35a); b.block(0x06f360);
+                    b.block(0x06f3c3); b.block(0x06f3c6); b.block(0x06f3c7); return;
+                }
+                b.taken(0x06f355);
+            } else {
+                b.taken(0x06f350); b.block(0x06f366);
+                if ty == 0x92 {
+                    b.block(0x06f36a); b.block(0x06f460);
+                    if sprite.c()>=3 { b.taken(0x06f465); b.block(0x06f46a); b.block(0x06f395); b.block(0x06f39a); recoiled=true; }
+                    else { b.block(0x06f467); self.sprite_damage_getting_out_markers(false); return; }
+                } else {
+                    b.taken(0x06f368); b.block(0x06f36d);
+                    if ty==0x26 { b.taken(0x06f36f); }
+                    else {
+                        b.block(0x06f371);
+                        if ty==0x13 { b.taken(0x06f373); b.block(0x06f327); }
+                        else { b.block(0x06f375); if ty==2 { b.taken(0x06f377); } }
+                    }
+                    if matches!(ty,0x26|0x13|2) {
+                        let facing = ty==2 || (ty==0x13 && [4,6,0,2][usize::from(sprite.direction()&3)]
+                            ==self.game_state.player.follower_link.facing());
+                        if ty==0x13 && !facing { b.taken(0x06f32f); }
+                        if facing { b.block(0x06f331); }
+                        b.block(0x06f33d); b.block(0x06f340); b.block(0x06f345); b.block(0x06f3c7);
+                        if facing { b.block(0x06f334); b.block(0x06f33a); b.block(0x06f3c7); }
+                        return;
+                    }
+                    let mut special=false;
+                    for (pc,value) in [(0x06f379,0xcb),(0x06f37d,0xcd),(0x06f381,0xcc),
+                        (0x06f385,0xd6),(0x06f389,0xd7),(0x06f38d,0xce)] {
+                        b.block(pc);
+                        if ty==value { b.taken(pc+2); special=true; break; }
+                    }
+                    if !special {
+                        b.block(0x06f391);
+                        if ty!=0x54 { b.taken(0x06f393); } else { special=true; }
+                    }
+                    if special { b.block(0x06f395); b.block(0x06f39a); recoiled=true; }
+                }
+            }
+        }
+        b.block(0x06f3a2);
+        if sprite.deflection_bits()&4==0 {
+            b.block(0x06f3a9); b.block(0x06f3ac); b.block(0x06f3c7);
+        } else { b.taken(0x06f3a7); self.sprite_damage_getting_out_markers(recoiled); }
+    }
+
+    fn sprite_damage_getting_out_markers(&self, recoiled: bool) {
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06f3b2);
+        if recoiled || self.game_state.sprite_battle.damaging_enemies_timer()!=0 { b.taken(0x06f3b4); }
+        else { b.block(0x06f3b6); b.block(0x06f3bb); }
+        b.block(0x06f3c3); b.block(0x06f3c6); b.block(0x06f3c7);
     }
 
     pub(in crate::zelda_rtl) fn sprite_check_damage_to_and_from_link(
@@ -1223,19 +1306,49 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_attempt_zap_damage(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ec02));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
         let ty = self.sprite_slot_view(k).sprite_type();
+        b.block(0x06ec02);
+        let electric_type = if ty == 0x7a { b.taken(0x06ec07); true } else {
+            b.block(0x06ec09);
+            if ty != 0x0d { b.taken(0x06ec0b); }
+            else { b.block(0x06ec0d); }
+            if ty == 0x0d && self.game_state.inventory.items.sword_type() < 4 {
+                b.taken(0x06ec13); true
+            } else {
+                b.block(0x06ec15);
+                if ty == 0x24 { b.taken(0x06ec17); }
+                else { b.block(0x06ec19); if ty != 0x23 { b.taken(0x06ec1b); } }
+                if matches!(ty,0x24|0x23) {
+                    b.block(0x06ec1d);
+                    if self.sprite_slot_view(k).delay_main()==0 { b.taken(0x06ec20); false } else { true }
+                } else { false }
+            }
+        };
+        if electric_type {
+            b.block(0x06ec22);
+            if self.sprite_slot_view(k).state()!=9 { b.taken(0x06ec27); }
+        }
         let electric = (ty == 0x7a
             || (ty == 0x0d && self.game_state.inventory.items.sword_type() < 4)
             || ((ty == 0x24 || ty == 0x23) && self.sprite_slot_view(k).delay_main() != 0))
             && self.sprite_slot_view(k).state() == 9;
         if electric {
+            b.block(0x06ec29);
             if self.game_state.player.follower_link.blink_countdown() == 0 {
+                b.block(0x06ec2e);
                 let value = 64;
                 self.sprite_slot_view_mut(k).set_delay_aux1(value);
                 self.follower_link_state_mut().set_electrocute_on_touch(64);
                 self.sprite_attempt_damage_to_link_plus_recoil(k);
-            }
+            } else { b.taken(0x06ec2c); }
+            b.block(0x06ec39);
         } else {
+            b.block(0x06ec3a);
+            if sign8(self.game_state.player.follower_link.button_b_frames().wrapping_sub(9)) { b.taken(0x06ec40); }
+            else { b.block(0x06ec42); }
+            b.block(0x06ec44);
             let vel = if sign8(
                 self.game_state
                     .player
@@ -1248,11 +1361,13 @@ impl ZeldaState {
                 0x40
             };
             let pt = self.sprite_project_speed_towards_link(k, vel);
+            b.block(0x06ec47);
             let value = 0u8.wrapping_sub(pt.x);
             self.sprite_slot_view_mut(k).set_x_recoil(value);
             let value = 0u8.wrapping_sub(pt.y);
             self.sprite_slot_view_mut(k).set_y_recoil(value);
             self.sprite_calculate_sword_damage(k);
+            b.block(0x06ec5b);
         }
     }
 
@@ -1739,6 +1854,9 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn thrown_sprite_check_damage_to_single_sprite(&mut self, k: usize, j: i32) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e1b2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06e1b2);
         let j = j as usize;
         let t =
             i32::from(self.sprite_slot_view(k).y_low()) - i32::from(self.sprite_slot_view(k).z());
@@ -1762,12 +1880,29 @@ impl ZeldaState {
             r7_spr_ysize: 0,
         };
         self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Unpriced);
+        b.block(0x06e1e0);
         if !self.check_if_hit_boxes_overlap(&hb) {
+            b.block(0x06e1e4); b.taken(0x06e1e4); b.block(0x06e1b1);
             return;
         }
+        b.block(0x06e1e4); b.block(0x06e1e6);
         if self.sprite_slot_view(j).sprite_type() == 0x3f {
+            b.block(0x06e1ed);
             self.sprite_place_weapon_tink(k);
+            b.block(0x06e1f1);
         } else {
+            b.taken(0x06e1eb); b.block(0x06e1f3);
+            if self.sprite_slot_view(k).sprite_type()!=0xec { b.taken(0x06e1fb); }
+            else {
+                b.block(0x06e1fd);
+                if self.sprite_slot_view(k).c()!=2 { b.taken(0x06e202); }
+                else {
+                    b.block(0x06e204);
+                    if self.game_state.world.location.is_indoors() { b.taken(0x06e206); }
+                    else { b.block(0x06e208); }
+                }
+            }
+            b.block(0x06e20c);
             let a = if self.sprite_slot_view(k).sprite_type() == 0xec
                 && self.sprite_slot_view(k).c() == 2
                 && self.game_state.world.location.is_outdoors()
@@ -1777,6 +1912,7 @@ impl ZeldaState {
                 3
             };
             self.ancilla_check_damage_to_sprite_preset(j, a);
+            b.block(0x06e214);
             let value = self.sprite_slot_view(k).x_velocity().wrapping_mul(2);
             self.sprite_slot_view_mut(j).set_x_recoil(value);
             let value = self.sprite_slot_view(k).y_velocity().wrapping_mul(2);

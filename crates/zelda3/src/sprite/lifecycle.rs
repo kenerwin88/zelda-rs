@@ -700,15 +700,27 @@ impl ZeldaState {
     //   Sprite_ApplyCalculatedDamage(k, 0x9d);
     // }
     pub(in crate::zelda_rtl) fn sprite_calculate_sword_damage(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ed3f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ed3f);
         if self.sprite_slot_view(k).flags3() & 0x40 != 0 {
+            b.block(0x06ed46);
             return;
         }
+        b.taken(0x06ed44); b.block(0x06ed47);
         let is_running = self.game_state.player.follower_link.is_running();
         let item_in_hand_has_sword_mask = self.game_state.player.follower_link.item_in_hand_has(10);
         let value = u8::from(is_running);
         self.sprite_slot_view_mut(k).set_draw_work_byte_1(value);
         let mut a = self.game_state.inventory.items.sword_type().wrapping_sub(1);
         if !is_running {
+            b.block(0x06ed59); b.block(0x06ed5f);
+            if sign8(self.game_state.player.follower_link.button_b_frames()) { b.taken(0x06ed61); b.block(0x06ed5b); }
+            else {
+                b.block(0x06ed63);
+                if sign8(self.game_state.player.follower_link.button_b_frames().wrapping_sub(9)) { b.taken(0x06ed65); }
+                else { b.block(0x06ed67); }
+            }
             a |= if sign8(self.game_state.player.follower_link.button_b_frames()) {
                 4
             } else if sign8(
@@ -722,13 +734,16 @@ impl ZeldaState {
             } else {
                 8
             };
-        }
+        } else { b.taken(0x06ed57); }
+        b.block(0x06ed69);
         self.sprite_battle_mut().set_damage_type_determiner(
             SPRITE_CALCULATE_SWORD_DAMAGE_SPRITE_DAMAGE_BY_PLAYER_WEAPON[a as usize],
         );
         if item_in_hand_has_sword_mask {
+            b.block(0x06ed78);
             self.sprite_battle_mut().set_damage_type_determiner(3);
-        }
+        } else { b.taken(0x06ed76); }
+        b.block(0x06ed7d);
         self.follower_link_state_mut().set_sword_delay_timer(4);
         self.sprite_battle_mut().set_damaging_enemies_timer(16);
         self.sprite_apply_calculated_damage(k, 0x9d);
@@ -741,12 +756,24 @@ impl ZeldaState {
     //   Sprite_GiveDamage(k, dmg, a);
     // }
     pub(in crate::zelda_rtl) fn sprite_apply_calculated_damage(&mut self, k: usize, a: u8) {
+        // ED3F falls through here; the direct JSL entry and this tail share
+        // ED89's physical work. GiveDamage owns its separate fallthrough.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ed89));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ed89);
+        if self.sprite_slot_view(k).flags3() & 0x40 != 0 { b.taken(0x06ed93); b.block(0x06ed9f); }
+        else {
+            b.block(0x06ed95);
+            if self.sprite_slot_view(k).sprite_type() >= 0xd8 { b.block(0x06ed9f); }
+            else { b.taken(0x06ed9d); }
+        }
         if self.sprite_slot_view(k).flags3() & 0x40 != 0
             || self.sprite_slot_view(k).sprite_type() >= 0xd8
         {
             return;
         }
         let damage_type = self.game_state.sprite_battle.damage_type_determiner();
+        b.block(0x06eda0);
         let dmg = self.sprite_calculated_damage(k, damage_type);
         self.sprite_give_damage(k, dmg, a);
     }
@@ -790,12 +817,19 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn sprite_give_damage(&mut self, k: usize, dmg: u8, r0_hit_timer: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06edc5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06edc5);
         if dmg == 249 {
+            b.block(0x06edc9);
             self.sprite_func18(k, 0xe3);
             return;
         }
+        b.taken(0x06edc7); b.block(0x06ede2);
         if dmg == 250 {
+            b.block(0x06ede6);
             self.sprite_func18(k, 0x8f);
+            b.block(0x06edec);
             let value = 2;
             self.sprite_slot_view_mut(k).set_ai_state(value);
             let value = 32;
@@ -814,34 +848,50 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_flags5(value);
             return;
         }
+        b.taken(0x06ede4); b.block(0x06ee0d);
         if dmg >= self.sprite_slot_view(k).incoming_damage() {
+            b.block(0x06ee12);
             let value = dmg;
             self.sprite_slot_view_mut(k).set_incoming_damage(value);
-        }
+        } else { b.taken(0x06ee10); }
+        b.block(0x06ee15);
         if dmg == 0 {
+            b.block(0x06ee19);
             if self.game_state.sprite_battle.damage_type_determiner() != 10 {
+                b.block(0x06ee20);
                 if self.sprite_slot_view(k).flags() & 4 != 0 {
+                    b.taken(0x06ee25);
                     self.sprite_set_damage_stun(k);
                     return;
                 }
+                b.block(0x06ee27);
                 self.follower_link_state_mut().clear_sword_delay_timer();
-            }
+            } else { b.taken(0x06ee1e); }
+            b.block(0x06ee2a); b.block(0x06eec1);
             let value = 0;
             self.sprite_slot_view_mut(k).set_hit_timer(value);
             let value = 0;
             self.sprite_slot_view_mut(k).set_incoming_damage(value);
             return;
         }
+        b.taken(0x06ee17); b.block(0x06ee2d);
+        if dmg>=254 { b.block(0x06ee31); }
+        else { b.taken(0x06ee2f); }
         if dmg >= 254 && self.sprite_slot_view(k).state() == 11 {
+            b.taken(0x06ee36); b.block(0x06ee2a); b.block(0x06eec1);
             let value = 0;
             self.sprite_slot_view_mut(k).set_hit_timer(value);
             let value = 0;
             self.sprite_slot_view_mut(k).set_incoming_damage(value);
             return;
         }
+        b.block(0x06ee38);
+        if self.sprite_slot_view(k).sprite_type()==0x9a { b.block(0x06ee3f); }
+        else { b.taken(0x06ee3d); }
         if self.sprite_slot_view(k).sprite_type() == 0x9a
             && self.sprite_slot_view(k).incoming_damage() < 0xf0
         {
+            b.block(0x06ee46);
             let value = 9;
             self.sprite_slot_view_mut(k).set_state(value);
             let value = 4;
@@ -849,17 +899,31 @@ impl ZeldaState {
             let value = 15;
             self.sprite_slot_view_mut(k).set_delay_main(value);
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x28);
+            b.block(0x06ee5b);
             return;
         }
+        if self.sprite_slot_view(k).sprite_type()==0x9a { b.taken(0x06ee44); }
+        b.block(0x06ee5c);
         if self.sprite_slot_view(k).sprite_type() == 0x1b {
+            b.block(0x06ee60);
             self.sprite_sfx_queue_sfx2_with_pan(k, 5);
+            b.block(0x06ee66);
             self.sprite_schedule_for_breakage(k);
+            b.block(0x06ee69);
             self.sprite_place_weapon_tink(k);
+            b.block(0x06ee6d);
             return;
         }
+        b.taken(0x06ee5e); b.block(0x06ee6e);
         let value = r0_hit_timer;
         self.sprite_slot_view_mut(k).set_hit_timer(value);
+        if self.sprite_slot_view(k).sprite_type()!=0x92 { b.taken(0x06ee77); }
+        else { b.block(0x06ee79); if self.sprite_slot_view(k).c()<3 { b.taken(0x06ee7e); } }
         if self.sprite_slot_view(k).sprite_type() != 0x92 || self.sprite_slot_view(k).c() >= 3 {
+            b.block(0x06ee80);
+            if self.sprite_slot_view(k).flags()&2!=0 { b.taken(0x06ee87); }
+            else { b.block(0x06ee89); if self.sprite_slot_view(k).flags5()&0x10==0 { b.taken(0x06ee90); } else { b.block(0x06ee92); } }
+            b.block(0x06ee94);
             let sfx = if self.sprite_slot_view(k).flags() & 2 != 0 {
                 0x21
             } else if self.sprite_slot_view(k).flags5() & 0x10 != 0 {
@@ -868,12 +932,27 @@ impl ZeldaState {
                 8
             };
             self.set_sound_effect_2_with_sprite_pan(k, sfx);
+            b.block(0x06ee9a);
         }
         self.sprite_set_damage_stun(k);
     }
 
     fn sprite_set_damage_stun(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06ee9f));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06ee9f);
         let ty = self.sprite_slot_view(k).sprite_type();
+        if self.game_state.sprite_battle.damage_type_determiner()>=13 { b.taken(0x06eea6); }
+        else {
+            b.block(0x06eea8);
+            if ty==9 { b.taken(0x06eeaf); }
+            else {
+                b.block(0x06eeb1);
+                if ty==0x53 { b.taken(0x06eeb5); b.block(0x06eebb); }
+                else { b.block(0x06eeb7); if ty!=0x18 { b.taken(0x06eeb9); } else { b.block(0x06eebb); } }
+            }
+        }
+        b.block(0x06eebd);
         let value = if self.game_state.sprite_battle.damage_type_determiner() >= 13 {
             0
         } else if ty == 9 {
@@ -1895,10 +1974,19 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(in crate::zelda_rtl) fn carried_sprite_check_for_throw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06df6d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06df6d);
         if self.game_state.frame.main_module == 14 {
+            b.taken(0x06df72); b.block(0x06df5d);
             return;
         }
+        b.block(0x06df74);
         if !self.game_state.player.follower_link.near_pit_state_is(2) {
+            b.block(0x06df7a);
+            if self.game_state.player.follower_link.sprite_damage_disable_timer()!=0 { b.taken(0x06df81); }
+            else { b.block(0x06df83); }
+            b.block(0x06df86);
             let t = (self.game_state.player.follower_link.auxiliary_state() & 1)
                 | self.game_state.player.follower_link.deep_water_state()
                 | u8::from(self.game_state.player.follower_link.is_bunny_mirror())
@@ -1915,20 +2003,28 @@ impl ZeldaState {
                     self.game_state.player.follower_link.incapacitated_timer()
                 };
             if t == 0 {
-                if self.sprite_slot_view(k).draw_work_byte_3() != 3
-                    || ((self.game_state.player.follower_link.filtered_joypad_h()
+                b.block(0x06df91);
+                if self.sprite_slot_view(k).draw_work_byte_3() != 3 {
+                    b.taken(0x06df97); b.block(0x06dff1); return;
+                }
+                b.block(0x06df99);
+                if ((self.game_state.player.follower_link.filtered_joypad_h()
                         | self.game_state.player.follower_link.filtered_joypad_l())
                         & 0x80)
                         == 0
                 {
+                    b.taken(0x06df9d); b.block(0x06dff1);
                     return;
                 }
+                b.block(0x06df9f);
                 self.follower_link_state_mut()
                     .clear_filtered_joypad_l_bits(0x80);
-            }
-        }
+            } else { b.taken(0x06df8f); }
+        } else { b.taken(0x06df78); }
 
+        b.block(0x06dfa3);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
+        b.block(0x06dfa9);
         self.follower_link_state_mut().set_picking_throw_state(2);
         let value = self.sprite_slot_view(k).draw_work_byte_4();
         self.sprite_slot_view_mut(k).set_state(value);
@@ -1951,6 +2047,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_z_velocity(value);
         let value = 0;
         self.sprite_slot_view_mut(k).set_delay_aux4(value);
+        b.block(0x06dff1);
     }
 
     // void SpriteModule_Stunned(int k) {  // 86dffa
@@ -1992,11 +2089,17 @@ impl ZeldaState {
     //   ThrownSprite_TileAndSpriteInteraction(k);
     // }
     pub(in crate::zelda_rtl) fn throwable_scenery_interact_with_sprites_and_tiles(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x06e164));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06e164);
         // ROM $06:E164
         self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
+        b.block(0x06e167);
         if self.sprite_slot_view(k).e() == 0 {
+            b.block(0x06e16c);
             self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
-        }
+        } else { b.taken(0x06e16a); }
+        b.block(0x06e16f);
         self.thrown_sprite_tile_and_sprite_interaction(k);
     }
 

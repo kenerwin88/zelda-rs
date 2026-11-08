@@ -434,6 +434,19 @@ impl ZeldaState {
     }
 
     // -----------------------------------------------------------------------
+    pub(super) fn sprite_heart_piece_bounce(&mut self, k: usize) {
+        let _bounce = self.lag_free.then(|| crate::cycle_ledger::routine(0x06c0a3));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x06c0a3);
+        {
+            let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x05f018));
+            b.block(0x05f018);
+            self.sprite_heart_piece(k);
+            b.block(0x05f01e);
+        }
+        b.block(0x06c0a7);
+    }
+
     // void Sprite_HeartPiece(int k) {  // 85f020
     pub(super) fn sprite_heart_piece(&mut self, k: usize) {
         // $05:F020..F058 prefix. Pickup/receipt and bounce suffix stay separate.

@@ -569,16 +569,27 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_cancel_dash(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079195));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x079195);
         if !self.game_state.player.follower_link.is_running() {
+            b.taken(0x079198); b.block(0x0791b8);
             return;
         }
+        b.block(0x07919a);
         for i in (0..=4).rev() {
+            b.block(0x07919d);
             if self.ancilla_slot_view(i).ancilla_type() == 0x1e {
+                b.block(0x0791a4);
                 self.ancilla_slot_view_mut(i).set_ancilla_type(0);
-            }
+            } else { b.taken(0x0791a2); }
+            b.block(0x0791a7);
+            if i != 0 { b.taken(0x0791a8); }
         }
+        b.block(0x0791aa);
         self.follower_link_state_mut().cancel_dash_state();
         self.swim_acceleration_mut().clear_mode_low_axis();
+        b.block(0x0791b8);
     }
 
     pub(in crate::zelda_rtl) fn repel_dash(&mut self) {

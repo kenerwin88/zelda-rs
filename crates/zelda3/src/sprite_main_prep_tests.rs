@@ -6,6 +6,23 @@ fn fresh_state() -> Box<ZeldaState> {
 }
 
 #[test]
+fn prefix29_boss_finished_all_slots_flags_and_property_paths() {
+    for slot in [0usize,15] {for finished in [false,true] {for ty in 0u8..243 {
+        let mut n=ZeldaState::new();n.set_lag_free(true);
+        for i in 0..16 {n.write_wram_byte(0xe20+i,((usize::from(ty)+i)%243)as u8);n.write_wram_byte(0xdd0+i,9);}
+        n.write_wram_byte(0x403,if finished{128}else{0});n.sync_native_game_state_from_ram();
+        let rom=std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc")).expect("unmodified ROM");
+        let mut s=snes::Snes::new();s.cart.load(snes::CartType::LoRom,&rom,0x2000);
+        s.ram.copy_from_slice(&n.wram_image());
+        s.ram[0x1fb..0x200].copy_from_slice(&[0xff,0x7f,0xff,0x7f,0]);
+        s.cpu.e=false;s.cpu.unpack_flags(0x30);s.cpu.k=6;s.cpu.db=6;s.cpu.pc=0x8f1c;
+        s.cpu.sp=0x1fa;s.cpu.x=slot as u16;
+        crate::cycle_ledger::assert_rom_marker_work(0x068f1c,s,
+            |s|s.cpu.k==6&&(0x8f1c..0x8f3f).contains(&s.cpu.pc),||{n.sprite_return_if_boss_finished(slot);});
+    } } }
+}
+
+#[test]
 fn overworld_proximity_scan_can_pause_inside_a_column_and_resume() {
     let mut atomic = fresh_state();
     atomic.set_bg2_x(0x1234);

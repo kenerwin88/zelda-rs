@@ -3120,13 +3120,33 @@ impl ZeldaState {
         { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
         b.block(0x008784); b.block(0x008799);
 
+        self.arrghus_state(k);
+    }
+
+    pub(super) fn arrghus_state(&mut self, k: usize) {
+        let state = self.sprite_slot_view(k).ai_state();
+        let owner = match state {0=>0x1eb593,1=>0x1eb5c8,2=>0x1eb63d,3=>0x1eb4ca,4=>0x1eb4ef,5=>0x1eb532,_=>return};
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(owner));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(owner);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1eb598);
                     self.sprite_slot_view_mut(k).set_ai_state(1);
                     self.sprite_slot_view_mut(k).set_delay_main(48);
-                }
+                } else { b.taken(0x1eb596); }
+                b.block(0x1eb5a0);
                 self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
+                b.block(0x1eb5a3);
+                let x=self.sprite_slot_view(k).x_velocity();let tx=self.sprite_slot_view(k).head_direction();
+                if x==tx { b.taken(0x1eb5a9); }
+                else { b.block(0x1eb5ab); if sign8(x.wrapping_sub(tx)) { b.block(0x1eb5ad); } else { b.taken(0x1eb5ab); b.block(0x1eb5b2); } }
+                b.block(0x1eb5b5);
+                let y=self.sprite_slot_view(k).y_velocity();let ty=self.sprite_slot_view(k).direction();
+                if y==ty { b.taken(0x1eb5bb); }
+                else { b.block(0x1eb5bd); if sign8(y.wrapping_sub(ty)) { b.block(0x1eb5bf); } else { b.taken(0x1eb5bd); b.block(0x1eb5c4); } }
+                b.block(0x1eb5c7);
                 self.sprite_approach_target_speed(
                     k,
                     self.sprite_slot_view(k).head_direction(),
@@ -3135,55 +3155,81 @@ impl ZeldaState {
             }
             1 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1eb5cd);
                     self.sprite_slot_view_mut(k).set_ai_state(0);
-                    if !self.sprite_check_if_screen_is_clear() {
+                    let clear=self.sprite_check_if_screen_is_clear();
+                    b.block(0x1eb5d4);
+                    if !clear {
+                        b.block(0x1eb5d6);
                         self.overlord_slot_view_mut(3).add_x_low(1);
                         if self.overlord_slot_view(3).x_low() == 4 {
+                            b.block(0x1eb5e0);
                             self.overlord_slot_view_mut(3).set_x_low(0);
                             self.sprite_slot_view_mut(k).set_ai_state(2);
                             self.sprite_slot_view_mut(k).set_delay_main(176);
                         } else {
+                            b.taken(0x1eb5de); b.block(0x1eb5fd);
                             // ROM Sprite_8C_Arrghus $1E:B5FD: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
                             let value = self.get_random_number_with_carry().masked_adc(63, 48);
+                            b.block(0x1eb601);
                             self.sprite_slot_view_mut(k).set_delay_main(value);
                             let speed = (self.sprite_slot_view(k).delay_main() & 3).wrapping_add(8);
-                            let pt = self.sprite_project_speed_towards_link(k, speed);
+                            let pt = self.sprite_project_speed_towards_link_long_marked(k, speed);
+                            b.block(0x1eb610);
                             let value = pt.x;
                             self.sprite_slot_view_mut(k).set_head_direction(value);
                             self.sprite_slot_view_mut(k).set_direction(pt.y);
                         }
                     } else {
-                        self.sprite_slot_view_mut(k).set_ai_state(3);
-                        self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
-                        self.sprite_slot_view_mut(k).set_subtype2(0);
+                        b.taken(0x1eb5d4);
+                        self.arrghus_set_state3(k);
                     }
                 } else {
+                    b.taken(0x1eb5cb); b.block(0x1eb61b);
                     self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
+                    b.block(0x1eb61e);
+                    let x=self.sprite_slot_view(k).x_velocity();
+                    if x==0 { b.taken(0x1eb621); }
+                    else { b.block(0x1eb623); if sign8(x) { b.block(0x1eb625); } else { b.taken(0x1eb623); b.block(0x1eb62a); } }
+                    b.block(0x1eb62d);
+                    let y=self.sprite_slot_view(k).y_velocity();
+                    if y==0 { b.taken(0x1eb630); }
+                    else { b.block(0x1eb632); if sign8(y) { b.block(0x1eb634); } else { b.taken(0x1eb632); b.block(0x1eb639); } }
+                    b.block(0x1eb63c);
                     self.sprite_approach_target_speed(k, 0, 0);
                 }
             }
             2 => {
                 self.overlord_slot_view_mut(4).set_x_low(8);
                 if self.sprite_slot_view(k).delay_main() < 32 {
+                    b.taken(0x1eb647); b.block(0x1eb651);
                     self.overlord_slot_view_mut(2).subtract_x_low(1);
                     if sign8(self.overlord_slot_view(2).x_low()) {
+                        b.taken(0x1eb654); b.block(0x1eb668);
                         self.overlord_slot_view_mut(2).set_x_low(0);
                         self.sprite_slot_view_mut(k).set_ai_state(1);
                         self.sprite_slot_view_mut(k).set_delay_main(112);
-                    }
+                    } else { b.block(0x1eb656); }
                 } else if self.sprite_slot_view(k).delay_main() < 96 {
+                    b.block(0x1eb649); b.block(0x1eb64d);
                     self.overlord_slot_view_mut(2).add_x_low(1);
                 } else if self.sprite_slot_view(k).delay_main() == 96 {
+                    b.block(0x1eb649); b.taken(0x1eb64b); b.block(0x1eb657); b.block(0x1eb659); b.block(0x1eb663);
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x26);
+                    b.block(0x1eb667);
                 } else if (self.sprite_slot_view(k).delay_main() & 0x0f) == 0 {
+                    b.block(0x1eb649); b.taken(0x1eb64b); b.block(0x1eb657); b.taken(0x1eb657); b.block(0x1eb65d); b.block(0x1eb661); b.block(0x1eb663);
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x06);
-                }
+                    b.block(0x1eb667);
+                } else { b.block(0x1eb649); b.taken(0x1eb64b); b.block(0x1eb657); b.taken(0x1eb657); b.block(0x1eb65d); b.taken(0x1eb65f); b.block(0x1eb667); }
             }
             3 => {
                 self.sprite_slot_view_mut(k).set_z_velocity(120);
                 // ROM $1E:B4CF
                 self.sprite_move_z(k, SpriteMoveZEntry::Rom1EFF62);
+                b.block(0x1eb4d2);
                 if self.sprite_slot_view(k).z() >= 224 {
+                    b.block(0x1eb4d9);
                     self.sprite_slot_view_mut(k).set_delay_main(64);
                     self.sprite_slot_view_mut(k).set_ai_state(4);
                     self.sprite_slot_view_mut(k).set_z_velocity(0);
@@ -3191,40 +3237,62 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_x_low(value);
                     let value = self.game_state.player.follower_link.y() as u8;
                     self.sprite_slot_view_mut(k).set_y_low(value);
-                }
+                } else { b.taken(0x1eb4d7); }
+                b.block(0x1eb4ee);
             }
             4 => {
                 let mut a = self.sprite_slot_view(k).delay_main();
                 if a == 0 {
+                    b.block(0x1eb4f4);
                     self.sprite_slot_view_mut(k).set_z_velocity(144);
                     let old_z = self.sprite_slot_view(k).z();
                     // ROM $1E:B4CF
                     self.sprite_move_z(k, SpriteMoveZEntry::Rom1EFF62);
+                    b.block(0x1eb500);
                     a = old_z ^ self.sprite_slot_view(k).z();
                     if sign8(a) {
+                        b.block(0x1eb506);
                         a = self.sprite_slot_view(k).z();
                         if sign8(a) {
+                            b.block(0x1eb50b);
                             self.sprite_slot_view_mut(k).set_z(0);
                             self.sprite_spawn_big_splash(k);
+                            b.block(0x1eb512);
                             self.sprite_slot_view_mut(k).set_ai_state(5);
                             self.sprite_slot_view_mut(k).set_delay_main(32);
                             self.sprite_sfx_queue_sfx3_with_pan(k, 0x03);
+                            b.block(0x1eb520);
                             self.sprite_slot_view_mut(k).set_x_velocity(32);
                             self.sprite_slot_view_mut(k).set_y_velocity(32);
-                        }
-                    }
-                }
+                        } else { b.taken(0x1eb509); }
+                    } else { b.taken(0x1eb504); }
+                } else { b.taken(0x1eb4f2); }
+                b.block(0x1eb528);
                 if a == 1 {
+                    b.block(0x1eb52b);
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x20);
-                }
+                    b.block(0x1eb531);
+                } else { b.taken(0x1eb529); b.block(0x1eb531); }
             }
             5 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    b.block(0x1eb537);
                     self.sprite_slot_view_mut(k).set_flags3(0);
                     self.sprite_move_xy(k, SpriteMoveEntry::Rom1EFF34);
-                    self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Unpriced);
+                    b.block(0x1eb53d);
+                    self.sprite_check_damage_from_link(k, SpriteDamageFromEntry::Rom06F2AA);
+                    b.block(0x1eb541);
                     if (self.game_state.frame.frame_counter & 7) == 0 {
+                        b.block(0x1eb547);
                         self.sprite_sfx_queue_sfx2_with_pan(k, 0x28);
+                        b.block(0x1eb54d);
+                        let limit=if sign8(self.sprite_slot_view(k).y_velocity()) { b.taken(0x1eb554); 29 } else { b.block(0x1eb556); 14 };
+                        for i in (0..=limit).rev() {
+                            b.block(0x1eb558);
+                            if self.garnish_slot_view(i).is_empty() { break; }
+                            b.taken(0x1eb55c); b.block(0x1eb58e);
+                            if i!=0 { b.taken(0x1eb58f); }
+                        }
                         let j = self.garnish_alloc_limit(
                             if sign8(self.sprite_slot_view(k).y_velocity()) {
                                 29
@@ -3233,6 +3301,7 @@ impl ZeldaState {
                             },
                         );
                         if j >= 0 {
+                            b.block(0x1eb55e);
                             let j = j as usize;
                             let sprite = self.sprite_slot_view(k);
                             let x_low = sprite.x_low();
@@ -3249,9 +3318,9 @@ impl ZeldaState {
                                 garnish.set_countdown(15);
                             }
                             self.garnish_state_mut().set_active_type(21);
-                        }
-                    }
-                }
+                        } else { b.block(0x1eb591); b.block(0x1eb592); }
+                    } else { b.taken(0x1eb545); b.block(0x1eb592); }
+                } else { b.taken(0x1eb535); b.block(0x1eb592); }
             }
             _ => {}
         }
@@ -3274,6 +3343,7 @@ impl ZeldaState {
         b.block(0x1eb840);
         { let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87f0)); b.block(0x1e87f0); }
         self.sprite_draw_multiple(k, &ARRGHUS_DRAW_DATA);
+        { let _far = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e87f0)); b.block(0x1e87f4); }
         b.block(0x1eb84e);
         let oam = self.game_state.oam.current_pointer_usize();
         let chr = self.sprite_slot_view(k).graphics().wrapping_mul(2);

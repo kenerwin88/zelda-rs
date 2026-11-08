@@ -375,7 +375,7 @@ impl ZeldaState {
             0xe8 => self.sprite_e8_fake_sword_long(k),
             0xe9 => self.sprite_e9_potion_shop(k),
             0xea => self.sprite_heart_container(k),
-            0xeb => self.sprite_heart_piece(k),
+            0xeb => self.sprite_heart_piece_bounce(k),
             0xec => self.sprite_ec_thrown_item(k),
             0xed => self.sprite_ed_somaria_platform(k),
             0xee => self.sprite_ee_movable_mantle(k),

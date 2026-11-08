@@ -2253,7 +2253,19 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_calculate_sfx_pan(&self, k: usize) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dbba1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dbba1);
+        b.block(0x0dbba8);
         let x = self.sprite_slot_view(k).x();
+        let relative = x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
+            .wrapping_sub(0x50);
+        if relative < 0x50 { b.taken(0x0dbbb7); }
+        else {
+            b.block(0x0dbbb9);
+            if (relative as i16).is_negative() { b.taken(0x0dbbbd); } else { b.block(0x0dbbbf); }
+        }
+        b.block(0x0dbbc0);
         Self::calculate_sfx_pan_with_scroll(
             x,
             self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
@@ -2261,18 +2273,39 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_sfx_queue_sfx2_with_pan(&mut self, k: usize, a: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dbb7c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dbb7c);
         if !self.game_state.system_signals.has_sound_effect_1() {
-            let sfx = a | self.sprite_calculate_sfx_pan(k);
+            b.block(0x0dbb82);
+            let sfx = self.sprite_sfx_apply_panning(k, a);
             self.set_sound_effect_1(sfx);
-        }
+            b.block(0x0dbb85);
+        } else { b.taken(0x0dbb80); }
+        b.block(0x0dbb88);
     }
 
     #[track_caller]
     pub(super) fn sprite_sfx_queue_sfx3_with_pan(&mut self, k: usize, a: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dbb8a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dbb8a);
         if !self.game_state.system_signals.has_sound_effect_2() {
-            let sfx = a | self.sprite_calculate_sfx_pan(k);
+            b.block(0x0dbb90);
+            let sfx = self.sprite_sfx_apply_panning(k, a);
             self.set_sound_effect_2(sfx);
-        }
+            b.block(0x0dbb93);
+        } else { b.taken(0x0dbb8e); }
+        b.block(0x0dbb96);
+    }
+
+    fn sprite_sfx_apply_panning(&self, k: usize, a: u8) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dbb98));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dbb98);
+        let result = a | self.sprite_calculate_sfx_pan(k);
+        b.block(0x0dbb9e);
+        result
     }
 
     pub(super) fn main_show_text_message(&mut self) {

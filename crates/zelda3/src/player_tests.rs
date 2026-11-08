@@ -5,6 +5,91 @@ use crate::game_state::constants::{
 };
 
 #[test]
+fn prefix29_bow_all_button_animation_allocation_ammo_refund_and_cleanup_paths_exclude_children() {
+    for mask in [0,0x40] {for timer in [0,1,128,255] {for step in 0..3 {for variant in 0..32 {
+        let mut n=ZeldaState::new();n.set_lag_free(true);
+        for(a,v)in[(0x3a,mask),(0x3d,timer),(0x300,step),(0x6c,variant&1),(0xf4,if variant&2==0{0}else{0x40}),
+            (0x46,u8::from(variant==2)),(0x3c,if variant&4==0{0}else{9}),(0xb99,(variant>>3)&1),
+            (0xb9a,(variant>>4)&1),(0xf377,(variant>>2)%3),(0x2f,((variant>>2)&3)*2)]{n.write_wram_byte(a,v);}
+        for i in 0..6 {n.write_wram_byte(0xc4a+i,if variant&4==0{0}else{1});}
+        n.sync_native_game_state_from_ram();
+        let s=marker36_player_machine(&n,0x07a006).expect("unmodified ROM");
+        crate::cycle_ledger::assert_rom_marker_work(0x07a006,s,
+            |s|s.cpu.k==7&&((0xa006..0xa0bb).contains(&s.cpu.pc)||s.cpu.pc==0xa002),||n.link_item_bow());
+    } } } }
+}
+
+#[test]
+fn prefix29_hookshot_item_all_button_door_defense_press_and_allocation_paths_exclude_children() {
+    for mask in [0,0x40] {for doorway in [0,1] {for defense in [0,2] {for button in [0,0x40] {
+        for incapacitated in [0,1] {for full in [false,true] {for facing in [0,2,4,6] {
+            let mut n=ZeldaState::new();n.set_lag_free(true);
+            for(a,v)in[(0x3a,mask),(0x6c,doorway),(0x48,defense),(0xf4,button),(0x46,incapacitated),(0x2f,facing)]{n.write_wram_byte(a,v);}
+            for i in 0..6 {n.write_wram_byte(0xc4a+i,u8::from(full));}n.sync_native_game_state_from_ram();
+            let s=marker36_player_machine(&n,0x07ab25).expect("unmodified ROM");
+            crate::cycle_ledger::assert_rom_marker_work(0x07ab25,s,
+                |s|s.cpu.k==7&&(0xab25..0xab6c).contains(&s.cpu.pc),||n.link_item_hookshot());
+        } } }
+    } } } }
+}
+
+#[test]
+fn prefix29_y_bonk_all_collision_swim_snap_direction_and_drag_paths_exclude_children() {
+    for collision in 0u8..8 {for mode in [0,4] {for orthogonal in [0,1,2] {
+        for velocity in [0,1,127,128,255] {for variant in 0..8 {
+            let mut n=ZeldaState::new();n.set_lag_free(true);
+            for(a,v)in[(0xe,collision),(0x5d,mode),(0x6a,orthogonal),(0x30,velocity),(0x22,if variant&1==0{0x40}else{0x41}),
+                (0x20,0x40),(0x1b,1),(0x66,if variant&2==0{0}else{1}),(0x2f,0),(0x3c,if variant&4==0{0}else{1}),
+                (0x371,if variant&2==0{0}else{32}),(0x315,1),(0x2f6,if variant&2==0{0}else{0x20}),
+                (0x310,(variant>>2)&1),(0xee,(variant>>2)&1)]{n.write_wram_byte(a,v);}
+            n.sync_native_game_state_from_ram();
+            let s=marker36_player_machine(&n,0x07bdb1).expect("unmodified ROM");
+            crate::cycle_ledger::assert_rom_marker_owners_work(&[0x07bdb1,0x07bdeb,0x07be6b],s,
+                |s|s.cpu.k==7&&(0xbdb1..0xbeaf).contains(&s.cpu.pc),||n.handle_pushing_bonking_snaps_y());
+        } }
+    } } }
+}
+
+#[test]
+fn prefix29_add_hookshot_all_allocation_directions_and_coordinate_wraps_exclude_children() {
+    for facing in [0,2,4,6] {for free in 0..=6 {for xy in [0u16,1,255,256,0xffff] {
+        let mut n=ZeldaState::new();n.set_lag_free(true);
+        for i in 0..6 {n.write_wram_byte(0xc4a+i,if i<free{1}else{0});}
+        n.write_wram_byte(0x2f,facing);n.write_wram_word(0x22,xy);n.write_wram_word(0x20,xy);n.sync_native_game_state_from_ram();
+        let mut s=marker36_player_machine(&n,0x099b10).expect("unmodified ROM");s.cpu.a=0x1f;s.cpu.y=5;s.cpu.db=9;
+        crate::cycle_ledger::assert_rom_marker_work(0x099b10,s,
+            |s|s.cpu.k==9&&((0x9b10..0x9b68).contains(&s.cpu.pc)||(0x80c3..0x80c8).contains(&s.cpu.pc)),
+            ||n.ancilla_add_hookshot(0x1f,5));
+    } } }
+}
+
+#[test]
+fn prefix29_cancel_dash_all_slots_and_clear_paths() {
+    for running in [0,1,255] {for mask in 0u8..32 {
+        let mut n=ZeldaState::new();n.set_lag_free(true);
+        n.write_wram_byte(0x372,running);
+        for i in 0..5 {n.write_wram_byte(0xc4a+i,if mask&(1<<i)!=0 {0x1e}else{1});}
+        n.sync_native_game_state_from_ram();
+        let s=marker36_player_machine(&n,0x079195).expect("unmodified ROM");
+        crate::cycle_ledger::assert_rom_marker_work(0x079195,s,
+            |s|s.cpu.k==7&&(0x9195..0x91b9).contains(&s.cpu.pc),||n.link_cancel_dash());
+    } }
+}
+
+#[test]
+fn prefix29_swimming_reset_and_cape_direct_entries_exclude_acceleration_child() {
+    for fill in [0,1,127,128,255] {for cape in [false,true] {
+        let mut n=ZeldaState::new();n.set_lag_free(true);
+        for a in [0x55,0x2cb,0x34f,0x32a,0x360,0x37b] {n.write_wram_byte(a,fill);}
+        n.sync_native_game_state_from_ram();let owner=if cape{0x07ae54}else{0x07983a};
+        let s=marker36_player_machine(&n,owner).expect("unmodified ROM");
+        crate::cycle_ledger::assert_rom_marker_work(owner,s,
+            |s|s.cpu.k==7&&(if cape{0xae54..0xae62}else{0x983a..0x984b}).contains(&s.cpu.pc),
+            ||if cape{n.link_force_unequip_cape_quietly()}else{n.link_reset_swimming_state()});
+    } }
+}
+
+#[test]
 fn prefix11_lamp_caller_all_paths_match_rom() {
     for door in [0, 1] {
         for incapacitated in [0, 1] {

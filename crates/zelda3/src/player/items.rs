@@ -4,6 +4,8 @@ use super::*;
 
 impl ZeldaState {
     pub(in crate::zelda_rtl) fn link_force_unequip_cape_quietly(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07ae54));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x07ae54);
         self.follower_link_state_mut().unequip_cape_quietly();
     }
 
@@ -354,37 +356,53 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_item_bow(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07a006));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07a006);
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
-            if self.game_state.player.follower_link.doorway_state() != 0
-                || !self.check_y_button_press()
-            {
+            b.block(0x07a00a);
+            if self.game_state.player.follower_link.doorway_state() != 0 {
+                b.taken(0x07a00c); b.block(0x07a002); return;
+            }
+            b.block(0x07a00e);
+            let pressed=self.check_y_button_press();
+            b.block(0x07a011);
+            if !pressed {
+                b.taken(0x07a011); b.block(0x07a002);
                 return;
             }
+            b.block(0x07a013);
             self.follower_link_state_mut().set_direction_lock_bits(1);
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(LINK_ITEM_BOW_BOW_DELAYS[0]);
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_item_in_hand(16);
-        }
+        } else { b.taken(0x07a008); }
+        b.block(0x07a02b);
         self.halt_link_when_using_items();
+        b.block(0x07a02e);
         self.follower_link_state_mut().clear_direction_flags(0x0f);
         if (self
             .follower_link_state_mut()
             .decrement_spin_attack_delay_timer() as i8)
             >= 0
         {
+            b.taken(0x07a036); b.block(0x07a002);
             return;
         }
+        b.block(0x07a038);
         self.follower_link_state_mut()
             .increment_action_handler_timer();
         let step = self.game_state.player.follower_link.action_handler_timer() as usize;
         if step < LINK_ITEM_BOW_BOW_DELAYS.len() {
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(LINK_ITEM_BOW_BOW_DELAYS[step]);
+            b.taken(0x07a047); b.block(0x07a0ba);
             return;
         }
 
+        b.block(0x07a049);
         let k = self.ancilla_add_arrow(
             9,
             self.game_state.player.follower_link.facing(),
@@ -392,24 +410,35 @@ impl ZeldaState {
             self.game_state.player.follower_link.x(),
             self.game_state.player.follower_link.y(),
         );
+        b.block(0x07a063);
         if k >= 0 {
+            b.block(0x07a065);
             let k = k as usize;
             if self.game_state.archery_game.arrows_left() != 0 {
+                b.block(0x07a06a);
                 self.archery_game_mut().decrement_arrows_left();
                 self.player_resources_mut().increment_arrows_by(2);
-            }
+            } else { b.taken(0x07a068); }
+            b.block(0x07a077);
+            if self.game_state.archery_game.out_of_arrows()!=0 { b.taken(0x07a07a); }
+            else { b.block(0x07a07c); if self.game_state.inventory.player_resources.arrows()==0 { b.taken(0x07a080); } }
             if self.game_state.archery_game.out_of_arrows() == 0
                 && self.game_state.inventory.player_resources.arrows() != 0
             {
+                b.block(0x07a082);
                 if self.player_resources_mut().decrement_arrows() == 0 {
+                    b.block(0x07a089);
                     self.hud_refresh_icon();
-                }
+                    b.block(0x07a08d);
+                } else { b.taken(0x07a087); }
             } else {
+                b.block(0x07a08f);
                 self.ancilla_slot_view_mut(k).set_ancilla_type(0);
                 self.ancilla_sfx2_near(60);
             }
-        }
+        } else { b.taken(0x07a063); }
 
+        b.block(0x07a097);
         self.follower_link_state_mut().clear_action_handler_timer();
         self.follower_link_state_mut()
             .set_spin_attack_delay_timer(0);
@@ -418,8 +447,10 @@ impl ZeldaState {
         self.follower_link_state_mut().clear_direction_lock_bits(1);
         self.follower_link_state_mut().clear_item_in_hand_bits(0x10);
         if self.game_state.player.follower_link.button_b_frames() >= 9 {
+            b.block(0x07a0b6);
             self.follower_link_state_mut().set_button_b_frames(9);
-        }
+        } else { b.taken(0x07a0b4); }
+        b.block(0x07a0ba);
     }
 
     pub(in crate::zelda_rtl) fn link_item_boomerang(&mut self) {
@@ -888,6 +919,10 @@ impl ZeldaState {
     /// Complete selectors reached by $07:81C6 and $07:8427 JSR $9B0E.
     /// Calls and item JMP targets retain their separate body ownership.
     pub(super) fn link_handle_y_item_marked(&mut self) {
+        self.link_handle_y_item();
+    }
+
+    pub(super) fn link_handle_y_item(&mut self) {
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x079b0e));
         let b = crate::cycle_ledger::blocks(self.lag_free);
         let p = &self.game_state.player.follower_link;
@@ -895,7 +930,7 @@ impl ZeldaState {
         if p.button_b_frames() == 0 { b.taken(0x079b10); }
         else {
             b.block(0x079b12);
-            if p.button_b_frames() < 9 { b.taken(0x079b14); b.block(0x079ae5); return self.link_handle_y_item(); }
+            if p.button_b_frames() < 9 { b.taken(0x079b14); b.block(0x079ae5); return self.link_handle_y_item_body(); }
         }
         b.block(0x079b16);
         if !p.is_bunny_mirror() { b.taken(0x079b19); }
@@ -905,7 +940,7 @@ impl ZeldaState {
             else {
                 b.block(0x079b22);
                 if p.current_item_y() == 20 { b.taken(0x079b24); }
-                else { b.block(0x079b26); return self.link_handle_y_item(); }
+                else { b.block(0x079b26); return self.link_handle_y_item_body(); }
             }
         }
         b.block(0x079b27);
@@ -918,7 +953,7 @@ impl ZeldaState {
                 b.block(0x079b31);
                 if game == 2 { b.taken(0x079b33); b.block(0x079b38); }
                 else { b.block(0x079b35); }
-                return self.link_handle_y_item();
+                return self.link_handle_y_item_body();
             }
         }
         b.block(0x079b3b);
@@ -955,10 +990,10 @@ impl ZeldaState {
             if active.wrapping_sub(1) & 0x80 != 0 { b.taken(0x079b89); b.block(0x079b91); }
             else { b.block(0x079b8b); }
         }
-        self.link_handle_y_item();
+        self.link_handle_y_item_body();
     }
 
-    pub(super) fn link_handle_y_item(&mut self) {
+    fn link_handle_y_item_body(&mut self) {
         if self.game_state.player.follower_link.button_b_frames() != 0
             && self.game_state.player.follower_link.button_b_frames() < 9
         {
@@ -1531,15 +1566,22 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_item_hookshot(&mut self) {
-        if self.game_state.player.follower_link.button_mask_b_y() & 0x40 != 0
-            || self.game_state.player.follower_link.doorway_state() != 0
-            || self.game_state.player.follower_link.defense_flags() & 2 != 0
-            || !self.check_y_button_press()
-        {
-            return;
-        }
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07ab25));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07ab25);
+        if self.game_state.player.follower_link.button_mask_b_y()&0x40!=0 { b.taken(0x07ab29); b.block(0x07ab6b); return; }
+        b.block(0x07ab2b);
+        if self.game_state.player.follower_link.doorway_state()!=0 { b.taken(0x07ab2d); b.block(0x07ab6b); return; }
+        b.block(0x07ab2f);
+        if self.game_state.player.follower_link.defense_flags()&2!=0 { b.taken(0x07ab33); b.block(0x07ab6b); return; }
+        b.block(0x07ab35);
+        let pressed=self.check_y_button_press();
+        b.block(0x07ab38);
+        if !pressed { b.taken(0x07ab38); b.block(0x07ab6b); return; }
 
+        b.block(0x07ab3a);
         self.reset_all_acceleration();
+        b.block(0x07ab3d);
         self.follower_link_state_mut().clear_action_handler_timer();
         self.follower_link_state_mut().set_direction_lock_bits(1);
         self.follower_link_state_mut()
@@ -1551,6 +1593,7 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_sprite_damage_disable_timer(1);
         self.ancilla_add_hookshot(0x1f, 3);
+        b.block(0x07ab6b);
     }
 
     pub(in crate::zelda_rtl) fn link_state_hookshotting(&mut self) {
@@ -2051,7 +2094,13 @@ impl ZeldaState {
     }
 
     fn ancilla_add_hookshot_inner(&mut self, a: u8, y: u8) -> Option<usize> {
-        let k = self.ancilla_add_simple(a, y)?;
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x099b10));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x099b10);
+        let allocated = self.ancilla_add_simple(a, y);
+        b.block(0x099b16);
+        let Some(k) = allocated else { b.taken(0x099b16); b.block(0x099b66); return None; };
+        b.block(0x099b18);
         self.follower_link_state_mut().clear_hookshot_interlock();
         self.messaging_state_mut().set_effect_index(k as u8);
         let dir = self.game_state.player.follower_link.facing() >> 1;
@@ -2082,6 +2131,7 @@ impl ZeldaState {
             .y()
             .wrapping_add(ANCILLA_ADD_HOOKSHOT_INNER_HOOKSHOT_Y_DELTA[dir as usize] as u16);
         self.ancilla_set_xy(k, x, y);
+        b.block(0x0980c3); b.block(0x0980c6);
         Some(k)
     }
 

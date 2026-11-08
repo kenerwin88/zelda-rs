@@ -1089,4 +1089,48 @@
   ,{"entry":"06f2a9","end":"06f2aa"}
   ,{"entry":"01efec","end":"01f046","data_bank":0}
   ,{"entry":"1dd1a8","end":"1dd1af"}
+  ,{"entry":"06eb0a","end":"06eb1d","index_max":15}
+  ,{"entry":"06eb1d","end":"06eb30","index_max":15}
+  ,{"entry":"079195","end":"0791b9","index_max":4}
+  ,{"entry":"07ae54","end":"07ae62"}
+  ,{"entry":"05f018","end":"05f020"}
+  ,{"entry":"06c0a3","end":"06c0a8"}
+  ,{"entry":"0dbba1","end":"0dbba8","index_max":15}
+  ,{"entry":"0dbb98","end":"0dbba1"}
+  ,{"entry":"0dbb7c","end":"0dbb8a"}
+  ,{"entry":"0dbb8a","end":"0dbb98"}
+  ,{"entry":"068f1c","end":"068f3f","index_max":15}
+  ,{"entry":"06f69f","end":"06f6ca"}
+  ,{"entry":"06ec02","end":"06ec5c","index_max":15}
+  ,{"entry":"06ed3f","end":"06ed89","index_max":15}
+  ,{"entry":"06ed89","end":"06edc5"}
+  ,{"entry":"06f314","end":"06f3ca","index_max":15}
+  ,{"entry":"06f460","end":"06f46d","index_max":15}
+  ,{"entry":"06df6d","end":"06dff2","index_max":15}
+  ,{"entry":"06e164","end":"06e172","index_max":15}
+  ,{"entry":"06e1b2","end":"06e229","index_max":15}
+  ,{"entry":"06edc5","end":"06edcb"}
+  ,{"entry":"06ede2","end":"06eec1"}
+  ,{"entry":"06aa0c","end":"06aa18"}
+  ,{"entry":"06aa14","end":"06aa18"}
+  ,{"entry":"06a86c","end":"06a874","index_max":15}
+  ,{"entry":"06a874","end":"06a91d","index_max":15}
+  ,{"entry":"06c017","end":"06c01c"}
+  ,{"entry":"05e24d","end":"05e255"}
+  ,{"entry":"05e255","end":"05e28c","index_max":15}
+  ,{"entry":"1edc5b","end":"1edc62","index_max":15,"terminal_dispatch":true}
+  ,{"entry":"1edc68","end":"1edc7b","index_max":15}
+  ,{"entry":"1eb593","end":"1eb5c8","index_max":15}
+  ,{"entry":"1eb5c8","end":"1eb5ee","index_max":15}
+  ,{"entry":"1eb5fd","end":"1eb63d","index_max":15}
+  ,{"entry":"1eb61b","end":"1eb63d","index_max":15}
+  ,{"entry":"1eb63d","end":"1eb674","index_max":15}
+  ,{"entry":"1eb4ca","end":"1eb4ef","index_max":15}
+  ,{"entry":"1eb4ef","end":"1eb532","index_max":15}
+  ,{"entry":"1eb532","end":"1eb593","index_max":29}
+  ,{"entry":"099b10","end":"099b68","index_max":6}
+  ,{"entry":"07bdba","end":"07be99"}
+  ,{"entry":"07a006","end":"07a0ba","index_max":6}
+  ,{"entry":"07a002","end":"07a003"}
+  ,{"entry":"07ab25","end":"07ab6c"}
 ]

@@ -527,17 +527,17 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn link_reset_swimming_state_marked(&mut self) {
+        self.link_reset_swimming_state();
+    }
+
+    pub(in crate::zelda_rtl) fn link_reset_swimming_state(&mut self) {
         // $07:8158, $07:83E1 and $07:9747 JSL $983A.
         let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07983a));
         let b = crate::cycle_ledger::blocks(self.lag_free);
         b.block(0x07983a);
-        self.link_reset_swimming_state();
-        b.block(0x079849);
-    }
-
-    pub(in crate::zelda_rtl) fn link_reset_swimming_state(&mut self) {
         self.follower_link_state_mut().reset_swim_stroke_state();
         self.reset_all_acceleration();
+        b.block(0x079849);
     }
 
     pub(in crate::zelda_rtl) fn link_reset_state_after_damaging_pit(&mut self) {

@@ -5226,17 +5226,27 @@ impl ZeldaState {
     }
 
     fn sprite_return_if_boss_finished(&mut self, k: usize) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x068f1c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x068f1c);
         if self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x8000 != 0 {
+            b.block(0x068f21);
             self.sprite_slot_view_mut(k).set_state(0);
             return true;
         }
+        b.taken(0x068f1f); b.block(0x068f27);
         for j in (0..16).rev() {
+            b.block(0x068f29);
             if SPRITE_INITIAL_BUMP_DAMAGE[self.sprite_slot_view(j).sprite_type() as usize] & 0x10
                 == 0
             {
+                b.block(0x068f36);
                 self.sprite_slot_view_mut(j).set_state(0);
-            }
+            } else { b.taken(0x068f34); }
+            b.block(0x068f3b);
+            if j != 0 { b.taken(0x068f3c); }
         }
+        b.block(0x068f3e);
         false
     }
 

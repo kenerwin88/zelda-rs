@@ -75,6 +75,11 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_79_bee(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1edc5b));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1edc5b);
+        { let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x008781)); b.block(0x008781); }
+        b.block(0x008784); b.block(0x008799);
         match self.sprite_slot_view(k).ai_state() {
             0 => self.bee_dormant_hive(k),
             1 => self.bee_main(k),
@@ -91,13 +96,22 @@ impl ZeldaState {
     //     SpawnBeeFromHive(k);
     // }
     pub(super) fn bee_dormant_hive(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1edc68));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1edc68);
         if self.sprite_slot_view(k).e() != 0 {
+            b.taken(0x1edc6b); b.block(0x1edc7a);
             return;
         }
+        b.block(0x1edc6d);
         self.sprite_slot_view_mut(k).clear();
-        for _ in (0..=11).rev() {
+        for i in (0..=11).rev() {
+            b.block(0x1edc72);
             self.spawn_bee_from_hive(k);
+            b.block(0x1edc76);
+            if i!=0 { b.taken(0x1edc78); }
         }
+        b.block(0x1edc7a);
     }
 
     // void SpawnBeeFromHive(int k) {  // 9edc8f
