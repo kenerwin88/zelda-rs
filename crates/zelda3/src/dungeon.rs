@@ -515,3 +515,6 @@ mod aux_graphics_publication_tests {
 #[cfg(test)]
 #[path = "dungeon/m3a_fixtures.rs"]
 pub(crate) mod m3a_fixtures;
+#[cfg(test)]
+#[path = "dungeon_prefix34_tests.rs"]
+mod prefix34_tests;

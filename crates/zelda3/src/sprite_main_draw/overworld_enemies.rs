@@ -37,9 +37,25 @@ impl ZeldaState {
     // void SpriteDraw_Pikit_Tongue(int k, PrepOamCoordsRet *info) {  // 8dd74a — sprite_main.c:13316
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_pikit_tongue(&mut self, k: usize, info: &PrepOamCoordsRet) {
-        if self.sprite_slot_view(k).ai_state() != 2 || self.sprite_slot_view(k).pause() != 0 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dd74a));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dd74a);
+        if self.sprite_slot_view(k).ai_state() != 2 {
+            b.taken(0x0dd74f); b.block(0x0dd739);
             return;
         }
+        b.block(0x0dd751);
+        if self.sprite_slot_view(k).pause() != 0 {
+            b.taken(0x0dd754); b.block(0x0dd739);
+            return;
+        }
+        b.block(0x0dd756);
+        if sign8(self.sprite_slot_view(k).a()) { b.block(0x0dd79c); }
+        else { b.taken(0x0dd79a); }
+        b.block(0x0dd79f);
+        if sign8(self.sprite_slot_view(k).b()) { b.block(0x0dd7a8); }
+        else { b.taken(0x0dd7a6); }
+        b.block(0x0dd7ab);
         let oam = self.game_state.oam.current_pointer_usize();
         let x = info.x.wrapping_add(4) as u8;
         let y = info.y.wrapping_add(3) as u8;
@@ -55,6 +71,23 @@ impl ZeldaState {
         let g = self.sprite_slot_view(k).direction() as usize;
         let mut i: i32 = 3;
         loop {
+            b.block(0x0dd7b2);
+            {
+                let _delay = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dd813));
+                b.block(0x0dd813);
+            }
+            b.block(0x0dd7c0);
+            if sign8(self.sprite_slot_view(k).a()) { b.block(0x0dd7c8); }
+            else { b.taken(0x0dd7c6); }
+            b.block(0x0dd7cb);
+            {
+                let _delay = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dd813));
+                b.block(0x0dd813);
+            }
+            b.block(0x0dd7de);
+            if sign8(self.sprite_slot_view(k).b()) { b.block(0x0dd7e6); }
+            else { b.taken(0x0dd7e4); }
+            b.block(0x0dd7e9);
             let sa = self.sprite_slot_view(k).a() as i8 as i32;
             let sb = self.sprite_slot_view(k).b() as i8 as i32;
             let xv = x as i32 + (sa * PIKIT_TONGUE_LENGTH_MULTIPLIERS[i as usize] as i32) / 256;
@@ -68,30 +101,42 @@ impl ZeldaState {
             );
             cur += 4;
             i -= 1;
+            if i >= 0 { b.taken(0x0dd803); }
             if i < 0 {
                 break;
             }
         }
-        self.sprite_correct_oam_entries(k, 5, 0);
+        b.block(0x0dd805);
+        self.sprite_correct_oam_entries_long(k, 5, 0);
+        b.block(0x0dd80e);
     }
 
     // -----------------------------------------------------------------------
     // void SpriteDraw_Pikit_Loot(int k, PrepOamCoordsRet *info) {  // 8dd858 — sprite_main.c:13341
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_pikit_loot(&mut self, k: usize, _info: &PrepOamCoordsRet) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dd858));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dd858);
         if self.sprite_slot_view(k).g() == 0 {
+            b.taken(0x0dd85b); b.block(0x0dd8ae);
             return;
         }
+        b.block(0x0dd85d);
         let mut g = (self.sprite_slot_view(k).g() as usize) - 1;
         if g == 3 {
+            b.block(0x0dd862);
             g = (self.sprite_slot_view(k).subtype() as usize) + 2;
-        }
+        } else { b.taken(0x0dd860); }
+        b.block(0x0dd868);
         self.oam_allocate_from_region_c(0x10);
+        b.block(0x0dd870);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let tmp_x = self.game_state.scratch_counter.value();
         let tmp_y = self.game_state.sprites.workspace.shared_scratch_a();
         let mut i: i32 = 3;
         loop {
+            b.block(0x0dd875);
             let j = g * 4 + i as usize;
             self.oam_state_mut().write_entry(
                 oam,
@@ -102,11 +147,14 @@ impl ZeldaState {
             );
             oam += 4;
             i -= 1;
+            if i >= 0 { b.taken(0x0dd8a3); }
             if i < 0 {
                 break;
             }
         }
-        self.sprite_correct_oam_entries(k, 3, 0);
+        b.block(0x0dd8a5);
+        self.sprite_correct_oam_entries_long(k, 3, 0);
+        b.block(0x0dd8ae);
     }
 
     // -----------------------------------------------------------------------
@@ -265,10 +313,15 @@ impl ZeldaState {
     //   Two body tiles selected by sprite_graphics plus common shadow.
     // }
     pub(in crate::zelda_rtl) fn bomber_draw(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dd56c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dd56c);
         let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
         let mut info = self.sprite_draw_multiple(k, &BOMBER_DRAW_FRAMES[base..base + 2]);
+        b.block(0x0dd588);
         // ROM $0D:D588
         self.sprite_draw_shadow_custom(k, &mut info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x0dd58c);
     }
 
     // -----------------------------------------------------------------------
@@ -1901,17 +1954,26 @@ impl ZeldaState {
     }
 
     pub(super) fn moblin_before_tile_collision(&mut self, k: usize) -> bool {
+        // Only $06:98E4..98FC is admitted here; state bodies remain unpriced.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0698e4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0698e4);
         self.moblin_draw(k);
+        b.block(0x0698e7);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return false;
         }
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        b.block(0x0698ea);
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom06FF78) {
             return false;
         }
         // $06:98ED JSR $06:D88B: both complete damage calls.
+        b.block(0x0698ed);
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom06D88B);
         // $06:98F0 JSR $06:E92C: complete body, caller opcode unchanged.
+        b.block(0x0698f0);
         self.sprite_move_xy(k, SpriteMoveEntry::Rom06E93E);
+        b.block(0x0698f3);
         true
     }
 
@@ -1929,6 +1991,13 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn moblin_after_tile_collision(&mut self, k: usize) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0698e4));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0698f6);
+        if self.lag_free {
+            { let _local = crate::cycle_ledger::routine(0x008781); b.block(0x008781); }
+            b.block(0x008784); b.block(0x008799);
+        }
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -2121,12 +2190,27 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn pikit_draw(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
+        // $1E:8DCA owns only the prep JSR, far draw JSL and RTS.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8dca));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8dca);
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank1eDoubleRet) else {
             return;
         };
+        b.block(0x1e8dcd);
+        self.pikit_draw_body(k,x,y,flags);
+        b.block(0x1e8dd1);
+    }
+
+    fn pikit_draw_body(&mut self, k: usize, x: u16, y: u16, flags: u8) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0dd6e6));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0dd6e6);
         let info = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.sprite_draw_pikit_tongue(k, &info);
+        b.block(0x0dd6ec);
         let oam = self.game_state.oam.current_pointer_usize();
+        if (oam & 0xff) + 1 > 0xff { b.crossing(0x0dd6f4); }
         let oam_byte = self.game_state.oam.entry_x(oam);
         self.temp_counter_mut().set(oam_byte);
         let shared_scratch_a = self.game_state.oam.entry_y(oam);
@@ -2139,13 +2223,16 @@ impl ZeldaState {
             .set_current_extended_pointer(ext.wrapping_add(6));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
         let mut shadow_info = self.sprite_draw_multiple(k, &PIKIT_DRAW_FRAMES[base..base + 2]);
+        b.block(0x0dd722);
         let bak = self.sprite_slot_view(k).flags2();
         self.sprite_slot_view_mut(k).subtract_flags2(6);
         // ROM $0D:D72C
         self.sprite_draw_shadow_custom(k, &mut shadow_info, 10, SpriteShadowEntry::Rom06DC54);
+        b.block(0x0dd730);
         let value = bak;
         self.sprite_slot_view_mut(k).set_flags2(value);
         self.sprite_draw_pikit_loot(k, &info);
+        b.block(0x0dd737);
     }
 
     pub(super) fn moblin_draw(&mut self, k: usize) {

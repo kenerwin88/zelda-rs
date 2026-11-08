@@ -13763,3 +13763,490 @@ occupies **13.61 GB allocated**, below 16 GB. `verification.json`,
 `source-freeze-agreement.json`, `profile-census-agreement.json` and
 `artifact-hashes.json` retain the readback receipts. The 22 unresolved early
 (a) rows and the dedicated 407,899 callers remain for subsequent work.
+
+## Lagless prefix hunt 34
+
+Baseline is `33407cdf` on `codex/prefix-hunt34`; evidence is in
+`target/prefix-hunt34/`. Before reuse, all **14 authority hashes**, **152
+retained hunt-33 artifacts** and **1,615 baseline source/fixture files** agree.
+The freshly regenerated ledger contains **1,473,123 iterations**. The final
+production binary is `zelda3-candidate3`, SHA-256
+`1a2247bf1df70e85f313d57a377c094e10fb9ba29059b72120b4d0bc93ad024a`.
+
+ROM, live and CPU-picture censuses pass on the same final binary. All live-only
+changed holds have direct source-PC poll attribution. The full default library
+suite has only the permitted spotlight failure. Census results and all row
+attributions were written here before that long final test wait.
+
+### Owners and ROM fixtures
+
+| ROM owner | Newly priced work / excluded children |
+| --- | --- |
+| `$05:9CAB` | King Zora drawing, all 13 graphics frames, splash paths, clipping and actual indexed-page crossing; prep, correction and allocation children excluded |
+| `$09:B020` | Fireball trail frame gate, inline 30-slot allocation scan, success and exhaustion, coordinate carry and return |
+| `$1A:F5A5` | Waterfall bank wrapper; dispatched body excluded |
+| `$1A:F5AD` | Waterfall dispatch and contact body, inactive, splash and GT branches; inactive, damage and spawn children excluded |
+| `$02:C1E5` | Transition landing classification, all tile bytes and both floors |
+| `$02:C12C` | Subtile landing coordinates and visibility; classification child excluded |
+| `$07:E704` | Direct pose/walk animation entry, timers, guards and returns; dash body excluded |
+| `$08:8DAE` | Single-sprite ancilla collision, deflection, projectile and damage guards, caller-stack return; hitbox, overlap, arrow, damage and alert children excluded |
+| `$08:8AB9` | Shared alert body reached by tile-collision fallthrough and single-collision JSR |
+| `$0D:D56C` | Bomber drawing wrapper; multiple drawing and shadow children excluded |
+| `$1E:8DCA` | Pikit coordinate-prep wrapper; prep and far drawing children excluded |
+| `$0D:D6E6` | Pikit drawing wrapper; tongue, multiple drawing, shadow and loot children excluded |
+| `$0D:D74A` | Pikit tongue, sign branches, four segments and return; multiply-delay and OAM-correction children excluded |
+| `$0D:D813` | Three-NOP multiply delay and RTS |
+| `$0D:D858` | Pikit loot, subtype selection, four tiles and return; allocation and OAM-correction children excluded |
+| `$06:98E4` | Moblin call/dispatch prefix through 98FC; state bodies remain unpriced |
+| `$1E:8BBF` | Pikit call/dispatch prefix through 8BD1; state bodies remain unpriced |
+| `$1E:8DD2` | Zirro dispatch and Bomber_Main call prefix through 8E5D; pellet states and movement/attack suffix remain unpriced |
+
+The full `$07:E6A6` animation model already owns its fallthrough into the
+animation body. Its semantic calls bypass the new direct-entry markers, so
+the same instructions are never charged twice. Pikit uses its actual
+`$1E:FF84` prep entry. The existing `$06:FEB4` long correction wrapper is
+admitted at King Zora and Pikit's actual calls, `$1E:8B2E` at Pikit's collision
+call, and the existing `$06:FF78` entry-test/zero-return model at Moblin's
+recoil call. The nonzero bank-6 recoil body remains unpriced.
+
+There is **one existing fixture owned-PC transfer**:
+`one_floor_body_markers_match_rom_paths` changes its owned interval from
+`$08:8A03..8ABE` to `$08:8A03..8AB8`. Newly shared child `$08:8AB9` owns
+**8AB9, 8ABB and 8ABE**, previously included in the tile-collision block.
+Both tile-collision success paths explicitly enter that child. The old
+8AB6 block retains its actual 30 clocks; the alert child owns its 90 clocks.
+No other existing generated block changes. Existing recoil caller-owned
+second-PLA/RTS work is included in the new caller fixtures without adding
+another charge.
+
+The `$05:967B` Zora selector remains **unpriced globally**. Its independently
+decoded 48-clock test and 24-clock JMP execute twice at protected 168,346;
+the diagnostic profile proves the resulting 144-clock change. The entire
+owner is withheld rather than introducing a scene condition or compensation.
+`withheld-owner-proof.json` retains the two calls and binary identity.
+
+Two ROM behavior corrections accompany the markers. Fireball trail allocation
+returns on exhaustion at B033/B034. Collision deflection uses the opposite
+**sprite** direction at 8DFE/8E02, and direct 8E6C guard exits skip the 8E66
+hit-type store. ROM fixtures verify allocation output and collision direction,
+hit-type and alert fields; the complete CPU-picture census gates these changes.
+
+All new prices are decoded ROM blocks and actual native branch operands.
+Measurements below are results, never prices. Nine new unmodified-ROM fixtures
+explicitly construct lag-free states:
+
+- `prefix34_king_zora_all_graphics_splash_and_double_return_paths_match_rom`
+- `prefix34_fireball_trail_all_frames_slots_allocations_and_coordinate_carries_match_rom`
+- `prefix34_transition_landing_every_tile_floor_direction_and_wrap_matches_rom`
+- `prefix34_direct_animation_all_pose_walk_timers_and_guards_exclude_full_entry_and_dash_child`
+- `prefix34_ancilla_single_collision_all_guards_success_returns_and_deflected_arrows_exclude_children`
+- `prefix34_waterfall_dispatch_all_inactive_contact_screen_and_child_paths_match_rom`
+- `prefix34_bomber_draw_every_graphic_and_clip_path_excludes_draw_and_shadow_children`
+- `prefix34_pikit_prep_body_tongue_and_loot_all_paths_exclude_shared_children`
+- `prefix34_moblin_pikit_zirro_call_prefixes_all_dispatch_and_early_return_paths_exclude_state_bodies`
+
+The animation fixture checks both outcomes at all **25** priced conditional
+branches; collision checks **15**, Pikit drawing **10**, King Zora **5**,
+waterfall **2**, and the Zirro prefix **3**. Pikit's prep recomputes pause;
+its child is also entered directly to exercise the unchanged pause guard.
+Landing covers every tile byte, both floors, all four directions and coordinate
+wraps. Fireball allocation covers every selected free slot and exhaustion.
+`owners-and-fixtures.json` records complete scope and fixture ownership.
+
+### ROM census and classification
+
+The required eight-slice ROM helper reports **PASS**, unexplained **0**,
+complete **1,473,123 iterations**. Missing/excess/FP improves
+**1,384/0/0 -> 1,310/0/0**. All **74 changed holds** recover source lag;
+there are **zero exposed rows**. Route-wide native instruction work gains
+**134,410,266 clocks**, with **zero negative main deltas** and **zero VWF
+changes**. Admission uses `admission-final-v3/` and the final binary above;
+earlier snapshots are diagnostic only.
+
+| Missing before iteration | ROM missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 43/0/0 -> 33/0/0 |
+| 380,243 | 89/0/0 -> 79/0/0 |
+| 461,989 | 133/0/0 -> 121/0/0 |
+
+Regenerated classification through 461,989 changes **97 (a), 14 (c), 22 (d)
+-> 85 (a), 14 (c), 22 (d)**. Recoveries are **160,109; 162,301; 198,239;
+198,240; 215,857; 215,858; 215,859; 217,220; 217,221; 217,222; 401,764;
+456,900**. There are ten early recoveries, no hold recovery in
+228,499–380,243, and two later prefix recoveries. Remaining rows retain their
+explicit owner partitions below.
+
+All **33 protected predictor records are byte-identical**: 14 uploads, seven
+polygon rows, eleven other inverse-threshold rows, and 101,031. This includes
+every instruction, elapsed, wait, handler and predictor field.
+`classification-before/after.json`, `classification.json`,
+`rom-comparison.json`, `rom-changed-holds.json`, `protected-selection.json`
+and `protected-row-verification.json` retain the complete checks.
+
+### Remaining owner partitions
+
+The frozen final binary profiles all **98 selected rows**. All source totals
+match the verified ROM authority; all before/after native totals match their
+ROM census `main_master` exactly. `main_master` already includes VWF; the
+synthetic `total` profile row is excluded from sums. The earlier diagnostic
+aggregate accidentally included that total twice; its individual owner vectors
+were unchanged. `profile-reconciliation.json` records the corrected check.
+
+The tables give signed **sprite / object / other** exclusive-clock gaps.
+Negative values retain ownership offsets; they are never clamped or priced.
+`admitted-owner-partitions.json/.csv` and `admitted-owner-vectors.csv` retain
+every per-routine signed term, including aliases and already-priced children.
+A source parent deficit alone is not an unpriced owner: full-animation, receipt,
+VWF and sprite-helper scopes must be reconciled with their negative children.
+
+All 22 original early (a) rows, in iteration order:
+
+| Iteration | Added clocks | Result or remaining sprite / object / other | Remaining threshold shortfall |
+| --- | ---: | --- | ---: |
+| 160,109 | 744 | recovered | 0 |
+| 161,123 | 912 | 2,632 / 0 / -174 | 1,866 |
+| 162,301 | 3,544 | recovered | 0 |
+| 162,819 | 3,544 | 92 / 0 / 3,018 | 2,686 |
+| 174,034 | 0 | 1,414 / 0 / 114 | 215 |
+| 181,568 | 0 | 2,524 / 0 / -22 | 534 |
+| 187,779 | 1,410 | 0 / 0 / 1,950 | 1,760 |
+| 189,344 | 0 | 192 / 0 / 4,440 | 4,204 |
+| 189,368 | 0 | 840 / 0 / 2,828 | 2,344 |
+| 190,815 | 0 | 192 / 0 / 944 | 752 |
+| 194,994 | 0 | 3,470 / 0 / 2,904 | 3,508 |
+| 196,051 | 790 | 0 / 0 / 7,300 | 6,728 |
+| 198,239 | 908 | recovered | 0 |
+| 198,240 | 790 | recovered | 0 |
+| 209,808 | 0 | 0 / 0 / 15,104 | 5,088 |
+| 215,857 | 790 | recovered | 0 |
+| 215,858 | 790 | recovered | 0 |
+| 215,859 | 790 | recovered | 0 |
+| 217,220 | 908 | recovered | 0 |
+| 217,221 | 790 | recovered | 0 |
+| 217,222 | 790 | recovered | 0 |
+| 225,257 | 790 | 0 / 1,206 / 2,968 | 2,452 |
+
+The next **36 (a) rows**, in iteration order, remain missing:
+
+| Iteration | Added clocks | Remaining sprite / object / other | Remaining threshold shortfall |
+| --- | ---: | --- | ---: |
+| 281,028 | 790 | 460 / 0 / 7,300 | 6,260 |
+| 282,475 | 0 | 1,178 / 0 / -438 | 160 |
+| 294,833 | 0 | 7,492 / 0 / 654 | 4,392 |
+| 294,835 | 0 | 10,322 / 0 / 1,758 | 4,486 |
+| 294,837 | 0 | 9,148 / 0 / 352 | 6,970 |
+| 297,585 | 120 | 4,070 / 0 / 1,844 | 4,982 |
+| 297,638 | 884 | 1,996 / 0 / 3,310 | 42 |
+| 304,890 | 0 | 14,686 / 0 / -22 | 10,786 |
+| 310,875 | 0 | 15,362 / 0 / 4,532 | 9,216 |
+| 313,078 | 760 | 9,276 / 0 / 268 | 8,912 |
+| 313,255 | 380 | 12,554 / 0 / 738 | 13,188 |
+| 317,588 | 0 | 92 / 0 / 8,006 | 3,970 |
+| 322,193 | 880 | 2,160 / 0 / 4,634 | 5,902 |
+| 327,434 | 0 | 0 / 0 / 574 | 508 |
+| 336,035 | 0 | 0 / 0 / 574 | 28 |
+| 336,046 | 0 | 0 / 0 / 470 | 152 |
+| 337,925 | 0 | 1,876 / 0 / 3,090 | 2,096 |
+| 338,240 | 0 | 3,440 / 0 / 3,090 | 1,070 |
+| 338,673 | 0 | 0 / 0 / 848 | 4 |
+| 344,246 | 790 | 1,012 / 0 / 3,588 | 3,468 |
+| 348,203 | 0 | 0 / 0 / 5,096 | 3,224 |
+| 353,572 | 0 | 0 / 0 / 4,968 | 2,890 |
+| 354,592 | 0 | 0 / 0 / 470 | 132 |
+| 354,619 | 0 | 0 / 0 / 574 | 314 |
+| 367,327 | 380 | 104 / 0 / 3,382 | 2,852 |
+| 370,567 | 0 | 0 / 0 / 1,510 | 1,276 |
+| 372,814 | 0 | 108 / 0 / 4,122 | 2,694 |
+| 378,071 | 0 | 782 / 0 / 570 | 62 |
+| 378,077 | 0 | 102 / 0 / 1,646 | 232 |
+| 378,080 | 0 | 102 / 0 / 1,086 | 188 |
+| 378,092 | 0 | 238 / 0 / 1,086 | 802 |
+| 378,094 | 0 | 238 / 0 / 1,086 | 980 |
+| 378,096 | 0 | 238 / 0 / 1,928 | 1,100 |
+| 378,098 | 0 | 238 / 0 / 960 | 656 |
+| 378,105 | 0 | 238 / 0 / 960 | 154 |
+| 378,541 | 0 | 238 / 0 / 1,910 | 692 |
+
+At **407,899**, Moblin/Pikit/Zirro call prefixes and Pikit/Bomber drawing
+recover **4,448 clocks**. The remaining signed partition is **2,698 sprite /
+0 object / 253,556 other**; the latter includes the separately identified
+**253,472-clock song-end polling owner `$00:F312`**, leaving **2,782
+non-poll clocks** overall. Moblin/Pikit state bodies, Zirro movement and attack
+suffixes remain unpriced. Positive caller terms retain their existing negative
+child offsets in the attached vectors; none of this residual is used as a price.
+
+The remaining early work includes sprite state/draw bodies, map/overworld
+construction (notably `$01:B83E`/`$01:F967` at 209,808), movement and collision
+callers. Direct animation, landing and single-sprite collision work is priced
+here; larger player, hookshot `$08:833C`, Y-movement and Mirror scopes still
+require independently bounded all-path ROM ownership before admission.
+
+### Live poll attribution
+
+The single seeded live census reports **PASS**, unexplained **0**, complete
+**1,473,123 iterations**. Missing/excess/FP improves **1,640/252/72 ->
+1,337/27/5**. There are **229 changed holds**: **74 shared ROM recoveries**
+and **155 live-only changes**, all attributed, with **zero unattributed rows**.
+The receipt records exactly one continuous seeded launch and exit zero.
+
+| Missing before iteration | Live missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 43/0/0 -> 33/0/0 |
+| 380,243 | 98/9/2 -> 79/0/0 |
+| 461,989 | 142/9/2 -> 121/0/0 |
+
+Attribution compares all four baseline/candidate live and ROM lanes. There are
+**3,257 changed live-vs-ROM instruction/VWF work events** and
+**60 changed native context/poll events**, a union of
+**3,260 iterations**, independently of changed holds. The union of all
+before/after nonzero live-minus-ROM work has the same 3,257 rows.
+Recovery ends at the first actual reseed after the last independent event when
+that precedes its containing 2,000-iteration boundary, otherwise that boundary.
+Empty, unchanged episodes display the next boundary after their first-zero
+observations. No hold change sets or extends an attribution window.
+
+Source context, reads/writes and start/end counters agree across **all
+1,473,123 trace rows**. Cartridge APUI answers are disabled on every row.
+Both normalized source SHA-256 values are
+`a3da76b73786f97ec20c3ce3476432200463b968d43136fe847b3c40e3afb20f`.
+All **20** retained unmodified-ROM bus observations are hash-verified and
+matched directly to both traces at every episode start and source first zero.
+Source PCs are established directly: pendant **`$08:C3FD`**, crystal
+**`$08:C606`**. There are **zero unassigned execution events**.
+
+| Source episode | Direct source PC | Source first zero | Native first zero before -> after | Last changed execution | Recovery end | Live-only rows | Delta missing/excess/FP |
+| --- | --- | ---: | --- | ---: | ---: | ---: | --- |
+| 94,334 | `$08:C3FD` | 94,854 | 94,854 -> 94,854 | — | 96,000 | 0 | +0/+0/+0 |
+| 141,568 | `$08:C3FD` | 142,088 | 142,088 -> 142,088 | — | 144,000 | 0 | +0/+0/+0 |
+| 228,499 | `$08:C3FD` | 229,035 | 229,036 -> 229,035 | 229,069 | 230,000 | 4 | -9/-9/-2 |
+| 380,243 | `$08:C606` | 380,881 | 380,881 -> 380,881 | — | 382,000 | 0 | +0/+0/+0 |
+| 461,989 | `$08:C606` | 462,628 | 462,627 -> 462,628 | 464,051 | 466,000 | 6 | -13/-13/-3 |
+| 626,618 | `$08:C606` | 627,256 | 627,256 -> 627,257 | 629,601 | 629,845 | 10 | +27/+27/+5 |
+| 735,229 | `$08:C606` | 735,867 | 735,867 -> 735,867 | — | 736,000 | 0 | +0/+0/+0 |
+| 881,095 | `$08:C606` | 881,734 | 881,733 -> 881,734 | 884,326 | 884,327 | 135 | -234/-230/-67 |
+| 1,064,096 | `$08:C606` | 1,064,734 | 1,064,734 -> 1,064,734 | — | 1,066,000 | 0 | +0/+0/+0 |
+| 1,317,697 | `$08:C606` | 1,318,335 | 1,318,335 -> 1,318,335 | — | 1,320,000 | 0 | +0/+0/+0 |
+
+The 626,618 crystal episode worsens live metrics by **27/27/5**; the other
+changed episodes improve them by **256/252/72**. Their net live-only change
+is **-229/-225/-67**, plus the 74 shared missing recoveries. These measured
+SPC phase effects are retained without adjusting any price.
+
+All **155 live-only changed holds** are listed below; both ROM holds are
+unchanged at each row. `live-only-attributed-rows.csv/json` records each row,
+episode, source PC, first-zero evidence and independent recovery boundary.
+
+| Iteration | Source episode / direct PC | Source lag | Live hold before -> after |
+| --- | --- | ---: | --- |
+| 229,036 | 228,499 / `$08:C3FD` | 5 | 0 -> 5 |
+| 229,037 | 228,499 / `$08:C3FD` | 0 | 5 -> 0 |
+| 229,039 | 228,499 / `$08:C3FD` | 4 | 0 -> 4 |
+| 229,042 | 228,499 / `$08:C3FD` | 0 | 4 -> 0 |
+| 462,699 | 461,989 / `$08:C606` | 0 | 1 -> 0 |
+| 462,700 | 461,989 / `$08:C606` | 1 | 0 -> 1 |
+| 462,709 | 461,989 / `$08:C606` | 0 | 4 -> 0 |
+| 462,710 | 461,989 / `$08:C606` | 5 | 0 -> 4 |
+| 463,179 | 461,989 / `$08:C606` | 0 | 8 -> 0 |
+| 463,180 | 461,989 / `$08:C606` | 8 | 0 -> 8 |
+| 627,317 | 626,618 / `$08:C606` | 1 | 1 -> 0 |
+| 627,318 | 626,618 / `$08:C606` | 0 | 0 -> 1 |
+| 627,327 | 626,618 / `$08:C606` | 5 | 4 -> 0 |
+| 627,328 | 626,618 / `$08:C606` | 0 | 0 -> 4 |
+| 627,800 | 626,618 / `$08:C606` | 8 | 8 -> 0 |
+| 627,801 | 626,618 / `$08:C606` | 0 | 0 -> 8 |
+| 629,325 | 626,618 / `$08:C606` | 7 | 7 -> 0 |
+| 629,327 | 626,618 / `$08:C606` | 0 | 0 -> 7 |
+| 629,458 | 626,618 / `$08:C606` | 0 | 0 -> 7 |
+| 629,462 | 626,618 / `$08:C606` | 7 | 7 -> 0 |
+| 881,794 | 881,095 / `$08:C606` | 0 | 1 -> 0 |
+| 881,795 | 881,095 / `$08:C606` | 1 | 0 -> 1 |
+| 881,804 | 881,095 / `$08:C606` | 0 | 4 -> 0 |
+| 881,805 | 881,095 / `$08:C606` | 5 | 0 -> 4 |
+| 882,275 | 881,095 / `$08:C606` | 8 | 0 -> 8 |
+| 882,276 | 881,095 / `$08:C606` | 0 | 8 -> 0 |
+| 882,475 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,476 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,477 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,484 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,485 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,486 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,529 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,530 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,531 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,538 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,539 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,540 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,591 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,592 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,593 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,600 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,601 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,602 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,676 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,677 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,678 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,686 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,687 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,688 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,740 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,741 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,742 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,750 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,751 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,752 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,804 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,805 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,806 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,814 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,815 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,816 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,893 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,894 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,895 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,919 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,920 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,921 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,957 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,958 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,959 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 882,983 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,984 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 882,985 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,053 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,054 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,055 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,071 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,072 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,073 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,117 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,118 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,119 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,135 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,136 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,137 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,181 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,182 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,183 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,199 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,200 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,201 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,272 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,273 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,274 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,298 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,299 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,300 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,338 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,339 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,340 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,364 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,365 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,366 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,398 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,399 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,400 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,424 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,425 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,426 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,483 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,484 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,485 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,509 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,510 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,511 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,539 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,540 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,541 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,565 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,566 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,567 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,601 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,602 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,603 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,627 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,628 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,629 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,697 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,698 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,699 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,724 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,725 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,726 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,727 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,728 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,729 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,754 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,755 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,756 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,765 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,766 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,767 | 881,095 / `$08:C606` | 2 | 0 -> 2 |
+| 883,792 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,793 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,794 | 881,095 / `$08:C606` | 0 | 2 -> 0 |
+| 883,842 | 881,095 / `$08:C606` | 7 | 0 -> 7 |
+| 883,881 | 881,095 / `$08:C606` | 0 | 7 -> 0 |
+| 883,977 | 881,095 / `$08:C606` | 7 | 0 -> 7 |
+| 884,319 | 881,095 / `$08:C606` | 0 | 59 -> 0 |
+| 884,320 | 881,095 / `$08:C606` | 0 | 6 -> 0 |
+| 884,321 | 881,095 / `$08:C606` | 0 | 25 -> 0 |
+| 884,322 | 881,095 / `$08:C606` | 59 | 1 -> 59 |
+| 884,323 | 881,095 / `$08:C606` | 6 | 1 -> 6 |
+| 884,324 | 881,095 / `$08:C606` | 25 | 1 -> 25 |
+
+`live-command.json`, `live-gate.txt`, `live-counts.txt`,
+`live-comparison.json`, `poll-source-verification.json`,
+`baseline-trace-proof.json`, `live-trace-proof.json`, `poll-attribution.csv/json`
+and the complete execution-event and changed-row vectors retain the proof.
+
+### Verification boundary
+
+The final CPU-only picture census completes **1,473,123 iterations**, reports
+**PASS / unexplained 0**, and preserves **1,462,997 exact CPU pictures**.
+All eight final picture-hash streams are byte-identical to hunt 33.
+`cpu-final-v3-commands.json`, `cpu-final-v3-gate.txt` and
+`cpu-final-v3-picture-agreement.json` bind this proof to the admitted binary.
+
+The nine new fixtures pass. Filtered groups for ancilla (52), dungeon (95),
+player (60), sprite drawing (352 after withholding the selector), sprite prep
+(40), Mothula (7) and full-entry player animation (1) pass. The changed tile
+collision ownership initially exposed its old alert span; the shared child
+transfer above fixes that fixture, and the complete ancilla group passes.
+All eight generator tests pass; regenerated Rust is byte-identical to the
+checked-in generated file. The production build is warning-free. Library test
+compilation retains the same **24 pre-existing warning headers** as hunt 33.
+
+The required full default library command ran **once**, after all code changes,
+censuses, attribution and documentation of their final results:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+SNES reports **505 passed, 7 ignored**. Zelda reports **3,177 passed, 3 ignored**
+and exactly the permitted failure:
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+Its assertion remains `Some(1047868)` versus `Some(170442)`, exactly as on
+baseline. There are **zero other failures**; the command's exit 101 is retained
+in its receipt. `full-library.log`, `full-library-command.json` and
+`full-library-gate.json` retain the complete result.
+
+`doc-before-full-suite.json` and its section snapshot verify that the complete
+census tables and all 155 live-only rows were written before the suite started.
+`existing-block-ownership-audit.json` confirms the single existing-block split;
+`admitted-binary-agreement.json` binds all 11 census/profile command receipts
+to the same binary. Scope is seeded logical replay, CPU pictures and live SPC
+pacing. Classifier, matcher and P2 are unchanged; no residual-derived price,
+phase compensation or new environment switch is introduced. No commit or push.
+
+Final readbacks preserve all **14 authority hashes** and **152 retained
+hunt-33 artifact hashes**. All **1,618 non-document source/fixture files**
+remain unchanged from the admitted freeze; `final-source-hashes.json` also
+captures the completed document. `git diff --check` passes. All **29 recorded
+child processes** have finished, and the worktree's target is **under 14.0 GB**
+after removing only finalized compiler caches within its own target directory.
+`verification-summary.json` and `artifact-hashes.json` retain the final checks.

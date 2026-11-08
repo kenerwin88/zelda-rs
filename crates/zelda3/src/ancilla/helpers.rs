@@ -1242,7 +1242,7 @@ impl ZeldaState {
                 EntityCollision::Passable => { b.taken(0x088a7d); b.block(0x088ab4); return false; },
                 EntityCollision::Solid => {
                     b.block(0x088a7f); b.taken(0x088a81); b.block(0x088ab6);
-                    self.sprite_system_mut().set_alert_flag(3);
+                    self.ancilla_set_sprite_alert_marked(marked);
                     return true;
                 }
                 EntityCollision::Slope => {
@@ -1254,7 +1254,7 @@ impl ZeldaState {
                     b.block(0x088a7f); b.block(0x088a83); b.taken(0x088a85); b.block(0x088a8c); b.block(0x088a90);
                     if self.ancilla_slot_view(k).floor2() != 0 {
                         b.taken(0x088a93); b.block(0x088ab6);
-                        self.sprite_system_mut().set_alert_flag(3);
+                        self.ancilla_set_sprite_alert_marked(marked);
                         return true;
                     }
                     b.block(0x088a95); b.block(0x088ab4);
@@ -1483,61 +1483,114 @@ impl ZeldaState {
         self.ancilla_check_damage_to_sprite_preset(k, dmg);
     }
 
+    fn ancilla_set_sprite_alert_marked(&mut self, marked: bool) {
+        // $08:8AB9..8ABE is shared by the tile-collision fallthrough and
+        // the single-sprite collision JSR; neither caller owns it twice.
+        let _scope = (marked && self.lag_free).then(|| crate::cycle_ledger::routine(0x088ab9));
+        crate::cycle_ledger::blocks(marked && self.lag_free).block(0x088ab9);
+        self.sprite_system_mut().set_alert_flag(3);
+    }
+
     fn ancilla_check_sprite_collision_single(&mut self, k: usize, j: usize) -> bool {
+        // $08:8DAE..8E74, including the successful caller-stack pop.
+        // Hitboxes, overlap, damage, arrow creation and alert are children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x088dae));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x088dae);
         let mut hb = self.ancilla_setup_hit_box(k);
+        b.block(0x088db1);
         self.sprite_setup_hit_box(j, &mut hb, SpriteHitBoxEntry::Rom0683EA);
+        b.block(0x088db8);
         let overlap = self.check_if_hit_boxes_overlap(&hb);
+        b.block(0x088dbe);
         if !overlap {
+            b.block(0x088dc0); b.block(0x088e73);
             return false;
         }
+        b.taken(0x088dbe); b.block(0x088dc3);
 
         let mut return_value = true;
-        if self.sprite_slot_view(j).flags() & 8 != 0
-            && self.ancilla_slot_view(k).ancilla_type() == 9
-        {
+        let arrow_guard = self.sprite_slot_view(j).flags() & 8 != 0;
+        if !arrow_guard { b.taken(0x088dc8); }
+        else { b.block(0x088dca); }
+        if arrow_guard && self.ancilla_slot_view(k).ancilla_type() == 9 {
+            b.block(0x088dd1);
             if self.sprite_slot_view(j).sprite_type() != 0x1b {
+                b.block(0x088dd8);
                 self.sprite_create_deflected_arrow(k);
+                b.block(0x088ddc);
                 return false;
             }
+            b.taken(0x088dd6); b.block(0x088dde);
             if !self.game_state.inventory.items.has_upgraded_bow() {
+                b.taken(0x088de4); b.block(0x088deb); b.block(0x088dd8);
                 self.sprite_create_deflected_arrow(k);
+                b.block(0x088ddc);
             } else {
+                b.block(0x088de6);
                 return_value = false;
             }
-        }
+        } else if arrow_guard { b.taken(0x088dcf); }
 
+        b.block(0x088dee);
         let mut return_true_set_alert = false;
         if self.sprite_slot_view(j).deflection_bits() & 0x10 != 0 {
+            b.block(0x088df5);
             self.ancilla_slot_view_mut(k).and_direction(3);
             if self.ancilla_slot_view(k).direction()
                 == ANCILLA_SPRITE_COLLISION_DEFLECTED_DIRECTIONS
-                    [self.ancilla_slot_view(k).direction() as usize]
+                    [self.sprite_slot_view(j).direction() as usize]
             {
+                b.taken(0x088e09);
                 return_true_set_alert = true;
             }
-        }
+        } else { b.taken(0x088df3); }
 
+        if !return_true_set_alert {
+            b.block(0x088e0b);
+            if self.ancilla_slot_view(k).ancilla_type() == 5 { b.taken(0x088e10); }
+            else {
+                b.block(0x088e12);
+                if self.ancilla_slot_view(k).ancilla_type() != 0x1f { b.taken(0x088e14); }
+            }
+        }
+        let mut publish_type = false;
         if !return_true_set_alert
             && (self.ancilla_slot_view(k).ancilla_type() == 5
                 || self.ancilla_slot_view(k).ancilla_type() == 0x1f)
         {
+            if self.ancilla_slot_view(k).ancilla_type() == 0x1f { b.block(0x088e16); }
             let skip = self.ancilla_slot_view(k).ancilla_type() == 0x1f
                 && self.sprite_slot_view(j).sprite_type() == 0x8d;
+            if skip { b.taken(0x088e1b); }
+            else { b.block(0x088e1d); }
             if !skip && self.sprite_slot_view(j).hit_timer() != 0 {
+                b.taken(0x088e20);
                 return_true_set_alert = true;
-            } else if skip || self.sprite_slot_view(j).deflection_bits() & 2 != 0 {
+            } else {
+                if !skip { b.block(0x088e22); }
+                if skip || self.sprite_slot_view(j).deflection_bits() & 2 != 0 {
+                b.block(0x088e29);
                 let value = k as u8 + 1;
                 self.sprite_slot_view_mut(j).set_b(value);
                 let value = self.ancilla_slot_view(k).ancilla_type();
                 self.sprite_slot_view_mut(j).set_draw_work_byte_2(value);
+                publish_type = true;
                 return_true_set_alert = true;
+                } else { b.taken(0x088e27); }
             }
         }
 
+        if !return_true_set_alert { b.block(0x088e30); }
         if !return_true_set_alert && self.sprite_slot_view(j).ignore_projectile() == 0 {
+            b.block(0x088e35);
+            if self.sprite_slot_view(j).sprite_type() != 0x92 { b.taken(0x088e3a); }
+            else { b.block(0x088e3c); }
             if self.sprite_slot_view(j).sprite_type() == 0x92 && self.sprite_slot_view(j).c() < 3 {
+                b.taken(0x088e41);
                 return_true_set_alert = true;
             } else {
+                b.block(0x088e43);
                 let i = (self.ancilla_slot_view(k).direction() & 3) as usize;
                 let value = ANCILLA_SPRITE_COLLISION_RECOIL_X[i];
                 self.sprite_slot_view_mut(j).set_x_recoil(value);
@@ -1545,16 +1598,23 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(j).set_y_recoil(value);
                 self.sprite_workspace_mut().set_shared_scratch_a(k as u8);
                 self.ancilla_check_damage_to_sprite(j, self.ancilla_slot_view(k).ancilla_type());
+                b.block(0x088e64);
+                publish_type = true;
                 return_true_set_alert = true;
             }
         } else if !return_true_set_alert {
+            b.taken(0x088e33); b.block(0x088e73);
+            if !return_value { b.block(0x088de9); }
             return false;
         }
 
         if return_true_set_alert {
+            if publish_type { b.block(0x088e66); }
+            b.block(0x088e6c);
             let value = self.ancilla_slot_view(k).ancilla_type();
-            self.sprite_slot_view_mut(j).set_draw_work_byte_2(value);
-            self.sprite_system_mut().set_alert_flag(3);
+            if publish_type { self.sprite_slot_view_mut(j).set_draw_work_byte_2(value); }
+            self.ancilla_set_sprite_alert_marked(true);
+            b.block(0x088e71);
             return return_value;
         }
         false
@@ -2031,7 +2091,8 @@ fn one_floor_body_markers_match_rom_paths() {
         let pc = (u32::from(s.cpu.k) << 16) | u32::from(s.cpu.pc);
         if let Some(old) = previous.replace(Some(pc)) { edges.borrow_mut().insert((old, pc)); }
         visited.borrow_mut().insert(pc);
-        (0x088a03..0x088abf).contains(&pc)
+        // The newly shared $8AB9 alert child owns its own three PCs.
+        (0x088a03..0x088ab9).contains(&pc)
     };
     for tile in 0..=255u8 {
         for priority in [0, 1] {

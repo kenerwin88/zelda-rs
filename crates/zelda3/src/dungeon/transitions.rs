@@ -563,6 +563,12 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn CalculateTransitionLanding(&mut self) -> u8 {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c1e5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02c1e5);
+        if self.game_state.player.follower_link.lower_level_state() == 0 { b.taken(0x02c205); }
+        else { b.block(0x02c207); }
+        b.block(0x02c20b);
         let mut pos = ((self.game_state.player.follower_link.y().wrapping_add(12) & 0x01f8) << 3)
             | ((self.game_state.player.follower_link.x().wrapping_add(8) & 0x01f8) >> 3);
         pos |= self
@@ -571,12 +577,41 @@ impl ZeldaState {
             .follower_link
             .lower_level_tilemap_offset();
 
-        let result = self
+        let tile = self
             .game_state
             .dungeon
             .bg2_attributes
-            .bg2_tile(pos as usize)
-            .transition_landing();
+            .bg2_tile(pos as usize);
+        let a = tile.cartridge_attribute();
+        if a == 0 { b.taken(0x02c218); }
+        else {
+            b.block(0x02c21a);
+            if a == 9 { b.taken(0x02c21c); }
+            else {
+                b.block(0x02c21e);
+                let a = a & 0x8e;
+                if a == 0x80 { b.taken(0x02c223); }
+                else {
+                    b.block(0x02c225);
+                    if a == 0x82 { b.taken(0x02c228); }
+                    else {
+                        b.block(0x02c22a);
+                        if a == 0x84 { b.taken(0x02c22d); }
+                        else {
+                            b.block(0x02c22f);
+                            if a == 0x88 { b.taken(0x02c231); }
+                            else {
+                                b.block(0x02c233);
+                                if a == 0x86 { b.taken(0x02c236); }
+                                else { b.block(0x02c238); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        b.block(0x02c23a);
+        let result = tile.transition_landing();
 
         self.dungeon_room_runtime_mut().set_landing_class(result);
         result
@@ -1191,20 +1226,32 @@ impl ZeldaState {
     }
 
     pub(super) fn SubtileTransitionCalculateLanding(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02c12c));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02c12c);
         let st = self.screen_transition();
         let mut a = self.CalculateTransitionLanding();
+        b.block(0x02c135);
         if a == 2 {
+            b.block(0x02c13c);
             a = 1;
-        } else if a == 4 {
+        } else { b.taken(0x02c13a); }
+        b.block(0x02c13e);
+        if a == 4 {
+            b.block(0x02c142);
             a = 2;
-        }
+        } else { b.taken(0x02c140); }
+        b.block(0x02c144);
         let index = a as usize + self.screen_transition() as usize * 5;
         let mut v = STAIRCASE_LANDING_COORDINATES[index];
         if v < 0 {
+            b.block(0x02c152);
             v = v.wrapping_add(8);
         } else {
+            b.taken(0x02c150);
             v = v.wrapping_sub(8);
         }
+        b.block(0x02c154);
         if st & 2 != 0 {
             self.follower_link_state_mut().set_x_low(v as u8);
         } else {

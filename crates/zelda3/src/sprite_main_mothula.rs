@@ -1083,15 +1083,28 @@ impl ZeldaState {
 
     // void Sprite_AA_Pikit(int k) {  // 9e8bbf
     pub(super) fn sprite_aa_pikit(&mut self, k: usize) {
+        // Prefix through the local state dispatch; three state bodies remain
+        // separate work. The far drawing and collision wrappers are children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8bbf));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8bbf);
         self.pikit_draw(k);
+        b.block(0x1e8bc2);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1e8bc5);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1EFE9B) {
             return;
         }
         // $1E:8BC8 JSR $1E:C267: both complete damage calls.
+        b.block(0x1e8bc8);
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
+        b.block(0x1e8bcb);
+        if self.lag_free {
+            { let _local = crate::cycle_ledger::routine(0x008781); b.block(0x008781); }
+            b.block(0x008784); b.block(0x008799);
+        }
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -1119,7 +1132,7 @@ impl ZeldaState {
             }
             1 => {
                 self.sprite_move_xyz(k, SpriteMoveEntry::Rom1EFF34);
-                self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Unpriced);
+                self.sprite_check_tile_collision(k, SpriteTileCollisionEntry::Rom1E8B2E);
                 self.sprite_slot_view_mut(k).subtract_z_velocity(2);
                 if sign8(self.sprite_slot_view(k).z()) {
                     self.sprite_slot_view_mut(k).set_z(0);
@@ -1778,8 +1791,18 @@ impl ZeldaState {
 
     // void Sprite_A8_GreenZirro(int k) {  // 9e8dd2
     pub(super) fn sprite_a8_green_zirro(&mut self, k: usize) {
+        // Dispatch and Bomber_Main's call prefix only. Pellet states and the
+        // movement/attack suffix retain their unpriced ownership.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x1e8dd2));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1e8dd2);
         self.sprite_slot_view_mut(k).set_object_priority(0x30);
         if self.sprite_slot_view(k).a() != 0 {
+            b.block(0x1e8ddc);
+            if self.lag_free {
+                { let _local = crate::cycle_ledger::routine(0x008781); b.block(0x008781); }
+                b.block(0x008784); b.block(0x008799);
+            }
             match self.sprite_slot_view(k).ai_state() {
                 0 => {
                     // ROM $1E:8DE7
@@ -1815,23 +1838,31 @@ impl ZeldaState {
             return;
         }
 
+        b.taken(0x1e8dda); b.block(0x1e8e31);
         if self.sprite_slot_view(k).delay_aux1() != 0 {
+            b.block(0x1e8e36);
             let value =
                 BOMBER_GRAPHICS_BY_DIRECTION[usize::from(self.sprite_slot_view(k).direction())];
             self.sprite_slot_view_mut(k).set_graphics(value);
-        }
+        } else { b.taken(0x1e8e34); }
+        b.block(0x1e8e3f);
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.bomber_draw(k);
+        b.block(0x1e8e4b);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1e8e4e);
         if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom1EFE9B) {
             return;
         }
+        b.block(0x1e8e51);
         if self.sprite_slot_view(k).delay_aux1() == 8 {
+            b.block(0x1e8e58);
             self.zirro_drop_bomb(k);
-        }
+        } else { b.taken(0x1e8e56); }
         // $1E:8E5B JSR $1E:C267: both complete damage calls.
+        b.block(0x1e8e5b);
         self.sprite_check_damage_to_and_from_link(k, SpriteDamageBothEntry::Rom1EC267);
         if (self.game_state.frame.frame_counter & 1) == 0 {
             let j = self.sprite_slot_view(k).g() & 1;

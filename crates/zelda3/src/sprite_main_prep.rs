@@ -1405,10 +1405,30 @@ impl ZeldaState {
     }
 
     pub(super) fn fireball_spawn_trail_garnish(&mut self, k: usize) {
+        // $09:B020..B06D: the allocation scan is inline in the ROM.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09b020));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09b020);
         if (k as u8 ^ self.game_state.frame.frame_counter) & 3 != 0 {
+            b.taken(0x09b025); b.block(0x09b034);
             return;
         }
-        let j = self.garnish_alloc() as usize;
+        b.block(0x09b027);
+        if self.lag_free {
+            for slot in (0..30).rev() {
+                b.block(0x09b02a);
+                if self.garnish_slot_view(slot).is_empty() { b.taken(0x09b02e); break; }
+                b.block(0x09b030);
+                if slot != 0 { b.taken(0x09b031); }
+            }
+        }
+        let j = self.garnish_alloc();
+        if j < 0 {
+            b.block(0x09b033); b.block(0x09b034);
+            return;
+        }
+        b.block(0x09b035);
+        let j = j as usize;
         let value = 8;
         self.garnish_slot_view_mut(j).set_garnish_type(value);
         self.garnish_state_mut().set_active_type(8);

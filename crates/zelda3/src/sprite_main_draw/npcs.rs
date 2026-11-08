@@ -135,17 +135,28 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Waterfall(int k) {  // 9af5b8
     pub(super) fn waterfall(&mut self, k: usize) {
+        // The local JMP dispatch retains the F5AD frame through this body.
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1af5b8);
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
+        b.block(0x1af5bb);
         // ROM $1A:F5BB
-        if self.sprite_check_damage_same_layer_long_marked(k) {
+        let contact = self.sprite_check_damage_same_layer_long_marked(k);
+        b.block(0x1af5bf);
+        if contact {
+            b.block(0x1af5c1);
             if self.game_state.world.location.overworld_screen_index() == 0x43 {
+                b.taken(0x1af5c5); b.block(0x1af5ce);
                 self.ancilla_add_gt_cutscene();
+                b.block(0x1af5d3);
             } else {
+                b.block(0x1af5c7);
                 self.ancilla_add_waterfall_splash();
+                b.block(0x1af5cc); b.block(0x1af5cd);
             }
-        }
+        } else { b.taken(0x1af5bf); b.block(0x1af5cd); }
     }
 
     /// `Waterfall` on screen $43 up to `AncillaAdd_GTCutscene`'s graphics
@@ -180,11 +191,28 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_37_Waterfall(int k) {  // 86c03a
     pub(super) fn sprite_37_waterfall(&mut self, k: usize) {
+        let _wrapper = self.lag_free.then(|| crate::cycle_ledger::routine(0x1af5a5));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x1af5a5);
+        {
+        let _dispatch = self.lag_free.then(|| crate::cycle_ledger::routine(0x1af5ad));
+        b.block(0x1af5ad);
+        if self.lag_free {
+            // $00:8781 pulls this JSL's return. Its STY/PLY is its own
+            // frame; the remaining dispatch retires in the retained caller.
+            {
+                let _local = crate::cycle_ledger::routine(0x008781);
+                b.block(0x008781);
+            }
+            b.block(0x008784); b.block(0x008799);
+        }
         match self.sprite_slot_view(k).subtype2() {
             0 => self.waterfall(k),
             1 => self.sprite_bat_crash(k),
             _ => {}
         }
+        }
+        b.block(0x1af5ab);
     }
 
     // -----------------------------------------------------------------------

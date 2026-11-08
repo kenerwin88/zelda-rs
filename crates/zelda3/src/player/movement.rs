@@ -749,7 +749,7 @@ impl ZeldaState {
                     [self.game_state.player.follower_link.facing_index()]
                 != 0
             {
-                self.link_handle_moving_animation_start_with_dash();
+                self.link_handle_moving_animation_start_with_dash_inner(false);
                 return;
             } else {
                 y = if r0 & 0x0c != 0 { 0 } else { 4 };
@@ -761,43 +761,105 @@ impl ZeldaState {
             }
             self.follower_link_state_mut().set_facing(y);
         }
-        self.link_handle_moving_animation_start_with_dash();
+        self.link_handle_moving_animation_start_with_dash_inner(false);
     }
 
     pub(in crate::zelda_rtl) fn link_handle_moving_animation_start_with_dash(&mut self) {
+        self.link_handle_moving_animation_start_with_dash_inner(self.lag_free);
+    }
+
+    fn link_handle_moving_animation_start_with_dash_inner(&mut self, marked: bool) {
+        // Direct $07:E704 entry. The E6A6 model already owns its fallthrough
+        // into E70F, so that entry calls this body without these markers.
+        // The dash BRL target remains a separate, unpriced child here.
+        let _scope = marked.then(|| crate::cycle_ledger::routine(0x07e704));
+        let b = crate::cycle_ledger::blocks(marked);
+        b.block(0x07e704);
         if self.game_state.player.follower_link.is_running() {
+            b.block(0x07e70c);
             self.link_handle_moving_animation_dash();
             return;
         }
+        b.taken(0x07e70a); b.block(0x07e70f);
         let mut x = self.game_state.player.follower_link.facing() >> 1;
         if self.game_state.player.follower_link.speed_setting() == 6 {
+            b.block(0x07e719);
             x = x.wrapping_add(4);
-        } else if self.game_state.player.follower_link.flag_moving() != 0 {
-            if self.game_state.player.follower_link.joypad1h_last() & 0x0f == 0 {
+        } else {
+            b.taken(0x07e717); b.block(0x07e720);
+            if self.game_state.player.follower_link.flag_moving() != 0 {
+                b.block(0x07e725);
+                if self.game_state.player.follower_link.joypad1h_last() & 0x0f == 0 {
+                b.taken(0x07e729); b.block(0x07e78b); b.block(0x07e78d); b.block(0x07e78f);
                 self.follower_link_state_mut().clear_animation_step();
                 return;
+                }
+                b.block(0x07e72b);
+                x = x.wrapping_add(4);
+            } else {
+                b.taken(0x07e723);
             }
-            x = x.wrapping_add(4);
         }
 
+        b.block(0x07e730);
         if self.game_state.player.follower_link.handler_state() == 23
             || (self.game_state.enhanced_features.has(4096)
                 && self.game_state.player.follower_link.handler_state() == 28)
         {
-            if self.game_state.player.follower_link.animation_step() < 4
-                && self.game_state.player.follower_link.on_somaria_platform() != 2
-            {
+            b.block(0x07e736); b.block(0x07e7ce);
+            let step = self.game_state.player.follower_link.animation_step();
+            if step >= 4 {
+                b.taken(0x07e7d2); b.block(0x07e7f4); b.block(0x07e7f6);
+                self.follower_link_state_mut().clear_animation_step();
+            } else {
+                b.block(0x07e7d4);
+                if self.game_state.player.follower_link.on_somaria_platform() != 2 {
+                b.block(0x07e7db);
+                let delay = LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_POSE_ANIMATION_DELAYS[x as usize];
+                if self.read_wram_byte(0x2d).wrapping_add(1) < delay {
+                    b.taken(0x07e7e9);
+                } else {
+                    b.block(0x07e7eb);
+                    if step.wrapping_add(1) != 4 { b.taken(0x07e7f2); }
+                    else { b.block(0x07e7f4); }
+                    b.block(0x07e7f6);
+                }
                 self.advance_link_animation_step(
-                    LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_POSE_ANIMATION_DELAYS[x as usize],
+                    delay,
                     4,
                     0,
                 );
-            } else {
-                self.follower_link_state_mut().clear_animation_step();
+                } else {
+                    b.taken(0x07e7d9); b.block(0x07e7f4); b.block(0x07e7f6);
+                    self.follower_link_state_mut().clear_animation_step();
+                }
             }
+            b.block(0x07e7f8);
             return;
         }
 
+        b.taken(0x07e734); b.block(0x07e739);
+        match self.game_state.frame.submodule {
+            14 => b.taken(0x07e73d),
+            18 => { b.block(0x07e73f); b.taken(0x07e741); b.block(0x07e747); },
+            19 => { b.block(0x07e73f); b.block(0x07e743); b.block(0x07e747); },
+            _ => {
+                b.block(0x07e73f); b.block(0x07e743); b.taken(0x07e745); b.block(0x07e74b);
+                if self.game_state.player.follower_link.is_lifting_or_carrying() { b.taken(0x07e750); }
+                else {
+                    b.block(0x07e752);
+                    if self.game_state.player.follower_link.defense_flags() & 0x8d != 0 { b.block(0x07e758); }
+                    else {
+                        b.taken(0x07e756); b.block(0x07e75c);
+                        if self.game_state.player.follower_link.water_ripple_or_grass_state() != 0 { b.taken(0x07e75f); }
+                        else {
+                            b.block(0x07e761);
+                            if self.game_state.player.follower_link.button_b_frames() == 0 { b.taken(0x07e763); }
+                        }
+                    }
+                }
+            }
+        }
         if self.game_state.frame.submodule == 18 || self.game_state.frame.submodule == 19 {
             x = 12;
         } else if self.game_state.frame.submodule != 14
@@ -817,36 +879,64 @@ impl ZeldaState {
                 == 0
                 && self.game_state.player.follower_link.button_b_frames() == 0
             {
+                b.block(0x07e791);
                 let mut idx = self.game_state.player.follower_link.animation_step();
                 if self.game_state.player.follower_link.speed_setting() == 6 {
+                    b.block(0x07e799);
                     idx = idx.wrapping_add(8);
-                }
+                } else { b.taken(0x07e797); }
+                b.block(0x07e79e);
                 if self.game_state.player.follower_link.flag_moving() != 0 {
+                    b.block(0x07e7a3);
                     idx = idx.wrapping_add(8);
-                }
+                } else { b.taken(0x07e7a1); }
+                b.block(0x07e7a8);
                 if self.game_state.player.follower_link.on_somaria_platform() != 2 {
+                    b.block(0x07e7af);
+                    let delay = LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_WALK_ANIMATION_DELAYS[idx as usize];
+                    if self.read_wram_byte(0x2d).wrapping_add(1) < delay { b.taken(0x07e7bd); }
+                    else {
+                        b.block(0x07e7bf);
+                        if self.game_state.player.follower_link.animation_step().wrapping_add(1) != 9 { b.taken(0x07e7c6); }
+                        else { b.block(0x07e7c8); }
+                        b.block(0x07e7ca);
+                    }
                     self.advance_link_animation_step(
-                        LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_WALK_ANIMATION_DELAYS
-                            [idx as usize],
+                        delay,
                         9,
                         1,
                     );
-                }
+                } else { b.taken(0x07e7ad); b.block(0x07e7f8); return; }
+                b.block(0x07e7cc);
                 return;
             }
         }
 
-        if self.game_state.player.follower_link.animation_step() < 6
-            && self.game_state.player.follower_link.on_somaria_platform() != 2
-        {
+        b.block(0x07e765);
+        let step = self.game_state.player.follower_link.animation_step();
+        if step >= 6 { b.taken(0x07e769); }
+        else { b.block(0x07e76b); }
+        if step < 6 && self.game_state.player.follower_link.on_somaria_platform() != 2 {
+            b.block(0x07e772);
+            let delay = LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_POSE_ANIMATION_DELAYS[x as usize];
+            if self.read_wram_byte(0x2d).wrapping_add(1) < delay { b.taken(0x07e780); }
+            else {
+                b.block(0x07e782);
+                if step.wrapping_add(1) != 6 { b.taken(0x07e789); }
+                else { b.block(0x07e78b); }
+                b.block(0x07e78d);
+            }
             self.advance_link_animation_step(
-                LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_POSE_ANIMATION_DELAYS[x as usize],
+                delay,
                 6,
                 0,
             );
         } else {
+            if step < 6 { b.taken(0x07e770); }
+            b.block(0x07e78b); b.block(0x07e78d);
             self.follower_link_state_mut().clear_animation_step();
         }
+        b.block(0x07e78f);
     }
 
     pub(super) fn link_handle_moving_animation_swimming(&mut self) {

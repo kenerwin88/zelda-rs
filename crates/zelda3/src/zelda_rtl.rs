@@ -17828,3 +17828,6 @@ mod chr_source_tests;
 
 #[cfg(feature = "rom-timing")]
 use crate::OriginalTimingReceiptInstallError;
+#[cfg(test)]
+#[path = "prefix34_tests.rs"]
+mod prefix34_tests;

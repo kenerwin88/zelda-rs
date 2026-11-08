@@ -638,16 +638,29 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void ZoraKing_Draw(int k) {  // 859cab
     pub(super) fn zora_king_draw(&mut self, k: usize) {
+        // $05:9CAB..9D49; coordinate, OAM correction and allocation children
+        // own their bodies. A double return never reaches the next block.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x059cab));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x059cab);
         let Some((mut x, mut y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
             return;
         };
 
+        b.block(0x059cae);
         if self.sprite_slot_view(k).ai_state() >= 2 {
+            b.block(0x059cb5);
             let mut oam = self.game_state.oam.current_pointer_usize();
             let g = usize::from(self.sprite_slot_view(k).graphics());
             for i in (0..4usize).rev() {
+                b.block(0x059cbf);
                 let j = g * 4 + i;
                 let f = ZORA_KING_DRAW_FLAGS_0[j];
+                if 0xef + j >= 0x100 { b.crossing(0x059cce); }
+                if f & 0x0f != 0 { b.taken(0x059ce5); }
+                else { b.block(0x059ce7); }
+                b.block(0x059ce9);
+                if i != 0 { b.taken(0x059cf1); }
                 self.oam_state_mut().write_entry(
                     oam,
                     x.wrapping_add(ZORA_KING_DRAW_X_OFFSETS_0[j] as i16 as u16) as u8,
@@ -657,22 +670,32 @@ impl ZeldaState {
                 );
                 oam += 4;
             }
-            self.sprite_correct_oam_entries(k, 3, 2);
+            b.block(0x059cf3);
+            self.sprite_correct_oam_entries_long(k, 3, 2);
+            b.block(0x059cfc);
             let Some(poc) = self.sprite_prep_oam_coord_or_double_ret_from(k, super::sprite::PrepOamCoordEntry::Bank5DoubleRet) else {
                 return;
             };
             x = poc.0;
             y = poc.1;
+        } else {
+            b.taken(0x059cb3);
         }
 
+        b.block(0x059cff);
         if self.sprite_slot_view(k).delay_aux2() == 0 {
+            b.taken(0x059d02); b.block(0x059d49);
             return;
         }
 
+        b.block(0x059d04);
         self.oam_allocate_from_region_c(0x10);
+        b.block(0x059d0f);
         let mut oam = self.game_state.oam.current_pointer_usize();
         let g = usize::from((self.sprite_slot_view(k).delay_aux2() >> 1) & 4);
         for i in (0..4usize).rev() {
+            b.block(0x059d14);
+            if i != 0 { b.taken(0x059d46); }
             let j = g + i;
             self.set_oam_plain_at(
                 oam,
@@ -684,6 +707,7 @@ impl ZeldaState {
             );
             oam += 4;
         }
+        b.block(0x059d48); b.block(0x059d49);
     }
 
     // -----------------------------------------------------------------------
