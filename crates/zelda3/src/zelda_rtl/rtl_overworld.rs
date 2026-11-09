@@ -290,8 +290,15 @@ impl ZeldaState {
     }
 
     pub(crate) fn clear_overworld_sprite_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
-        self.overworld_sprite_loaded_mut()
-            .clear_loaded_mask(block, loaded_mask);
+        if usize::from(block >> 3) < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT {
+            self.overworld_sprite_loaded_mut().clear_loaded_mask(block, loaded_mask);
+        } else {
+            // $09:C0F5..C111 uses a wrapping bank-7F pointer even beyond
+            // the typed table. Preserve the store to the adjacent WRAM owner.
+            let pointer = 0xef80u16.wrapping_add(block >> 3);
+            let value = self.ram[0x10000 + usize::from(pointer)] & !loaded_mask;
+            self.store_overworld_sprite_loaded_byte_wrapped(pointer, value);
+        }
     }
 
     pub(crate) fn store_overworld_sprite_loaded_byte_wrapped(

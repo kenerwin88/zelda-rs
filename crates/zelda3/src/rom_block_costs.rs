@@ -1142,6 +1142,20 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x028e35, 0x028e39, true, true, 62, 0x000000, &[]),
     // $02:8E39: fixed cost
     (0x028e39, 0x028e3f, true, true, 86, 0x000000, &[]),
+    // $02:92B1: 0292b6 taken +6
+    (0x0292b1, 0x0292b8, true, true, 64, 0x0292b6, &[]),
+    // $02:92B8: fixed cost
+    (0x0292b8, 0x0292c9, true, true, 180, 0x000000, &[]),
+    // $02:92C9: 0292d4 taken +6
+    (0x0292c9, 0x0292d6, false, false, 160, 0x0292d4, &[]),
+    // $02:92D6: fixed cost
+    (0x0292d6, 0x0292e5, false, false, 176, 0x000000, &[]),
+    // $02:92E5: 029314 taken +6
+    (0x0292e5, 0x029316, false, false, 538, 0x029314, &[]),
+    // $02:9316: fixed cost
+    (0x029316, 0x029318, false, false, 22, 0x000000, &[]),
+    // $02:9318: fixed cost
+    (0x029318, 0x029319, true, true, 42, 0x000000, &[]),
     // $02:9357: 02935b taken +6
     (0x029357, 0x02935d, true, true, 56, 0x02935b, &[]),
     // $02:935D: fixed cost
@@ -1188,6 +1202,8 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x02a2a0, 0x02a2a4, true, true, 62, 0x000000, &[]),
     // $02:A2A4: fixed cost
     (0x02a2a4, 0x02a2a5, true, true, 42, 0x000000, &[]),
+    // $02:A2F0: fixed cost
+    (0x02a2f0, 0x02a37c, true, true, 1656, 0x000000, &[]),
     // $02:A475: fixed cost
     (0x02a475, 0x02a47e, true, true, 136, 0x000000, &[]),
     // $02:A47E: fixed cost
@@ -9464,6 +9480,50 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x08bd44, 0x08bd4a, true, true, 92, 0x08bd48, &[]),
     // $08:BD4A: fixed cost
     (0x08bd4a, 0x08bd4c, true, true, 70, 0x000000, &[]),
+    // $08:BD74: 08bd76 taken +6
+    (0x08bd74, 0x08bd78, true, true, 40, 0x08bd76, &[]),
+    // $08:BD78: 08bd78 +6 if the index crosses a page; 08bd7b taken +6
+    (0x08bd78, 0x08bd7d, true, true, 48, 0x08bd7b, &[0x08bd78]),
+    // $08:BD7D: fixed cost
+    (0x08bd7d, 0x08bd87, true, true, 116, 0x000000, &[]),
+    // $08:BD87: 08bd8a taken +6
+    (0x08bd87, 0x08bd8c, true, true, 48, 0x08bd8a, &[]),
+    // $08:BD8C: fixed cost
+    (0x08bd8c, 0x08bd8f, true, true, 46, 0x000000, &[]),
+    // $08:BD8F: fixed cost
+    (0x08bd8f, 0x08bd92, true, true, 46, 0x000000, &[]),
+    // $08:BD92: 08bd92 +6 if the index crosses a page; 08bd95 taken +6
+    (0x08bd92, 0x08bd97, true, true, 48, 0x08bd95, &[0x08bd92]),
+    // $08:BD97: 08bd9a taken +6
+    (0x08bd97, 0x08bd9c, true, true, 68, 0x08bd9a, &[]),
+    // $08:BD9C: fixed cost
+    (0x08bd9c, 0x08bd9f, true, true, 30, 0x000000, &[]),
+    // $08:BD9F: fixed cost
+    (0x08bd9f, 0x08bda3, true, true, 80, 0x000000, &[]),
+    // $08:BDA3: 08bda3 +6 if the index crosses a page; 08bdac taken +6
+    (0x08bda3, 0x08bdae, true, true, 116, 0x08bdac, &[0x08bda3]),
+    // $08:BDAE: 08bdb3 +6 if the index crosses a page; 08bdbc +6 if the index crosses a page
+    (0x08bdae, 0x08bdc5, true, true, 254, 0x000000, &[0x08bdb3, 0x08bdbc]),
+    // $08:BDC5: fixed cost
+    (0x08bdc5, 0x08bdc8, true, true, 46, 0x000000, &[]),
+    // $08:BDC8: 08bdc8 taken +6
+    (0x08bdc8, 0x08bdca, true, true, 16, 0x08bdc8, &[]),
+    // $08:BDCA: fixed cost
+    (0x08bdca, 0x08bdcd, true, true, 30, 0x000000, &[]),
+    // $08:BDCD: 08bdcd +6 if the index crosses a page; 08bdd0 taken +6
+    (0x08bdcd, 0x08bdd2, true, true, 48, 0x08bdd0, &[0x08bdcd]),
+    // $08:BDD2: 08bdd2 +6 if the index crosses a page; 08bdd5 taken +6
+    (0x08bdd2, 0x08bdd7, true, true, 48, 0x08bdd5, &[0x08bdd2]),
+    // $08:BDD7: fixed cost
+    (0x08bdd7, 0x08bdda, true, true, 46, 0x000000, &[]),
+    // $08:BDDA: 08bdda taken +6
+    (0x08bdda, 0x08bddc, true, true, 16, 0x08bdda, &[]),
+    // $08:BDDC: 08bddc +6 if the index crosses a page; 08bddf taken +6
+    (0x08bddc, 0x08bde1, true, true, 48, 0x08bddf, &[0x08bddc]),
+    // $08:BDE1: 08bde6 +6 if the index crosses a page; 08bdef +6 if the index crosses a page
+    (0x08bde1, 0x08bdfa, true, true, 276, 0x000000, &[0x08bde6, 0x08bdef]),
+    // $08:BDFD: fixed cost
+    (0x08bdfd, 0x08be01, true, true, 62, 0x000000, &[]),
     // $08:BEDC: fixed cost
     (0x08bedc, 0x08bedf, true, true, 46, 0x000000, &[]),
     // $08:BEDF: 08bedf +6 if the index crosses a page; 08bee2 taken +6
@@ -10098,6 +10158,28 @@ pub(super) const BLOCKS: &[(u32, u32, bool, bool, u64, u32, &[u32])] = &[
     (0x09b6e1, 0x09b70c, true, true, 562, 0x000000, &[0x09b705, 0x09b708]),
     // $09:B70C: fixed cost
     (0x09b70c, 0x09b714, true, true, 158, 0x000000, &[]),
+    // $09:C08C: fixed cost
+    (0x09c08c, 0x09c08d, true, true, 42, 0x000000, &[]),
+    // $09:C08D: 09c08f taken +6
+    (0x09c08d, 0x09c091, true, true, 40, 0x09c08f, &[]),
+    // $09:C091: 09c09d +6 if the index crosses a page; 09c0a2 +6 if the index crosses a page; 09c0aa +6 if the index crosses a page; 09c0ae +6 if the index crosses a page; 09c0b5 taken +6
+    (0x09c091, 0x09c0b7, true, true, 496, 0x09c0b5, &[0x09c09d, 0x09c0a2, 0x09c0aa, 0x09c0ae]),
+    // $09:C0B7: fixed cost
+    (0x09c0b7, 0x09c0bb, true, true, 40, 0x000000, &[]),
+    // $09:C0BB: 09c0bd taken +6
+    (0x09c0bb, 0x09c0bf, true, true, 40, 0x09c0bd, &[]),
+    // $09:C0BF: 09c0c2 +6 if the index crosses a page; 09c0c7 +6 if the index crosses a page; 09c0cf +6 if the index crosses a page; 09c0d3 +6 if the index crosses a page; 09c0da taken +6
+    (0x09c0bf, 0x09c0dc, true, true, 394, 0x09c0da, &[0x09c0c2, 0x09c0c7, 0x09c0cf, 0x09c0d3]),
+    // $09:C0DC: fixed cost
+    (0x09c0dc, 0x09c0e0, true, true, 40, 0x000000, &[]),
+    // $09:C0E0: 09c0e2 taken +6
+    (0x09c0e0, 0x09c0e4, true, true, 40, 0x09c0e2, &[]),
+    // $09:C0E4: 09c0ec +6 if the index crosses a page; 09c101 taken +6
+    (0x09c0e4, 0x09c103, true, true, 398, 0x09c101, &[0x09c0ec]),
+    // $09:C103: 09c10e +6 if the index crosses a page
+    (0x09c103, 0x09c113, true, true, 222, 0x000000, &[0x09c10e]),
+    // $09:C113: fixed cost
+    (0x09c113, 0x09c114, true, true, 42, 0x000000, &[]),
     // $09:C175: fixed cost
     (0x09c175, 0x09c176, true, true, 42, 0x000000, &[]),
     // $09:C176: 09c178 taken +6

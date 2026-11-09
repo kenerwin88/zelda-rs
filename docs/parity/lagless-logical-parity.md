@@ -14593,3 +14593,311 @@ Scope is seeded logical replay, CPU pictures and live SPC pacing. Classifier,
 matcher and P2 code are unchanged. Prices use ROM blocks and routine scopes;
 there are no residual-derived prices, scene conditions, phase compensation,
 or new environment switches. No commit or push.
+
+## Lagless prefix hunt 36
+
+Baseline is `9cbcff82` on `codex/prefix-hunt36`; evidence is in
+`target/prefix-hunt36/`. The regenerated ledger contains **1,473,123
+iterations**. Before reuse, all **2,164 baseline artifact, authority, helper
+and source hashes**, plus **358 retained hunt-34 artifact hashes**, agree.
+The final binary is `zelda3-final`, SHA-256
+`b11d52d99c3abcbd67152dbf6cf44027652def0105d351f5248a4330b0522a7b`.
+Draft census jobs were stopped and their process groups verified finished;
+only the restarted runs bound to this final binary are admission evidence.
+
+### Owners and ROM fixtures
+
+| ROM owner | Newly priced work / excluded children |
+| --- | --- |
+| `$08:BD74` | Hookshot caller prefix through BDFD's tile-collision call and shared BD9F termination; sound, movement, bounds, sprite/tile collision and drawing children excluded; BE01..BEDB remains unpriced |
+| `$02:92B1` | Spiral-stair direction guard, actual staircase search, five columns of four priority stores and both returns; no children |
+| `$02:A2F0` | Straight-line room, scroll and room-bound high-byte adjustment; **1,656 decoded clocks**, no children |
+| `$09:C08D` | Indoor return, alternating signed X/Y activity checks, removal and bank-7F loaded-mask store; no children |
+
+There are **41 new generated blocks**. All **7,400 existing blocks remain
+byte-identical**, and **no existing fixture changes its owned-PC set**.
+Prices come from ROM blocks and executing branch/index operands, never a
+residual. The hookshot dispatcher reaches BD74 by JMP; `$08:833C` is not
+charged again. BDDF's taken edge is unreachable: BDD5 established step zero,
+and the hookshot collision child does not store the step byte.
+
+Four new fixtures construct lag-free states and run the unmodified ROM:
+
+- `prefix36_hookshot_caller_prefix_all_guards_retraction_extension_bounds_and_hits_exclude_children`
+- `prefix36_spiral_wall_scan_all_table_slots_layers_and_skip_paths_match_rom`
+- `prefix36_spiral_room_adjustment_all_room_axis_deltas_and_byte_wraps_match_rom`
+- `prefix36_overlord_activity_all_parities_axes_wraps_and_loaded_masks_match_rom`
+
+They cover **360 hookshot**, **64 wall-scan**, **2,048 room-adjustment**, and
+**12,800 overlord** cases. Reachable conditional edges are asserted in both
+directions; the hookshot's unreachable edge is asserted separately. The
+hookshot fixture sets the dispatcher's live `$0FA0` slot byte, which MoveX
+uses to restore X. Wall cases cover every physical table word, both tilemap
+layers and all five loop columns. Room cases cover every pair of room
+nibbles on each independent axis, with byte-high wraps. Overlord cases cover
+both frame parities, both axes, coordinate wraps, all eight loaded-mask bits,
+the table boundary, pointer wrap and the FFFF sentinel.
+
+One ROM behavior correction is explicit: `$09:C0F5..C111` forms a wrapping
+16-bit pointer in bank 7F, `EF80 + (block >> 3)`. The native loaded-mask helper
+previously dropped writes outside its typed 0x200-byte table. It now retains
+the typed helper in-table and uses the existing wrapped-store helper for
+adjacent WRAM. The unmodified-ROM overlord fixture proves the boundary and
+wrap stores; the final CPU picture gate below preserves every picture stream.
+
+### ROM census and classification
+
+The eight-slice helper reports **PASS / unexplained 0**, complete
+**1,473,123 iterations**. Missing/excess/FP improves **1,295/0/0 -> 1,291/0/0**.
+All **four changed holds** recover source lag; **zero rows are exposed**.
+Native instruction work gains **34,049,790 clocks**, with **zero negative
+main changes** and **zero VWF changes**.
+
+| Missing before iteration | ROM missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 32/0/0 -> 32/0/0 |
+| 380,243 | 77/0/0 -> 77/0/0 |
+| 461,989 | 109/0/0 -> 106/0/0 |
+
+Classification through 461,989 changes **73 (a), 14 (c), 22 (d) -> 70 (a),
+14 (c), 22 (d)**. Prefix recoveries are **456,903; 456,905; 456,906**, each
+adding **704 instruction clocks**. The later recovery **1,176,897** adds
+**1,656 clocks**. There are no reclassifications among unresolved rows.
+All **33 protected records are identical in every CSV field**, including
+upload rows, the eleven other inverse-threshold rows, 101,031 and the seven
+polygon rows. `rom-comparison.json`, `rom-changed-holds.json`,
+`classification-before/after.json`, `classification.json`, and
+`protected-full-context-agreement.json` retain the complete checks.
+
+### Remaining owner partitions
+
+All **98 selected rows** reconcile to the verified source instruction totals,
+the baseline native census and the final native census. The synthetic `total`
+row is excluded; VWF is already included in `main_master`. Full signed
+per-routine, sprite and object terms are in `owner-partitions.json/.csv`,
+`owner-vectors.csv`, `sprite-vectors.csv`, and `object-vectors.csv`. Positive
+parent terms retain their negative child offsets and are not independent
+unpriced work. `profile-reconciliation.json` records every total.
+
+The tables cover every baseline (a) row in the requested intervals, lowest
+iteration first. No hold is recovered before 380,243 in this batch. Each
+remaining partition is signed **sprite / object / other** instruction clocks;
+threshold shortfalls are diagnostic observations, never prices.
+
+141,568–228,499:
+
+| Iteration | Added clocks | Result or remaining sprite / object / other | Remaining threshold shortfall |
+| --- | ---: | --- | ---: |
+| 161,123 | 0 | 980 / 0 / -174 | 214 |
+| 162,819 | 0 | 92 / 0 / 3,018 | 2,686 |
+| 174,034 | 0 | 1,414 / 0 / 114 | 215 |
+| 181,568 | 0 | 2,524 / 0 / -22 | 534 |
+| 187,779 | 0 | 0 / 0 / 1,950 | 1,760 |
+| 189,344 | 1,138 | 192 / 0 / 3,302 | 3,066 |
+| 189,368 | 0 | 840 / 0 / 2,828 | 2,344 |
+| 190,815 | 0 | 192 / 0 / 944 | 752 |
+| 194,994 | 0 | 3,470 / 0 / 2,904 | 3,508 |
+| 196,051 | 3,524 | 0 / 0 / 3,776 | 3,204 |
+| 225,257 | 1,656 | 0 / 1,206 / 1,312 | 796 |
+
+228,499–380,243:
+
+| Iteration | Added clocks | Result or remaining sprite / object / other | Remaining threshold shortfall |
+| --- | ---: | --- | ---: |
+| 281,028 | 3,524 | 460 / 0 / 3,776 | 2,736 |
+| 282,475 | 0 | 1,178 / 0 / -438 | 160 |
+| 294,833 | 0 | 7,492 / 0 / 654 | 4,392 |
+| 294,835 | 0 | 10,322 / 0 / 1,758 | 4,486 |
+| 294,837 | 0 | 9,148 / 0 / 352 | 6,970 |
+| 297,585 | 0 | 3,506 / 0 / 1,844 | 4,418 |
+| 304,890 | 0 | 14,686 / 0 / -22 | 10,786 |
+| 310,875 | 0 | 14,904 / 0 / 4,532 | 8,758 |
+| 313,078 | 0 | 9,276 / 0 / 268 | 8,912 |
+| 313,255 | 0 | 12,554 / 0 / 738 | 13,188 |
+| 317,588 | 0 | 92 / 0 / 8,006 | 3,970 |
+| 322,193 | 0 | 2,160 / 0 / 4,634 | 5,902 |
+| 327,434 | 0 | 0 / 0 / 574 | 508 |
+| 336,035 | 0 | 0 / 0 / 574 | 28 |
+| 336,046 | 0 | 0 / 0 / 470 | 152 |
+| 337,925 | 0 | 1,876 / 0 / 3,090 | 2,096 |
+| 338,240 | 0 | 3,440 / 0 / 3,090 | 1,070 |
+| 338,673 | 0 | 0 / 0 / 848 | 4 |
+| 344,246 | 0 | 1,012 / 0 / 3,588 | 3,468 |
+| 348,203 | 0 | 0 / 0 / 5,096 | 3,224 |
+| 353,572 | 0 | 0 / 0 / 4,968 | 2,890 |
+| 354,592 | 0 | 0 / 0 / 470 | 132 |
+| 354,619 | 0 | 0 / 0 / 574 | 314 |
+| 367,327 | 0 | 104 / 0 / 3,382 | 2,852 |
+| 370,567 | 0 | 0 / 0 / 1,510 | 1,276 |
+| 372,814 | 0 | 108 / 0 / 4,122 | 2,694 |
+| 378,071 | 0 | 782 / 0 / 570 | 62 |
+| 378,077 | 0 | 102 / 0 / 1,646 | 232 |
+| 378,080 | 0 | 102 / 0 / 1,086 | 188 |
+| 378,092 | 0 | 238 / 0 / 1,086 | 802 |
+| 378,094 | 0 | 238 / 0 / 1,086 | 980 |
+| 378,096 | 0 | 238 / 0 / 1,928 | 1,100 |
+| 378,098 | 0 | 238 / 0 / 960 | 656 |
+| 378,105 | 0 | 238 / 0 / 960 | 154 |
+| 378,541 | 0 | 238 / 0 / 1,910 | 692 |
+
+380,243–461,989:
+
+| Iteration | Added clocks | Result or remaining sprite / object / other | Remaining threshold shortfall |
+| --- | ---: | --- | ---: |
+| 383,633 | 0 | 0 / 0 / 7,198 | 5,726 |
+| 389,654 | 0 | 0 / 0 / 47,122 | 37,922 |
+| 390,579 | 0 | 10,294 / 0 / 116 | 3,278 |
+| 390,877 | 0 | 6,540 / 0 / 654 | 598 |
+| 401,366 | 0 | 2,368 / 0 / 374 | 2,550 |
+| 411,310 | 0 | 1,798 / 0 / 128 | 1,288 |
+| 411,514 | 0 | 3,416 / 0 / 128 | 2,548 |
+| 411,549 | 0 | 2,090 / 0 / 128 | 424 |
+| 411,556 | 0 | 1,798 / 0 / 128 | 1,684 |
+| 427,806 | 0 | 650 / 1,952 / 4,126 | 706 |
+| 435,694 | 0 | 5,978 / 0 / 120 | 1,248 |
+| 435,695 | 0 | 5,978 / 0 / 120 | 452 |
+| 435,696 | 0 | 5,978 / 0 / 120 | 692 |
+| 440,926 | 0 | 650 / 1,952 / 3,882 | 2,612 |
+| 452,255 | 0 | 1,406 / 0 / 120 | 1,254 |
+| 456,855 | 704 | 0 / 0 / 4,434 | 2,688 |
+| 456,856 | 814 | 0 / 0 / 5,206 | 3,654 |
+| 456,857 | 704 | 0 / 0 / 4,452 | 2,978 |
+| 456,858 | 704 | 0 / 0 / 4,452 | 1,368 |
+| 456,901 | 704 | 0 / 0 / 4,550 | 3,182 |
+| 456,902 | 704 | 0 / 0 / 4,550 | 3,900 |
+| 456,903 | 704 | recovered | 0 |
+| 456,904 | 704 | 0 / 0 / 4,550 | 1,888 |
+| 456,905 | 704 | recovered | 0 |
+| 456,906 | 704 | recovered | 0 |
+| 457,147 | 0 | 0 / 0 / 1,150 | 98 |
+| 457,309 | 814 | 0 / 0 / 4,958 | 1,922 |
+
+The early general-owner additions are **1,138 clocks at 189,344** from the
+overlord activity check, **3,524 at 196,051** from the staircase scan, and
+**1,656 at 225,257** from room adjustment. All three rows remain unresolved.
+The first three unresolved rows remain **161,123: 980 / 0 / -174**,
+**162,819: 92 / 0 / 3,018**, and **174,034: 1,414 / 0 / 114**. The previously
+withheld Zora selector and complete pre-inactive prefix remain unpriced
+globally; there is no scene or iteration exception.
+
+For example, the source `$07:E245` term at 189,344 is **2,390 clocks**;
+the already-priced native `$07:E373` and `$07:E3E0` child offsets are
+**-1,844 and -546**, canceling it exactly. At 196,051, `$07:E370` has
+**2,488 / -1,870 / -546** across those same physical owners, leaving the
+separate **72-clock PHB/PHK/PLB wrapper** identified by its decoded ROM
+block. That wrapper remains unpriced on this call path; the residual is not
+used as a price. `$08:8DAE` was already marked before this batch. No extra
+movement or collision-body charge is added from a positive parent label.
+
+At **407,899**, the song-end poll owner `$00:F312` remains unpriced; its
+**253,472 clocks** are retained separately from the non-poll partition.
+
+### Live poll attribution
+
+The **single seeded live census** uses `--live-apu-reads --pacing-predictor`
+with `--seed-every 2000`, retaining SPC state across seeds. It completes
+**1,473,123 iterations**, reports **PASS / unexplained 0**, and improves
+missing/excess/FP **1,445/126/12 -> 1,441/126/12**. All **four changed holds**
+match the ROM recoveries. There are **zero live-only changed holds** and
+**zero unattributed rows**. Excess and FP remain at their baseline values.
+
+| Missing before iteration | Live missing/excess/FP before -> after |
+| --- | --- |
+| 94,334 | 2/0/0 -> 2/0/0 |
+| 141,568 | 6/0/0 -> 6/0/0 |
+| 228,499 | 32/0/0 -> 32/0/0 |
+| 380,243 | 86/9/2 -> 86/9/2 |
+| 461,989 | 232/99/7 -> 229/99/7 |
+
+Every changed live row, without sampling:
+
+| Iteration | Source lag | Live holds before -> after | ROM hold change |
+| --- | ---: | --- | --- |
+| 456,903 | 1 | 0 -> 1 | +1 |
+| 456,905 | 1 | 0 -> 1 | +1 |
+| 456,906 | 1 | 0 -> 1 | +1 |
+| 1,176,897 | 19 | 18 -> 19 | +1 |
+
+All **1,473,123 source trace records** preserve source context, sample bounds,
+reads and writes: SHA-256
+`a3da76b73786f97ec20c3ce3476432200463b968d43136fe847b3c40e3afb20f`
+before and after. Trace holds agree with the complete CSV; there are zero
+cartridge-answer rows and zero lost pushes. The complete native context/poll
+RLE agrees with baseline, and there are **zero live-only execution-work
+changes**. The live instruction gain therefore matches ROM at **34,049,790
+clocks**.
+
+Both directly observed source PCs contain ROM bytes `AD 40 21` (`LDA $2140`).
+The hash-verified direct bus observations match the final source reads at
+all ten episode starts and first-zero endpoints. Source PC identity is not
+inferred solely from an iteration range. Pre-existing source/native first-zero
+differences remain visible below; this batch adds no poll-phase compensation.
+
+| Episode / direct source PC | Source first zero | Native first zero before -> after | Live-only changed holds |
+| --- | ---: | --- | ---: |
+| 94,334 / `$08:C3FD` | 94,854 | 94,854 -> 94,854 | 0 |
+| 141,568 / `$08:C3FD` | 142,088 | 142,088 -> 142,088 | 0 |
+| 228,499 / `$08:C3FD` | 229,035 | 229,036 -> 229,036 | 0 |
+| 380,243 / `$08:C606` | 380,881 | 380,882 -> 380,882 | 0 |
+| 461,989 / `$08:C606` | 462,628 | 462,628 -> 462,628 | 0 |
+| 626,618 / `$08:C606` | 627,256 | 627,257 -> 627,257 | 0 |
+| 735,229 / `$08:C606` | 735,867 | 735,867 -> 735,867 | 0 |
+| 881,095 / `$08:C606` | 881,734 | 881,734 -> 881,734 | 0 |
+| 1,064,096 / `$08:C606` | 1,064,734 | 1,064,734 -> 1,064,734 | 0 |
+| 1,317,697 / `$08:C606` | 1,318,335 | 1,318,335 -> 1,318,335 | 0 |
+
+`live-command.json`, `live-gate.txt`, `live-counts.txt`, `live-comparison.json`,
+`live-trace-proof.json`, `poll-source-verification.json`,
+`poll-source-rom-bytes.json`, `poll-attribution.json`, and the complete
+`live-changed-rows.csv/.json` retain the proof.
+`live-only-attributed-rows.csv/.json` and `live-unattributed-rows.json` are empty;
+the former CSV retains its column header.
+
+### Verification boundary
+
+The final CPU-only picture census reports **PASS / unexplained 0**, complete
+**1,473,123 iterations**, with **1,462,997 exact pictures**. All eight picture
+hash streams are byte-identical to baseline. `cpu-commands.json`,
+`cpu-gate.txt`, and `cpu-picture-agreement.json` bind this proof to the final
+binary. All eleven admitted census/profile receipts use that same binary.
+
+The build is warning-free. Filtered ancilla **56**, dungeon **99**, overlord
+**2**, and all four new fixtures pass. Eight generator and two worklist checks
+pass; regenerated Rust is byte-identical. Library test builds retain the same
+**24 pre-existing warning headers**. All **1,624 frozen non-document source
+and fixture hashes** agree. The final authority readback preserves all **14
+authority files**, **two helpers**, **five source-vector authorities**,
+**358 hunt-34 artifacts**, and **521 hunt-35 artifacts**.
+
+All code changes, complete census tables, every remaining (a) row partition,
+and the zero-live-only-change attribution are written here before the required
+final default library command starts:
+
+```sh
+ZELDA3_ASSETS=/Users/missingno/Documents/zelda3-rs/zelda3_assets.dat cargo test -q --profile parity -p zelda3 -p snes --lib
+```
+
+The command ran **once**, exiting 101 with exactly the permitted failure.
+SNES reports **505 passed, 7 ignored**. Zelda reports **3,187 passed,
+3 ignored**, and only:
+`cycle_models::spotlight_caller_return::tests::closing_dispatch_and_outdoor_movement_keep_the_actual_child_frames`.
+Its assertion remains `Some(1047868)` versus `Some(170442)`, unchanged from
+baseline. There are **zero other failures** and the same **24 warning
+headers**. `full-library-command.json`, `full-library.log`, and
+`full-library-gate.json` retain the complete result. `doc-before-full-suite.json`
+and its section snapshot prove all census, partition and poll-attribution
+tables were written before the suite started.
+
+All recorded admission and test processes have finished. Only compiler caches
+under this worktree's own `target/` were removed; cleanup receipts preserve
+the paths and byte counts. The monitored full-suite target peak is **17.44 GB**,
+below the **18 GB** cap. The final source, authority, helper and retained
+evidence readbacks agree. `verification-summary.json`,
+`admitted-binary-agreement.json`, and `artifact-hashes.json` retain the final
+checks. `git diff --check` passes.
+
+Scope is seeded logical replay, CPU pictures and live SPC pacing. Classifier,
+matcher and P2 code are unchanged. There are no residual-derived prices, scene
+conditions, phase compensation, or new environment switches. No commit or push.

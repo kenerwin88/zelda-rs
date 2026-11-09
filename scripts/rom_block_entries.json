@@ -1220,5 +1220,10 @@
   {"entry":"1e8bbf","end":"1e8bd2","index_max":15},
   {"entry":"1e8dd2","end":"1e8de3","index_max":15},
   {"entry":"1e8e31","end":"1e8e5e","index_max":15},
-  {"entry":"0dd739","end":"0dd73a","index_max":15,"data_bank":13}
+  {"entry":"0dd739","end":"0dd73a","index_max":15,"data_bank":13},
+  {"entry":"08bd74","end":"08be01","index_max":9},
+  {"entry":"0292b1","end":"029319"},
+  {"entry":"02a2f0","end":"02a37c"},
+  {"entry":"09c08d","end":"09c114","index_max":7},
+  {"entry":"09c08c","end":"09c08d"}
 ]

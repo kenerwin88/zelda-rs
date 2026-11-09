@@ -7,6 +7,10 @@ mod overlord_shared;
 use crate::types::sign8;
 use overlord_shared::*;
 
+#[cfg(test)]
+#[path = "overlord_prefix36_tests.rs"]
+mod prefix36_tests;
+
 impl ZeldaState {
     pub(super) fn overlord_get_x(&self, k: usize) -> u16 {
         self.overlord_slot_view(k).x_low() as u16
@@ -901,10 +905,19 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord_check_if_active(&mut self, k: usize) {
+        // $09:C08D..C113, including the indoor RTS at C08C. The original
+        // checks X before Y, and alternates the signed range with frame parity.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09c08d));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09c08d);
         if self.game_state.world.location.is_indoors() {
+            b.taken(0x09c08f); b.block(0x09c08c);
             return;
         }
+        b.block(0x09c091);
         let j = (self.game_state.frame.frame_counter & 1) as usize;
+        if j == 0 { b.taken(0x09c0b5); } else { b.block(0x09c0b7); }
+        b.block(0x09c0bb);
         let x = self
             .game_state
             .display
@@ -919,15 +932,25 @@ impl ZeldaState {
             .bg2_v_copy2()
             .wrapping_add(OVERLORD_ACTIVE_RANGE_OFFSETS[j])
             .wrapping_sub(self.overlord_get_y(k));
+        if ((x >> 15) as usize) != j { b.taken(0x09c0bd); }
+        else {
+            b.block(0x09c0bf);
+            if j == 0 { b.taken(0x09c0da); } else { b.block(0x09c0dc); }
+            b.block(0x09c0e0);
+            if ((y >> 15) as usize) == j { b.taken(0x09c0e2); }
+        }
         if ((x >> 15) as usize) != j || ((y >> 15) as usize) != j {
+            b.block(0x09c0e4);
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
             let blk = self.overlord_slot_view(k).sprite_block_pos();
             if blk != 0xffff {
+                b.block(0x09c103);
                 let loadedmask = 0x80 >> (blk & 7);
                 self.clear_overworld_sprite_loaded_mask(blk, loadedmask as u8);
-            }
+            } else { b.taken(0x09c101); }
         }
+        b.block(0x09c113);
     }
 
     pub(super) fn armos_coordinator_rotate_knights(&mut self, k: usize) {

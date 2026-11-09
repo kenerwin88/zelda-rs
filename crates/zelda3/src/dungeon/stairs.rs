@@ -1096,9 +1096,14 @@ impl ZeldaState {
 
     /// ROM: `SpiralStairs_MakeNearbyWallsHighPriority_Exiting`
     pub(super) fn spiral_stairs_make_nearby_walls_high_priority_exiting(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x0292b1));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x0292b1);
         if self.game_state.dungeon.stair_movement.staircase_index() & 4 != 0 {
+            b.taken(0x0292b6); b.block(0x029318);
             return;
         }
+        b.block(0x0292b8);
         let lf = self
             .game_state
             .dungeon
@@ -1109,15 +1114,24 @@ impl ZeldaState {
         let mut x = 0usize;
         let mut p;
         loop {
+            b.block(0x0292c9);
             p = self.game_state.dungeon.stair_lists.inter_staircase_pos(x);
             if (p.wrapping_mul(2) & 0x007f) == lf {
                 break;
             }
+            b.taken(0x0292d4);
             x += 1;
         }
+        b.block(0x0292d6);
         p = p.wrapping_sub(4);
         self.dungeon_stair_movement_mut()
             .set_staircase_tilemap_pos_x2(p.wrapping_mul(2));
+        // Five columns, four row stores per column; no child call in ROM.
+        for column in 0..5 {
+            b.block(0x0292e5);
+            if column != 4 { b.taken(0x029314); }
+        }
+        b.block(0x029316); b.block(0x029318);
         self.set_spiral_stair_wall_priority(p, true);
     }
 

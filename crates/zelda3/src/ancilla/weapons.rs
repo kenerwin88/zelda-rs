@@ -11,6 +11,10 @@ use crate::types::{abs16, sign16, sign8, ProjectSpeedRet};
 #[path = "../ancilla_prefix35_tests.rs"]
 mod prefix35_tests;
 
+#[cfg(test)]
+#[path = "../ancilla_prefix36_tests.rs"]
+mod prefix36_tests;
+
 impl ZeldaState {
     fn boomerang_cheat_when_no_ones_looking(&self, k: usize, pt: &mut ProjectSpeedRet) {
         let x = self
@@ -1210,48 +1214,85 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla1_f_hookshot(&mut self, k: usize) {
+        // $08:BD74..BDFC caller prefix. Movement, sound, bounds, sprite
+        // collision and drawing retain their own owners; BE01..BEDB remains
+        // unpriced. The type dispatcher enters this body by JMP, not JSR.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x08bd74));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x08bd74);
         if self.game_state.frame.submodule == 0 {
+            b.block(0x08bd78);
             if self.ancilla_slot_view(k).timer() == 0 {
+                b.block(0x08bd7d);
                 self.ancilla_slot_view_mut(k).set_timer(7);
                 self.ancilla_sfx2_pan(k, 0x0a);
-            }
+            } else { b.taken(0x08bd7b); }
 
+            b.block(0x08bd87);
             if !self
                 .game_state
                 .player
                 .follower_link
                 .has_hookshot_interlock()
             {
+                b.block(0x08bd8c);
                 self.ancilla_move_y(k);
+                b.block(0x08bd8f);
                 self.ancilla_move_x(k);
+                b.block(0x08bd92);
                 if self.ancilla_slot_view(k).step() != 0 {
+                    b.block(0x08bd97);
                     let hookshot_length = self.ancilla_slot_view_mut(k).retreat_item_to_link();
                     if sign8(hookshot_length) {
+                        b.taken(0x08bd9a); b.block(0x08bd9f);
                         self.ancilla_slot_view_mut(k).clear();
                         return;
                     }
+                    b.block(0x08bd9c);
                 } else {
+                    b.taken(0x08bd95); b.block(0x08bda3);
                     let hookshot_length = self.ancilla_slot_view_mut(k).advance_item_to_link();
                     if hookshot_length == 32 {
+                        b.block(0x08bdae);
                         let mut hookshot = self.ancilla_slot_view_mut(k);
                         hookshot.set_step(1);
                         hookshot.negate_x_velocity();
                         hookshot.negate_y_velocity();
-                    }
+                    } else { b.taken(0x08bdac); }
 
-                    if !self.hookshot_should_i_even_bother_with_tiles(k) {
-                        if self.ancilla_slot_view(k).l() == 0
-                            && self.ancilla_slot_view(k).step() == 0
-                            // ROM $08:BDD7
-                            && self.ancilla_check_sprite_collision_marked(k).is_some()
-                            && self.ancilla_slot_view(k).step() == 0
-                        {
+                    b.block(0x08bdc5);
+                    let skip_tiles = self.hookshot_should_i_even_bother_with_tiles(k);
+                    b.block(0x08bdc8);
+                    if !skip_tiles {
+                        b.taken(0x08bdc8); b.block(0x08bdcd);
+                        let mut check_sprite = self.ancilla_slot_view(k).l() == 0;
+                        if check_sprite {
+                            b.block(0x08bdd2);
+                            check_sprite = self.ancilla_slot_view(k).step() == 0;
+                            if !check_sprite { b.taken(0x08bdd5); }
+                        } else { b.taken(0x08bdd0); }
+                        let mut reverse = false;
+                        if check_sprite {
+                            b.block(0x08bdd7);
+                            let hit = self.ancilla_check_sprite_collision_marked(k).is_some();
+                            b.block(0x08bdda);
+                            if hit {
+                                b.block(0x08bddc);
+                                reverse = self.ancilla_slot_view(k).step() == 0;
+                                if !reverse { b.taken(0x08bddf); }
+                            } else { b.taken(0x08bdda); }
+                        }
+                        if reverse {
+                            b.block(0x08bde1);
                             let mut hookshot = self.ancilla_slot_view_mut(k);
                             hookshot.set_step(1);
                             hookshot.negate_y_velocity();
                             hookshot.negate_x_velocity();
                         }
 
+                        // BDFD's call belongs to the prefix, while BE01's
+                        // post-tile instructions remain unpriced.
+                        b.block(0x08bdfd);
                         self.hookshot_check_tile_collision(k as i32);
 
                         let mut r0 = 0u8;
@@ -1340,6 +1381,7 @@ impl ZeldaState {
 
                                 if self.game_state.player.tile_detection.misc_tiles() & 3 != 0 {
                                     if self.ancilla_slot_view(k).item_to_link() < 4 {
+                                        b.block(0x08bd9f);
                                         self.ancilla_slot_view_mut(k).clear();
                                         return;
                                     }
@@ -1348,10 +1390,10 @@ impl ZeldaState {
                                 }
                             }
                         }
-                    }
+                    } else { b.block(0x08bdca); }
                 }
-            }
-        }
+            } else { b.taken(0x08bd8a); b.block(0x08bd9c); }
+        } else { b.taken(0x08bd76); b.block(0x08bd9c); }
 
         self.hookshot_draw(k);
     }

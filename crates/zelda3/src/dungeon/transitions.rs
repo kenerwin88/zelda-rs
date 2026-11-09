@@ -2311,6 +2311,9 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_AdjustAfterSpiralStairs`
     pub(in crate::zelda_rtl) fn dungeon_adjust_after_spiral_stairs(&mut self) {
+        // Straight-line $02:A2F0..A37B; all byte-high adjustments, no children.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02a2f0));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x02a2f0);
         let room = self.game_state.world.location.dungeon_room();
         let prev = self
             .game_state
