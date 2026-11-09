@@ -16,25 +16,33 @@ impl ZeldaState {
     }
 
     pub(in crate::zelda_rtl) fn halt_link_when_using_items(&mut self) {
-        if self.game_state.dungeon.room_load.header_collision_2() == 2
-            && self.has_player_layer_collision(
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07ae65));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07ae65);
+        if self.game_state.dungeon.room_load.header_collision_2() == 2 {
+            b.block(0x07ae6b);
+            if self.has_player_layer_collision(
                 crate::game_state::constants::player::LAYER_COLLISION_BOTH,
-            )
-        {
-            self.follower_link_state_mut()
-                .clear_movement_velocity_and_direction();
-            self.follower_link_state_mut().clear_movement_subpixels();
-            self.follower_link_state_mut()
-                .clear_moving_against_diag_tile();
-        }
+            ) {
+                b.block(0x07ae74);
+                self.follower_link_state_mut()
+                    .clear_movement_velocity_and_direction();
+                self.follower_link_state_mut().clear_movement_subpixels();
+                self.follower_link_state_mut()
+                    .clear_moving_against_diag_tile();
+            } else { b.taken(0x07ae72); }
+        } else { b.taken(0x07ae69); }
+        b.block(0x07ae80);
         if self
             .game_state
             .player
             .follower_link
             .has_somaria_platform_state()
         {
+            b.block(0x07ae85);
             self.follower_link_state_mut().set_direction(0);
-        }
+        } else { b.taken(0x07ae83); }
+        b.block(0x07ae87);
     }
 
     pub(super) fn link_handle_cape_passive_lift_check(&mut self) {

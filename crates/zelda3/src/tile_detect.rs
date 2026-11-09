@@ -205,10 +205,16 @@ impl ZeldaState {
     }
 
     pub(super) fn hookshot_check_tile_collision(&mut self, k: i32) {
+        // $07:D576..D606 owns the wrapper and both call sites, excluding
+        // TileDetect_ResetState and each single-layer collision child.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07d576));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07d576);
         let k = k as usize;
         let bak0 = self.game_state.world.location.dungeon_room_index();
         let bak1 = self.game_state.player.follower_link.lower_level_state();
         if self.ancilla_slot_view(k).work_byte_1() != 0 {
+            b.block(0x07d584);
             if self
                 .game_state
                 .dungeon
@@ -216,17 +222,23 @@ impl ZeldaState {
                 .kind_of_in_room_staircase()
                 == 0
             {
+                b.block(0x07d589);
                 self.increment_dungeon_room_index_by(0x10);
-            }
+            } else { b.taken(0x07d587); }
+            b.block(0x07d590);
             self.follower_link_state_mut()
                 .set_lower_level_state(bak1 ^ 1);
-        }
+        } else { b.taken(0x07d582); }
+        b.block(0x07d596);
+        if k >= 6 { b.crossing(0x07d596); }
         let x = self.ancilla_x(k);
         let y = self.ancilla_y(k);
         let dir = self.ancilla_slot_view(k).direction() as i32;
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
+        b.block(0x07d5b9);
         if self.game_state.dungeon.room_load.header_collision() == 2 {
+            b.block(0x07d5c2);
             self.follower_link_state_mut().set_lower_level_state(1);
             self.hookshot_check_single_layer_tile_collision(
                 x.wrapping_add(self.game_state.display.ppu_scroll_copy.bg1_h_copy2())
@@ -235,14 +247,21 @@ impl ZeldaState {
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()),
                 dir,
             );
+            b.block(0x07d5ed);
             self.follower_link_state_mut().set_lower_level_state(0);
-        }
+        } else { b.taken(0x07d5c0); }
+        b.block(0x07d5fb);
         self.hookshot_check_single_layer_tile_collision(x, y, dir);
+        b.block(0x07d5fe);
         self.follower_link_state_mut().set_lower_level_state(bak1);
         self.set_dungeon_room_index(bak0);
     }
 
     pub(super) fn hookshot_check_single_layer_tile_collision(&mut self, x: u16, y: u16, dir: i32) {
+        // $07:D607..D656: coordinate setup and the two actual child calls.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07d607));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x07d607);
         let base = dir as usize * 2;
         let mask = self.game_state.player.tile_detection.location_calc_mask();
         let y0 = y.wrapping_add(HOOKSHOT_SINGLE_LAYER_CHECK_Y_OFFSETS[base] as u16) & mask;
@@ -251,7 +270,9 @@ impl ZeldaState {
         let x1 =
             (x.wrapping_add(HOOKSHOT_SINGLE_LAYER_CHECK_X_OFFSETS[base + 1] as u16) & mask) >> 3;
         self.tile_detection_execute(x0, y0, 1);
+        b.block(0x07d644);
         self.tile_detection_execute(x1, y1, 2);
+        b.block(0x07d654);
     }
 
     pub(super) fn handle_nudging_in_a_door(&mut self, speed: i8) {

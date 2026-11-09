@@ -17831,3 +17831,7 @@ use crate::OriginalTimingReceiptInstallError;
 #[cfg(test)]
 #[path = "prefix34_tests.rs"]
 mod prefix34_tests;
+
+#[cfg(test)]
+#[path = "prefix37_tests.rs"]
+mod prefix37_tests;

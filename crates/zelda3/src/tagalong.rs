@@ -3,6 +3,10 @@
 use super::*;
 use crate::types::{abs16, sign16, sign8};
 
+#[cfg(test)]
+#[path = "tagalong_prefix37_tests.rs"]
+mod prefix37_tests;
+
 const OAM_BUF_TAGALONG: usize = 0x0800;
 const FEATURES0_MISC_BUG_FIXES_TAGALONG: u32 = 4096;
 const FEATURES0_TURN_WHILE_DASHING_TAGALONG: u32 = 4;
@@ -1579,26 +1583,58 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_handle_trigger(&mut self) {
+        // Price only the room search and trigger scan, not the message /
+        // sprite handoff suffix at A657..A6C9 or CheckForTrigger's body.
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09a59e));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09a59e);
+        // Every path rejoins this one shared SEP/RTS after its children.
+        b.block(0x09a6ca);
         if self.game_state.frame.submodule != 0 {
-            // $A59E LDA/BNE, $A5CD BRL, $A6CA SEP/RTS.
-            crate::cycle_ledger::charge(24 + 22 + 30 + 22 + 42);
+            if !self.lag_free { crate::cycle_ledger::charge(140); }
+            b.taken(0x09a5a0); b.block(0x09a5cd);
             return;
         }
+        b.block(0x09a5a2);
         let (infos, start, end) = if self.game_state.world.location.is_indoors() {
+            b.block(0x09a5ae);
             let room = self.game_state.world.location.dungeon_room();
-            let Some(j) = TAGALONG_INDOOR_ROOMS.iter().position(|&v| v == room) else {
+            let mut found = None;
+            for j in (0..TAGALONG_INDOOR_ROOMS.len()).rev() {
+                b.block(0x09a5b4);
+                if TAGALONG_INDOOR_ROOMS[j] == room {
+                    b.taken(0x09a5b7); found = Some(j); break;
+                }
+                b.block(0x09a5b9);
+                if j != 0 { b.taken(0x09a5bb); }
+            }
+            let Some(j) = found else {
+                b.block(0x09a5bd); b.block(0x09a5cd);
                 return;
             };
+            b.block(0x09a5d0);
             (
                 &TAGALONG_INDOOR_INFOS[..],
                 TAGALONG_INDOOR_OFFSETS[j] as usize,
                 TAGALONG_INDOOR_OFFSETS[j + 1] as usize,
             )
         } else {
+            b.taken(0x09a5ac); b.block(0x09a5bf);
             let screen = self.game_state.world.location.overworld_screen();
-            let Some(j) = TAGALONG_OUTDOOR_ROOMS.iter().position(|&v| v == screen) else {
+            let mut found = None;
+            for j in (0..TAGALONG_OUTDOOR_ROOMS.len()).rev() {
+                b.block(0x09a5c4);
+                if TAGALONG_OUTDOOR_ROOMS[j] == screen {
+                    b.taken(0x09a5c7); found = Some(j); break;
+                }
+                b.block(0x09a5c9);
+                if j != 0 { b.taken(0x09a5cb); }
+            }
+            let Some(j) = found else {
+                b.block(0x09a5cd);
                 return;
             };
+            b.block(0x09a614);
             (
                 &TAGALONG_OUTDOOR_INFOS[..],
                 TAGALONG_OUTDOOR_OFFSETS[j] as usize,
@@ -1621,10 +1657,21 @@ impl ZeldaState {
                 .data_index()
                 .wrapping_add(1)
         };
-        for info in &infos[start..end] {
-            if info.tagalong == self.game_state.sprites.follower_runtime.indicator()
-                && self.follower_check_for_trigger(info)
-            {
+        let indoor = self.game_state.world.location.is_indoors();
+        for (index, info) in infos[start..end].iter().enumerate() {
+            b.block(if indoor {0x09a5d9} else {0x09a61d});
+            let same = info.tagalong == self.game_state.sprites.follower_runtime.indicator();
+            let hit = if same {
+                b.block(if indoor {0x09a5e9} else {0x09a62d});
+                let hit = self.follower_check_for_trigger(info);
+                b.block(if indoor {0x09a602} else {0x09a646});
+                if hit { b.taken(if indoor {0x09a602} else {0x09a646}); }
+                else { b.block(if indoor {0x09a604} else {0x09a648}); }
+                hit
+            } else {
+                b.taken(if indoor {0x09a5e7} else {0x09a62b}); false
+            };
+            if hit {
                 if info.bit & self.game_state.sprites.follower_runtime.event_flags() != 0 {
                     return;
                 }
@@ -1650,7 +1697,12 @@ impl ZeldaState {
                 self.tagalong_main_show_text_message();
                 return;
             }
+            b.block(if indoor {0x09a606} else {0x09a64a});
+            if start + index + 1 != end {
+                b.taken(if indoor {0x09a60f} else {0x09a653});
+            }
         }
+        b.block(if indoor {0x09a611} else {0x09a655});
     }
 
     pub(super) fn tagalong_draw(&mut self) {
@@ -2040,6 +2092,9 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_check_for_trigger(&self, info: &TagalongMessageInfo) -> bool {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x09ac26));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x09ac26);
         let link = self.game_state.player.follower_link;
         let mut x = link
             .x()
@@ -2049,13 +2104,23 @@ impl ZeldaState {
             .y()
             .wrapping_add(12)
             .wrapping_sub(info.y.wrapping_add(8));
-        if sign16(x) {
-            x = 0u16.wrapping_sub(x);
-        }
         if sign16(y) {
+            b.block(0x09ac46);
             y = 0u16.wrapping_sub(y);
+        } else { b.taken(0x09ac44); }
+        b.block(0x09ac4a);
+        if y >= 28 {
+            b.taken(0x09ac4d); b.block(0x09ac67); return false;
         }
-        x < 24 && y < 28
+        b.block(0x09ac4f);
+        if sign16(x) {
+            b.block(0x09ac5a);
+            x = 0u16.wrapping_sub(x);
+        } else { b.taken(0x09ac58); }
+        b.block(0x09ac5e);
+        if x >= 24 {
+            b.taken(0x09ac61); b.block(0x09ac67); false
+        } else { b.block(0x09ac63); true }
     }
 
     pub(super) fn follower_disable(&mut self) {

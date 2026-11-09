@@ -1225,5 +1225,14 @@
   {"entry":"0292b1","end":"029319"},
   {"entry":"02a2f0","end":"02a37c"},
   {"entry":"09c08d","end":"09c114","index_max":7},
-  {"entry":"09c08c","end":"09c08d"}
+  {"entry":"09c08c","end":"09c08d"},
+  {"entry":"07ae65","end":"07ae88"},
+  {"entry":"07d576","end":"07d607","index_max":9},
+  {"entry":"07d607","end":"07d657","index_max":12},
+  {"entry":"09a59e","end":"09a5cd","index_max":110},
+  {"entry":"09a5cd","end":"09a5d0"},
+  {"entry":"09a5d0","end":"09a614","m8":false,"x8":false,"index_max":110},
+  {"entry":"09a614","end":"09a657","m8":false,"x8":false,"index_max":110},
+  {"entry":"09a6ca","end":"09a6cd"},
+  {"entry":"09ac26","end":"09ac6b"}
 ]
