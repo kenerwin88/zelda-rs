@@ -1563,7 +1563,8 @@ impl ZeldaState {
         if self.sprite_return_if_inactive(k, SpriteInactiveEntry::Rom06D9EC) {
             return;
         }
-        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Unpriced) {
+        // ROM $06:96C8 JSR $06:FF78; the nonzero body stays unpriced.
+        if self.sprite_return_if_recoiling(k, SpriteRecoilEntry::Rom06FF78) {
             return;
         }
         if self.sprite_slot_view(k).e() != 0 {

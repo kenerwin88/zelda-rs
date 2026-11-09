@@ -1178,6 +1178,14 @@ impl ZeldaState {
         }
     }
 
+    /// $07:E370: the far entry owns PHB/PHK/PLB only. The movement
+    /// body and its common bank-restore/RTL tail retain their existing scopes.
+    pub(in crate::zelda_rtl) fn link_move_position_long_entry(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07e370));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x07e370);
+        self.link_move_position();
+    }
+
     fn link_move_position_until_coordinates_integrated(
         &mut self,
     ) -> Option<LinkMovePositionReturn> {

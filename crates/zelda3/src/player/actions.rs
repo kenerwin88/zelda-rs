@@ -1937,11 +1937,7 @@ impl ZeldaState {
             } else { b.taken(0x07883d); }
         } else { b.taken(0x07882c); }
         b.block(0x078841);
-        {
-            let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x07e370));
-            b.block(0x07e370);
-            self.link_move_position();
-        }
+        self.link_move_position_long_entry();
 
         b.block(0x078845);
         if self.game_state.player.follower_link.handler_state() != 6 {

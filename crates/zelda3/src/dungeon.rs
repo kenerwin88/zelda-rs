@@ -33,6 +33,10 @@ mod runtime;
 mod dungeon_shared;
 use dungeon_shared::*;
 
+#[cfg(test)]
+#[path = "dungeon_prefix38_tests.rs"]
+mod prefix38_tests;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) enum SelectedGameEntranceContinuation {
     BeforeSelection,

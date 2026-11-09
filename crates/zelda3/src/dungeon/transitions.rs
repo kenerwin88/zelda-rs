@@ -110,6 +110,8 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_AdjustQuadrant`
     pub(super) fn dungeon_adjust_quadrant(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02ba27));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x02ba27);
         let quadrant_y = self.game_state.player.follower_link.quadrant_y();
         let quadrant_x = self.game_state.player.follower_link.quadrant_x();
         // dung_layout_and_starting_quadrant is owned solely by DungeonRoomParserState
@@ -126,13 +128,36 @@ impl ZeldaState {
 
     /// ROM: `Dungeon_AdjustForRoomLayout`
     pub(super) fn dungeon_adjust_for_room_layout(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02b5dc));
+        let b = crate::cycle_ledger::blocks(self.lag_free);
+        b.block(0x02b5dc);
         self.dungeon_adjust_quadrant();
+        b.block(0x02b5e4);
         let flags =
             LAYOUT_QUADRANT_FLAGS[self.game_state.dungeon.room_load.layout_quadrant_key() as usize];
         let horizontal_mask = self.game_state.player.follower_link.quadrant_x_mask();
         let vertical_mask = self.game_state.player.follower_link.quadrant_y_mask();
         let blast_wall_x_open = self.game_state.dungeon.room_effects.blast_wall_x_open();
         let blast_wall_y_open = self.game_state.dungeon.room_effects.blast_wall_y_open();
+        if self.game_state.player.follower_link.quadrant_x() != 0 { b.taken(0x02b5ea); }
+        else { b.block(0x02b5ec); }
+        b.block(0x02b5ee);
+        if blast_wall_x_open { b.taken(0x02b5f3); b.block(0x02b5fe); }
+        else {
+            b.block(0x02b5f5);
+            if flags & horizontal_mask != 0 { b.taken(0x02b5fc); }
+            else { b.block(0x02b5fe); }
+        }
+        b.block(0x02b602);
+        if self.game_state.player.follower_link.quadrant_y() != 0 { b.taken(0x02b608); }
+        else { b.block(0x02b60a); }
+        b.block(0x02b60c);
+        if blast_wall_y_open { b.taken(0x02b611); b.block(0x02b61c); }
+        else {
+            b.block(0x02b613);
+            if flags & vertical_mask != 0 { b.taken(0x02b61a); }
+            else { b.block(0x02b61c); }
+        }
         self.apply_dungeon_layout_quadrant_fullsize(
             flags,
             horizontal_mask,
@@ -141,6 +166,13 @@ impl ZeldaState {
             blast_wall_y_open,
         );
         let reset_xy_flags = self.game_state.dungeon.door_setup.reset_xy_check_flags();
+        b.block(0x02b620);
+        if reset_xy_flags as u8 == 0 { b.taken(0x02b622); }
+        else { b.block(0x02b624); }
+        b.block(0x02b626);
+        if reset_xy_flags >> 8 == 0 { b.taken(0x02b628); }
+        else { b.block(0x02b62a); }
+        b.block(0x02b62c);
         self.apply_reset_xy_quadrant_overrides(reset_xy_flags);
         if crate::debug_env::var_os!("ZELDA3_DEBUG_QUADRANT").is_some() {
             eprintln!(
@@ -618,6 +650,8 @@ impl ZeldaState {
     }
 
     pub(super) fn MirrorBg1Bg2Offs(&mut self) {
+        let _scope = self.lag_free.then(|| crate::cycle_ledger::routine(0x02bb7b));
+        crate::cycle_ledger::blocks(self.lag_free).block(0x02bb7b);
         let h = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let v = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         self.set_bg1_x(h);

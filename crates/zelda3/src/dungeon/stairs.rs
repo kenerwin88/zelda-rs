@@ -2040,7 +2040,7 @@ impl ZeldaState {
         if self.game_state.player.follower_link.y_button_action_step() == 2 {
             self.follower_link_state_mut().set_actual_velocity_xy(0, 16);
         }
-        self.link_move_position();
+        self.link_move_position_long_entry();
         self.link_handle_moving_animation_start_with_dash();
         if self.game_state.player.follower_link.x() as u8
             == self.game_state.player.tile_detection.x_low()

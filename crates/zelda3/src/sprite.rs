@@ -116,7 +116,7 @@ pub(super) enum SpritePausedEntry {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpriteRecoilEntry {
     Unpriced,
-    /// Only the entry test and zero-recoil return are admitted so far.
+    /// Complete explicit bank-5 and bank-6 entries, including their XY calls.
     Rom05F971,
     Rom06FF78,
     Rom1EFE9B,

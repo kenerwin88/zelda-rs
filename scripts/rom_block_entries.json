@@ -1234,5 +1234,12 @@
   {"entry":"09a5d0","end":"09a614","m8":false,"x8":false,"index_max":110},
   {"entry":"09a614","end":"09a657","m8":false,"x8":false,"index_max":110},
   {"entry":"09a6ca","end":"09a6cd"},
-  {"entry":"09ac26","end":"09ac6b"}
+  {"entry":"09ac26","end":"09ac6b"},
+  {"entry":"02b5dc","end":"02b62e","data_bank":2,"index_max":31},
+  {"entry":"02ba27","end":"02ba31"},
+  {"entry":"02bb7b","end":"02bb88"},
+  {"entry":"06ff7d","end":"06fff3","index_max":31},
+  {"entry":"06fff4","end":"06fff8","index_max":31},
+  {"entry":"05f976","end":"05f9e8","index_max":31},
+  {"entry":"05f9e9","end":"05f9ed","index_max":31}
 ]
